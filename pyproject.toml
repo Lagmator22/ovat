@@ -1,0 +1,24 @@
+[project]
+name = "ovat"
+version = "0.1.0"
+description = "Agentic Toolkit for AI PC with OpenVINO — turn agent boilerplate into one YAML + one command."
+requires-python = ">=3.10"
+dependencies = [
+  "openvino",
+  "openvino-genai",
+  "openai",
+  "typer",
+  "pydantic>=2",
+  "fastmcp",
+  "sqlite-vec",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov"]
+
+[project.scripts]
+ovat = "ovat.cli.main:app"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"

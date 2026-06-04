@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Virtual environment
+.venv/
+venv/
+
+# Local models, data, vector DBs (not source code)
+models/
+*.db
+*.sqlite
+*.sqlite3
+
+# OS / editor cruft
+.DS_Store
+.vscode/
+.idea/
