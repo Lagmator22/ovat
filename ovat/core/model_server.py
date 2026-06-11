@@ -19,12 +19,22 @@ import urllib.request
 class ModelServer:
     """Manages the OVMS process: start, wait-until-ready, stop."""
 
-    def __init__(self, model_name: str, device: str = "CPU",
-                 port: int = 8000, tool_parser: str = "hermes3"):
+    def __init__(self, model_name: str, source_model: str | None = None,
+                 model_repository_path: str = "models", device: str = "CPU",
+                 port: int = 8000, tool_parser: str = "hermes3",
+                 task: str = "text_generation"):
         self.model_name = model_name
+        # Note to myself: source_model is the Hugging Face id OVMS downloads if
+        # the model is not already on disk, for example OpenVINO/Qwen3-8B-int4-ov.
+        self.source_model = source_model
+        # The folder on disk where models live. OVMS needs this to have anything
+        # to serve. Leaving it out is exactly why the server used to exit at once.
+        self.model_repository_path = model_repository_path
         self.device = device
         self.port = port
         self.tool_parser = tool_parser
+        # task text_generation is what turns on the chat endpoints I call.
+        self.task = task
         self.process: subprocess.Popen | None = None
 
     @property
@@ -38,14 +48,23 @@ class ModelServer:
     def start(self) -> None:
         """Launch OVMS in the background. (Flags illustrative -> match them to
         our OVMS version / the demo README.)"""
+        # Note to myself: the three flags that matter most here are
+        # model_repository_path, source_model and task. Without a model to load,
+        # OVMS starts and exits in under a second because it has nothing to do.
         cmd = [
             "ovms",
             "--rest_port", str(self.port),
+            "--model_repository_path", self.model_repository_path,
             "--model_name", self.model_name,
+            "--task", self.task,
             "--target_device", self.device,
             "--tool_parser", self.tool_parser,
-            "--enable_prefix_caching",
+            "--enable_prefix_caching", "true",
         ]
+        # I only add source_model when I have one. On the first run OVMS uses it
+        # to download the model, about 5 GB, then later runs see it on disk.
+        if self.source_model:
+            cmd += ["--source_model", self.source_model]
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
