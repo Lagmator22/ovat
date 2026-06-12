@@ -22,6 +22,7 @@ class ModelServer:
     def __init__(self, model_name: str, source_model: str | None = None,
                  model_repository_path: str = "models", device: str = "CPU",
                  port: int = 8000, tool_parser: str = "hermes3",
+                 reasoning_parser: str | None = None,
                  task: str = "text_generation"):
         self.model_name = model_name
         # Note to myself: source_model is the Hugging Face id OVMS downloads if
@@ -33,6 +34,7 @@ class ModelServer:
         self.device = device
         self.port = port
         self.tool_parser = tool_parser
+        self.reasoning_parser = reasoning_parser
         # task text_generation is what turns on the chat endpoints I call.
         self.task = task
         self.process: subprocess.Popen | None = None
@@ -61,6 +63,8 @@ class ModelServer:
             "--tool_parser", self.tool_parser,
             "--enable_prefix_caching", "true",
         ]
+        if self.reasoning_parser:
+            cmd += ["--reasoning_parser", self.reasoning_parser]
         # I only add source_model when I have one. On the first run OVMS uses it
         # to download the model, about 5 GB, then later runs see it on disk.
         if self.source_model:
