@@ -16,6 +16,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
 
+[tool.pytest.ini_options]
+markers = [
+  "live: tests that need a running OVMS server (AI PC only, skipped elsewhere)",
+]
+
 [project.scripts]
 ovat = "ovat.cli.main:app"
 
