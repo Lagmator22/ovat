@@ -1,0 +1,21 @@
+# examples/workflow.yml
+# A sample OVAT workflow. This is the "one YAML" a user writes to describe a
+# whole agent: which model, which tools, how the agent behaves. Then they run:
+#   ovat run examples/workflow.yml --input "your question"
+
+model:
+  name: Qwen3-8B-int4-ov          # the model name my OVMS server serves
+  device: GPU                     # CPU, GPU, or NPU on the AI PC
+  ovms_url: http://localhost:8000/v3
+  tool_parser: hermes3            # correct parser for Qwen3 tool calls
+
+tools:
+  - name: search_docs             # my built-in document search tool
+    type: builtin
+  - name: transcribe              # my built-in audio transcription tool
+    type: builtin
+
+agent:
+  type: native                    # use my own loop.py (LangChain comes later)
+  max_iterations: 10
+  system_prompt: "You are a helpful assistant that uses tools when needed."
