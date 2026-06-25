@@ -46,6 +46,10 @@ needs_ovms = pytest.mark.skipif(
     reason=f"no OVMS server reachable at {OVMS_URL}",
 )
 
+# Every test in this file is a live test, so `pytest -m "not live"` skips the
+# whole file fast and `pytest -m live` selects exactly these (on the AI PC).
+pytestmark = pytest.mark.live
+
 
 @needs_ovms
 def test_ovms_plain_chat_answers():
