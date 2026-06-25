@@ -46,6 +46,28 @@ def search_docs_impl(query: str, top_k: int = 5,
     return retriever.retrieve(query, top_k=top_k)
 
 
+# The OpenAI-style tool schema my agent loop shows the model. I keep it next to
+# the tool itself so the description the model reads and the function that runs
+# can never drift apart. The factory imports this to build the agent's menu.
+SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "search_docs",
+        "description": "Search the user's indexed local documents and return the "
+                       "most relevant text chunks. Use when the user asks about "
+                       "the contents of their own files or notes.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "natural language search query"},
+                "top_k": {"type": "integer", "description": "max chunks to return"},
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+
 @mcp.tool
 def search_docs(query: str, top_k: int = 5) -> list[dict]:
     """Search my indexed local documents and return the most relevant chunks.

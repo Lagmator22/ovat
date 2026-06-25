@@ -61,6 +61,26 @@ def transcribe_impl(file_path: str, language: str = "en", pipeline=None) -> str:
     return str(pipeline.generate(samples))
 
 
+# The OpenAI-style tool schema my agent loop shows the model. Co-located with
+# the tool so the model's description and the real function stay in sync.
+SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "transcribe",
+        "description": "Transcribe a spoken audio file into text. Use when the "
+                       "user gives a path to an audio recording and wants the words.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "path to a WAV audio file"},
+                "language": {"type": "string", "description": "language code, e.g. en"},
+            },
+            "required": ["file_path"],
+        },
+    },
+}
+
+
 @mcp.tool
 def transcribe(file_path: str, language: str = "en") -> str:
     """Transcribe a spoken audio file into text.
