@@ -1,0 +1,21 @@
+# examples/minimal.yml
+# The "Minimal" profile: same agent, but tuned for an 8 GB / CPU-only laptop.
+# Compare this with workflow.yml (the "Standard" GPU profile) and notice that
+# moving from a 16 GB AI PC to a small laptop is a THREE-LINE change, not a
+# rewrite. That is the abstraction OVAT is selling: the agent code never moves,
+# only the config does.
+
+model:
+  name: Qwen2.5-1.5B-Instruct-int4-ov   # smaller model that fits in ~2 GB
+  device: CPU                           # no GPU needed
+  ovms_url: http://localhost:8000/v3
+  tool_parser: hermes3
+
+tools:
+  - name: search_docs
+    type: builtin
+
+agent:
+  type: native
+  max_iterations: 6
+  system_prompt: "You are a concise assistant. Use tools when needed."
