@@ -9,6 +9,7 @@ dependencies = [
   "openai",
   "typer",
   "pydantic>=2",
+  "pyyaml",
   "fastmcp",
   "sqlite-vec",
 ]
