@@ -29,3 +29,9 @@ ovat = "ovat.cli.main:app"
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
+
+# Only package the `ovat` source tree. Without this, setuptools' flat-layout
+# auto-discovery breaks when a non-package folder appears in the repo root
+# (e.g. a `models/` download from `ovat serve`, or an extracted `ovms_linux/`).
+[tool.setuptools.packages.find]
+include = ["ovat*"]
