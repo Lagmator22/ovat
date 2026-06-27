@@ -98,16 +98,23 @@ def models(
     """List or pull OVMS models (needs the ovms binary, so runs on the AI PC)."""
     from ovat.core.model_manager import ModelManager
     mgr = ModelManager()
-    if action == "list":
-        for name in mgr.list_models():
-            rprint(name)
-    elif action == "pull":
-        if not source_model:
-            rprint("[red]pull needs --source-model[/red]")
+    try:
+        if action == "list":
+            for name in mgr.list_models():
+                rprint(name)
+        elif action == "pull":
+            if not source_model:
+                rprint("[red]pull needs --source-model[/red]")
+                raise typer.Exit(code=1)
+            rprint(mgr.pull(source_model))
+        else:
+            rprint(f"[red]Unknown action '{action}'. Use list or pull.[/red]")
             raise typer.Exit(code=1)
-        rprint(mgr.pull(source_model))
-    else:
-        rprint(f"[red]Unknown action '{action}'. Use list or pull.[/red]")
+    except FileNotFoundError:
+        # The ovms binary is not on PATH. Tell the user plainly instead of
+        # dumping a raw subprocess traceback.
+        rprint("[red]Could not find the 'ovms' binary on PATH.[/red] "
+               "Install OVMS or add its folder to PATH (Windows: run setupvars first).")
         raise typer.Exit(code=1)
 
 
@@ -127,7 +134,13 @@ def serve(
         reasoning_parser=cfg.model.reasoning_parser,
     )
     rprint(f"[green]Starting OVMS[/green] for {cfg.model.name} on {cfg.model.device} ...")
-    server.start()
+    try:
+        server.start()
+    except FileNotFoundError:
+        # ovms binary not on PATH. Clean message instead of a raw traceback.
+        rprint("[red]Could not find the 'ovms' binary on PATH.[/red] On Windows, run "
+               "setupvars.bat and add the OVMS folder to PATH before 'ovat serve'.")
+        raise typer.Exit(code=1)
     if server.wait_until_ready():
         rprint(f"[green]OVMS is ready[/green] at {server.base_url}")
     else:
