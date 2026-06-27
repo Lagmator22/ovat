@@ -37,6 +37,22 @@ def test_full_config_parses_all_fields():
     assert cfg.agent.max_iterations == 5
 
 
+def test_serve_model_location_fields():
+    # source_model and model_repository_path are for `ovat serve`. They default
+    # sensibly and parse correctly when given.
+    cfg = WorkflowConfig(model={"name": "m"})
+    assert cfg.model.source_model is None
+    assert cfg.model.model_repository_path == "models"
+
+    cfg2 = WorkflowConfig(model={
+        "name": "Qwen3-8B-int4-ov",
+        "source_model": "OpenVINO/Qwen3-8B-int4-ov",
+        "model_repository_path": "/abs/models",
+    })
+    assert cfg2.model.source_model == "OpenVINO/Qwen3-8B-int4-ov"
+    assert cfg2.model.model_repository_path == "/abs/models"
+
+
 def test_missing_required_model_is_rejected():
     # No model at all should fail validation, not silently pass.
     with pytest.raises(ValidationError):

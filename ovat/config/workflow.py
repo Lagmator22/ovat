@@ -39,6 +39,11 @@ class ModelConfig(BaseModel):
     # reasoning_parser is for thinking models like the Qwen3 30B variant. It
     # stays None for normal models, which is why I default it to None.
     reasoning_parser: str | None = None
+    # These two only matter for `ovat serve`, which starts OVMS for me. They
+    # tell OVMS where to find (or download) the model. Without them, serve points
+    # OVMS at a relative "models" folder with nothing in it, so it cannot start.
+    source_model: str | None = None             # HF id, e.g. OpenVINO/Qwen3-8B-int4-ov
+    model_repository_path: str = "models"       # folder on disk where models live
 
 
 class ToolConfig(BaseModel):
