@@ -6,7 +6,7 @@
 model:
   name: Qwen3-8B-int4-ov          # the model name my OVMS server serves
   device: GPU                     # CPU, GPU, or NPU on the AI PC
-  ovms_url: http://localhost:8000/v3
+  ovms_url: http://localhost:8000/v3 # for vm(linux) like wsl2 testing, format is like => ovms_url: http://[IP_ADDRESS]:8000/v3
   tool_parser: hermes3            # correct parser for Qwen3 tool calls
   # Only used by `ovat serve` to start OVMS and locate the model:
   source_model: OpenVINO/Qwen3-8B-int4-ov   # HF id (downloaded if not on disk)
