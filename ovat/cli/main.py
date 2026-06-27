@@ -29,6 +29,9 @@ model:
   device: GPU
   ovms_url: http://localhost:8000/v3
   tool_parser: hermes3
+  # Only used by `ovat serve` to start OVMS and locate the model:
+  source_model: OpenVINO/Qwen3-8B-int4-ov
+  model_repository_path: models     # set to an absolute path if needed, e.g. C:\\Users\\you\\models
 
 tools:
   - name: search_docs
@@ -117,6 +120,8 @@ def serve(
     cfg = load_workflow(config)
     server = ModelServer(
         model_name=cfg.model.name,
+        source_model=cfg.model.source_model,
+        model_repository_path=cfg.model.model_repository_path,
         device=cfg.model.device,
         tool_parser=cfg.model.tool_parser,
         reasoning_parser=cfg.model.reasoning_parser,
