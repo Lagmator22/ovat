@@ -10,6 +10,7 @@ dependencies = [
   "typer",
   "pydantic>=2",
   "pyyaml",
+  "pillow",
   "fastmcp",
   "sqlite-vec",
 ]
