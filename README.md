@@ -102,6 +102,8 @@ ovat run workflow.yml --input "hi" --dry-run
 | | `device` | `CPU`, `GPU`, or `NPU` |
 | | `ovms_url` | where OVMS listens |
 | | `tool_parser` | how tool calls are decoded (`hermes3` for Qwen3) |
+| | `source_model` | (for `ovat serve`) HF id to download/serve |
+| | `model_repository_path` | (for `ovat serve`) folder where models live |
 | `tools` | `name` / `type` | a built-in tool (`search_docs`, `transcribe`) |
 | `agent` | `type` | `native` (the built-in loop) |
 | | `max_iterations` | safety cap on tool-calling turns |
