@@ -8,6 +8,9 @@ model:
   device: GPU                     # CPU, GPU, or NPU on the AI PC
   ovms_url: http://localhost:8000/v3
   tool_parser: hermes3            # correct parser for Qwen3 tool calls
+  # Only used by `ovat serve` to start OVMS and locate the model:
+  source_model: OpenVINO/Qwen3-8B-int4-ov   # HF id (downloaded if not on disk)
+  model_repository_path: models             # folder where models live (absolute path is fine)
 
 tools:
   - name: search_docs             # my built-in document search tool

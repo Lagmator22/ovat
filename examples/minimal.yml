@@ -10,6 +10,9 @@ model:
   device: CPU                           # no GPU needed
   ovms_url: http://localhost:8000/v3
   tool_parser: hermes3
+  # Only used by `ovat serve`:
+  source_model: OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov
+  model_repository_path: models
 
 tools:
   - name: search_docs
