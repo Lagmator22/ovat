@@ -18,48 +18,29 @@ from ovat.config.workflow import load_workflow
 app = typer.Typer(
     help="OVAT: run an OpenVINO agent from one YAML + one command.",
     add_completion=False,
+    invoke_without_command=True,   # so bare `ovat` can open the TUI
 )
 
-# A starter workflow I write out for `ovat init`, so a new user has something
-# that already works to edit instead of a blank file.
-_STARTER_YAML = """\
-# OVAT workflow. Edit this, then run:  ovat run workflow.yml --input "..."
-model:
-  name: Qwen3-8B-int4-ov
-  device: GPU
-  ovms_url: http://localhost:8000/v3
-  tool_parser: hermes3
-  # Only used by `ovat serve` to start OVMS and locate the model:
-  source_model: OpenVINO/Qwen3-8B-int4-ov
-  model_repository_path: models     # set to an absolute path if needed, e.g. C:\\Users\\you\\models
 
-tools:
-  - name: search_docs
-    type: builtin
-  - name: transcribe
-    type: builtin
+@app.callback()
+def _entry(ctx: typer.Context):
+    """Open the TUI when `ovat` is run with no subcommand.
 
-agent:
-  type: native
-  max_iterations: 10
-  system_prompt: "You are a helpful assistant that uses tools when needed."
-
-# RAG for the search_docs tool. Run `ovat index <folder> workflow.yml` first to
-# fill the index, then ask questions with `ovat run`. Swap a provider string to
-# change a backend; no code changes, only this YAML.
-rag:
-  embeddings:
-    provider: genai                 # genai (local) or ovms (server /v3)
-    model: models/bge-small-en-v1.5 # OpenVINO embedding model folder on disk
-    device: CPU                     # CPU or NPU on the AI PC
-    dim: 384
-  retriever:
-    provider: sqlite-vec
-    db_path: ovat_index.db
-  chunk:
-    size: 512
-    overlap: 64
-"""
+    typer runs this before any command. If the user typed a subcommand I get out
+    of the way; if they typed just `ovat`, I launch the full-screen launcher.
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+    try:
+        from ovat.cli.tui import run_tui
+    except ImportError:
+        # Textual is optional. If it is missing, fall back to the help text
+        # instead of crashing, and point the user at the install.
+        rprint("[yellow]The TUI needs Textual.[/yellow] Install it with "
+               "[bold]pip install textual[/bold], or use a subcommand like "
+               "[bold]ovat doctor[/bold]. See [bold]ovat --help[/bold].")
+        raise typer.Exit()
+    run_tui()
 
 
 @app.command()
@@ -141,11 +122,13 @@ def init(
 ):
     """Write a starter workflow.yml you can edit."""
     import os
+
+    from ovat.cli.commands import STARTER_YAML
     if os.path.exists(path):
         rprint(f"[red]Refusing to overwrite existing file:[/red] {path}")
         raise typer.Exit(code=1)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(_STARTER_YAML)
+        f.write(STARTER_YAML)
     rprint(f"[green]Wrote starter workflow to[/green] {path}")
 
 
@@ -243,6 +226,13 @@ def doctor(
                       f"Fix the red rows above.")
         raise typer.Exit(code=1)
     console.print("[ovat.ok]Everything essential looks good.[/ovat.ok]")
+
+
+@app.command()
+def tui():
+    """Open the full-screen OVAT launcher (same as running `ovat` with no args)."""
+    from ovat.cli.tui import run_tui
+    run_tui()
 
 
 if __name__ == "__main__":

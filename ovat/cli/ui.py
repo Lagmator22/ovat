@@ -15,6 +15,24 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.theme import Theme
 
+# The raw hex palette, shared by the themed CLI and the Textual TUI. The TUI
+# renders into widgets that do not carry my rich Theme, so it needs the plain
+# hex values; keeping them here means both front-ends use one source of truth.
+BLUE = "#0068B5"      # Intel energy blue (primary)
+CYAN = "#00C7FD"      # bright accent
+PURPLE = "#8F5CFF"    # the purple half of the scheme
+GREEN = "#3DD68C"     # ok
+YELLOW = "#FFC107"    # warn
+RED = "#FF5C5C"       # fail
+DIM = "#7A8CA0"       # secondary text
+
+# Glyph + hex colour per check status, for output that cannot use theme names.
+STATUS_HEX = {
+    "ok": ("✓", GREEN),
+    "warn": ("!", YELLOW),
+    "fail": ("✗", RED),
+}
+
 # Intel-inspired palette. I name the styles by role, not by colour, so a command
 # asks for "ovat.ok" and never hardcodes a hex value.
 OVAT_THEME = Theme({

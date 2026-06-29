@@ -13,6 +13,8 @@ dependencies = [
   "pillow",
   "fastmcp",
   "sqlite-vec",
+  "rich",
+  "textual",
 ]
 
 # The react agent (agent.type: react) needs LangChain. It is an extra so the
