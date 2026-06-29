@@ -18,33 +18,66 @@ from textual.widgets import Input, RichLog, Static
 from ovat.cli import ui
 from ovat.cli.commands import cmd_help, dispatch, match_commands
 
-# The wordmark, drawn in blocks and shaded top-to-bottom from cyan to Intel blue.
-_WORDMARK = [
+# A dependency-free fallback, used only if pyfiglet is somehow unavailable.
+_FALLBACK_WORDMARK = [
     "██████ ██  ██  ████  ██████",
     "██  ██ ██  ██ ██  ██   ██  ",
     "██  ██ ██  ██ ██████   ██  ",
     "██  ██  ████  ██  ██   ██  ",
     "██████   ██   ██  ██   ██  ",
 ]
-_WORDMARK_SHADE = ["#00C7FD", "#16B2F2", "#1199DC", "#0B82CA", "#0068B5"]
+# Gradient endpoints (cyan -> Intel blue), the RGB form of ui.CYAN / ui.BLUE.
+_CYAN_RGB = (0, 199, 253)
+_BLUE_RGB = (0, 104, 181)
+
+
+def _lerp_hex(a: tuple, b: tuple, t: float) -> str:
+    """Blend two RGB colours by fraction t in 0..1 and return a hex string."""
+    return "#{:02X}{:02X}{:02X}".format(
+        *(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+    )
+
+
+def _wordmark_lines() -> list:
+    """Render OVAT with a real FIGlet font (ansi_shadow), the stylish block look.
+
+    pyfiglet is the standard tool for terminal banners; it gives the same kind of
+    3D-shadow wordmark OpenCode and Hermes use, instead of a hand-drawn one. If
+    pyfiglet is missing for any reason, I fall back to plain blocks so the TUI
+    still opens.
+    """
+    try:
+        import pyfiglet
+        lines = [ln for ln in pyfiglet.figlet_format("OVAT", font="ansi_shadow").split("\n")
+                 if ln.strip()]
+        if lines:
+            return lines
+    except Exception:
+        pass
+    return _FALLBACK_WORDMARK
+
+
+def _wordmark_text() -> Text:
+    """The wordmark as Rich Text, shaded top-to-bottom from cyan to Intel blue."""
+    lines = _wordmark_lines()
+    text = Text()
+    last = max(len(lines) - 1, 1)
+    for i, line in enumerate(lines):
+        color = _lerp_hex(_CYAN_RGB, _BLUE_RGB, i / last)
+        text.append(line + "\n", style=f"bold {color}")
+    return text
 
 
 def _banner() -> Group:
-    """Build the header: the OVAT wordmark, the full product name, and a tagline.
+    """Header: the FIGlet OVAT wordmark, the full product name, and a tagline.
 
     The wordmark is the short brand mark; the full name spells out what OVAT
-    stands for so a first-time user is never left guessing: OpenVINO Agentic
-    Toolkit (OV - A - T).
+    stands for so a first-time user is never guessing: OpenVINO Agentic Toolkit.
     """
-    mark = Text()
-    for row, color in zip(_WORDMARK, _WORDMARK_SHADE):
-        mark.append(row + "\n", style=f"bold {color}")
-    name = Text()
-    name.append("\nOpenVINO ", style=f"bold {ui.CYAN}")
-    name.append("Agentic ", style=f"bold {ui.CYAN}")
-    name.append("Toolkit", style=f"bold {ui.CYAN}")
+    name = Text("OpenVINO Agentic Toolkit", style=f"bold {ui.CYAN}")
     tagline = Text("one YAML  +  one command", style=ui.PURPLE)
-    return Group(mark, name, tagline)
+    # The blank Text() puts a line between the wordmark and the name so it breathes.
+    return Group(_wordmark_text(), Text(), name, tagline)
 
 
 class OvatTUI(App):

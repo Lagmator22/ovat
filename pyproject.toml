@@ -15,6 +15,7 @@ dependencies = [
   "sqlite-vec",
   "rich",
   "textual",
+  "pyfiglet",
 ]
 
 # The react agent (agent.type: react) needs LangChain. It is an extra so the
