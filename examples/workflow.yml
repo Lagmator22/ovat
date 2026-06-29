@@ -19,6 +19,22 @@ tools:
     type: builtin
 
 agent:
-  type: native                    # use my own loop.py (LangChain comes later)
+  type: native                    # native = my own loop.py; react = LangChain
   max_iterations: 10
   system_prompt: "You are a helpful assistant that uses tools when needed."
+
+# RAG powers the search_docs tool. Swap any line below to change a backend; the
+# code does not change, only this YAML does. First run `ovat index <folder>
+# examples/workflow.yml` to fill the index, then ask a question with `ovat run`.
+rag:
+  embeddings:
+    provider: genai               # genai (local NPU/CPU) | ovms (server /v3)
+    model: models/bge-small-en-v1.5   # OpenVINO embedding model folder on disk
+    device: CPU                   # CPU or NPU on the AI PC
+    dim: 384                      # bge-small emits 384 numbers per chunk
+  retriever:
+    provider: sqlite-vec          # the vector store (usearch/hnsw can slot in later)
+    db_path: ovat_index.db        # the index file `ovat index` writes
+  chunk:
+    size: 512                     # characters per chunk
+    overlap: 64                   # characters shared with the next chunk

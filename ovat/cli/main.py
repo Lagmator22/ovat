@@ -43,6 +43,22 @@ agent:
   type: native
   max_iterations: 10
   system_prompt: "You are a helpful assistant that uses tools when needed."
+
+# RAG for the search_docs tool. Run `ovat index <folder> workflow.yml` first to
+# fill the index, then ask questions with `ovat run`. Swap a provider string to
+# change a backend; no code changes, only this YAML.
+rag:
+  embeddings:
+    provider: genai                 # genai (local) or ovms (server /v3)
+    model: models/bge-small-en-v1.5 # OpenVINO embedding model folder on disk
+    device: CPU                     # CPU or NPU on the AI PC
+    dim: 384
+  retriever:
+    provider: sqlite-vec
+    db_path: ovat_index.db
+  chunk:
+    size: 512
+    overlap: 64
 """
 
 
@@ -56,8 +72,9 @@ def run(
     """Run the agent described by CONFIG against your input."""
     # Step 1: YAML -> validated config. A bad file fails loudly right here.
     cfg = load_workflow(config)
-    # Step 2: config -> a fully wired agent (LLM + tools + loop).
-    agent = build_agent(cfg)
+    # Step 2: config -> a fully wired agent (LLM + tools + loop). dry-run skips
+    # loading the RAG model so the preview works on any machine.
+    agent = build_agent(cfg, skip_rag=dry_run)
 
     # dry-run lets me prove the wiring on any machine, even with no OVMS server.
     if dry_run:
@@ -73,6 +90,49 @@ def run(
         rprint(f"[red]Error talking to OVMS at {cfg.model.ovms_url}[/red]: {exc}")
         raise typer.Exit(code=1)
     rprint(answer)
+
+
+@app.command()
+def index(
+    folder: str = typer.Argument(..., help="Folder of .txt/.md documents to index."),
+    config: str = typer.Argument(..., help="Workflow YAML whose rag: section to use."),
+):
+    """Index a folder of documents so search_docs can find them.
+
+    This reads the rag: section of your workflow, builds the embedder and the
+    vector store it names, chunks every text file under FOLDER, and stores the
+    chunks. After this, `ovat run` can answer questions from those documents.
+    """
+    from ovat.agent.factory import build_rag
+    from ovat.rag.indexer import index_folder
+
+    cfg = load_workflow(config)
+    if cfg.rag is None:
+        rprint("[red]This workflow has no [bold]rag:[/bold] section.[/red] "
+               "Add one (embeddings + retriever) before indexing.")
+        raise typer.Exit(code=1)
+
+    # Building the retriever loads the embedding model. If that model is not on
+    # disk yet, say so plainly instead of dumping a pipeline traceback.
+    try:
+        retriever = build_rag(cfg)
+    except Exception as exc:
+        rprint(f"[red]Could not build the embedder/retriever:[/red] {exc}")
+        rprint("[yellow]Tip:[/yellow] make sure the embeddings model in "
+               f"[bold]{cfg.rag.embeddings.model}[/bold] exists on disk.")
+        raise typer.Exit(code=1)
+
+    rprint(f"[green]Indexing[/green] {folder} -> {cfg.rag.retriever.db_path} ...")
+    try:
+        summary = index_folder(
+            folder, retriever,
+            size=cfg.rag.chunk.size, overlap=cfg.rag.chunk.overlap,
+        )
+    except FileNotFoundError as exc:
+        rprint(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+    rprint(f"[green]Indexed[/green] {summary['chunks']} chunks "
+           f"from {summary['files']} files.")
 
 
 @app.command()

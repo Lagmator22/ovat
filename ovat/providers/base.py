@@ -46,7 +46,9 @@ class RetrieverProvider(ABC):
     """Contract/Socket for storing vectors and searching them by similarity."""
 
     @abstractmethod
-    def add(self, texts: list[str]) -> None:
+    def add(self, texts: list[str], sources: list[str] | None = None) -> None:
+        """Store these texts. `sources` is optional and lines up by index, so a
+        later retrieve() can say which file each chunk came from (citations)."""
         ...
 
     @abstractmethod
