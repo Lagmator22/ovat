@@ -22,3 +22,6 @@ models/
 .DS_Store
 .vscode/
 .idea/
+
+# OVMS process logs
+*.log
