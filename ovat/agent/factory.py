@@ -170,8 +170,11 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False):
             system_prompt=config.agent.system_prompt,
             max_iterations=config.agent.max_iterations,
         )
+    if agent_type == "react":
+        # Imported here so the native path never pays the LangChain import cost.
+        from ovat.agent.langchain_agent import build_react_agent
+        return build_react_agent(config, tools)
 
     raise ValueError(
-        f"Unknown agent type '{agent_type}'. Supported: native. "
-        f"(react is wired in the LangChain step.)"
+        f"Unknown agent type '{agent_type}'. Supported: native, react."
     )

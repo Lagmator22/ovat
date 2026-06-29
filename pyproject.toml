@@ -15,8 +15,11 @@ dependencies = [
   "sqlite-vec",
 ]
 
+# The react agent (agent.type: react) needs LangChain. It is an extra so the
+# base install stays light; `pip install 'ovat[langchain]'` turns it on.
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov"]
+langchain = ["langchain>=1", "langchain-openai>=1", "langgraph>=1"]
+dev = ["pytest", "pytest-cov", "langchain>=1", "langchain-openai>=1", "langgraph>=1"]
 
 [tool.pytest.ini_options]
 markers = [
