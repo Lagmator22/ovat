@@ -74,6 +74,8 @@ The agent never changes; only the YAML does.
 ```bash
 # 1. install (editable, from the repo root). Add the react engine with [langchain]:
 pip install -e ".[langchain]"
+# or, for a global `ovat` you can run from anywhere (no venv to activate):
+#   pipx install ".[langchain]"
 
 # 2. check your machine is ready (Python, deps, devices, OVMS, a config)
 ovat doctor workflow.yml
@@ -97,6 +99,32 @@ No server handy? Prove the pipeline assembles without one:
 ovat run workflow.yml --input "hi" --dry-run
 # Built agent  model=Qwen3-8B-int4-ov  tools=['search_docs', 'transcribe']  max_iterations=10
 ```
+
+---
+
+## Interactive launcher (TUI)
+
+Once installed, just run `ovat` (no arguments, from any directory) to open a
+full-screen launcher in your terminal:
+
+```bash
+ovat
+```
+
+It opens in the terminal's alternate screen, like a separate window, so it never
+smears into your scrollback. Type `/` to see the commands, Tab to complete:
+
+```
+OpenVINO Agentic Toolkit
+  /doctor [config]          check Python, deps, devices, OVMS, a config
+  /init [path]              write a starter workflow.yml you can edit
+  /validate <config>        load and validate a workflow file
+  /index <folder> <config>  index a folder of docs for search_docs
+  /help  /models  /clear  /exit
+```
+
+Every command runs the real toolkit, the same code the subcommands use. It is a
+discoverability layer, so a new user never has to memorise the CLI.
 
 ---
 
