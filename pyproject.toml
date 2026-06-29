@@ -24,6 +24,7 @@ dev = ["pytest", "pytest-cov", "langchain>=1", "langchain-openai>=1", "langgraph
 [tool.pytest.ini_options]
 markers = [
   "live: tests that need a running OVMS server (AI PC only, skipped elsewhere)",
+  "rag: tests that need the bge-small embedding model on disk (auto-skip if absent)",
 ]
 
 [project.scripts]

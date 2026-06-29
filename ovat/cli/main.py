@@ -208,5 +208,42 @@ def serve(
         raise typer.Exit(code=1)
 
 
+@app.command()
+def doctor(
+    config: str = typer.Argument(None, help="Optional workflow YAML to validate too."),
+):
+    """Check the setup: Python, dependencies, devices, OVMS, and a config.
+
+    Every row is a real check. Green means good, yellow is a heads-up that does
+    not block anything, red is something to fix. Pass a workflow to also validate
+    it and see whether its model and OVMS look ready.
+    """
+    from rich.table import Table
+
+    from ovat.cli import diagnostics
+    from ovat.cli.ui import banner, console, status_text
+
+    banner("environment & workflow diagnostics")
+    checks = diagnostics.run_checks(config)
+
+    table = Table(header_style="ovat.header", border_style="ovat.dim",
+                  expand=False)
+    table.add_column("Check", style="ovat.cyan", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Detail", style="ovat.dim")
+    failures = 0
+    for c in checks:
+        if c.status == diagnostics.FAIL:
+            failures += 1
+        table.add_row(c.name, status_text(c.status), c.detail)
+    console.print(table)
+
+    if failures:
+        console.print(f"[ovat.fail]{failures} check(s) failed.[/ovat.fail] "
+                      f"Fix the red rows above.")
+        raise typer.Exit(code=1)
+    console.print("[ovat.ok]Everything essential looks good.[/ovat.ok]")
+
+
 if __name__ == "__main__":
     app()
