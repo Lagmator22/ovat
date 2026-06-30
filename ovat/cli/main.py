@@ -93,6 +93,50 @@ def run(
 
 
 @app.command()
+def chat(
+    config: str = typer.Argument(..., help="Workflow YAML (uses its rag: section)."),
+    input: str = typer.Option(..., "--input", "-i", help="Your question."),
+    model_path: str = typer.Option(..., "--model-path", "-m",
+                                   help="Path to a local OpenVINO LLM folder, e.g. Llama-3.2-3B."),
+    device: str = typer.Option("CPU", "--device", help="CPU, or GPU/NPU on the AI PC."),
+    top_k: int = typer.Option(4, "--top-k", help="How many chunks to retrieve."),
+    max_tokens: int = typer.Option(256, "--max-tokens", help="Answer length cap."),
+):
+    """Chat with your documents using a LOCAL OpenVINO model (no OVMS needed).
+
+    The macOS path: this embeds your question, retrieves the closest chunks from
+    the index you built with `ovat index`, and answers with a local model, citing
+    its sources. It is real retrieval-augmented generation; it does not tool-call
+    (that needs OVMS) but always retrieves then answers. Index first, then ask.
+    """
+    from ovat.agent.factory import build_rag
+    from ovat.agent.rag_chat import rag_chat
+    from ovat.providers.llm_genai import GenAILLMProvider
+
+    cfg = load_workflow(config)
+    if cfg.rag is None:
+        rprint("[red]This workflow has no [bold]rag:[/bold] section to chat against.[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        retriever = build_rag(cfg)
+    except Exception as exc:
+        rprint(f"[red]Could not build the retriever:[/red] {exc}")
+        raise typer.Exit(code=1)
+    try:
+        llm = GenAILLMProvider(model_path, device=device, max_new_tokens=max_tokens)
+    except Exception as exc:
+        rprint(f"[red]Could not load the local model at {model_path}:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    answer, sources = rag_chat(retriever, llm, input, top_k=top_k,
+                               system_prompt=cfg.agent.system_prompt)
+    rprint(answer.strip())
+    if sources:
+        rprint("\n[dim]sources:[/dim] " + ", ".join(sources))
+
+
+@app.command()
 def index(
     folder: str = typer.Argument(..., help="Folder of .txt/.md documents to index."),
     config: str = typer.Argument(..., help="Workflow YAML whose rag: section to use."),
