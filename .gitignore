@@ -25,3 +25,8 @@ models/
 
 # OVMS process logs
 *.log
+
+# A workflow.yml written by `ovat init` in the repo root is local scratch; the
+# canonical sample lives in examples/. The leading slash ignores ONLY the root
+# one, so examples/workflow.yml stays tracked.
+/workflow.yml
