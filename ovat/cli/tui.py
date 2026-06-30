@@ -230,6 +230,11 @@ class OvatTUI(App):
             self.exit()
 
     def _start_command(self, cmd: str) -> None:
+        if self._proc is not None:
+            self.query_one("#output", RichLog).write(
+                Text("A command is still running. Press Esc to cancel it first.",
+                     style=ui.YELLOW))
+            return
         cols = max(80, self.size.width - 8)
         self._run_command(cmd, cols)
 
