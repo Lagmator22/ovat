@@ -30,3 +30,6 @@ models/
 # canonical sample lives in examples/. The leading slash ignores ONLY the root
 # one, so examples/workflow.yml stays tracked.
 /workflow.yml
+
+# Review artifacts written by external tools, not part of the toolkit.
+/analysis_report.md
