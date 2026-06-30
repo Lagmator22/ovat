@@ -43,6 +43,47 @@ def _entry(ctx: typer.Context):
     run_tui()
 
 
+# The starter workflow written by `ovat init` (and by the TUI's /init shortcut,
+# which runs `ovat init`). Kept here next to the command that writes it.
+_STARTER_YAML = """\
+# OVAT workflow. Edit this, then run:  ovat run workflow.yml --input "..."
+model:
+  name: Qwen3-8B-int4-ov
+  device: GPU
+  ovms_url: http://localhost:8000/v3
+  tool_parser: hermes3
+  # Only used by `ovat serve` to start OVMS and locate the model:
+  source_model: OpenVINO/Qwen3-8B-int4-ov
+  model_repository_path: models
+
+tools:
+  - name: search_docs
+    type: builtin
+  - name: transcribe
+    type: builtin
+
+agent:
+  type: native
+  max_iterations: 10
+  system_prompt: "You are a helpful assistant that uses tools when needed."
+
+# RAG for the search_docs tool. Run `ovat index <folder> workflow.yml` first,
+# then ask questions. Swap a provider string to change a backend.
+rag:
+  embeddings:
+    provider: genai
+    model: models/bge-small-en-v1.5
+    device: CPU
+    dim: 384
+  retriever:
+    provider: sqlite-vec
+    db_path: ovat_index.db
+  chunk:
+    size: 512
+    overlap: 64
+"""
+
+
 @app.command()
 def run(
     config: str = typer.Argument(..., help="Path to a workflow YAML."),
@@ -122,13 +163,11 @@ def init(
 ):
     """Write a starter workflow.yml you can edit."""
     import os
-
-    from ovat.cli.commands import STARTER_YAML
     if os.path.exists(path):
         rprint(f"[red]Refusing to overwrite existing file:[/red] {path}")
         raise typer.Exit(code=1)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(STARTER_YAML)
+        f.write(_STARTER_YAML)
     rprint(f"[green]Wrote starter workflow to[/green] {path}")
 
 
