@@ -47,7 +47,7 @@ class ModelServer:
     def health_url(self) -> str:
         return f"http://localhost:{self.port}/v2/health/ready"
 
-    def start(self) -> None:
+    def start(self, log_path: str = "ovms.log") -> None:
         """Launch OVMS in the background. (Flags illustrative -> match them to
         our OVMS version / the demo README.)"""
         # Note to myself: the three flags that matter most here are
@@ -69,14 +69,24 @@ class ModelServer:
         # to download the model, about 5 GB, then later runs see it on disk.
         if self.source_model:
             cmd += ["--source_model", self.source_model]
+        # Note: send OVMS logs to a FILE, not subprocess.PIPE. Piping without
+        # ever draining the pipe deadlocks OVMS once its output fills the ~64KB
+        # OS pipe buffer. A file has no such limit, and it lets me show the real
+        # error if OVMS fails to start.
+        self.log_path = log_path
+        self._log_file = open(log_path, "w", encoding="utf-8")
         self.process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            cmd, stdout=self._log_file, stderr=subprocess.STDOUT
         )
 
     def wait_until_ready(self, timeout: int = 120) -> bool:
         """Poll the health endpoint until OVMS is up or we time out."""
         start = time.time()
         while time.time() - start < timeout:
+            # If OVMS already exited, stop waiting the full timeout. The reason
+            # is in the log file (self.log_path) instead of being hidden.
+            if self.process is not None and self.process.poll() is not None:
+                return False
             try:
                 with urllib.request.urlopen(self.health_url, timeout=2) as r:
                     if r.status == 200:
@@ -91,3 +101,6 @@ class ModelServer:
             self.process.terminate()
             self.process.wait(timeout=10)
             self.process = None
+        if getattr(self, "_log_file", None):
+            self._log_file.close()
+            self._log_file = None

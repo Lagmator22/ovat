@@ -49,10 +49,36 @@ def test_transcribe_reads_audio_and_calls_pipeline(tmp_path):
         w.writeframes(np.zeros(1600, dtype=np.int16).tobytes())
 
     class FakePipeline:
-        def generate(self, samples):
-            # I assert my reader handed me floats, then return a fake transcript.
+        def generate(self, samples, language=None):
+            # I assert my reader handed me floats and the language was passed
+            # through in Whisper's token form, then return a fake transcript.
             assert samples.dtype == np.float32
+            assert language == "<|en|>"
             return "hello world"
 
     out = transcribe_impl(str(path), pipeline=FakePipeline())
     assert out == "hello world"
+
+
+def _write_wav(path, channels, rate):
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(channels)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(np.zeros(1600 * channels, dtype=np.int16).tobytes())
+
+
+def test_transcribe_rejects_non_mono_audio(tmp_path):
+    # A stereo file should fail clearly instead of producing a garbled result.
+    path = tmp_path / "stereo.wav"
+    _write_wav(path, channels=2, rate=16000)
+    out = transcribe_impl(str(path), pipeline=object())   # pipeline never reached
+    assert out.startswith("Error:") and "mono" in out
+
+
+def test_transcribe_rejects_wrong_sample_rate(tmp_path):
+    # A 44.1 kHz file should fail clearly rather than transcribe sped-up speech.
+    path = tmp_path / "hires.wav"
+    _write_wav(path, channels=1, rate=44100)
+    out = transcribe_impl(str(path), pipeline=object())
+    assert out.startswith("Error:") and "16 kHz" in out

@@ -59,20 +59,69 @@ class ToolConfig(BaseModel):
 class AgentConfig(BaseModel):
     """How the agent loop behaves."""
 
-    # "native" uses my own loop.py. Later "react" will use LangChain instead.
+    # "native" uses my own loop.py. "react" hands the same job to LangChain.
     type: str = "native"
     max_iterations: int = 10            # the safety cap from my loop
     system_prompt: str | None = None    # optional persona for the agent
 
 
+class EmbeddingsConfig(BaseModel):
+    """Which embedder turns text into vectors, and where it runs.
+
+    The whole point of pulling this into config is the ABC swap: change
+    `provider` from genai to ovms and a different concrete EmbeddingsProvider
+    gets built, with no code edit anywhere else.
+    """
+
+    provider: str = "genai"     # genai = local openvino_genai; ovms = server /v3
+    # For genai this is a path to an OpenVINO model folder on disk. For ovms it
+    # is the served model name. Same field, read differently per provider.
+    model: str = "models/bge-small-en-v1.5"
+    device: str = "CPU"         # genai only: CPU or NPU on the AI PC
+    dim: int = 384              # bge-small emits 384 floats; the table must match
+
+
+class RetrieverConfig(BaseModel):
+    """Which vector store holds the chunks and answers nearest-neighbour search."""
+
+    # sqlite-vec is the only backend wired today. usearch/hnsw can slot in later
+    # behind the same RetrieverProvider socket without touching the factory call.
+    provider: str = "sqlite-vec"
+    # A real file path makes the index survive between `ovat index` and `ovat run`.
+    db_path: str = "ovat_index.db"
+
+
+class ChunkConfig(BaseModel):
+    """How `ovat index` slices a document before embedding it."""
+
+    size: int = 512        # characters per chunk; roughly a paragraph
+    overlap: int = 64      # characters shared with the next chunk so meaning
+    #                        is not cut in half at a boundary
+
+
+class RagConfig(BaseModel):
+    """The retrieval-augmented-generation block that powers search_docs.
+
+    Heads up: this whole section is optional. Leave it out and search_docs runs
+    in stub mode (handy for wiring tests). Add it and the factory builds a real
+    embedder + retriever and search_docs returns real chunks with citations.
+    """
+
+    embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
+    retriever: RetrieverConfig = Field(default_factory=RetrieverConfig)
+    chunk: ChunkConfig = Field(default_factory=ChunkConfig)
+
+
 class WorkflowConfig(BaseModel):
-    """The whole workflow: one model, some tools, one agent."""
+    """The whole workflow: one model, some tools, one agent, optional RAG."""
 
     model: ModelConfig
     # default_factory=list gives each config its own empty list. I never share
     # one list between objects, which is a classic mutable-default bug in Python.
     tools: list[ToolConfig] = Field(default_factory=list)
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    # None means "no RAG configured" -> search_docs stays in stub mode.
+    rag: RagConfig | None = None
 
 
 def load_workflow(path: str) -> WorkflowConfig:

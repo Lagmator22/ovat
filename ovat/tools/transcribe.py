@@ -25,14 +25,24 @@ mcp = FastMCP("transcribe")
 
 
 def _read_wav(file_path: str):
-    """I read a 16 bit mono WAV into float samples the pipeline expects.
+    """I read a 16 bit mono 16 kHz WAV into float samples the pipeline expects.
 
-    Note to myself: this assumes 16 bit PCM mono audio. If I later need other
-    formats I will convert them first. Dividing by 32768 maps the integer
-    samples into the range minus one to one, which is what Whisper wants.
+    Whisper expects 16 kHz, 16 bit, mono audio. I check those up front and raise
+    a clear ValueError instead of silently reading a stereo or 44.1 kHz file,
+    which would parse without error but transcribe as garbled or sped-up speech.
+    Dividing by 32768 maps the integer samples into minus one to one.
     """
     with wave.open(file_path, "rb") as wav:
+        channels = wav.getnchannels()
+        sample_width = wav.getsampwidth()
+        frame_rate = wav.getframerate()
         frames = wav.readframes(wav.getnframes())
+    if channels != 1:
+        raise ValueError(f"audio must be mono, but this file has {channels} channels")
+    if sample_width != 2:
+        raise ValueError(f"audio must be 16 bit PCM, but this file is {sample_width * 8} bit")
+    if frame_rate != 16000:
+        raise ValueError(f"audio must be 16 kHz, but this file is {frame_rate} Hz")
     return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
 
@@ -55,10 +65,15 @@ def transcribe_impl(file_path: str, language: str = "en", pipeline=None) -> str:
     """
     if not os.path.isfile(file_path):
         return f"Error: I could not find an audio file at: {file_path}"
+    try:
+        samples = _read_wav(file_path)
+    except ValueError as exc:
+        return f"Error: {exc}. Convert it to 16 kHz, 16 bit, mono first."
     if pipeline is None:
         pipeline = _load_pipeline()
-    samples = _read_wav(file_path)
-    return str(pipeline.generate(samples))
+    # Pass the requested language in Whisper's token form (en -> <|en|>) so the
+    # model transcribes that language instead of guessing it.
+    return str(pipeline.generate(samples, language=f"<|{language}|>"))
 
 
 # The OpenAI-style tool schema my agent loop shows the model. Co-located with

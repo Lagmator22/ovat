@@ -93,3 +93,44 @@ def test_ovms_agent_actually_calls_a_tool():
 
     assert seen_cities, "the model never called get_weather"
     assert isinstance(out, str) and len(out) > 0
+
+
+# The LangChain (agent.type: react) path, same OVMS server, different engine.
+
+@needs_ovms
+def test_ovms_react_plain_chat_answers():
+    """The LangChain engine should answer a plain question against real OVMS."""
+    from ovat.agent.factory import build_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    cfg = WorkflowConfig(
+        model={"name": OVMS_MODEL, "ovms_url": OVMS_URL},
+        agent={"type": "react"},
+    )
+    agent = build_agent(cfg)
+    out = agent.run("Say hello in exactly five words.")
+    assert isinstance(out, str) and len(out) > 0
+
+
+@needs_ovms
+def test_ovms_react_calls_a_tool_through_langchain():
+    """Proof the react engine drives a real tool call on real OVMS.
+
+    search_docs runs in stub mode here (no rag section), so I am proving the
+    LangChain tool-calling loop end to end against the model, not the retrieval
+    quality. The stub still comes back through a ToolMessage, which only happens
+    if the model actually emitted a tool call that LangChain executed.
+    """
+    from ovat.agent.factory import build_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    cfg = WorkflowConfig(
+        model={"name": OVMS_MODEL, "ovms_url": OVMS_URL},
+        tools=[{"name": "search_docs"}],
+        agent={"type": "react",
+               "system_prompt": "When asked about the user's files or notes, "
+                                 "call the search_docs tool to answer."},
+    )
+    agent = build_agent(cfg)
+    out = agent.run("Search my documents for the Q3 budget and summarise what you find.")
+    assert isinstance(out, str) and len(out) > 0

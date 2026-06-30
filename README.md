@@ -72,16 +72,22 @@ The agent never changes; only the YAML does.
 ## Quickstart
 
 ```bash
-# 1. install (editable, from the repo root)
-pip install -e .
+# 1. install (editable, from the repo root). Add the react engine with [langchain]:
+pip install -e ".[langchain]"
 
-# 2. scaffold a starter config you can edit
+# 2. check your machine is ready (Python, deps, devices, OVMS, a config)
+ovat doctor workflow.yml
+
+# 3. scaffold a starter config you can edit
 ovat init workflow.yml
 
-# 3. on the AI PC (Windows/Linux), start OVMS serving your model
+# 4. index your documents so search_docs can find them
+ovat index ./my-notes workflow.yml
+
+# 5. on the AI PC (Windows/Linux), start OVMS serving your model
 ovat serve workflow.yml
 
-# 4. ask the agent something
+# 6. ask the agent something
 ovat run workflow.yml --input "summarise my meeting notes"
 ```
 
@@ -89,7 +95,7 @@ No server handy? Prove the pipeline assembles without one:
 
 ```bash
 ovat run workflow.yml --input "hi" --dry-run
-# Built agent  model=Qwen3-8B-int4-ov  tools=['search_docs']  max_iterations=10
+# Built agent  model=Qwen3-8B-int4-ov  tools=['search_docs', 'transcribe']  max_iterations=10
 ```
 
 ---
@@ -105,15 +111,71 @@ ovat run workflow.yml --input "hi" --dry-run
 | | `source_model` | (for `ovat serve`) HF id to download/serve |
 | | `model_repository_path` | (for `ovat serve`) folder where models live |
 | `tools` | `name` / `type` | a built-in tool (`search_docs`, `transcribe`) |
-| `agent` | `type` | `native` (the built-in loop) |
+| `agent` | `type` | `native` (built-in loop) or `react` (LangChain) |
 | | `max_iterations` | safety cap on tool-calling turns |
 | | `system_prompt` | the agent's persona |
+| `rag` | `embeddings` | the embedder: `provider` (`genai`/`ovms`), `model`, `device`, `dim` |
+| | `retriever` | the vector store: `provider` (`sqlite-vec`), `db_path` |
+| | `chunk` | `size` and `overlap` in characters |
+
+The `rag` section is optional. Leave it out and `search_docs` runs in stub mode;
+add it and the tool returns real chunks with citations.
+
+---
+
+## Two engines, one YAML word
+
+`agent.type` chooses how the loop runs, and nothing else in your config changes:
+
+- `native`: OVAT's own tool-calling loop (`loop.py`). Zero extra dependencies.
+- `react`: the same job through **LangChain** (`create_agent` + `ChatOpenAI`
+  pointed at OVMS). Install it with `pip install 'ovat[langchain]'`.
+
+Both expose the same behaviour to you; swapping is a one-word edit.
+
+---
+
+## RAG: search your own documents
+
+`search_docs` is real retrieval, swappable by config. The embedder and the
+vector store are chosen by **string**, honouring the provider abstractions, so
+moving from a local embedder to a server-side one is a YAML edit, not a code
+change.
+
+```bash
+# export an OpenVINO embedding model once (any optimum-cli export works)
+optimum-cli export openvino --model BAAI/bge-small-en-v1.5 \
+    --task feature-extraction models/bge-small-en-v1.5
+
+ovat index ./my-notes workflow.yml      # chunk + embed + store, with sources
+ovat run workflow.yml --input "what did the Q3 review conclude?"
+```
+
+Each result carries its source file, so the agent can cite where an answer came
+from.
+
+### Chat locally, no server (macOS / dev)
+
+OVMS does not run on macOS, but `openvino_genai` does. `ovat chat` answers from
+your index with a **local** OpenVINO model, so you can test real RAG without a
+server (no tool-calling; it always retrieves then answers):
+
+```bash
+ovat index ./my-notes workflow.yml
+ovat chat workflow.yml --model-path models/Llama-3.2-3B-Instruct-INT4 \
+    --input "what did the Q3 review conclude?"
+# → an answer grounded in your notes, with the source files listed
+```
+
+The full agentic path (the model deciding to call tools) still uses OVMS on the
+AI PC; `ovat chat` is the local retrieval-augmented fallback.
 
 ---
 
 ## Built-in tools
 
-- **search_docs**: semantic search over local documents (vector retrieval).
+- **search_docs**: semantic search over your local documents with source
+  citations (vector retrieval via the `rag` config).
 - **transcribe**: speech-to-text on an audio file (OpenVINO Whisper).
 
 Both are also standalone [MCP](https://modelcontextprotocol.io) servers, so any
@@ -127,10 +189,13 @@ Honest about where the abstraction holds and where it does not yet:
 
 | Works today | Not yet |
 | --- | --- |
-| `ovat run/init/models/serve` CLI | LangChain front-end (`agent.type: react`) |
-| YAML config + validation | External `mcp_stdio` tools (built-in only for now) |
-| Native tool-calling loop + Session | macOS serving (OVMS is Windows/Linux only) |
-| Built-in tools run in-process | Streaming responses |
+| `ovat run/chat/init/index/serve/models/doctor` CLI | External `mcp_stdio` tools (built-in only for now) |
+| YAML config + validation | macOS *serving* (OVMS is Windows/Linux only) |
+| Native loop **and** LangChain (`react`) engines | Streaming responses |
+| Real RAG in `search_docs` (vectors + citations) | Re-ranking / hybrid search |
+| Local RAG chat (`ovat chat`, no OVMS) | Approximate vector backends (usearch/hnsw) |
+| `ovat doctor` environment diagnostics | Multi-turn chat memory across calls |
+| Built-in tools run in-process | |
 
 OVMS runs on the Intel AI PC (Windows/Linux). On macOS you can develop and run
 the unit tests, but not serve a model.
@@ -140,10 +205,15 @@ the unit tests, but not serve a model.
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest -m "not live"     # fast unit tests, no server needed (runs anywhere)
-pytest -m live           # live tests against a running OVMS (AI PC only)
+pip install -e ".[dev]"   # dev pulls in LangChain so the react tests run too
+pytest -m "not live"      # fast unit tests, no server needed (runs anywhere)
+pytest -m live            # live tests against a running OVMS (AI PC only)
+pytest -m "not rag"       # skip the real-embedding-model test if it is not exported
 ```
+
+Test markers: `live` needs a running OVMS server; `rag` needs the bge-small
+model on disk. Both auto-skip when their dependency is absent, so a fresh clone
+runs green out of the box.
 
 The codebase is layered: providers (swappable backends) → agent (loop, session,
 factory) → config (YAML) → cli. Each new file carries comments explaining what

@@ -43,6 +43,22 @@ agent:
   type: native
   max_iterations: 10
   system_prompt: "You are a helpful assistant that uses tools when needed."
+
+# RAG for the search_docs tool. Run `ovat index <folder> workflow.yml` first to
+# fill the index, then ask questions with `ovat run`. Swap a provider string to
+# change a backend; no code changes, only this YAML.
+rag:
+  embeddings:
+    provider: genai                 # genai (local) or ovms (server /v3)
+    model: models/bge-small-en-v1.5 # OpenVINO embedding model folder on disk
+    device: CPU                     # CPU or NPU on the AI PC
+    dim: 384
+  retriever:
+    provider: sqlite-vec
+    db_path: ovat_index.db
+  chunk:
+    size: 512
+    overlap: 64
 """
 
 
@@ -56,8 +72,9 @@ def run(
     """Run the agent described by CONFIG against your input."""
     # Step 1: YAML -> validated config. A bad file fails loudly right here.
     cfg = load_workflow(config)
-    # Step 2: config -> a fully wired agent (LLM + tools + loop).
-    agent = build_agent(cfg)
+    # Step 2: config -> a fully wired agent (LLM + tools + loop). dry-run skips
+    # loading the RAG model so the preview works on any machine.
+    agent = build_agent(cfg, skip_rag=dry_run)
 
     # dry-run lets me prove the wiring on any machine, even with no OVMS server.
     if dry_run:
@@ -73,6 +90,93 @@ def run(
         rprint(f"[red]Error talking to OVMS at {cfg.model.ovms_url}[/red]: {exc}")
         raise typer.Exit(code=1)
     rprint(answer)
+
+
+@app.command()
+def chat(
+    config: str = typer.Argument(..., help="Workflow YAML (uses its rag: section)."),
+    input: str = typer.Option(..., "--input", "-i", help="Your question."),
+    model_path: str = typer.Option(..., "--model-path", "-m",
+                                   help="Path to a local OpenVINO LLM folder, e.g. Llama-3.2-3B."),
+    device: str = typer.Option("CPU", "--device", help="CPU, or GPU/NPU on the AI PC."),
+    top_k: int = typer.Option(4, "--top-k", help="How many chunks to retrieve."),
+    max_tokens: int = typer.Option(256, "--max-tokens", help="Answer length cap."),
+):
+    """Chat with your documents using a LOCAL OpenVINO model (no OVMS needed).
+
+    The macOS path: this embeds your question, retrieves the closest chunks from
+    the index you built with `ovat index`, and answers with a local model, citing
+    its sources. It is real retrieval-augmented generation; it does not tool-call
+    (that needs OVMS) but always retrieves then answers. Index first, then ask.
+    """
+    from ovat.agent.factory import build_rag
+    from ovat.agent.rag_chat import rag_chat
+    from ovat.providers.llm_genai import GenAILLMProvider
+
+    cfg = load_workflow(config)
+    if cfg.rag is None:
+        rprint("[red]This workflow has no [bold]rag:[/bold] section to chat against.[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        retriever = build_rag(cfg)
+    except Exception as exc:
+        rprint(f"[red]Could not build the retriever:[/red] {exc}")
+        raise typer.Exit(code=1)
+    try:
+        llm = GenAILLMProvider(model_path, device=device, max_new_tokens=max_tokens)
+    except Exception as exc:
+        rprint(f"[red]Could not load the local model at {model_path}:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    answer, sources = rag_chat(retriever, llm, input, top_k=top_k,
+                               system_prompt=cfg.agent.system_prompt)
+    rprint(answer.strip())
+    if sources:
+        rprint("\n[dim]sources:[/dim] " + ", ".join(sources))
+
+
+@app.command()
+def index(
+    folder: str = typer.Argument(..., help="Folder of .txt/.md documents to index."),
+    config: str = typer.Argument(..., help="Workflow YAML whose rag: section to use."),
+):
+    """Index a folder of documents so search_docs can find them.
+
+    This reads the rag: section of your workflow, builds the embedder and the
+    vector store it names, chunks every text file under FOLDER, and stores the
+    chunks. After this, `ovat run` can answer questions from those documents.
+    """
+    from ovat.agent.factory import build_rag
+    from ovat.rag.indexer import index_folder
+
+    cfg = load_workflow(config)
+    if cfg.rag is None:
+        rprint("[red]This workflow has no [bold]rag:[/bold] section.[/red] "
+               "Add one (embeddings + retriever) before indexing.")
+        raise typer.Exit(code=1)
+
+    # Building the retriever loads the embedding model. If that model is not on
+    # disk yet, say so plainly instead of dumping a pipeline traceback.
+    try:
+        retriever = build_rag(cfg)
+    except Exception as exc:
+        rprint(f"[red]Could not build the embedder/retriever:[/red] {exc}")
+        rprint("[yellow]Tip:[/yellow] make sure the embeddings model in "
+               f"[bold]{cfg.rag.embeddings.model}[/bold] exists on disk.")
+        raise typer.Exit(code=1)
+
+    rprint(f"[green]Indexing[/green] {folder} -> {cfg.rag.retriever.db_path} ...")
+    try:
+        summary = index_folder(
+            folder, retriever,
+            size=cfg.rag.chunk.size, overlap=cfg.rag.chunk.overlap,
+        )
+    except FileNotFoundError as exc:
+        rprint(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+    rprint(f"[green]Indexed[/green] {summary['chunks']} chunks "
+           f"from {summary['files']} files.")
 
 
 @app.command()
@@ -146,6 +250,43 @@ def serve(
     else:
         rprint("[red]OVMS did not become ready in time.[/red]")
         raise typer.Exit(code=1)
+
+
+@app.command()
+def doctor(
+    config: str = typer.Argument(None, help="Optional workflow YAML to validate too."),
+):
+    """Check the setup: Python, dependencies, devices, OVMS, and a config.
+
+    Every row is a real check. Green means good, yellow is a heads-up that does
+    not block anything, red is something to fix. Pass a workflow to also validate
+    it and see whether its model and OVMS look ready.
+    """
+    from rich.table import Table
+
+    from ovat.cli import diagnostics
+    from ovat.cli.ui import banner, console, status_text
+
+    banner("environment & workflow diagnostics")
+    checks = diagnostics.run_checks(config)
+
+    table = Table(header_style="ovat.header", border_style="ovat.dim",
+                  expand=False)
+    table.add_column("Check", style="ovat.cyan", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Detail", style="ovat.dim")
+    failures = 0
+    for c in checks:
+        if c.status == diagnostics.FAIL:
+            failures += 1
+        table.add_row(c.name, status_text(c.status), c.detail)
+    console.print(table)
+
+    if failures:
+        console.print(f"[ovat.fail]{failures} check(s) failed.[/ovat.fail] "
+                      f"Fix the red rows above.")
+        raise typer.Exit(code=1)
+    console.print("[ovat.ok]Everything essential looks good.[/ovat.ok]")
 
 
 if __name__ == "__main__":
