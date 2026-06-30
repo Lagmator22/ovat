@@ -59,6 +59,20 @@ def test_running_a_real_command_streams_into_the_log():
     _run(scenario())
 
 
+def test_cd_persists_the_working_directory():
+    async def scenario():
+        import os
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            start = app._cwd
+            inp = app.query_one("#prompt", Input)
+            inp.value = "cd .."
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app._cwd == os.path.normpath(os.path.join(start, ".."))
+    _run(scenario())
+
+
 def test_exit_command_stops_the_app():
     async def scenario():
         app = OvatTUI()

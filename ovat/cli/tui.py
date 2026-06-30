@@ -221,7 +221,31 @@ class OvatTUI(App):
                 return
             line = (template.insert + rest).strip() if rest else template.insert.strip()
 
+        if self._maybe_cd(line):
+            return
         self._start_command(line)
+
+    def _maybe_cd(self, line: str) -> bool:
+        """Handle `cd` myself so the directory persists between commands.
+
+        Each command runs in its own subprocess, so a `cd` inside one would not
+        affect the next. I intercept `cd <dir>`, update the directory I launch
+        commands from, and report it, which makes the TUI feel like a real shell.
+        """
+        parts = line.split(maxsplit=1)
+        if parts[0] != "cd":
+            return False
+        target = os.path.expanduser(parts[1].strip()) if len(parts) > 1 else os.path.expanduser("~")
+        if not os.path.isabs(target):
+            target = os.path.join(self._cwd, target)
+        target = os.path.normpath(target)
+        log = self.query_one("#output", RichLog)
+        if os.path.isdir(target):
+            self._cwd = target
+            log.write(Text(f"cwd → {target}", style=ui.CYAN))
+        else:
+            log.write(Text(f"cd: no such directory: {target}", style=ui.RED))
+        return True
 
     def _do_action(self, name: str) -> None:
         if name == "/clear":
