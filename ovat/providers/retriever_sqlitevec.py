@@ -29,7 +29,11 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         self.embedder = embedder          # the helper that makes vectors
         self.dim = dim                    # bge-small -> 384 numbers per vector
         # Open a SQLite database and load the vector-search extension into it.
-        self.db = sqlite3.connect(db_path)
+        # check_same_thread=False because the LangChain (react) engine runs tool
+        # calls on a worker thread, not the thread that built the retriever. The
+        # agent loop is sequential (one query at a time), so sharing the single
+        # connection across threads is safe here; SQLite just blocks it by default.
+        self.db = sqlite3.connect(db_path, check_same_thread=False)
         self.db.enable_load_extension(True)
         sqlite_vec.load(self.db)
         self.db.enable_load_extension(False)
