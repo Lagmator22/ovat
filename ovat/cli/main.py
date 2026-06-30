@@ -83,6 +83,11 @@ def run(
         rprint("[yellow]dry-run:[/yellow] not calling the model.")
         raise typer.Exit()
 
+    # Show which engine is actually running, so it is visible in a demo: the
+    # agent.type in the YAML is what picks it (native loop vs LangChain).
+    engine = "LangChain (react)" if cfg.agent.type == "react" else "native loop (loop.py)"
+    rprint(f"[dim]engine:[/dim] [bold]{engine}[/bold]")
+
     # Step 3: actually run. This needs a live OVMS server to answer.
     try:
         answer = agent.run(input)
