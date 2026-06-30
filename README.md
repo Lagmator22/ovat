@@ -154,6 +154,22 @@ ovat run workflow.yml --input "what did the Q3 review conclude?"
 Each result carries its source file, so the agent can cite where an answer came
 from.
 
+### Chat locally, no server (macOS / dev)
+
+OVMS does not run on macOS, but `openvino_genai` does. `ovat chat` answers from
+your index with a **local** OpenVINO model, so you can test real RAG without a
+server (no tool-calling; it always retrieves then answers):
+
+```bash
+ovat index ./my-notes workflow.yml
+ovat chat workflow.yml --model-path models/Llama-3.2-3B-Instruct-INT4 \
+    --input "what did the Q3 review conclude?"
+# → an answer grounded in your notes, with the source files listed
+```
+
+The full agentic path (the model deciding to call tools) still uses OVMS on the
+AI PC; `ovat chat` is the local retrieval-augmented fallback.
+
 ---
 
 ## Built-in tools
@@ -173,11 +189,12 @@ Honest about where the abstraction holds and where it does not yet:
 
 | Works today | Not yet |
 | --- | --- |
-| `ovat run/init/index/serve/models/doctor` CLI | External `mcp_stdio` tools (built-in only for now) |
-| YAML config + validation | macOS serving (OVMS is Windows/Linux only) |
+| `ovat run/chat/init/index/serve/models/doctor` CLI | External `mcp_stdio` tools (built-in only for now) |
+| YAML config + validation | macOS *serving* (OVMS is Windows/Linux only) |
 | Native loop **and** LangChain (`react`) engines | Streaming responses |
 | Real RAG in `search_docs` (vectors + citations) | Re-ranking / hybrid search |
-| `ovat doctor` environment diagnostics | Approximate vector backends (usearch/hnsw) |
+| Local RAG chat (`ovat chat`, no OVMS) | Approximate vector backends (usearch/hnsw) |
+| `ovat doctor` environment diagnostics | Multi-turn chat memory across calls |
 | Built-in tools run in-process | |
 
 OVMS runs on the Intel AI PC (Windows/Linux). On macOS you can develop and run
