@@ -10,10 +10,15 @@ The headline command is `run`: load a workflow YAML, build the agent, ask it
 my question, print the answer. That single line is the midterm demo.
 """
 import typer
-from rich import print as rprint
 
 from ovat.agent.factory import build_agent
+from ovat.cli.ui import console
 from ovat.config.workflow import load_workflow
+
+# Every command prints through the ONE themed console, so the whole CLI wears
+# the brand palette. `rich.print` (the old import) used a default console that
+# ignored the theme — only doctor looked like OVAT, the rest looked stock.
+rprint = console.print
 
 app = typer.Typer(
     help="OVAT: run an OpenVINO agent from one YAML + one command.",
