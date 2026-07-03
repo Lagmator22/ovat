@@ -69,5 +69,7 @@ def test_unknown_tool_is_rejected():
 
 
 def test_unsupported_tool_type_is_rejected():
+    # mcp_stdio used to be this test's example of "unsupported" — it is a
+    # real tool type now (see test_mcp_client.py), so a made-up type stands in.
     with pytest.raises(ValueError, match="Unsupported tool type"):
-        build_tools(_cfg(tools=[{"name": "search_docs", "type": "mcp_stdio"}]))
+        build_tools(_cfg(tools=[{"name": "search_docs", "type": "telepathy"}]))
