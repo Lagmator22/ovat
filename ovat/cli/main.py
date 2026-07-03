@@ -37,6 +37,8 @@ model:
   # Only used by `ovat serve` to start OVMS and locate the model:
   source_model: OpenVINO/Qwen3-8B-int4-ov
   model_repository_path: models     # set to an absolute path if needed, e.g. C:\\Users\\you\\models
+  # Where ovms lives if it is NOT on PATH (file or folder), e.g. on Windows:
+  # ovms_binary: C:\\Users\\you\\ovms_windows
 
 tools:
   - name: search_docs
@@ -263,7 +265,14 @@ def models(
 ):
     """List or pull OVMS models (needs the ovms binary, so runs on the AI PC)."""
     from ovat.core.model_manager import ModelManager
-    mgr = ModelManager()
+    from ovat.core.ovms_locator import find_ovms
+
+    binary, how = find_ovms()
+    if binary is None:
+        _ovms_not_found(how)
+        raise typer.Exit(code=1)
+    rprint(f"[dim]using ovms from {how}: {binary}[/dim]")
+    mgr = ModelManager(binary)
     try:
         if action == "list":
             for name in mgr.list_models():
@@ -277,11 +286,20 @@ def models(
             rprint(f"[red]Unknown action '{action}'. Use list or pull.[/red]")
             raise typer.Exit(code=1)
     except FileNotFoundError:
-        # The ovms binary is not on PATH. Tell the user plainly instead of
-        # dumping a raw subprocess traceback.
-        rprint("[red]Could not find the 'ovms' binary on PATH.[/red] "
-               "Install OVMS or add its folder to PATH (Windows: run setupvars first).")
+        _ovms_not_found(how)
         raise typer.Exit(code=1)
+
+
+def _ovms_not_found(how: str) -> None:
+    """One consistent, ACTIONABLE message wherever ovms cannot be found."""
+    rprint(f"[red]Could not find the ovms binary[/red] [dim]({how})[/dim]")
+    rprint("Point OVAT at it one of these ways:")
+    rprint("  1. workflow.yml →  [bold]model.ovms_binary: C:\\Users\\you\\ovms_windows[/bold]")
+    rprint("  2. env var      →  [bold]set OVAT_OVMS=C:\\Users\\you\\ovms_windows[/bold]  "
+           "(or export on Linux)")
+    rprint("  3. classic      →  add the OVMS folder to PATH")
+    rprint("[dim]macOS note: OVMS does not run on macOS at all — use 'ovat chat' "
+           "locally, or serve from an AI PC / Linux box.[/dim]")
 
 
 @app.command()
@@ -297,6 +315,7 @@ def serve(
     recorded in ovms.pid; `ovat serve <config> --stop` shuts it down cleanly.
     """
     from ovat.core.model_server import ModelServer, stop_from_pidfile
+    from ovat.core.ovms_locator import find_ovms
 
     if stop:
         # Stopping needs no config parsing at all — just the recorded pid.
@@ -304,6 +323,12 @@ def serve(
         return
 
     cfg = load_workflow(config)
+    # Resolve the binary FIRST (config field → OVAT_OVMS env → PATH → known
+    # folders), so a setupvars.bat-style install just works with no PATH edit.
+    binary, how = find_ovms(cfg.model.ovms_binary)
+    if binary is None:
+        _ovms_not_found(how)
+        raise typer.Exit(code=1)
     server = ModelServer(
         model_name=cfg.model.name,
         source_model=cfg.model.source_model,
@@ -312,14 +337,14 @@ def serve(
         tool_parser=cfg.model.tool_parser,
         reasoning_parser=cfg.model.reasoning_parser,
         enable_prefix_caching=cfg.model.enable_prefix_caching,
+        binary=binary,
     )
-    rprint(f"[green]Starting OVMS[/green] for {cfg.model.name} on {cfg.model.device} ...")
+    rprint(f"[green]Starting OVMS[/green] for {cfg.model.name} on {cfg.model.device} "
+           f"[dim](binary via {how})[/dim] ...")
     try:
         server.start()
     except FileNotFoundError:
-        # ovms binary not on PATH. Clean message instead of a raw traceback.
-        rprint("[red]Could not find the 'ovms' binary on PATH.[/red] On Windows, run "
-               "setupvars.bat and add the OVMS folder to PATH before 'ovat serve'.")
+        _ovms_not_found(how)
         raise typer.Exit(code=1)
     if server.wait_until_ready():
         rprint(f"[green]OVMS is ready[/green] at {server.base_url}  "

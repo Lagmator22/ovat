@@ -32,7 +32,8 @@ class ModelServer:
                  port: int = 8000, tool_parser: str = "hermes3",
                  reasoning_parser: str | None = None,
                  task: str = "text_generation",
-                 enable_prefix_caching: bool = True):
+                 enable_prefix_caching: bool = True,
+                 binary: str = "ovms"):
         self.model_name = model_name
         # Note to myself: source_model is the Hugging Face id OVMS downloads if
         # the model is not already on disk, for example OpenVINO/Qwen3-8B-int4-ov.
@@ -47,6 +48,9 @@ class ModelServer:
         # task text_generation is what turns on the chat endpoints I call.
         self.task = task
         self.enable_prefix_caching = enable_prefix_caching
+        # The resolved executable ("ovms" if on PATH, or a full path found by
+        # ovms_locator). Launching by full path means no setupvars.bat needed.
+        self.binary = binary
         self.process: subprocess.Popen | None = None
 
     @property
@@ -65,7 +69,7 @@ class ModelServer:
         # model_repository_path, source_model and task. Without a model to load,
         # OVMS starts and exits in under a second because it has nothing to do.
         cmd = [
-            "ovms",
+            self.binary,
             "--rest_port", str(self.port),
             "--model_repository_path", self.model_repository_path,
             "--model_name", self.model_name,
@@ -89,8 +93,15 @@ class ModelServer:
         # error if OVMS fails to start.
         self.log_path = log_path
         self._log_file = open(log_path, "w", encoding="utf-8")
+        # When launching by full path, prepend the binary's folder to the
+        # child's PATH so OVMS finds its own DLLs/.so files — this is what
+        # setupvars.bat does, done for the user automatically.
+        env = dict(os.environ)
+        binary_dir = os.path.dirname(os.path.abspath(self.binary))
+        if os.path.isdir(binary_dir):
+            env["PATH"] = binary_dir + os.pathsep + env.get("PATH", "")
         self.process = subprocess.Popen(
-            cmd, stdout=self._log_file, stderr=subprocess.STDOUT
+            cmd, stdout=self._log_file, stderr=subprocess.STDOUT, env=env
         )
         # Record the pid so `ovat serve --stop` (a NEW process, long after this
         # one exited) can still find and stop the server.

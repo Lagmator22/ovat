@@ -1,0 +1,4 @@
+{
+  "config": "/Users/lagmator22/ovat/workflow.yml",
+  "model_path": "/Users/lagmator22/OpenvinoDemo/OvaSearch/models/Qwen2-VL-2B-Instruct-INT4"
+}
