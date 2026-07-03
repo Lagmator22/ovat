@@ -30,6 +30,15 @@ def test_build_llm_uses_config_url_and_model():
     assert llm.model == "Qwen3-8B-int4-ov"
 
 
+def test_build_llm_wires_the_request_timeout_into_the_client():
+    # The whole point of the config field: it must reach the actual HTTP
+    # client, otherwise a hung OVMS still blocks for the SDK default (~600s).
+    cfg = _cfg()
+    cfg.model.request_timeout = 5.0
+    llm = build_llm(cfg)
+    assert llm.client.timeout == 5.0
+
+
 def test_build_tools_wires_both_builtins():
     tools = build_tools(_cfg())
     assert set(tools) == {"search_docs", "transcribe"}

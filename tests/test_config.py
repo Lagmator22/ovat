@@ -23,6 +23,12 @@ def test_minimal_config_fills_defaults():
     assert cfg.agent.type == "native"
     assert cfg.agent.max_iterations == 10
     assert cfg.tools == []
+    assert cfg.model.request_timeout == 120.0    # bounded, never the SDK's ~600s
+
+
+def test_request_timeout_is_configurable():
+    cfg = WorkflowConfig(model={"name": "m", "request_timeout": 30})
+    assert cfg.model.request_timeout == 30.0
 
 
 def test_full_config_parses_all_fields():

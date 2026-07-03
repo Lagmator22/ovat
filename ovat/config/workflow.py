@@ -44,6 +44,10 @@ class ModelConfig(BaseModel):
     # OVMS at a relative "models" folder with nothing in it, so it cannot start.
     source_model: str | None = None             # HF id, e.g. OpenVINO/Qwen3-8B-int4-ov
     model_repository_path: str = "models"       # folder on disk where models live
+    # Cap on ONE HTTP request to OVMS. Without this the OpenAI SDK waits ~10
+    # minutes on a hung server. 120s is generous for slow CPU generation but
+    # still turns a dead server into a clear error instead of a frozen CLI.
+    request_timeout: float = 120.0
 
 
 class ToolConfig(BaseModel):
