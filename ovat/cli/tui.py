@@ -16,6 +16,7 @@ import threading
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.widgets import Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
@@ -84,6 +85,17 @@ class OvatTUI(App):
     """The OVAT launcher: a styled terminal that knows OVAT's commands."""
 
     TITLE = "OVAT"
+    # Textual's default Ctrl-C quits the whole app instantly — mid-command
+    # that throws away a run the user only wanted to interrupt. priority=True
+    # wins over the built-in binding; the action decides: busy -> cancel the
+    # child (terminal muscle memory), idle -> quit like before.
+    BINDINGS = [Binding("ctrl+c", "cancel_or_quit", show=False, priority=True)]
+
+    def action_cancel_or_quit(self) -> None:
+        if self._busy:
+            self._cancel_running()
+        else:
+            self.exit()
 
     CSS = """
     Screen { background: #0b0e14; }
@@ -196,8 +208,15 @@ class OvatTUI(App):
             self._do_action(template.name)
             return
         inp.value = template.insert
-        inp.cursor_position = len(template.insert)
         inp.focus()
+        # Land the cursor where the next keystrokes belong (e.g. the config
+        # path gap in `ovat run | --input ""`), not blindly at the end.
+        # call_after_refresh because Input moves its own cursor to the end
+        # asynchronously after a programmatic value change — a synchronous
+        # assignment here would be overwritten a moment later.
+        target = (template.cursor if template.cursor is not None
+                  else len(template.insert))
+        self.call_after_refresh(setattr, inp, "cursor_position", target)
 
     # Running commands
 
@@ -272,6 +291,10 @@ class OvatTUI(App):
                      style=ui.YELLOW))
             return
         self._busy = True
+        # The placeholder doubles as the status line: while a command runs
+        # (serve can sit silent for two minutes) the empty prompt says so.
+        self.query_one("#prompt", Input).placeholder = \
+            "running…  Esc cancels  ·  output streams above"
         cols = max(80, self.size.width - 8)
         self._run_command(cmd, cols)
 
@@ -302,6 +325,8 @@ class OvatTUI(App):
 
     def _mark_idle(self) -> None:
         self._busy = False
+        self.query_one("#prompt", Input).placeholder = \
+            "Run any command (e.g. ovat doctor)  ·  type / for shortcuts"
 
     @work(thread=True, group="cmd")
     def _run_command(self, cmd: str, cols: int) -> None:

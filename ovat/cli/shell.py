@@ -26,14 +26,20 @@ class SlashTemplate:
     name: str               # e.g. "/doctor"
     insert: str | None      # the command text it fills in, or None for actions
     description: str
+    # Where the cursor should land inside `insert` (None = end of text).
+    # `/run` inserts `ovat run  --input ""` — the user's next keystrokes are
+    # the config path, so the cursor belongs in that gap, not at the end.
+    cursor: int | None = None
 
 
 # The slash menu. Each non-action entry inserts a real `ovat ...` command the
 # user can finish and run. /clear and /exit are handled by the TUI itself.
 TEMPLATES = [
     SlashTemplate("/doctor", "ovat doctor ", "check env + an optional config"),
-    SlashTemplate("/run", "ovat run  --input \"\"", "run the agent on a config"),
-    SlashTemplate("/index", "ovat index  ", "index a docs folder for search_docs"),
+    SlashTemplate("/run", "ovat run  --input \"\"", "run the agent on a config",
+                  cursor=len("ovat run ")),
+    SlashTemplate("/index", "ovat index  ", "index a docs folder for search_docs",
+                  cursor=len("ovat index ")),
     SlashTemplate("/init", "ovat init ", "write a starter workflow.yml"),
     SlashTemplate("/serve", "ovat serve ", "start OVMS for a config (AI PC)"),
     SlashTemplate("/models", "ovat models list", "list models OVMS can serve (AI PC)"),

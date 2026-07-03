@@ -44,6 +44,69 @@ def test_tab_fills_the_command_template():
     _run(scenario())
 
 
+def test_run_template_puts_the_cursor_in_the_config_gap():
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = "/run"
+            await pilot.pause()
+            await pilot.press("tab")
+            await pilot.pause()
+            assert inp.value == 'ovat run  --input ""'
+            # The next keystrokes are the config path, so the cursor must sit
+            # in the gap after "ovat run ", not at the end of the line.
+            assert inp.cursor_position == len("ovat run ")
+    _run(scenario())
+
+
+def test_ctrl_c_cancels_the_child_but_keeps_the_app_alive():
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = "sleep 30"
+            await pilot.press("enter")
+            for _ in range(100):
+                if app._proc is not None:
+                    break
+                await pilot.pause(0.05)
+            proc = app._proc
+            await pilot.press("ctrl+c")            # busy -> cancel, not quit
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert proc.poll() is not None         # child gone
+            assert app.is_running is True          # app survived
+    _run(scenario())
+
+
+def test_ctrl_c_quits_when_idle():
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+c")
+            await pilot.pause()
+        assert app.is_running is False
+    _run(scenario())
+
+
+def test_placeholder_shows_running_state_and_restores():
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            # sleep, not echo: an echo can FINISH before the assertion runs,
+            # and then we would see the already-restored placeholder.
+            inp.value = "sleep 30"
+            await pilot.press("enter")
+            assert "running" in inp.placeholder    # set synchronously on submit
+            app._cancel_running()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "type / for shortcuts" in inp.placeholder
+    _run(scenario())
+
+
 def test_running_a_real_command_streams_into_the_log():
     async def scenario():
         app = OvatTUI()
