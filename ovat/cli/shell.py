@@ -57,6 +57,9 @@ def venv_env(columns: int | None = None) -> dict:
     env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")
     env.setdefault("FORCE_COLOR", "1")        # ovat/pytest keep their colours
     env["PYTHONUNBUFFERED"] = "1"             # stream output line by line
+    # Mark every child as "inside the TUI" (like tmux's $TMUX): a bare `ovat`
+    # typed in here must NOT open a second TUI in a piped subprocess.
+    env["OVAT_TUI"] = "1"
     if columns:
         # So rich tools wrap to the TUI width instead of the default 80.
         env["COLUMNS"] = str(columns)

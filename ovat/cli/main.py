@@ -36,14 +36,25 @@ def _entry(ctx: typer.Context):
     """
     if ctx.invoked_subcommand is not None:
         return
+    # Recursion guard: the TUI stamps OVAT_TUI=1 into every child's env (the
+    # same trick tmux uses with $TMUX). Typing `ovat` INSIDE the TUI used to
+    # start a second TUI in a piped subprocess — escape codes as garbage, the
+    # command slot wedged. Now it gets a hint instead, before Textual even
+    # gets imported.
+    import os
+    if os.environ.get("OVAT_TUI"):
+        rprint("[yellow]You are already inside the OVAT TUI.[/yellow] "
+               "Type a subcommand instead (e.g. [bold]ovat doctor[/bold]), "
+               "or /exit to leave.")
+        raise typer.Exit()
     try:
         from ovat.cli.tui import run_tui
     except ImportError:
         # Textual is optional. If it is missing, fall back to the help text
         # instead of crashing, and point the user at the install.
         rprint("[yellow]The TUI needs Textual.[/yellow] Install it with "
-               "[bold]pip install textual[/bold], or use a subcommand like "
-               "[bold]ovat doctor[/bold]. See [bold]ovat --help[/bold].")
+               "[bold]pip install 'ovat\\[tui]'[/bold], or use a subcommand "
+               "like [bold]ovat doctor[/bold]. See [bold]ovat --help[/bold].")
         raise typer.Exit()
     run_tui()
 

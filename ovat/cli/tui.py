@@ -292,5 +292,16 @@ class OvatTUI(App):
 
 
 def run_tui() -> None:
-    """Launch the TUI. Called when someone runs `ovat` with no subcommand."""
+    """Launch the TUI. Called when someone runs `ovat` with no subcommand.
+
+    Refuses when stdout is not a real terminal: a full-screen app in a pipe
+    (`ovat | tee`, a subprocess, CI) can only print escape-code garbage and
+    then hang waiting for a terminal that is not there. This is the root-cause
+    guard; the OVAT_TUI env check in the CLI is the friendly early layer.
+    """
+    import sys
+    if not sys.stdout.isatty():
+        print("ovat: the TUI needs a real terminal (stdout is not a TTY). "
+              "Use a subcommand instead, e.g. `ovat doctor` or `ovat --help`.")
+        return
     OvatTUI().run()

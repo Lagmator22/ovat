@@ -18,6 +18,12 @@ def test_venv_env_puts_venv_bin_first_and_keeps_colour():
     assert "FORCE_COLOR" in env                          # colour stays on
 
 
+def test_venv_env_marks_children_as_inside_the_tui():
+    # The recursion guard's first half: every child must see OVAT_TUI=1 so a
+    # bare `ovat` typed inside the TUI refuses to open a second TUI.
+    assert shell.venv_env()["OVAT_TUI"] == "1"
+
+
 def test_match_templates_filters_by_prefix():
     assert {t.name for t in shell.match_templates("/d")} == {"/doctor"}
     assert len(shell.match_templates("/")) == len(shell.TEMPLATES)

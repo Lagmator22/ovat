@@ -83,3 +83,23 @@ def test_exit_command_stops_the_app():
             await pilot.pause()
         assert app.is_running is False
     _run(scenario())
+
+
+# The recursion guard (a TUI inside the TUI)
+
+def test_run_tui_refuses_without_a_real_terminal(capsys):
+    # pytest captures stdout, so isatty() is False here — exactly the situation
+    # inside a TUI subprocess or a pipe. run_tui must print a hint and return
+    # instead of starting a full-screen app into the void.
+    from ovat.cli.tui import run_tui
+    run_tui()
+    assert "needs a real terminal" in capsys.readouterr().out
+
+
+def test_bare_ovat_inside_the_tui_env_prints_a_hint_not_a_tui(monkeypatch):
+    from typer.testing import CliRunner
+    from ovat.cli.main import app as cli_app
+    monkeypatch.setenv("OVAT_TUI", "1")           # what shell.venv_env stamps
+    result = CliRunner().invoke(cli_app, [])
+    assert result.exit_code == 0
+    assert "already inside" in result.output
