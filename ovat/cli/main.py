@@ -311,6 +311,7 @@ def serve(
         device=cfg.model.device,
         tool_parser=cfg.model.tool_parser,
         reasoning_parser=cfg.model.reasoning_parser,
+        enable_prefix_caching=cfg.model.enable_prefix_caching,
     )
     rprint(f"[green]Starting OVMS[/green] for {cfg.model.name} on {cfg.model.device} ...")
     try:

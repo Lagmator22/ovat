@@ -60,6 +60,10 @@ class ModelConfig(StrictModel):
     # minutes on a hung server. 120s is generous for slow CPU generation but
     # still turns a dead server into a clear error instead of a frozen CLI.
     request_timeout: float = 120.0
+    # Prefix caching reuses KV-cache across turns that share a prefix (the
+    # whole conversation history does) — a big multi-turn speedup. A knob
+    # because not every OVMS build/device supports it; was hardcoded before.
+    enable_prefix_caching: bool = True
 
 
 class ToolConfig(StrictModel):

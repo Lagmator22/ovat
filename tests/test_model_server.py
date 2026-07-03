@@ -58,6 +58,24 @@ def test_start_writes_the_pidfile(monkeypatch, tmp_path):
     assert open(pid_path, encoding="utf-8").read() == "777"
 
 
+def test_prefix_caching_is_a_knob_not_a_constant(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakePopen()
+
+    monkeypatch.setattr("ovat.core.model_server.subprocess.Popen", fake_popen)
+
+    on = ModelServer(model_name="m")                      # default: enabled
+    on.start(log_path=str(tmp_path / "a.log"), pid_path=str(tmp_path / "a.pid"))
+    assert "--enable_prefix_caching" in captured["cmd"]
+
+    off = ModelServer(model_name="m", enable_prefix_caching=False)
+    off.start(log_path=str(tmp_path / "b.log"), pid_path=str(tmp_path / "b.pid"))
+    assert "--enable_prefix_caching" not in captured["cmd"]
+
+
 def test_stop_polite_path_closes_log_and_removes_pidfile(monkeypatch, tmp_path):
     fake = FakePopen()
     server, log_path, pid_path = _start_with_fake(monkeypatch, tmp_path, fake)
