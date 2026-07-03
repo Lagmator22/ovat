@@ -107,3 +107,41 @@ def test_loop_stops_at_max_iterations():
                for i in range(50)]
     agent = AgentLoop(FakeLLMProvider(endless), tools=_weather_tool(), max_iterations=3)
     assert "max of 3 steps" in agent.run("loop forever")
+
+
+# The three "model misbehaves" edge cases
+
+
+def test_none_content_final_answer_becomes_empty_string():
+    # A server may finish with content=None; the CLI must never print "None".
+    agent = AgentLoop(FakeLLMProvider([reply("stop", content=None)]), tools={})
+    assert agent.run("hi") == ""
+
+
+def test_empty_tool_calls_list_returns_immediately_instead_of_spinning():
+    # finish_reason says tool_calls but the list is empty. Re-asking with the
+    # same history would replay the same broken reply until max_iterations;
+    # the loop must bail after ONE request instead.
+    llm = FakeLLMProvider([reply("tool_calls", tool_calls=[])] * 10)
+    agent = AgentLoop(llm, tools=_weather_tool(), max_iterations=10)
+    out = agent.run("confuse the loop")
+    assert "tool_calls but sent none" in out
+    assert len(llm.calls) == 1                       # no wasted re-asks
+
+
+def test_malformed_json_args_are_reported_to_the_model_not_swallowed():
+    from types import SimpleNamespace
+    called = []
+    broken = SimpleNamespace(                        # arguments is NOT valid JSON
+        id="tc_1", type="function",
+        function=SimpleNamespace(name="get_weather", arguments="{city: Tokyo"),
+    )
+    llm = FakeLLMProvider([
+        reply("tool_calls", tool_calls=[broken]),
+        reply("stop", content="recovered"),
+    ])
+    agent = AgentLoop(llm, tools=_weather_tool(called))
+    assert agent.run("broken json") == "recovered"
+    assert called == []                              # the tool never ran blind
+    tool_msg = next(m for m in agent.session.messages if m["role"] == "tool")
+    assert "not valid JSON" in tool_msg["content"]   # the model sees its mistake

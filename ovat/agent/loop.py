@@ -21,19 +21,21 @@ from ovat.agent.session import Session
 from ovat.providers.base import LLMProvider
 
 
-def _parse_args(arguments: str) -> dict:
+def _parse_args(arguments: str) -> dict | None:
     """The model sends tool arguments as a JSON string. I turn it into a dict.
 
-    Note to myself: a no argument tool can send an empty string, and a small
-    model can occasionally send broken JSON. I never want that to crash the
-    whole agent, so I fall back to an empty dict.
+    Note to myself: a no argument tool can send an empty string (fine, empty
+    dict), but a small model can also send BROKEN JSON. That used to become {}
+    silently, so the tool ran with missing arguments and the model never
+    learned why it failed. Now broken JSON returns None and the loop tells the
+    model exactly what was wrong, so it can fix its own call next turn.
     """
     if not arguments:
         return {}
     try:
         return json.loads(arguments)
     except (json.JSONDecodeError, TypeError):
-        return {}
+        return None
 
 
 def _serialize_tool_calls(tool_calls) -> list[dict]:
@@ -106,14 +108,25 @@ class AgentLoop:
             reply = self.llm.chat(self.session.messages, tools=self._menu())
 
             # BEAT 2, READ. If the model did not ask for tools, it answered in
-            # words, so I record that answer and I am done.
+            # words, so I record that answer and I am done. `or ""` because a
+            # server can send content=None; the CLI would print literal "None".
             if reply["finish_reason"] != "tool_calls":
                 self.session.add_assistant(content=reply["content"])
-                return reply["content"]
+                return reply["content"] or ""
 
-            # The model wants one or more tools. I record its request first,
-            # serialized into plain dicts, so the history stays valid.
+            # The model wants one or more tools. Guard the malformed case
+            # first: finish_reason says tool_calls but the list is empty.
+            # Re-asking with unchanged history would just spin the same reply
+            # until max_iterations, so surface it immediately instead.
             tool_calls = reply["tool_calls"] or []
+            if not tool_calls:
+                self.session.add_assistant(content=reply["content"])
+                return reply["content"] or (
+                    "Error: the model reported tool_calls but sent none."
+                )
+
+            # I record its request, serialized into plain dicts, so the
+            # history stays valid.
             self.session.add_assistant(
                 content=reply["content"],
                 tool_calls=_serialize_tool_calls(tool_calls),
@@ -125,7 +138,13 @@ class AgentLoop:
             for call in tool_calls:
                 name = call.function.name
                 args = _parse_args(call.function.arguments)
-                result = self._execute(name, args)
+                if args is None:
+                    # Broken JSON from the model: report it AS the tool result
+                    # so the model reads its own mistake and can retry.
+                    result = (f"Error: arguments for tool '{name}' were not "
+                              f"valid JSON: {call.function.arguments!r}")
+                else:
+                    result = self._execute(name, args)
                 self.session.add_tool_result(call.id, result)
 
         # If I fall out of the loop I hit my safety cap without a final answer.
