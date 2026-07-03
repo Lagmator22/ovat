@@ -14,6 +14,10 @@ dependencies = [
   "pillow",
   "fastmcp",
   "sqlite-vec",
+  # Imported directly (transcribe/vlm use numpy; the CLI renders with rich).
+  # Declared here so we never depend on openvino/typer pulling them in for us.
+  "numpy",
+  "rich",
 ]
 
 # The react agent (agent.type: react) needs LangChain. It is an extra so the
