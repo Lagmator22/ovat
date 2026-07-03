@@ -12,7 +12,6 @@ the user what is wrong.
 """
 import importlib
 import os
-import shutil
 import socket
 import sys
 from dataclasses import dataclass
@@ -89,12 +88,45 @@ def check_device_routing() -> Check:
                  f"whisper→{summary['whisper']}")
 
 
-def check_ovms_binary() -> Check:
-    path = shutil.which("ovms")
+def check_local_genai() -> Check:
+    """Can THIS machine run OpenVINO models locally (no server)?
+
+    This is the answer to "how do I use OVAT on a Mac": openvino_genai runs
+    natively on macOS/Linux/Windows CPU, which powers `ovat chat` and the
+    TUI /chat screen. OVMS is only needed for the agentic tool-calling path.
+    """
+    try:
+        import openvino_genai
+        version = getattr(openvino_genai, "__version__", "installed")
+    except Exception as exc:
+        return Check("Local GenAI", FAIL,
+                     f"openvino_genai not importable ({exc}) — "
+                     f"'ovat chat' and TUI /chat need it")
+    return Check("Local GenAI", OK,
+                 f"openvino_genai {version} — local models run here "
+                 f"('ovat chat', TUI /chat; no server needed)")
+
+
+def check_ovms_serving(config_binary: str | None = None) -> Check:
+    """Is the OVMS serving path available HERE — and if not, why exactly.
+
+    Platform-aware on purpose: on macOS OVMS simply does not exist, so
+    saying "not on PATH" would send the user hunting for a binary they can
+    never install. Elsewhere the locator's answer (config → OVAT_OVMS →
+    PATH → known folders) tells them precisely how to fix it.
+    """
+    if sys.platform == "darwin":
+        return Check("OVMS serving", WARN,
+                     "OVMS does not run on macOS — develop + chat locally "
+                     "here; run 'ovat serve'/'ovat run' on an AI PC or "
+                     "Linux/Windows box")
+    from ovat.core.ovms_locator import find_ovms
+    path, how = find_ovms(config_binary)
     if path:
-        return Check("OVMS binary", OK, path)
-    return Check("OVMS binary", WARN,
-                 "not on PATH; needed for 'ovat serve'/'ovat models' (AI PC only)")
+        return Check("OVMS serving", OK, f"ovms via {how}: {path}")
+    return Check("OVMS serving", WARN,
+                 f"ovms {how} — set model.ovms_binary in workflow.yml or "
+                 f"the OVAT_OVMS env var to its folder")
 
 
 def check_config(config_path: str) -> list[Check]:
@@ -167,13 +199,22 @@ def _can_import(module_name: str) -> bool:
 
 def run_checks(config_path: str | None = None) -> list[Check]:
     """Run every diagnostic and return the flat list of results."""
+    # If a config is given, its ovms_binary should inform the serving check.
+    # Load it leniently here; a broken config is reported by check_config.
+    config_binary = None
+    if config_path:
+        try:
+            config_binary = load_workflow(config_path).model.ovms_binary
+        except Exception:
+            pass
     checks = [
         check_python(),
         check_core_deps(),
+        check_local_genai(),
         check_langchain(),
         check_devices(),
         check_device_routing(),
-        check_ovms_binary(),
+        check_ovms_serving(config_binary),
     ]
     if config_path:
         checks.extend(check_config(config_path))

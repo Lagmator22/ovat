@@ -36,3 +36,6 @@ models/
 
 # Review artifacts written by external tools, not part of the toolkit.
 /analysis_report.md
+
+# Per-project TUI state: chat preferences and saved conversations.
+.ovat/

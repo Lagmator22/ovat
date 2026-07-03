@@ -76,6 +76,46 @@ STATUS_GLYPH = {
 }
 
 
+def _hex_to_rgb(value: str) -> tuple:
+    value = value.lstrip("#")
+    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _lerp_hex(a: tuple, b: tuple, t: float) -> str:
+    """Blend two RGB colours by fraction t in 0..1 and return a hex string."""
+    return "#{:02X}{:02X}{:02X}".format(
+        *(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+    )
+
+
+def wordmark(text: str = "OVAT") -> Text:
+    """A big FIGlet wordmark, shaded top-to-bottom cyan → Intel blue.
+
+    Shared by every front-end that wants the 'big sign' look (the TUI
+    banner, `ovat doctor`). pyfiglet ships with the [tui] extra; without it
+    this degrades gracefully to the plain bold brand style instead of
+    crashing a CLI-only install.
+    """
+    lines: list = []
+    try:
+        import pyfiglet
+        lines = [ln for ln in
+                 pyfiglet.figlet_format(text, font="ansi_shadow").split("\n")
+                 if ln.strip()]
+    except Exception:
+        pass
+    out = Text()
+    if not lines:
+        out.append(text, style="ovat.brand")
+        return out
+    top, bottom = _hex_to_rgb(PALETTE["cyan"]), _hex_to_rgb(PALETTE["blue"])
+    last = max(len(lines) - 1, 1)
+    for i, line in enumerate(lines):
+        out.append(line + "\n",
+                   style=f"bold {_lerp_hex(top, bottom, i / last)}")
+    return out
+
+
 def banner(subtitle: str | None = None) -> None:
     """Print the OVAT header panel in the brand colours."""
     title = Text()

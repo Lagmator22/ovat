@@ -64,6 +64,11 @@ class ModelConfig(StrictModel):
     # whole conversation history does) — a big multi-turn speedup. A knob
     # because not every OVMS build/device supports it; was hardcoded before.
     enable_prefix_caching: bool = True
+    # Where the ovms executable lives (file or its folder). On Windows OVMS
+    # is usually unzipped somewhere (setupvars.bat setups) and NOT on PATH,
+    # so `ovat serve`/`ovat models` accept the location here. Also settable
+    # via the OVAT_OVMS environment variable; PATH still works too.
+    ovms_binary: str | None = None
 
 
 class ToolConfig(StrictModel):
