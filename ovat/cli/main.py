@@ -239,9 +239,22 @@ def models(
 @app.command()
 def serve(
     config: str = typer.Argument(..., help="Workflow YAML whose model OVMS should serve."),
+    stop: bool = typer.Option(False, "--stop",
+                              help="Stop the OVMS started earlier by 'ovat serve'."),
 ):
-    """Start OVMS serving the model from a workflow YAML (runs on the AI PC)."""
-    from ovat.core.model_server import ModelServer
+    """Start OVMS in the background (or stop it again with --stop). AI PC only.
+
+    Heads up: serve returns once OVMS is READY and leaves it running in the
+    background — that is the point, so `ovat run` can talk to it. The pid is
+    recorded in ovms.pid; `ovat serve <config> --stop` shuts it down cleanly.
+    """
+    from ovat.core.model_server import ModelServer, stop_from_pidfile
+
+    if stop:
+        # Stopping needs no config parsing at all — just the recorded pid.
+        rprint(stop_from_pidfile())
+        return
+
     cfg = load_workflow(config)
     server = ModelServer(
         model_name=cfg.model.name,
@@ -260,9 +273,13 @@ def serve(
                "setupvars.bat and add the OVMS folder to PATH before 'ovat serve'.")
         raise typer.Exit(code=1)
     if server.wait_until_ready():
-        rprint(f"[green]OVMS is ready[/green] at {server.base_url}")
+        rprint(f"[green]OVMS is ready[/green] at {server.base_url}  "
+               f"[dim](pid {server.process.pid}, logs in {server.log_path})[/dim]")
+        rprint(f"[dim]It keeps running in the background. Stop it with:[/dim] "
+               f"ovat serve {config} --stop")
     else:
-        rprint("[red]OVMS did not become ready in time.[/red]")
+        rprint("[red]OVMS did not become ready in time.[/red] "
+               f"See {server.log_path} for the reason.")
         raise typer.Exit(code=1)
 
 
