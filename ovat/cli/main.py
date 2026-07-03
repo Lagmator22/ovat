@@ -235,14 +235,24 @@ def index(
 def init(
     path: str = typer.Argument("workflow.yml", help="Where to write the starter YAML."),
 ):
-    """Write a starter workflow.yml you can edit."""
+    """Write a starter workflow.yml tuned to THIS machine's hardware."""
     import os
     if os.path.exists(path):
         rprint(f"[red]Refusing to overwrite existing file:[/red] {path}")
         raise typer.Exit(code=1)
+    # DeviceManager picks the LLM device for the hardware we are on: GPU on
+    # an AI PC, CPU on a laptop/Mac. The starter file should run where it
+    # was created, not assume a GPU that may not exist.
+    try:
+        from ovat.core.device_manager import DeviceManager
+        llm_device = DeviceManager().get_llm_device()
+    except Exception:
+        llm_device = "CPU"                       # the universal fallback
+    starter = _STARTER_YAML.replace("device: GPU", f"device: {llm_device}", 1)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(_STARTER_YAML)
-    rprint(f"[green]Wrote starter workflow to[/green] {path}")
+        f.write(starter)
+    rprint(f"[green]Wrote starter workflow to[/green] {path}  "
+           f"[dim](model device: {llm_device}, detected)[/dim]")
 
 
 @app.command()

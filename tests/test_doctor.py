@@ -35,7 +35,18 @@ def test_core_deps_check_passes_when_installed():
 
 def test_run_checks_includes_the_base_checks():
     names = {c.name for c in run_checks()}
-    assert {"Python", "Core dependencies", "OpenVINO devices", "OVMS binary"} <= names
+    assert {"Python", "Core dependencies", "OpenVINO devices",
+            "Device routing", "OVMS binary"} <= names
+
+
+def test_device_routing_check_shows_the_layer9_table():
+    from ovat.cli.diagnostics import check_device_routing
+    check = check_device_routing()
+    assert check.status == OK
+    # On any machine the table names all three model types; on this Mac all
+    # three route to CPU, on an AI PC LLM→GPU and embeddings→NPU.
+    for label in ("LLM→", "embeddings→", "whisper→"):
+        assert label in check.detail
 
 
 def test_config_check_reports_a_valid_workflow(tmp_path):

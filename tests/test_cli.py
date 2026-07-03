@@ -24,6 +24,16 @@ def test_init_writes_a_loadable_config(tmp_path):
     assert cfg.model.name == "Qwen3-8B-int4-ov"
 
 
+def test_init_picks_the_device_this_machine_actually_has(tmp_path):
+    # DeviceManager decides the starter's LLM device: CPU here on the Mac,
+    # GPU on an AI PC. The starter file must run where it was created.
+    from ovat.core.device_manager import DeviceManager
+    expected = DeviceManager().get_llm_device()
+    target = tmp_path / "workflow.yml"
+    runner.invoke(app, ["init", str(target)])
+    assert load_workflow(str(target)).model.device == expected
+
+
 def test_init_refuses_to_overwrite(tmp_path):
     target = tmp_path / "workflow.yml"
     target.write_text("model:\n  name: x\n")
