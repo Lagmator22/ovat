@@ -32,12 +32,18 @@ from ovat.providers.vlm_genai import GenAIVLMProvider
 from ovat.providers.llm_ovms import OVMSLLMProvider
 from ovat.providers.embeddings_ovms import OVMSEmbeddingsProvider
 
-# Local model paths (only on this Mac). Integration tests skip if missing.
-MODELS_DIR = "/Users/lagmator22/OpenvinoDemo/OvaSearch/models"
+# Where the real OpenVINO test models live. OVAT_TEST_MODELS_DIR makes these
+# integration tests runnable on ANY machine (AI PC, a mentor's box) — the old
+# hardcoded personal path meant they silently skipped everywhere but one Mac.
+MODELS_DIR = os.environ.get(
+    "OVAT_TEST_MODELS_DIR", "/Users/lagmator22/OpenvinoDemo/OvaSearch/models"
+)
 LLM_MODEL = os.path.join(MODELS_DIR, "TinyLlama-1.1B-Chat-v1.0-INT4")
 EMB_MODEL = os.path.join(MODELS_DIR, "bge-small-en-v1.5")
 VLM_MODEL = os.path.join(MODELS_DIR, "Qwen2-VL-2B-Instruct-INT4")
-DOG_IMG = "/Users/lagmator22/OpenvinoDemo/OvaSearch/data/dog.jpg"
+DOG_IMG = os.environ.get(
+    "OVAT_TEST_IMAGE", "/Users/lagmator22/OpenvinoDemo/OvaSearch/data/dog.jpg"
+)
 
 needs_llm = pytest.mark.skipif(not os.path.isdir(LLM_MODEL), reason="local LLM model not present")
 needs_emb = pytest.mark.skipif(not os.path.isdir(EMB_MODEL), reason="local embedding model not present")

@@ -83,6 +83,42 @@ def test_build_react_agent_exposes_native_like_interface():
     assert hasattr(agent, "run")
 
 
+# deriving argument models from the co-located SCHEMA (one source of truth)
+
+def test_args_model_derived_from_schema_matches_the_contract():
+    from pydantic import ValidationError
+    from ovat.agent.langchain_agent import _args_model_from_schema
+    from ovat.tools.search_docs import SCHEMA
+
+    Args = _args_model_from_schema("search_docs", SCHEMA)
+    ok = Args(query="find my notes")
+    assert ok.query == "find my notes"
+    assert ok.top_k == 5                       # default comes FROM the schema
+    with pytest.raises(ValidationError):       # required field enforced
+        Args(top_k=3)
+
+
+def test_a_brand_new_tool_needs_no_second_registry():
+    # The old _ARGS_MODELS dict made every new tool crash on react until it
+    # was registered twice. Now any tool with a SCHEMA just works.
+    from ovat.agent.langchain_agent import _wrap_tools
+
+    schema = {"type": "function", "function": {
+        "name": "shout", "description": "upper-case some text",
+        "parameters": {"type": "object",
+                       "properties": {
+                           "text": {"type": "string", "description": "words"},
+                           "times": {"type": "integer", "default": 1},
+                       },
+                       "required": ["text"]}}}
+    tools = {"shout": {"schema": schema,
+                       "function": lambda text, times=1: text.upper() * times}}
+    (wrapped,) = _wrap_tools(tools)
+    assert wrapped.name == "shout"
+    assert wrapped.invoke({"text": "hi", "times": 2}) == "HIHI"
+    assert wrapped.invoke({"text": "hi"}) == "HI"      # schema default applied
+
+
 # factory dispatch on agent.type
 
 def test_factory_builds_native_loop_for_native_type():

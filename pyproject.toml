@@ -1,7 +1,8 @@
 [project]
 name = "ovat"
-version = "0.1.0"
+version = "0.2.0"
 description = "Agentic Toolkit for AI PC with OpenVINO — turn agent boilerplate into one YAML + one command."
+license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 dependencies = [
   "openvino",
@@ -13,6 +14,9 @@ dependencies = [
   "pillow",
   "fastmcp",
   "sqlite-vec",
+  # Imported directly (transcribe/vlm use numpy; the CLI renders with rich).
+  # Declared here so we never depend on openvino/typer pulling them in for us.
+  "numpy",
   "rich",
   "textual",
   "pyfiglet",

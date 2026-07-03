@@ -29,7 +29,11 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         self.embedder = embedder          # the helper that makes vectors
         self.dim = dim                    # bge-small -> 384 numbers per vector
         # Open a SQLite database and load the vector-search extension into it.
-        self.db = sqlite3.connect(db_path)
+        # check_same_thread=False because the LangChain (react) engine runs tool
+        # calls on a worker thread, not the thread that built the retriever. The
+        # agent loop is sequential (one query at a time), so sharing the single
+        # connection across threads is safe here; SQLite just blocks it by default.
+        self.db = sqlite3.connect(db_path, check_same_thread=False)
         self.db.enable_load_extension(True)
         sqlite_vec.load(self.db)
         self.db.enable_load_extension(False)
@@ -44,6 +48,26 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
             "(rowid INTEGER PRIMARY KEY, text TEXT NOT NULL, source TEXT)"
         )
         self.db.commit()
+
+    def close(self) -> None:
+        """Close the SQLite connection and flush everything to disk.
+
+        Note to myself: __init__ acquires a real OS resource (the connection),
+        so something must release it — Python has no destructor I can rely on
+        the way C++ does. Safe to call twice: closing an already-closed
+        connection is a no-op here because I null the handle after the first.
+        """
+        if self.db is not None:
+            self.db.close()
+            self.db = None
+
+    # `with SQLiteVecRetrieverProvider(...) as r:` — Python's RAII. __exit__
+    # runs on ANY exit from the block, exception or not, like a destructor.
+    def __enter__(self) -> "SQLiteVecRetrieverProvider":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
 
     def _next_rowid(self) -> int:
         # Derive the next id from the table on disk, so a reopened database does

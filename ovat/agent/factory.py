@@ -37,7 +37,8 @@ def build_llm(config: WorkflowConfig) -> OVMSLLMProvider:
     which is why the factory tests pass on the Mac.
     """
     m = config.model
-    return OVMSLLMProvider(base_url=m.ovms_url, model=m.name)
+    return OVMSLLMProvider(base_url=m.ovms_url, model=m.name,
+                           timeout=m.request_timeout)
 
 
 def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:
@@ -53,8 +54,9 @@ def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:
         return GenAIEmbeddingsProvider(model_path=emb.model, device=emb.device)
     if emb.provider == "ovms":
         from ovat.providers.embeddings_ovms import OVMSEmbeddingsProvider
-        # The server path reuses the same OVMS url the LLM talks to.
-        return OVMSEmbeddingsProvider(base_url=config.model.ovms_url, model=emb.model)
+        # The server path reuses the same OVMS url (and timeout) the LLM uses.
+        return OVMSEmbeddingsProvider(base_url=config.model.ovms_url, model=emb.model,
+                                      timeout=config.model.request_timeout)
     raise ValueError(
         f"Unknown embeddings provider '{emb.provider}'. Supported: genai, ovms."
     )

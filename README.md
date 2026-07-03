@@ -86,11 +86,16 @@ ovat init workflow.yml
 # 4. index your documents so search_docs can find them
 ovat index ./my-notes workflow.yml
 
-# 5. on the AI PC (Windows/Linux), start OVMS serving your model
+# 5. on the AI PC (Windows/Linux), start OVMS serving your model.
+#    serve returns once OVMS is READY and leaves it running in the
+#    background (pid recorded in ovms.pid, logs in ovms.log)
 ovat serve workflow.yml
 
 # 6. ask the agent something
 ovat run workflow.yml --input "summarise my meeting notes"
+
+# 7. done for the day? stop the background OVMS cleanly
+ovat serve workflow.yml --stop
 ```
 
 No server handy? Prove the pipeline assembles without one:

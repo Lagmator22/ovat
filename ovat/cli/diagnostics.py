@@ -101,6 +101,17 @@ def check_config(config_path: str) -> list[Check]:
         f"tools={[t.name for t in cfg.tools]}",
     )]
 
+    # The stub trap: search_docs is declared but no rag: block exists, so at
+    # runtime the tool answers with obviously fake "[stub]" text. Legal config
+    # (wiring tests rely on it), but a user should hear about it up front.
+    tool_names = [t.name for t in cfg.tools]
+    if "search_docs" in tool_names and cfg.rag is None:
+        checks.append(Check(
+            "search_docs mode", WARN,
+            "declared as a tool but no rag: section — it will return stub "
+            "text, not real retrieval. Add a rag: block and run 'ovat index'.",
+        ))
+
     # Only meaningful when the workflow configures RAG with the local embedder.
     if cfg.rag is not None and cfg.rag.embeddings.provider == "genai":
         model_path = cfg.rag.embeddings.model

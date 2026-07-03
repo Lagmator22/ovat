@@ -12,6 +12,7 @@ import pytest
 
 from ovat.agent.factory import build_embedder, build_rag, build_retriever
 from ovat.config.workflow import WorkflowConfig
+from ovat.providers.base import RetrieverProvider
 from ovat.providers.retriever_sqlitevec import SQLiteVecRetrieverProvider
 from ovat.rag.indexer import chunk_text, index_folder
 from ovat.tools.search_docs import search_docs_impl
@@ -108,3 +109,35 @@ def test_build_retriever_rejects_unknown_provider():
 
 def test_build_rag_returns_none_when_no_rag_section():
     assert build_rag(WorkflowConfig(model={"name": "m"})) is None
+
+
+# close() — the retriever must release its SQLite connection
+
+def test_close_releases_the_connection_and_is_idempotent():
+    retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384, db_path=":memory:")
+    retriever.add(["hello"], sources=["x.md"])
+    retriever.close()
+    # After close the handle is gone, so any use must fail loudly...
+    with pytest.raises(AttributeError):
+        retriever.retrieve("hello")
+    # ...but closing again is safe (idempotent), like a guarded delete.
+    retriever.close()
+
+
+def test_context_manager_closes_on_exit(tmp_path):
+    db = str(tmp_path / "idx.db")
+    with SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384, db_path=db) as retriever:
+        retriever.add(["persist me"], sources=["a.md"])
+    assert retriever.db is None                      # __exit__ really closed it
+    # The data survived the close: a fresh open finds the chunk on disk.
+    with SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384, db_path=db) as reopened:
+        assert reopened.retrieve("persist me", top_k=1)[0]["source"] == "a.md"
+
+
+def test_base_retriever_close_is_a_safe_default_noop():
+    # Any RetrieverProvider can be close()d, even ones that hold nothing.
+    class NothingRetriever(RetrieverProvider):
+        def add(self, texts, sources=None): ...
+        def retrieve(self, query, top_k=5): return []
+
+    NothingRetriever().close()                       # must not raise

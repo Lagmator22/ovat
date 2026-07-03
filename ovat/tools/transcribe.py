@@ -88,7 +88,10 @@ SCHEMA = {
             "type": "object",
             "properties": {
                 "file_path": {"type": "string", "description": "path to a WAV audio file"},
-                "language": {"type": "string", "description": "language code, e.g. en"},
+                # "default" keeps this schema the complete contract; the
+                # LangChain argument model is derived from it.
+                "language": {"type": "string", "description": "language code, e.g. en",
+                             "default": "en"},
             },
             "required": ["file_path"],
         },

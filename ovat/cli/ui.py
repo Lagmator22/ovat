@@ -15,38 +15,53 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.theme import Theme
 
-# The raw hex palette, shared by the themed CLI and the Textual TUI. The TUI
-# renders into widgets that do not carry my rich Theme, so it needs the plain
-# hex values; keeping them here means both front-ends use one source of truth.
-BLUE = "#0068B5"      # Intel energy blue (primary)
-CYAN = "#00C7FD"      # bright accent
-PURPLE = "#8F5CFF"    # the purple half of the scheme
-GREEN = "#3DD68C"     # ok
-YELLOW = "#FFC107"    # warn
-RED = "#FF5C5C"       # fail
-DIM = "#7A8CA0"       # secondary text
-
-# Glyph + hex colour per check status, for output that cannot use theme names.
-STATUS_HEX = {
-    "ok": ("✓", GREEN),
-    "warn": ("!", YELLOW),
-    "fail": ("✗", RED),
+# The raw brand palette, hex by ROLE — the single source of truth. The rich
+# theme below derives from it, and the Textual TUI reads the aliases further
+# down for its widgets, so terminal and TUI can never drift.
+PALETTE = {
+    "blue":   "#0068B5",   # Intel energy blue, the primary brand colour
+    "cyan":   "#00C7FD",   # bright accent for highlights
+    "purple": "#8F5CFF",   # the purple half of the requested scheme
+    "ok":     "#3DD68C",   # a check passed / success
+    "warn":   "#FFC107",   # heads-up, not a failure
+    "fail":   "#FF5C5C",   # failed, needs attention
+    "dim":    "#7A8CA0",   # secondary text
 }
 
-# Intel-inspired palette. I name the styles by role, not by colour, so a command
-# asks for "ovat.ok" and never hardcodes a hex value.
+# Plain-hex aliases for the Textual TUI. Its widgets and CSS cannot read rich
+# theme names, only raw colours — but these are DERIVED, never redefined, so
+# there is still exactly one palette.
+BLUE = PALETTE["blue"]
+CYAN = PALETTE["cyan"]
+PURPLE = PALETTE["purple"]
+GREEN = PALETTE["ok"]
+YELLOW = PALETTE["warn"]
+RED = PALETTE["fail"]
+DIM = PALETTE["dim"]
+
+# Named styles derived from the palette. Two kinds of names on purpose:
+#   ovat.*  — role names new code should use ("ovat.ok", not a colour).
+#   green/red/yellow/dim/cyan — remaps of the GENERIC names the existing
+#   commands already use in markup like "[green]Indexed[/green]". Remapping
+#   them here restyles every command into the brand palette at once, through
+#   the one shared console, without editing every message string.
 OVAT_THEME = Theme({
-    "ovat.blue": "#0068B5",        # Intel energy blue, the primary brand colour
-    "ovat.cyan": "#00C7FD",        # bright accent for highlights
-    "ovat.purple": "#8F5CFF",      # the purple half of the requested scheme
-    "ovat.ok": "bold #3DD68C",     # a check passed
-    "ovat.warn": "bold #FFC107",   # a check is a heads-up, not a failure
-    "ovat.fail": "bold #FF5C5C",   # a check failed and needs attention
-    "ovat.dim": "#7A8CA0",         # secondary text
+    "ovat.blue": PALETTE["blue"],
+    "ovat.cyan": PALETTE["cyan"],
+    "ovat.purple": PALETTE["purple"],
+    "ovat.ok": f"bold {PALETTE['ok']}",
+    "ovat.warn": f"bold {PALETTE['warn']}",
+    "ovat.fail": f"bold {PALETTE['fail']}",
+    "ovat.dim": PALETTE["dim"],
     # rich cannot combine "bold" with a theme name in one string, so where I
     # want a bold brand colour I bake the weight into its own named style.
-    "ovat.brand": "bold #00C7FD",  # the OVAT wordmark
-    "ovat.header": "bold #0068B5", # table headers
+    "ovat.brand": f"bold {PALETTE['cyan']}",   # the OVAT wordmark
+    "ovat.header": f"bold {PALETTE['blue']}",  # table headers
+    "green": PALETTE["ok"],
+    "yellow": PALETTE["warn"],
+    "red": PALETTE["fail"],
+    "dim": PALETTE["dim"],
+    "cyan": PALETTE["cyan"],
 })
 
 # A single shared console. Importing this everywhere keeps styling consistent.

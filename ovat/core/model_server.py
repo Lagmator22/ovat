@@ -10,10 +10,18 @@ continue even with a new model.
 Uses urllib (standard library) for health checks, so there's no extra
 dependency. Needs the `ovms` binary to actually start (Linux/Windows/Docker).
 """
+import os
+import signal
 import subprocess
 import time
 import urllib.error
 import urllib.request
+
+# Where `ovat serve` records the OVMS process id. A pidfile is the classic
+# daemon pattern: the starting process exits, but the NUMBER of the server
+# process survives on disk, so a later `ovat serve --stop` can find and stop
+# a server it did not start itself.
+DEFAULT_PID_PATH = "ovms.pid"
 
 
 class ModelServer:
@@ -47,7 +55,8 @@ class ModelServer:
     def health_url(self) -> str:
         return f"http://localhost:{self.port}/v2/health/ready"
 
-    def start(self, log_path: str = "ovms.log") -> None:
+    def start(self, log_path: str = "ovms.log",
+              pid_path: str = DEFAULT_PID_PATH) -> None:
         """Launch OVMS in the background. (Flags illustrative -> match them to
         our OVMS version / the demo README.)"""
         # Note to myself: the three flags that matter most here are
@@ -78,6 +87,11 @@ class ModelServer:
         self.process = subprocess.Popen(
             cmd, stdout=self._log_file, stderr=subprocess.STDOUT
         )
+        # Record the pid so `ovat serve --stop` (a NEW process, long after this
+        # one exited) can still find and stop the server.
+        self.pid_path = pid_path
+        with open(pid_path, "w", encoding="utf-8") as f:
+            f.write(str(self.process.pid))
 
     def wait_until_ready(self, timeout: int = 120) -> bool:
         """Poll the health endpoint until OVMS is up or we time out."""
@@ -97,10 +111,68 @@ class ModelServer:
         return False
 
     def stop(self) -> None:
-        if self.process:
-            self.process.terminate()
-            self.process.wait(timeout=10)
-            self.process = None
-        if getattr(self, "_log_file", None):
-            self._log_file.close()
-            self._log_file = None
+        """Stop OVMS: ask politely (SIGTERM), then force (SIGKILL).
+
+        terminate() is only a REQUEST the process may ignore; kill() cannot be
+        ignored. The finally makes sure the log file handle is released even if
+        the process fights the whole way down — before this, a TimeoutExpired
+        skipped the close() and leaked the handle.
+        """
+        try:
+            if self.process:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()      # escalation: no more asking
+                    self.process.wait()
+                self.process = None
+        finally:
+            if getattr(self, "_log_file", None):
+                self._log_file.close()
+                self._log_file = None
+            pid_path = getattr(self, "pid_path", None)
+            if pid_path and os.path.exists(pid_path):
+                os.remove(pid_path)
+
+
+def stop_from_pidfile(pid_path: str = DEFAULT_PID_PATH, wait_seconds: float = 10.0) -> str:
+    """Stop an OVMS recorded in a pidfile; return a short human message.
+
+    This is for the CLI: the process that STARTED the server is long gone, so
+    all we have is the pid number on disk. Same escalation as stop(): SIGTERM,
+    give it wait_seconds to exit, then SIGKILL. Every odd state (no file, pid
+    already dead) is reported as a message, not an exception — stopping an
+    already-stopped server is a boring success, not an error.
+    """
+    if not os.path.exists(pid_path):
+        return f"No pidfile at {pid_path} — nothing to stop (server not started here?)."
+    try:
+        pid = int(open(pid_path, encoding="utf-8").read().strip())
+    except ValueError:
+        os.remove(pid_path)
+        return f"Pidfile {pid_path} was corrupt; removed it."
+
+    def _alive() -> bool:
+        try:
+            os.kill(pid, 0)         # signal 0 = existence check, sends nothing
+            return True
+        except OSError:
+            return False
+
+    if not _alive():
+        os.remove(pid_path)
+        return f"OVMS (pid {pid}) is not running; removed the stale pidfile."
+
+    os.kill(pid, signal.SIGTERM)    # ask politely first
+    deadline = time.time() + wait_seconds
+    while time.time() < deadline:
+        if not _alive():
+            os.remove(pid_path)
+            return f"Stopped OVMS (pid {pid})."
+        time.sleep(0.2)
+    # Windows has no SIGKILL (its SIGTERM already TerminateProcess-es), so
+    # fall back to SIGTERM there; on Linux/macOS this is the real force-kill.
+    os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+    os.remove(pid_path)
+    return f"OVMS (pid {pid}) ignored SIGTERM for {wait_seconds:.0f}s; killed it."

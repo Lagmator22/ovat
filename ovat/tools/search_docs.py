@@ -60,7 +60,10 @@ SCHEMA = {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "natural language search query"},
-                "top_k": {"type": "integer", "description": "max chunks to return"},
+                # "default" makes this schema the COMPLETE contract: the
+                # LangChain path derives its argument model from here.
+                "top_k": {"type": "integer", "description": "max chunks to return",
+                          "default": 5},
             },
             "required": ["query"],
         },

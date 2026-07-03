@@ -17,9 +17,12 @@ class OVMSLLMProvider(LLMProvider):
     """Talks to OVMS /v3 using the OpenAI SDK (as OVMS is OpenAI-compatible)."""
 
     def __init__(self, base_url: str = "http://localhost:8000/v3",
-                 model: str = "Qwen3-8B-int4-ov"):
+                 model: str = "Qwen3-8B-int4-ov", timeout: float = 120.0):
         # api_key is required by the SDK but ignored by OVMS, any string works.
-        self.client = OpenAI(base_url=base_url, api_key="not-needed")
+        # timeout caps each request; the SDK default (~600s) would freeze the
+        # CLI for ten minutes on a hung server before erroring.
+        self.client = OpenAI(base_url=base_url, api_key="not-needed",
+                             timeout=timeout)
         self.model = model
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:

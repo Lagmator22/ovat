@@ -10,10 +10,15 @@ The headline command is `run`: load a workflow YAML, build the agent, ask it
 my question, print the answer. That single line is the midterm demo.
 """
 import typer
-from rich import print as rprint
 
 from ovat.agent.factory import build_agent
+from ovat.cli.ui import console
 from ovat.config.workflow import load_workflow
+
+# Every command prints through the ONE themed console, so the whole CLI wears
+# the brand palette. `rich.print` (the old import) used a default console that
+# ignored the theme — only doctor looked like OVAT, the rest looked stock.
+rprint = console.print
 
 app = typer.Typer(
     help="OVAT: run an OpenVINO agent from one YAML + one command.",
@@ -105,6 +110,11 @@ def run(
         rprint("[yellow]dry-run:[/yellow] not calling the model.")
         raise typer.Exit()
 
+    # Show which engine is actually running, so it is visible in a demo: the
+    # agent.type in the YAML is what picks it (native loop vs LangChain).
+    engine = "LangChain (react)" if cfg.agent.type == "react" else "native loop (loop.py)"
+    rprint(f"[dim]engine:[/dim] [bold]{engine}[/bold]")
+
     # Step 3: actually run. This needs a live OVMS server to answer.
     try:
         answer = agent.run(input)
@@ -151,8 +161,13 @@ def chat(
         rprint(f"[red]Could not load the local model at {model_path}:[/red] {exc}")
         raise typer.Exit(code=1)
 
-    answer, sources = rag_chat(retriever, llm, input, top_k=top_k,
-                               system_prompt=cfg.agent.system_prompt)
+    # finally: the retriever owns a SQLite connection; close it even if the
+    # model call raises, so the index file is always flushed and unlocked.
+    try:
+        answer, sources = rag_chat(retriever, llm, input, top_k=top_k,
+                                   system_prompt=cfg.agent.system_prompt)
+    finally:
+        retriever.close()
     rprint(answer.strip())
     if sources:
         rprint("\n[dim]sources:[/dim] " + ", ".join(sources))
@@ -197,6 +212,10 @@ def index(
     except FileNotFoundError as exc:
         rprint(f"[red]{exc}[/red]")
         raise typer.Exit(code=1)
+    finally:
+        # Close the vector store so every chunk is flushed to the .db file and
+        # its lock is released, even when indexing fails halfway.
+        retriever.close()
     rprint(f"[green]Indexed[/green] {summary['chunks']} chunks "
            f"from {summary['files']} files.")
 
@@ -247,9 +266,22 @@ def models(
 @app.command()
 def serve(
     config: str = typer.Argument(..., help="Workflow YAML whose model OVMS should serve."),
+    stop: bool = typer.Option(False, "--stop",
+                              help="Stop the OVMS started earlier by 'ovat serve'."),
 ):
-    """Start OVMS serving the model from a workflow YAML (runs on the AI PC)."""
-    from ovat.core.model_server import ModelServer
+    """Start OVMS in the background (or stop it again with --stop). AI PC only.
+
+    Heads up: serve returns once OVMS is READY and leaves it running in the
+    background — that is the point, so `ovat run` can talk to it. The pid is
+    recorded in ovms.pid; `ovat serve <config> --stop` shuts it down cleanly.
+    """
+    from ovat.core.model_server import ModelServer, stop_from_pidfile
+
+    if stop:
+        # Stopping needs no config parsing at all — just the recorded pid.
+        rprint(stop_from_pidfile())
+        return
+
     cfg = load_workflow(config)
     server = ModelServer(
         model_name=cfg.model.name,
@@ -268,9 +300,13 @@ def serve(
                "setupvars.bat and add the OVMS folder to PATH before 'ovat serve'.")
         raise typer.Exit(code=1)
     if server.wait_until_ready():
-        rprint(f"[green]OVMS is ready[/green] at {server.base_url}")
+        rprint(f"[green]OVMS is ready[/green] at {server.base_url}  "
+               f"[dim](pid {server.process.pid}, logs in {server.log_path})[/dim]")
+        rprint(f"[dim]It keeps running in the background. Stop it with:[/dim] "
+               f"ovat serve {config} --stop")
     else:
-        rprint("[red]OVMS did not become ready in time.[/red]")
+        rprint("[red]OVMS did not become ready in time.[/red] "
+               f"See {server.log_path} for the reason.")
         raise typer.Exit(code=1)
 
 
