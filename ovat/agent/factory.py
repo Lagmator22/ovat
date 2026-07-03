@@ -16,16 +16,18 @@ from ovat.agent.loop import AgentLoop
 from ovat.config.workflow import WorkflowConfig
 from ovat.providers.base import EmbeddingsProvider, RetrieverProvider
 from ovat.providers.llm_ovms import OVMSLLMProvider
+from ovat.tools import describe_image as describe_image_tool
 from ovat.tools import search_docs as search_docs_tool
 from ovat.tools import transcribe as transcribe_tool
 
 
 # The schema (the menu the model reads) for each built-in tool. I keep the
 # function-building separate, below, because search_docs needs the retriever
-# bound in while transcribe does not.
+# bound in while the others do not.
 BUILTIN_TOOL_SCHEMAS = {
     "search_docs": search_docs_tool.SCHEMA,
     "transcribe": transcribe_tool.SCHEMA,
+    "describe_image": describe_image_tool.SCHEMA,
 }
 
 
@@ -138,6 +140,7 @@ def build_tools(config: WorkflowConfig,
     builders = {
         "search_docs": lambda: _make_search_docs(retriever),
         "transcribe": lambda: _make_transcribe(),
+        "describe_image": lambda: describe_image_tool.describe_image_impl,
     }
     tools = {}
     for tool_cfg in config.tools:

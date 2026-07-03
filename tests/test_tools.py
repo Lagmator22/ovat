@@ -82,3 +82,44 @@ def test_transcribe_rejects_wrong_sample_rate(tmp_path):
     _write_wav(path, channels=1, rate=44100)
     out = transcribe_impl(str(path), pipeline=object())
     assert out.startswith("Error:") and "16 kHz" in out
+
+
+# describe_image (the VLM tool) — impl-level with a fake provider
+
+def test_describe_image_missing_file_is_a_readable_error():
+    from ovat.tools.describe_image import describe_image_impl
+    out = describe_image_impl("/no/such/photo.jpg", provider=object())
+    assert out.startswith("Error:") and "photo.jpg" in out
+
+
+def test_describe_image_calls_the_provider_with_path_and_prompt(tmp_path):
+    from ovat.tools.describe_image import describe_image_impl
+
+    class FakeVLM:
+        def __init__(self):
+            self.seen = None
+
+        def generate(self, prompt, images):
+            self.seen = (prompt, images)
+            return "a dog on a beach"
+
+    image = tmp_path / "dog.jpg"
+    image.write_bytes(b"not really a jpg, the fake never reads it")
+    fake = FakeVLM()
+    out = describe_image_impl(str(image), prompt="what animal?", provider=fake)
+    assert out == "a dog on a beach"
+    assert fake.seen == ("what animal?", [str(image)])
+
+
+def test_describe_image_is_a_wired_builtin():
+    from ovat.agent.factory import build_tools
+    from ovat.config.workflow import WorkflowConfig
+
+    cfg = WorkflowConfig(model={"name": "m"},
+                         tools=[{"name": "describe_image", "type": "builtin"}])
+    tools = build_tools(cfg)
+    assert tools["describe_image"]["schema"]["function"]["name"] == "describe_image"
+    # The bound function is the impl itself; a missing file proves it runs
+    # without ever touching a real model.
+    out = tools["describe_image"]["function"](image_path="/nope.png")
+    assert out.startswith("Error:")
