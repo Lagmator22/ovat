@@ -325,8 +325,10 @@ class OvatTUI(App):
                 return
             self._proc = proc
             try:
-                for line in proc.stdout:
-                    self.call_from_thread(log.write, Text.from_ansi(line.rstrip("\n")))
+                # iter_display_lines also tames \r progress bars (pip, tqdm)
+                # that would otherwise stall then flood the append-only log.
+                for line in shell.iter_display_lines(proc.stdout):
+                    self.call_from_thread(log.write, Text.from_ansi(line))
             finally:
                 if proc.stdout:
                     proc.stdout.close()

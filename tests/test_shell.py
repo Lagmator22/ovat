@@ -47,3 +47,48 @@ def test_run_command_runs_in_the_given_directory(tmp_path):
     shell.run_command("pwd", str(tmp_path), lines.append)
     # macOS may resolve /tmp to /private/tmp, so I match the leaf directory name.
     assert any(tmp_path.name in ln for ln in lines)
+
+
+# iter_display_lines — \r progress bars must neither stall nor flood
+
+class _FakeStream:
+    """A fileno()-backed stream fed from a real OS pipe, so os.read works."""
+
+    def __init__(self, payload: bytes):
+        r, w = os.pipe()
+        os.write(w, payload)
+        os.close(w)                  # EOF once the payload is drained
+        self._fd = r
+
+    def fileno(self):
+        return self._fd
+
+
+def test_progress_frames_are_rate_limited_but_real_lines_always_pass():
+    # Clock stands still -> after the first frame, every further \r frame is
+    # inside the interval and must be suppressed; \n lines always pass.
+    stream = _FakeStream(b"10%\r20%\r30%\rdone 100%\nnext step\n")
+    out = list(shell.iter_display_lines(stream, progress_interval=0.5,
+                                        _clock=lambda: 1000.0))
+    assert out == ["10%", "done 100%", "next step"]
+
+
+def test_progress_frames_all_pass_when_interval_is_zero():
+    stream = _FakeStream(b"a\rb\rc\rend\n")
+    out = list(shell.iter_display_lines(stream, progress_interval=0.0,
+                                        _clock=lambda: 1000.0))
+    assert out == ["a", "b", "c", "end"]
+
+
+def test_windows_line_endings_and_eof_tail_are_handled():
+    stream = _FakeStream(b"one\r\ntwo\r\nno-newline-at-eof")
+    out = list(shell.iter_display_lines(stream, progress_interval=0.0))
+    assert out == ["one", "two", "no-newline-at-eof"]
+
+
+def test_run_command_streams_a_real_progress_bar_without_flooding():
+    lines = []
+    code = shell.run_command(r"printf 'x\ry\rz\rfinal\n'", os.getcwd(), lines.append)
+    assert code == 0
+    assert lines[-1] == "final"      # the real line always arrives
+    assert len(lines) <= 4           # never more frames than were sent

@@ -15,6 +15,7 @@ Two design choices make it behave like an activated venv:
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 
 
@@ -83,6 +84,53 @@ def spawn(cmd: str, cwd: str, env: dict | None = None) -> subprocess.Popen:
     )
 
 
+def iter_display_lines(stream, progress_interval: float = 0.5,
+                       _clock=time.monotonic):
+    """Yield printable lines from a process stream, taming \\r progress bars.
+
+    The problem: pip/tqdm redraw ONE line many times a second with bare
+    carriage returns and send no newline until the end. Iterating the stream
+    by lines therefore shows nothing for minutes, then dumps one giant line.
+
+    Two tricks here:
+    - os.read() on the raw fd returns whatever bytes are AVAILABLE (a plain
+      text-mode read(4096) would block until it had all 4096 chars — no
+      streaming at all).
+    - a frame that ends in \\r is a transient redraw. The log is append-only,
+      so instead of appending every redraw I let at most one through per
+      progress_interval; the final state arrives with the tool's closing
+      newline anyway.
+    """
+    fd = stream.fileno()
+    buf = ""
+    last_progress = 0.0
+    while True:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:            # stream closed under us (cancel path)
+            break
+        if not chunk:
+            break
+        buf += chunk.decode("utf-8", errors="replace")
+        # Normalise Windows line ends, then treat bare \r as its own boundary.
+        buf = buf.replace("\r\n", "\n")
+        while True:
+            i_nl, i_cr = buf.find("\n"), buf.find("\r")
+            if i_nl == -1 and i_cr == -1:
+                break
+            if i_cr == -1 or (i_nl != -1 and i_nl < i_cr):
+                line, buf = buf[:i_nl], buf[i_nl + 1:]
+                yield line                       # real line: always shown
+            else:
+                line, buf = buf[:i_cr], buf[i_cr + 1:]
+                now = _clock()
+                if now - last_progress >= progress_interval:
+                    last_progress = now
+                    yield line                   # sampled progress frame
+    if buf:
+        yield buf                                # whatever EOF left behind
+
+
 def run_command(cmd: str, cwd: str, on_line, env: dict | None = None) -> int:
     """Run `cmd` to completion, calling on_line(text) for each output line.
 
@@ -91,8 +139,8 @@ def run_command(cmd: str, cwd: str, on_line, env: dict | None = None) -> int:
     """
     proc = spawn(cmd, cwd, env)
     try:
-        for line in proc.stdout:
-            on_line(line.rstrip("\n"))
+        for line in iter_display_lines(proc.stdout):
+            on_line(line)
     finally:
         if proc.stdout:
             proc.stdout.close()
