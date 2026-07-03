@@ -8,6 +8,12 @@ and fills the input, a real command streams into the log, and /exit quits.
 """
 import asyncio
 
+import pytest
+
+# The TUI is an optional extra (pip install 'ovat[tui]'). Without it these
+# tests skip cleanly — the isolation contract lives in test_tui_isolation.py.
+pytest.importorskip("textual")
+
 from textual.widgets import Input, OptionList, RichLog
 
 from ovat.cli.tui import OvatTUI
