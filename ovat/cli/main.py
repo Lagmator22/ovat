@@ -134,8 +134,13 @@ def chat(
         rprint(f"[red]Could not load the local model at {model_path}:[/red] {exc}")
         raise typer.Exit(code=1)
 
-    answer, sources = rag_chat(retriever, llm, input, top_k=top_k,
-                               system_prompt=cfg.agent.system_prompt)
+    # finally: the retriever owns a SQLite connection; close it even if the
+    # model call raises, so the index file is always flushed and unlocked.
+    try:
+        answer, sources = rag_chat(retriever, llm, input, top_k=top_k,
+                                   system_prompt=cfg.agent.system_prompt)
+    finally:
+        retriever.close()
     rprint(answer.strip())
     if sources:
         rprint("\n[dim]sources:[/dim] " + ", ".join(sources))
@@ -180,6 +185,10 @@ def index(
     except FileNotFoundError as exc:
         rprint(f"[red]{exc}[/red]")
         raise typer.Exit(code=1)
+    finally:
+        # Close the vector store so every chunk is flushed to the .db file and
+        # its lock is released, even when indexing fails halfway.
+        retriever.close()
     rprint(f"[green]Indexed[/green] {summary['chunks']} chunks "
            f"from {summary['files']} files.")
 

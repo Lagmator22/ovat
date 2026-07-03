@@ -55,6 +55,16 @@ class RetrieverProvider(ABC):
     def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
         ...
 
+    def close(self) -> None:
+        """Release whatever the retriever holds (DB connections, files).
+
+        NOT abstract on purpose: a plain virtual with an empty default body,
+        not pure virtual. In-memory retrievers hold nothing, so they inherit
+        this no-op; sqlite-vec overrides it to close its connection. Callers
+        can always call close() without caring which backend they got.
+        """
+        return None
+
 
 class VLMProvider(ABC): # adds the support for multimodality supporting models like gemma 4[OpenVINO formats are experimental] and no video support yet
     """Contract/Socket for a vision-language model: a text prompt + images -> text.
