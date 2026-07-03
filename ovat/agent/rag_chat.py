@@ -36,20 +36,32 @@ def build_context(hits: list) -> str:
 
 
 def rag_chat(retriever: RetrieverProvider, llm: LLMProvider, question: str,
-             top_k: int = 4, system_prompt: str | None = None) -> tuple:
+             top_k: int = 4, system_prompt: str | None = None,
+             history: list | None = None, on_token=None) -> tuple:
     """Answer `question` from the index. Returns (answer_text, source_list).
 
     Steps: retrieve the top_k closest chunks, build a context block that labels
     each chunk with its source, ask the local model to answer from that context,
     and return the answer plus the de-duplicated list of sources it was given.
+
+    history: optional prior turns ([{role, content}, ...]) slotted between the
+    system prompt and this question, so a chat UI gets real conversation
+    memory while retrieval stays per-question. Capped to the last 8 turns so
+    a long chat cannot blow the model's context window.
+    on_token: optional streaming callback, forwarded to providers that
+    support it (GenAILLMProvider); None keeps the old single-shot call.
     """
     hits = retriever.retrieve(question, top_k=top_k)
     context = build_context(hits)
     messages = [
         {"role": "system", "content": system_prompt or _DEFAULT_SYSTEM},
+        *(history or [])[-8:],
         {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
     ]
-    reply = llm.chat(messages)
+    if on_token is not None:
+        reply = llm.chat(messages, on_token=on_token)
+    else:
+        reply = llm.chat(messages)
 
     sources = []
     for h in hits:
