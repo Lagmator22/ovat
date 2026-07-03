@@ -53,6 +53,28 @@ def test_config_check_fails_on_missing_file():
     assert checks[0].status == FAIL
 
 
+def test_config_check_warns_on_search_docs_without_rag(tmp_path):
+    # The stub trap: search_docs declared, no rag: block. Legal, but the tool
+    # would return fake "[stub]" text at runtime — doctor must say so.
+    path = _write(tmp_path,
+                  "model:\n  name: m\n"
+                  "tools:\n  - name: search_docs\n    type: builtin\n")
+    checks = check_config(path)
+    stub = [c for c in checks if c.name == "search_docs mode"]
+    assert stub and stub[0].status == WARN
+    assert "stub" in stub[0].detail
+
+
+def test_config_check_no_stub_warning_when_rag_is_configured(tmp_path):
+    path = _write(tmp_path,
+                  "model:\n  name: m\n"
+                  "tools:\n  - name: search_docs\n    type: builtin\n"
+                  "rag:\n  embeddings:\n    provider: genai\n"
+                  "    model: /definitely/not/here/bge\n")
+    checks = check_config(path)
+    assert not [c for c in checks if c.name == "search_docs mode"]
+
+
 def test_config_check_warns_when_embeddings_model_absent(tmp_path):
     path = _write(tmp_path,
                   "model:\n  name: m\n"

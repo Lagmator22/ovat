@@ -22,3 +22,20 @@ agent:
   type: native
   max_iterations: 6
   system_prompt: "You are a concise assistant. Use tools when needed."
+
+# Without this block search_docs runs in STUB mode and returns fake text.
+# bge-small is ~130 MB and runs happily on the same 8 GB CPU-only laptop,
+# so the Minimal profile keeps real retrieval (matches the proposal's
+# "Qwen2.5-1.5B INT4 + bge-small" minimal tier).
+rag:
+  embeddings:
+    provider: genai
+    model: models/bge-small-en-v1.5
+    device: CPU
+    dim: 384
+  retriever:
+    provider: sqlite-vec
+    db_path: ovat_index.db
+  chunk:
+    size: 512
+    overlap: 64
