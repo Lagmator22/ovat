@@ -296,16 +296,40 @@ class OvatTUI(App):
         """
         from ovat.cli.chat_screen import ChatScreen, load_prefs
 
+        log = self.query_one("#output", RichLog)
         prefs = load_prefs(self._cwd)
         parts = args.split()
         config = parts[0] if parts else prefs.get("config", "workflow.yml")
         model = parts[1] if len(parts) > 1 else prefs.get("model_path")
         if not model:
-            self.query_one("#output", RichLog).write(Text(
-                "usage: /chat [config] [model-path] — give a local OpenVINO "
-                "model path once; I will remember it in .ovat/chat_prefs.json.",
-                style=ui.YELLOW))
-            return
+            # Friendliest path last: AUTO-DETECT a local text LLM instead of
+            # demanding a path a new user does not know.
+            from ovat.core.model_scout import find_models, pick_chat_llm
+            choice, llms = pick_chat_llm()
+            if choice is not None:
+                model = choice["path"]
+                log.write(Text(f"auto-detected local LLM: {choice['name']}  "
+                               f"({choice['path']})", style=ui.CYAN))
+                if len(llms) > 1:
+                    log.write(Text("also available: " +
+                                   ", ".join(m["name"] for m in llms
+                                             if m is not choice) +
+                                   "  —  choose with /chat <config> <path>",
+                                   style=ui.DIM))
+            else:
+                log.write(Text(
+                    "No local text LLM found (scanned OVAT_MODELS, ./models, "
+                    "~/models).", style=ui.YELLOW))
+                others = find_models()
+                if others:
+                    log.write(Text("Found, but wrong kind for chat: " +
+                                   ", ".join(f"{m['name']} ({m['kind']})"
+                                             for m in others), style=ui.DIM))
+                log.write(Text(
+                    "Fix: /chat [config] [model-path], or set OVAT_MODELS to "
+                    "your models folder. I remember your choice afterwards.",
+                    style=ui.DIM))
+                return
 
         def _resolve(p: str) -> str:
             return p if os.path.isabs(p) else os.path.normpath(

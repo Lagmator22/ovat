@@ -133,8 +133,12 @@ def test_load_failure_reports_and_offers_the_way_back(monkeypatch, tmp_path):
     _run(scenario())
 
 
-def test_chat_without_a_known_model_path_prints_usage(monkeypatch, tmp_path):
+def test_chat_with_no_model_and_none_found_explains_the_fix(monkeypatch, tmp_path):
+    import ovat.core.model_scout as scout
     monkeypatch.chdir(tmp_path)                     # no prefs saved here yet
+    monkeypatch.setattr(scout, "pick_chat_llm", lambda: (None, []))
+    monkeypatch.setattr(scout, "find_models", lambda kind=None: [
+        {"name": "Qwen2-VL-2B", "path": "/x", "kind": "vlm", "why": ""}])
 
     async def scenario():
         app = OvatTUI()
@@ -145,8 +149,50 @@ def test_chat_without_a_known_model_path_prints_usage(monkeypatch, tmp_path):
             await pilot.pause()
             log = app.query_one("#output", RichLog)
             text = "\n".join(str(line) for line in log.lines)
-            assert "usage: /chat" in text
+            assert "No local text LLM found" in text
+            assert "Qwen2-VL-2B (vlm)" in text       # names what it DID find
+            assert "OVAT_MODELS" in text             # and the fix
     _run(scenario())
+
+
+def test_chat_with_no_model_auto_detects_one(monkeypatch, tmp_path):
+    import ovat.core.model_scout as scout
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+    llama = {"name": "Llama-3B-Instruct", "path": str(tmp_path / "llama"),
+             "kind": "llm", "why": ""}
+    monkeypatch.setattr(scout, "pick_chat_llm", lambda: (llama, [llama]))
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = "/chat"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert isinstance(app.screen, ChatScreen)      # it just worked
+            log = app.screen_stack[0].query_one("#output", RichLog)
+            text = "\n".join(str(line) for line in log.lines)
+            assert "auto-detected local LLM: Llama-3B-Instruct" in text
+    _run(scenario())
+
+
+def test_build_components_refuses_a_vision_model_before_loading(tmp_path):
+    # The real-user bug: a Qwen2-VL folder given as the chat LLM used to load
+    # and then explode at generate time with a C++ tensor-port traceback.
+    import json
+
+    import pytest as _pytest
+    vlm = tmp_path / "Qwen2-VL-2B-Instruct-INT4"
+    vlm.mkdir()
+    (vlm / "openvino_language_model.xml").write_text("")
+    (vlm / "config.json").write_text(json.dumps({"model_type": "qwen2_vl"}))
+    cfg = tmp_path / "w.yml"
+    cfg.write_text("model:\n  name: m\nrag:\n  retriever:\n    db_path: ':memory:'\n")
+
+    with _pytest.raises(ValueError, match="not a text"):
+        chat_screen._build_components(str(cfg), str(vlm))
 
 
 def test_prefs_round_trip(tmp_path):

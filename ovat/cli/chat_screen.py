@@ -68,12 +68,25 @@ def _build_components(config_path: str, model_path: str, max_tokens: int = 256):
     """
     from ovat.agent.factory import build_rag
     from ovat.config.workflow import load_workflow
+    from ovat.core.model_scout import identify_model, pick_chat_llm
     from ovat.providers.llm_genai import GenAILLMProvider
 
     cfg = load_workflow(config_path)
     if cfg.rag is None:
         raise ValueError(
             "this workflow has no rag: section — add one and run `ovat index` first"
+        )
+    # Identify BEFORE the 30-second load. A vision/whisper/embedding folder
+    # used to load "fine" and then explode at generate time with a C++
+    # traceback about tensor ports — now it is one readable sentence.
+    kind, why = identify_model(model_path)
+    if kind not in ("llm", "unknown"):
+        _, llms = pick_chat_llm()
+        suggestion = (" Try: " + ", ".join(m["name"] for m in llms)
+                      if llms else "")
+        raise ValueError(
+            f"{os.path.basename(model_path.rstrip(os.sep))} is not a text "
+            f"LLM ({why}) — chat needs a text model.{suggestion}"
         )
     retriever = build_rag(cfg)
     llm = GenAILLMProvider(model_path, device="CPU", max_new_tokens=max_tokens)
