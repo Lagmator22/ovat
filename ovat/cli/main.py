@@ -9,6 +9,8 @@ subcommand automatically, using the type hints to parse arguments, so
 The headline command is `run`: load a workflow YAML, build the agent, ask it
 my question, print the answer. That single line is the midterm demo.
 """
+import os
+
 import typer
 
 from ovat.agent.factory import build_agent
@@ -137,12 +139,60 @@ def _write_trace(path: str, cfg, agent) -> None:
     rprint(f"[dim]trace written to[/dim] {path}")
 
 
+def resolve_chat_model(model_path: str | None) -> str:
+    """Pick and sanity-check the local text LLM `chat` should load.
+
+    Two jobs, both learned from real users:
+    1. No path given? Auto-discover: scan OVAT_MODELS / ./models / ~/models
+       and pick an instruct-tuned text LLM.
+    2. Path given (or found)? IDENTIFY it before loading. Pointing chat at a
+       vision model used to explode at generate time with a C++ traceback
+       about tensor ports; now it is one plain sentence and a suggestion.
+    Raises typer.Exit(1) after printing guidance when nothing usable exists.
+    """
+    from ovat.core.model_scout import find_models, identify_model, pick_chat_llm
+
+    if model_path is None:
+        choice, llms = pick_chat_llm()
+        if choice is None:
+            rprint("[red]No local text LLM found.[/red] I scanned OVAT_MODELS, "
+                   "./models and ~/models.")
+            others = find_models()
+            if others:
+                rprint("[dim]I did find these (wrong kind for chat):[/dim]")
+                for m in others:
+                    rprint(f"  [ovat.dim]{m['name']}  —  {m['kind']}[/ovat.dim]")
+            rprint("Fix: pass [bold]--model-path <folder>[/bold], or set "
+                   "[bold]OVAT_MODELS[/bold] to the folder that holds your "
+                   "OpenVINO models.")
+            raise typer.Exit(code=1)
+        rprint(f"[dim]auto-detected local LLM:[/dim] [bold]{choice['name']}[/bold]"
+               f"  [dim]({choice['path']})[/dim]")
+        if len(llms) > 1:
+            names = ", ".join(m["name"] for m in llms if m is not choice)
+            rprint(f"[dim]also available: {names} — choose with --model-path[/dim]")
+        return choice["path"]
+
+    kind, why = identify_model(model_path)
+    if kind in ("llm", "unknown"):        # unknown = benefit of the doubt
+        return model_path
+    rprint(f"[red]{os.path.basename(model_path.rstrip('/'))} is not a text "
+           f"LLM[/red] [dim]({why})[/dim] — chat needs a text model.")
+    _, llms = pick_chat_llm()
+    if llms:
+        rprint("[dim]Text LLMs found on this machine:[/dim]")
+        for m in llms:
+            rprint(f"  [bold]{m['name']}[/bold]  [ovat.dim]{m['path']}[/ovat.dim]")
+    raise typer.Exit(code=1)
+
+
 @app.command()
 def chat(
     config: str = typer.Argument(..., help="Workflow YAML (uses its rag: section)."),
     input: str = typer.Option(..., "--input", "-i", help="Your question."),
-    model_path: str = typer.Option(..., "--model-path", "-m",
-                                   help="Path to a local OpenVINO LLM folder, e.g. Llama-3.2-3B."),
+    model_path: str = typer.Option(None, "--model-path", "-m",
+                                   help="Local OpenVINO text-LLM folder. Omit to "
+                                        "auto-detect (OVAT_MODELS, ./models, ~/models)."),
     device: str = typer.Option("CPU", "--device", help="CPU, or GPU/NPU on the AI PC."),
     top_k: int = typer.Option(4, "--top-k", help="How many chunks to retrieve."),
     max_tokens: int = typer.Option(256, "--max-tokens", help="Answer length cap."),
@@ -162,6 +212,10 @@ def chat(
     if cfg.rag is None:
         rprint("[red]This workflow has no [bold]rag:[/bold] section to chat against.[/red]")
         raise typer.Exit(code=1)
+
+    # Resolve + identify BEFORE any heavy loading, so a wrong model kind or a
+    # missing model is a one-second answer, not a 30s load then a traceback.
+    model_path = resolve_chat_model(model_path)
 
     try:
         retriever = build_rag(cfg)
