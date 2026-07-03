@@ -20,8 +20,11 @@ class FakeLLM:
     def __init__(self):
         self.seen = None
 
-    def chat(self, messages, tools=None):
+    def chat(self, messages, tools=None, on_token=None):
         self.seen = messages
+        if on_token is not None:                 # stream like the real GenAI plug
+            for token in ("AN", "SW", "ER"):
+                on_token(token)
         return {"finish_reason": "stop", "content": "ANSWER", "tool_calls": None}
 
 
@@ -50,3 +53,30 @@ def test_rag_chat_handles_an_empty_index():
 def test_build_context_labels_each_source():
     ctx = build_context([{"text": "hello", "source": "a.md"}])
     assert "[source: a.md]" in ctx and "hello" in ctx
+
+
+def test_rag_chat_streams_tokens_when_asked():
+    tokens = []
+    answer, _ = rag_chat(FakeRetriever([]), FakeLLM(), "q", on_token=tokens.append)
+    assert "".join(tokens) == "ANSWER"           # every token reached the callback
+    assert answer == "ANSWER"                    # final text unchanged
+
+
+def test_rag_chat_threads_history_between_system_and_question():
+    llm = FakeLLM()
+    history = [{"role": "user", "content": "earlier question"},
+               {"role": "assistant", "content": "earlier answer"}]
+    rag_chat(FakeRetriever([]), llm, "follow-up", history=history)
+    roles = [m["role"] for m in llm.seen]
+    assert roles == ["system", "user", "assistant", "user"]
+    assert llm.seen[1]["content"] == "earlier question"
+    assert "follow-up" in llm.seen[-1]["content"]
+
+
+def test_rag_chat_caps_history_to_the_last_8_turns():
+    llm = FakeLLM()
+    history = [{"role": "user", "content": f"turn {i}"} for i in range(20)]
+    rag_chat(FakeRetriever([]), llm, "q", history=history)
+    # system + capped history (8) + the new question
+    assert len(llm.seen) == 1 + 8 + 1
+    assert llm.seen[1]["content"] == "turn 12"   # only the most recent survive

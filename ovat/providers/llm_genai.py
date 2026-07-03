@@ -27,9 +27,24 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
         self.pipe = ov_genai.LLMPipeline(model_path, device)
         self.max_new_tokens = max_new_tokens #to remember/use the max_new_tokens limit for later
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+    def chat(self, messages: list[dict], tools: list[dict] | None = None,
+             on_token=None) -> dict:
+        """Generate a reply. With on_token, stream each token as it decodes.
+
+        on_token is optional so every existing caller behaves exactly as
+        before. When given, openvino_genai calls our streamer per decoded
+        token; we forward the text and return False ("keep generating").
+        The final return dict is identical either way.
+        """
         prompt = self._format(messages)
-        text = self.pipe.generate(prompt, max_new_tokens=self.max_new_tokens)
+        if on_token is None:
+            text = self.pipe.generate(prompt, max_new_tokens=self.max_new_tokens)
+        else:
+            def _streamer(token: str):
+                on_token(token)
+                return False          # False = do not stop generation
+            text = self.pipe.generate(prompt, max_new_tokens=self.max_new_tokens,
+                                      streamer=_streamer)
         return {
             "finish_reason": "stop", # as genai directly can't request tools so writes
             "content": str(text),    # text only then stops
