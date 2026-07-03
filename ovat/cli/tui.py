@@ -10,6 +10,8 @@ Typing "/" opens a dropdown of OVAT command templates you can pick and complete,
 so you get shortcuts without losing the ability to run any command at all.
 """
 import os
+import subprocess
+import threading
 
 from rich.text import Text
 from textual import work
@@ -118,6 +120,11 @@ class OvatTUI(App):
         # (./docs, examples/workflow.yml) mean what they expect.
         self._cwd = os.getcwd()
         self._proc = None        # the currently running subprocess, if any
+        # The submission gate. Flipped on the MAIN thread BEFORE the worker is
+        # scheduled, so a double-Enter can never pass the guard — _proc alone
+        # could not do that job, because the worker assigns it only after
+        # spawn() returns (a race window the old code had).
+        self._busy = False
 
     def compose(self) -> ComposeResult:
         yield Static(_banner(), id="banner")
@@ -153,8 +160,8 @@ class OvatTUI(App):
         palette = self.query_one("#palette", OptionList)
 
         if event.key == "escape":
-            if self._proc is not None:          # cancel a running command first
-                self._proc.terminate()
+            if self._busy:                      # cancel a running command first
+                self._cancel_running()
                 event.stop()
             elif palette.display:
                 palette.display = False
@@ -254,41 +261,83 @@ class OvatTUI(App):
             self.exit()
 
     def _start_command(self, cmd: str) -> None:
-        if self._proc is not None:
+        # Gate on _busy, which only the main thread flips, BEFORE scheduling
+        # the worker. The old check on _proc raced: the worker assigned it
+        # only after spawn(), so a fast double-Enter started two processes —
+        # and exclusive=True then cancelled the first worker THREAD while its
+        # OS process kept running, orphaned, with the handle overwritten.
+        if self._busy:
             self.query_one("#output", RichLog).write(
                 Text("A command is still running. Press Esc to cancel it first.",
                      style=ui.YELLOW))
             return
+        self._busy = True
         cols = max(80, self.size.width - 8)
         self._run_command(cmd, cols)
 
-    @work(thread=True, exclusive=True, group="cmd")
+    def _cancel_running(self) -> None:
+        """Cancel the running command: ask politely, then force.
+
+        Local ref first: the worker nulls self._proc from its thread, so
+        reading it twice could hit None mid-flight. Escalation runs on a tiny
+        daemon thread because the main thread must never block on wait().
+        """
+        proc = self._proc
+        if proc is None:
+            return
+        self.query_one("#output", RichLog).write(
+            Text("cancelling…", style=ui.YELLOW))
+        try:
+            proc.terminate()                    # SIGTERM: a request
+        except ProcessLookupError:
+            return                              # already gone; worker cleans up
+
+        def _force():
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()                     # SIGKILL: not a request
+
+        threading.Thread(target=_force, daemon=True).start()
+
+    def _mark_idle(self) -> None:
+        self._busy = False
+
+    @work(thread=True, group="cmd")
     def _run_command(self, cmd: str, cols: int) -> None:
         """Run a shell command in the venv, streaming its output into the log.
 
         Runs on a worker thread so a slow command never freezes the UI. I push
         every line back to the main thread with call_from_thread, and convert
         ANSI colour codes so coloured tools (ovat doctor, pytest) keep their
-        colours inside the log.
+        colours inside the log. No exclusive=True here on purpose: cancelling
+        a worker thread does not kill its subprocess, so exclusivity is
+        enforced by the _busy gate instead.
         """
         log = self.query_one("#output", RichLog)
         self.call_from_thread(log.write, Text(f"$ {cmd}", style="bold #FFFFFF"))
         try:
-            proc = shell.spawn(cmd, self._cwd, shell.venv_env(columns=cols))
-        except Exception as exc:
-            self.call_from_thread(log.write, Text(f"failed to start: {exc}", style=ui.RED))
-            return
-        self._proc = proc
-        try:
-            for line in proc.stdout:
-                self.call_from_thread(log.write, Text.from_ansi(line.rstrip("\n")))
+            try:
+                proc = shell.spawn(cmd, self._cwd, shell.venv_env(columns=cols))
+            except Exception as exc:
+                self.call_from_thread(log.write,
+                                      Text(f"failed to start: {exc}", style=ui.RED))
+                return
+            self._proc = proc
+            try:
+                for line in proc.stdout:
+                    self.call_from_thread(log.write, Text.from_ansi(line.rstrip("\n")))
+            finally:
+                if proc.stdout:
+                    proc.stdout.close()
+                code = proc.wait()
+                self._proc = None
+            color = ui.GREEN if code == 0 else ui.RED
+            self.call_from_thread(log.write, Text(f"[exit {code}]", style=color))
         finally:
-            if proc.stdout:
-                proc.stdout.close()
-            code = proc.wait()
-            self._proc = None
-        color = ui.GREEN if code == 0 else ui.RED
-        self.call_from_thread(log.write, Text(f"[exit {code}]", style=color))
+            # Always reopen the gate, even when spawn failed — otherwise one
+            # typo'd command would lock the TUI forever.
+            self.call_from_thread(self._mark_idle)
 
 
 def run_tui() -> None:

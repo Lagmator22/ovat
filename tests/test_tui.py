@@ -85,6 +85,68 @@ def test_exit_command_stops_the_app():
     _run(scenario())
 
 
+# The busy gate (no double-spawn, no orphaned processes)
+
+def test_second_submit_while_busy_is_refused_not_double_spawned():
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = "sleep 5"
+            await pilot.press("enter")            # gate closes on this thread,
+            first_proc_gate = app._busy           # synchronously
+            inp.value = "echo should_be_refused"
+            await pilot.press("enter")
+            await pilot.pause()
+            log_text = "\n".join(str(ln) for ln in app.query_one("#output", RichLog).lines)
+            assert first_proc_gate is True
+            assert "still running" in log_text    # the refusal, not a 2nd spawn
+            app._cancel_running()                 # clean up the sleeper
+            await app.workers.wait_for_complete()
+    _run(scenario())
+
+
+def test_gate_reopens_after_a_command_finishes():
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = "echo one"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert app._busy is False             # gate reopened
+            inp.value = "echo two"                # and a second command runs fine
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            log_text = "\n".join(str(ln) for ln in app.query_one("#output", RichLog).lines)
+            assert "two" in log_text
+    _run(scenario())
+
+
+def test_escape_terminates_the_child_process():
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = "sleep 30"
+            await pilot.press("enter")
+            # Wait until the worker has actually spawned the process.
+            for _ in range(100):
+                if app._proc is not None:
+                    break
+                await pilot.pause(0.05)
+            proc = app._proc
+            assert proc is not None
+            await pilot.press("escape")           # the cancel path
+            await app.workers.wait_for_complete() # worker sees EOF + exit
+            await pilot.pause()
+            assert proc.poll() is not None        # the child is really dead
+            assert app._busy is False             # and the gate reopened
+    _run(scenario())
+
+
 # The recursion guard (a TUI inside the TUI)
 
 def test_run_tui_refuses_without_a_real_terminal(capsys):
