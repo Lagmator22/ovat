@@ -66,10 +66,11 @@ class ToolConfig(StrictModel):
     """One tool the agent is allowed to use."""
 
     name: str                       # must match a tool I know how to build
-    # "builtin" means one of my own tools (search_docs, transcribe). Later I
-    # can add "mcp_stdio" to launch an external MCP server as a subprocess.
+    # "builtin" = one of my own tools (search_docs, transcribe), in-process.
+    # "mcp_stdio" = launch `command` as an MCP server subprocess and import
+    # every tool it advertises — ANY MCP server plugs in this way.
     type: str = "builtin"
-    command: list[str] | None = None  # only used by mcp_stdio launch later
+    command: list[str] | None = None  # the mcp_stdio server launch command
 
 
 class AgentConfig(StrictModel):
