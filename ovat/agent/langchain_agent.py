@@ -15,28 +15,39 @@ works against it without any special glue.
 I import langchain lazily inside the build function. That keeps `import ovat`
 cheap and lets someone who only uses the native loop skip the heavy install.
 """
-from pydantic import BaseModel, Field
+from pydantic import Field, create_model
 
 from ovat.config.workflow import WorkflowConfig
 
-
-# LangChain needs a typed argument schema per tool so it can validate what the
-# model asks for. I keep one small model per built-in tool. The descriptions
-# match each tool's SCHEMA so the model reads the same wording on both paths.
-class _SearchDocsArgs(BaseModel):
-    query: str = Field(description="natural language search query")
-    top_k: int = Field(default=5, description="max chunks to return")
+# JSON-schema type names -> Python types, for deriving argument models.
+_JSON_TO_PY = {"string": str, "integer": int, "number": float,
+               "boolean": bool, "array": list, "object": dict}
 
 
-class _TranscribeArgs(BaseModel):
-    file_path: str = Field(description="path to a WAV audio file")
-    language: str = Field(default="en", description="language code, e.g. en")
+def _args_model_from_schema(name: str, schema: dict):
+    """Derive a pydantic argument model from a tool's OpenAI SCHEMA.
 
+    Design note: each tool already ships its full contract in the co-located
+    SCHEMA dict (that was the whole point of co-locating it). Deriving the
+    LangChain model from it means ONE source of truth — the old hand-kept
+    _ARGS_MODELS registry meant every new tool worked on the native path and
+    then crashed on react until someone remembered the second list.
 
-_ARGS_MODELS = {
-    "search_docs": _SearchDocsArgs,
-    "transcribe": _TranscribeArgs,
-}
+    create_model is pydantic's runtime class factory: it builds the same kind
+    of class a `class ...Args(BaseModel)` block would, from data instead of
+    source code.
+    """
+    params = schema["function"].get("parameters", {})
+    required = set(params.get("required", []))
+    fields = {}
+    for pname, spec in params.get("properties", {}).items():
+        py_type = _JSON_TO_PY.get(spec.get("type"), str)
+        # Required fields use `...` (pydantic's "no default, must be given");
+        # optional ones take the schema's default (None if it names none).
+        default = ... if pname in required else spec.get("default", None)
+        fields[pname] = (py_type,
+                         Field(default, description=spec.get("description", "")))
+    return create_model(f"{name}_Args", **fields)
 
 
 def _wrap_tools(tools: dict) -> list:
@@ -50,16 +61,11 @@ def _wrap_tools(tools: dict) -> list:
 
     wrapped = []
     for name, spec in tools.items():
-        args_model = _ARGS_MODELS.get(name)
-        if args_model is None:
-            raise ValueError(
-                f"No LangChain argument schema registered for tool '{name}'."
-            )
         wrapped.append(StructuredTool.from_function(
             func=spec["function"],
             name=name,
             description=spec["schema"]["function"]["description"],
-            args_schema=args_model,
+            args_schema=_args_model_from_schema(name, spec["schema"]),
         ))
     return wrapped
 
