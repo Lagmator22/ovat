@@ -35,12 +35,14 @@ class SlashTemplate:
 # The slash menu. Each non-action entry inserts a real `ovat ...` command the
 # user can finish and run. /clear and /exit are handled by the TUI itself.
 TEMPLATES = [
+    SlashTemplate("/chat", None, "chat with your indexed docs (local model)"),
     SlashTemplate("/doctor", "ovat doctor ", "check env + an optional config"),
     SlashTemplate("/run", "ovat run  --input \"\"", "run the agent on a config",
                   cursor=len("ovat run ")),
     SlashTemplate("/index", "ovat index  ", "index a docs folder for search_docs",
                   cursor=len("ovat index ")),
     SlashTemplate("/init", "ovat init ", "write a starter workflow.yml"),
+    SlashTemplate("/validate", "ovat doctor ", "validate a workflow file (via doctor)"),
     SlashTemplate("/serve", "ovat serve ", "start OVMS for a config (AI PC)"),
     SlashTemplate("/models", "ovat models list", "list models OVMS can serve (AI PC)"),
     SlashTemplate("/help", "ovat --help", "show every OVAT subcommand"),

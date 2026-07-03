@@ -168,6 +168,12 @@ class OvatTUI(App):
         palette.display = False
 
     def on_key(self, event) -> None:
+        # This handler belongs to the LAUNCHER. When another screen is pushed
+        # (the chat screen), its widgets are not in the active screen and the
+        # queries below would raise NoMatches on every keypress — breaking the
+        # pushed screen's own key handling. Stand down; the screen owns keys.
+        if len(self.screen_stack) > 1:
+            return
         inp = self.query_one("#prompt", Input)
         palette = self.query_one("#palette", OptionList)
 
@@ -243,7 +249,7 @@ class OvatTUI(App):
                          f"type a normal command.", style=ui.YELLOW))
                 return
             if template.insert is None:
-                self._do_action(head)
+                self._do_action(head, rest.strip())
                 return
             line = (template.insert + rest).strip() if rest else template.insert.strip()
 
@@ -273,11 +279,40 @@ class OvatTUI(App):
             log.write(Text(f"cd: no such directory: {target}", style=ui.RED))
         return True
 
-    def _do_action(self, name: str) -> None:
+    def _do_action(self, name: str, args: str = "") -> None:
         if name == "/clear":
             self.query_one("#output", RichLog).clear()
         elif name == "/exit":
             self.exit()
+        elif name == "/chat":
+            self._open_chat(args)
+
+    def _open_chat(self, args: str) -> None:
+        """Push the native chat screen: `/chat [config] [model-path]`.
+
+        Both arguments are remembered in .ovat/chat_prefs.json after the first
+        successful load, so from then on a bare `/chat` just works. Relative
+        paths resolve against the TUI's cd-tracked working directory.
+        """
+        from ovat.cli.chat_screen import ChatScreen, load_prefs
+
+        prefs = load_prefs(self._cwd)
+        parts = args.split()
+        config = parts[0] if parts else prefs.get("config", "workflow.yml")
+        model = parts[1] if len(parts) > 1 else prefs.get("model_path")
+        if not model:
+            self.query_one("#output", RichLog).write(Text(
+                "usage: /chat [config] [model-path] — give a local OpenVINO "
+                "model path once; I will remember it in .ovat/chat_prefs.json.",
+                style=ui.YELLOW))
+            return
+
+        def _resolve(p: str) -> str:
+            return p if os.path.isabs(p) else os.path.normpath(
+                os.path.join(self._cwd, p))
+
+        self.push_screen(ChatScreen(_resolve(config), _resolve(model),
+                                    cwd=self._cwd))
 
     def _start_command(self, cmd: str) -> None:
         # Gate on _busy, which only the main thread flips, BEFORE scheduling

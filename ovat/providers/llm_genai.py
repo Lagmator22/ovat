@@ -41,8 +41,9 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
             text = self.pipe.generate(prompt, max_new_tokens=self.max_new_tokens)
         else:
             def _streamer(token: str):
-                on_token(token)
-                return False          # False = do not stop generation
+                # on_token may return True to STOP generation early (that is
+                # openvino_genai's streamer contract); None/False continues.
+                return bool(on_token(token))
             text = self.pipe.generate(prompt, max_new_tokens=self.max_new_tokens,
                                       streamer=_streamer)
         return {

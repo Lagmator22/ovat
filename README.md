@@ -109,10 +109,11 @@ ovat run workflow.yml --input "hi" --dry-run
 
 ## Interactive launcher (TUI)
 
-Once installed, just run `ovat` (no arguments, from any directory) to open a
-full-screen launcher in your terminal:
+The TUI is an **optional** front-end. Install it with the extra, then run
+`ovat` with no arguments:
 
 ```bash
+pip install -e ".[tui]"      # or ".[tui,langchain]" for everything
 ovat
 ```
 
@@ -121,15 +122,28 @@ smears into your scrollback. Type `/` to see the commands, Tab to complete:
 
 ```
 OpenVINO Agentic Toolkit
+  /chat [config] [model]    chat with your indexed docs (native, streaming)
   /doctor [config]          check Python, deps, devices, OVMS, a config
   /init [path]              write a starter workflow.yml you can edit
-  /validate <config>        load and validate a workflow file
+  /validate <config>        load and validate a workflow file (via doctor)
   /index <folder> <config>  index a folder of docs for search_docs
-  /help  /models  /clear  /exit
+  /run  /serve  /help  /models  /clear  /exit
 ```
 
-Every command runs the real toolkit, the same code the subcommands use. It is a
-discoverability layer, so a new user never has to memorise the CLI.
+Anything else you type runs as a real shell command in the venv (`pytest`,
+`git status`, `ls`), with streamed output; Esc cancels a running command.
+
+`/chat` is the flagship: a native chat screen that loads the model **once**
+and keeps it warm, streams the answer token by token, remembers the
+conversation across turns, and autosaves it under `.ovat/sessions/` (`/save
+<name>` and `/load <name>` for named conversations). Your config and model
+path are remembered in `.ovat/chat_prefs.json`, so after the first time a
+bare `/chat` just works.
+
+**Isolation contract:** the plain CLI never needs the TUI. `pip install ovat`
+without the extra installs no TUI dependencies at all, every subcommand works
+identically, and a bare `ovat` prints a pointer instead of a launcher. The
+TUI can be adopted — or removed — without touching the toolkit.
 
 ---
 
