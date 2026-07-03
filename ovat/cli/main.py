@@ -367,31 +367,64 @@ def doctor(
     not block anything, red is something to fix. Pass a workflow to also validate
     it and see whether its model and OVMS look ready.
     """
+    import platform
+    import sys
+
+    from rich import box
     from rich.table import Table
+    from rich.text import Text
 
     from ovat.cli import diagnostics
-    from ovat.cli.ui import banner, console, status_text
+    from ovat.cli.ui import console, status_text, wordmark
 
-    banner("environment & workflow diagnostics")
+    # The big sign — like the TUI launcher, but this one says what it is.
+    console.print(wordmark("DOCTOR"))
+    console.print("[ovat.brand]⚕ OVAT doctor[/ovat.brand]"
+                  "[ovat.dim]  —  environment & workflow diagnostics[/ovat.dim]")
+    os_name = {"darwin": "macOS", "win32": "Windows"}.get(
+        sys.platform, platform.system())
+    console.print(f"[ovat.dim]{os_name} {platform.machine()}  ·  "
+                  f"Python {sys.version.split()[0]}"
+                  + (f"  ·  {config}" if config else "") + "[/ovat.dim]\n")
+
     checks = diagnostics.run_checks(config)
 
-    table = Table(header_style="ovat.header", border_style="ovat.dim",
-                  expand=False)
-    table.add_column("Check", style="ovat.cyan", no_wrap=True)
+    # Row names take the status colour so the eye lands on trouble first.
+    _name_style = {"ok": "ovat.cyan", "warn": "ovat.warn", "fail": "ovat.fail"}
+    table = Table(header_style="ovat.header", border_style="ovat.blue",
+                  box=box.ROUNDED, expand=False, pad_edge=True)
+    table.add_column("Check", no_wrap=True)
     table.add_column("Status", no_wrap=True)
-    table.add_column("Detail", style="ovat.dim")
-    failures = 0
+    table.add_column("Detail", style="ovat.dim", max_width=76)
+    counts = {"ok": 0, "warn": 0, "fail": 0}
     for c in checks:
-        if c.status == diagnostics.FAIL:
-            failures += 1
-        table.add_row(c.name, status_text(c.status), c.detail)
+        counts[c.status] = counts.get(c.status, 0) + 1
+        table.add_row(Text(c.name, style=_name_style.get(c.status, "ovat.cyan")),
+                      status_text(c.status), c.detail)
     console.print(table)
 
-    if failures:
-        console.print(f"[ovat.fail]{failures} check(s) failed.[/ovat.fail] "
-                      f"Fix the red rows above.")
+    summary = Text()
+    summary.append(f"✓ {counts['ok']} ok", style="ovat.ok")
+    if counts["warn"]:
+        summary.append("  ·  ", style="ovat.dim")
+        summary.append(f"! {counts['warn']} warn", style="ovat.warn")
+    if counts["fail"]:
+        summary.append("  ·  ", style="ovat.dim")
+        summary.append(f"✗ {counts['fail']} fail", style="ovat.fail")
+    console.print(summary)
+
+    if counts["fail"]:
+        console.print("[ovat.fail]Fix the red rows above — those block "
+                      "features.[/ovat.fail]")
         raise typer.Exit(code=1)
-    console.print("[ovat.ok]Everything essential looks good.[/ovat.ok]")
+    if counts["warn"]:
+        console.print("[ovat.dim]Yellow rows are heads-ups, not blockers — "
+                      "each says what to do about it.[/ovat.dim]")
+    else:
+        console.print("[ovat.ok]All clear.[/ovat.ok]")
+    if not config:
+        console.print("[ovat.dim]Tip: 'ovat doctor workflow.yml' also "
+                      "validates a config.[/ovat.dim]")
 
 
 if __name__ == "__main__":

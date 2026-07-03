@@ -35,8 +35,47 @@ def test_core_deps_check_passes_when_installed():
 
 def test_run_checks_includes_the_base_checks():
     names = {c.name for c in run_checks()}
-    assert {"Python", "Core dependencies", "OpenVINO devices",
-            "Device routing", "OVMS binary"} <= names
+    assert {"Python", "Core dependencies", "Local GenAI", "OpenVINO devices",
+            "Device routing", "OVMS serving"} <= names
+
+
+def test_local_genai_check_confirms_the_no_server_path():
+    # This row is the "how do I use OVAT on a Mac" answer, in the tool itself.
+    from ovat.cli.diagnostics import check_local_genai
+    check = check_local_genai()
+    assert check.status == OK                     # installed for the tests
+    assert "no server needed" in check.detail
+
+
+def test_ovms_serving_is_platform_aware(monkeypatch):
+    from ovat.cli import diagnostics
+
+    # On macOS: never "not on PATH" — the honest answer is "does not run here".
+    monkeypatch.setattr(diagnostics.sys, "platform", "darwin")
+    check = diagnostics.check_ovms_serving()
+    assert check.status == WARN
+    assert "does not run on macOS" in check.detail
+
+    # Elsewhere: the locator's verdict, with the fix spelled out.
+    monkeypatch.setattr(diagnostics.sys, "platform", "linux")
+    monkeypatch.delenv("OVAT_OVMS", raising=False)
+    import ovat.core.ovms_locator as locator
+    monkeypatch.setattr(locator.shutil, "which", lambda name: None)
+    monkeypatch.setattr(locator, "_KNOWN_DIRS", [])
+    check = diagnostics.check_ovms_serving()
+    assert check.status == WARN
+    assert "ovms_binary" in check.detail          # names the exact fix
+
+
+def test_ovms_serving_reports_a_config_supplied_binary(monkeypatch, tmp_path):
+    from ovat.cli import diagnostics
+    monkeypatch.setattr(diagnostics.sys, "platform", "linux")
+    import ovat.core.ovms_locator as locator
+    exe = tmp_path / locator._EXE
+    exe.write_text("#!/bin/sh\n")
+    check = diagnostics.check_ovms_serving(str(tmp_path))
+    assert check.status == OK
+    assert "config" in check.detail and str(exe) in check.detail
 
 
 def test_device_routing_check_shows_the_layer9_table():
