@@ -18,6 +18,8 @@ dependencies = [
   # Declared here so we never depend on openvino/typer pulling them in for us.
   "numpy",
   "rich",
+  # Peak-RSS measurement for `ovat run --trace` (the <8 GB memory criterion).
+  "psutil",
 ]
 
 # The react agent (agent.type: react) needs LangChain. It is an extra so the

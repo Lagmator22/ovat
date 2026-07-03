@@ -33,9 +33,16 @@ class OVMSLLMProvider(LLMProvider):
             tool_choice="auto" if tools else None,
         )
         choice = response.choices[0]
+        # OVMS reports token usage on every response; keep it instead of
+        # dropping it — the agent loop turns it into the run trace (Layer 7).
+        usage = getattr(response, "usage", None)
         return {
             "finish_reason": choice.finish_reason,    # "stop" or "tool_calls"
             "content": choice.message.content,
             "tool_calls": choice.message.tool_calls,  # None or a list
+            "usage": {
+                "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                "completion_tokens": getattr(usage, "completion_tokens", None),
+            } if usage is not None else None,
             "raw": response,
         }
