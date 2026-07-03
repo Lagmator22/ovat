@@ -16,8 +16,8 @@ from rich.text import Text
 from rich.theme import Theme
 
 # The raw brand palette, hex by ROLE — the single source of truth. The rich
-# theme below derives from it, and the Textual TUI (separate branch) reads
-# these same entries for its widgets, so terminal and TUI can never drift.
+# theme below derives from it, and the Textual TUI reads the aliases further
+# down for its widgets, so terminal and TUI can never drift.
 PALETTE = {
     "blue":   "#0068B5",   # Intel energy blue, the primary brand colour
     "cyan":   "#00C7FD",   # bright accent for highlights
@@ -27,6 +27,17 @@ PALETTE = {
     "fail":   "#FF5C5C",   # failed, needs attention
     "dim":    "#7A8CA0",   # secondary text
 }
+
+# Plain-hex aliases for the Textual TUI. Its widgets and CSS cannot read rich
+# theme names, only raw colours — but these are DERIVED, never redefined, so
+# there is still exactly one palette.
+BLUE = PALETTE["blue"]
+CYAN = PALETTE["cyan"]
+PURPLE = PALETTE["purple"]
+GREEN = PALETTE["ok"]
+YELLOW = PALETTE["warn"]
+RED = PALETTE["fail"]
+DIM = PALETTE["dim"]
 
 # Named styles derived from the palette. Two kinds of names on purpose:
 #   ovat.*  — role names new code should use ("ovat.ok", not a colour).

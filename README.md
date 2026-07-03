@@ -74,6 +74,8 @@ The agent never changes; only the YAML does.
 ```bash
 # 1. install (editable, from the repo root). Add the react engine with [langchain]:
 pip install -e ".[langchain]"
+# or, for a global `ovat` you can run from anywhere (no venv to activate):
+#   pipx install ".[langchain]"
 
 # 2. check your machine is ready (Python, deps, devices, OVMS, a config)
 ovat doctor workflow.yml
@@ -102,6 +104,46 @@ No server handy? Prove the pipeline assembles without one:
 ovat run workflow.yml --input "hi" --dry-run
 # Built agent  model=Qwen3-8B-int4-ov  tools=['search_docs', 'transcribe']  max_iterations=10
 ```
+
+---
+
+## Interactive launcher (TUI)
+
+The TUI is an **optional** front-end. Install it with the extra, then run
+`ovat` with no arguments:
+
+```bash
+pip install -e ".[tui]"      # or ".[tui,langchain]" for everything
+ovat
+```
+
+It opens in the terminal's alternate screen, like a separate window, so it never
+smears into your scrollback. Type `/` to see the commands, Tab to complete:
+
+```
+OpenVINO Agentic Toolkit
+  /chat [config] [model]    chat with your indexed docs (native, streaming)
+  /doctor [config]          check Python, deps, devices, OVMS, a config
+  /init [path]              write a starter workflow.yml you can edit
+  /validate <config>        load and validate a workflow file (via doctor)
+  /index <folder> <config>  index a folder of docs for search_docs
+  /run  /serve  /help  /models  /clear  /exit
+```
+
+Anything else you type runs as a real shell command in the venv (`pytest`,
+`git status`, `ls`), with streamed output; Esc cancels a running command.
+
+`/chat` is the flagship: a native chat screen that loads the model **once**
+and keeps it warm, streams the answer token by token, remembers the
+conversation across turns, and autosaves it under `.ovat/sessions/` (`/save
+<name>` and `/load <name>` for named conversations). Your config and model
+path are remembered in `.ovat/chat_prefs.json`, so after the first time a
+bare `/chat` just works.
+
+**Isolation contract:** the plain CLI never needs the TUI. `pip install ovat`
+without the extra installs no TUI dependencies at all, every subcommand works
+identically, and a bare `ovat` prints a pointer instead of a launcher. The
+TUI can be adopted — or removed — without touching the toolkit.
 
 ---
 

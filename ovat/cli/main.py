@@ -25,10 +25,44 @@ rprint = console.print
 app = typer.Typer(
     help="OVAT: run an OpenVINO agent from one YAML + one command.",
     add_completion=False,
+    invoke_without_command=True,   # so bare `ovat` can open the TUI
 )
 
-# A starter workflow I write out for `ovat init`, so a new user has something
-# that already works to edit instead of a blank file.
+
+@app.callback()
+def _entry(ctx: typer.Context):
+    """Open the TUI when `ovat` is run with no subcommand.
+
+    typer runs this before any command. If the user typed a subcommand I get out
+    of the way; if they typed just `ovat`, I launch the full-screen launcher.
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+    # Recursion guard: the TUI stamps OVAT_TUI=1 into every child's env (the
+    # same trick tmux uses with $TMUX). Typing `ovat` INSIDE the TUI used to
+    # start a second TUI in a piped subprocess — escape codes as garbage, the
+    # command slot wedged. Now it gets a hint instead, before Textual even
+    # gets imported.
+    import os
+    if os.environ.get("OVAT_TUI"):
+        rprint("[yellow]You are already inside the OVAT TUI.[/yellow] "
+               "Type a subcommand instead (e.g. [bold]ovat doctor[/bold]), "
+               "or /exit to leave.")
+        raise typer.Exit()
+    try:
+        from ovat.cli.tui import run_tui
+    except ImportError:
+        # Textual is optional. If it is missing, fall back to the help text
+        # instead of crashing, and point the user at the install.
+        rprint("[yellow]The TUI needs Textual.[/yellow] Install it with "
+               "[bold]pip install 'ovat\\[tui]'[/bold], or use a subcommand "
+               "like [bold]ovat doctor[/bold]. See [bold]ovat --help[/bold].")
+        raise typer.Exit()
+    run_tui()
+
+
+# The starter workflow written by `ovat init` (and by the TUI's /init shortcut,
+# which runs `ovat init`). Kept here next to the command that writes it.
 _STARTER_YAML = """\
 # OVAT workflow. Edit this, then run:  ovat run workflow.yml --input "..."
 model:
@@ -53,14 +87,13 @@ agent:
   max_iterations: 10
   system_prompt: "You are a helpful assistant that uses tools when needed."
 
-# RAG for the search_docs tool. Run `ovat index <folder> workflow.yml` first to
-# fill the index, then ask questions with `ovat run`. Swap a provider string to
-# change a backend; no code changes, only this YAML.
+# RAG for the search_docs tool. Run `ovat index <folder> workflow.yml` first,
+# then ask questions. Swap a provider string to change a backend.
 rag:
   embeddings:
-    provider: genai                 # genai (local) or ovms (server /v3)
-    model: models/bge-small-en-v1.5 # OpenVINO embedding model folder on disk
-    device: CPU                     # CPU or NPU on the AI PC
+    provider: genai
+    model: models/bge-small-en-v1.5
+    device: CPU
     dim: 384
   retriever:
     provider: sqlite-vec
@@ -479,6 +512,13 @@ def doctor(
     if not config:
         console.print("[ovat.dim]Tip: 'ovat doctor workflow.yml' also "
                       "validates a config.[/ovat.dim]")
+
+
+@app.command()
+def tui():
+    """Open the full-screen OVAT launcher (same as running `ovat` with no args)."""
+    from ovat.cli.tui import run_tui
+    run_tui()
 
 
 if __name__ == "__main__":

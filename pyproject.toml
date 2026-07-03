@@ -22,11 +22,15 @@ dependencies = [
   "psutil",
 ]
 
-# The react agent (agent.type: react) needs LangChain. It is an extra so the
-# base install stays light; `pip install 'ovat[langchain]'` turns it on.
+# Extras keep the base install light AND encode the isolation contract:
+# - langchain: the react engine (agent.type: react).
+# - tui: the optional full-screen launcher. The plain CLI must work without
+#   it — that is what makes the TUI removable without breaking anything.
 [project.optional-dependencies]
 langchain = ["langchain>=1", "langchain-openai>=1", "langgraph>=1"]
-dev = ["pytest", "pytest-cov", "langchain>=1", "langchain-openai>=1", "langgraph>=1"]
+tui = ["textual", "pyfiglet"]
+dev = ["pytest", "pytest-cov", "langchain>=1", "langchain-openai>=1",
+       "langgraph>=1", "textual", "pyfiglet"]
 
 [tool.pytest.ini_options]
 markers = [

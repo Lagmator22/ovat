@@ -18,6 +18,9 @@ models/
 *.sqlite
 *.sqlite3
 
+# Per-project TUI state: chat preferences and saved conversations.
+.ovat/
+
 # OS / editor cruft
 .DS_Store
 .vscode/
