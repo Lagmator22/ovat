@@ -109,6 +109,44 @@ def test_loop_stops_at_max_iterations():
     assert "max of 3 steps" in agent.run("loop forever")
 
 
+# The run trace (Layer 7 observability)
+
+def test_run_trace_records_turns_tokens_and_tool_calls():
+    tool_reply = reply("tool_calls", tool_calls=[
+        make_tool_call("tc_1", "get_weather", {"city": "Tokyo"})])
+    tool_reply["usage"] = {"prompt_tokens": 100, "completion_tokens": 20}
+    final_reply = reply("stop", content="sunny")
+    final_reply["usage"] = {"prompt_tokens": 150, "completion_tokens": 10}
+
+    agent = AgentLoop(FakeLLMProvider([tool_reply, final_reply]),
+                      tools=_weather_tool())
+    agent.run("weather?")
+
+    trace = agent.last_trace
+    assert trace["engine"] == "native"
+    assert len(trace["turns"]) == 2
+    assert trace["turns"][0]["finish_reason"] == "tool_calls"
+    assert trace["turns"][0]["prompt_tokens"] == 100
+    (tool_call,) = trace["turns"][0]["tool_calls"]
+    assert tool_call["name"] == "get_weather"
+    assert tool_call["arguments"] == {"city": "Tokyo"}
+    assert tool_call["duration_s"] >= 0
+    assert tool_call["result_chars"] > 0
+    totals = trace["totals"]
+    assert totals == {"turns": 2, "latency_s": totals["latency_s"],
+                      "prompt_tokens": 250, "completion_tokens": 30,
+                      "tool_calls": 1}
+
+
+def test_run_trace_survives_replies_without_usage():
+    # conftest.reply() carries no usage key — exactly what a provider that
+    # doesn't report tokens looks like. The trace must not crash on it.
+    agent = AgentLoop(FakeLLMProvider([reply("stop", content="hi")]), tools={})
+    agent.run("hello")
+    assert agent.last_trace["totals"]["prompt_tokens"] == 0
+    assert agent.last_trace["turns"][0]["prompt_tokens"] is None
+
+
 # The three "model misbehaves" edge cases
 
 

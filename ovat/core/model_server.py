@@ -31,7 +31,8 @@ class ModelServer:
                  model_repository_path: str = "models", device: str = "CPU",
                  port: int = 8000, tool_parser: str = "hermes3",
                  reasoning_parser: str | None = None,
-                 task: str = "text_generation"):
+                 task: str = "text_generation",
+                 enable_prefix_caching: bool = True):
         self.model_name = model_name
         # Note to myself: source_model is the Hugging Face id OVMS downloads if
         # the model is not already on disk, for example OpenVINO/Qwen3-8B-int4-ov.
@@ -45,6 +46,7 @@ class ModelServer:
         self.reasoning_parser = reasoning_parser
         # task text_generation is what turns on the chat endpoints I call.
         self.task = task
+        self.enable_prefix_caching = enable_prefix_caching
         self.process: subprocess.Popen | None = None
 
     @property
@@ -70,8 +72,11 @@ class ModelServer:
             "--task", self.task,
             "--target_device", self.device,
             "--tool_parser", self.tool_parser,
-            "--enable_prefix_caching", "true",
         ]
+        # A knob, not a constant: some OVMS builds/devices reject the flag,
+        # and turning it off should be a YAML edit, not a code edit.
+        if self.enable_prefix_caching:
+            cmd += ["--enable_prefix_caching", "true"]
         if self.reasoning_parser:
             cmd += ["--reasoning_parser", self.reasoning_parser]
         # I only add source_model when I have one. On the first run OVMS uses it

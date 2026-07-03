@@ -16,6 +16,7 @@ Exit when finish_reason is "stop". A max_iterations guard makes sure I can
 never spin forever.
 """
 import json
+import time
 
 from ovat.agent.session import Session
 from ovat.providers.base import LLMProvider
@@ -74,6 +75,10 @@ class AgentLoop:
         self.max_iterations = max_iterations
         # Each agent owns one conversation memory.
         self.session = Session(system_prompt=system_prompt)
+        # Layer 7 (observability): after every run() this holds what happened
+        # — per-turn latency, token usage (OVMS reports it on each response),
+        # and every tool call with its duration. `ovat run --trace` dumps it.
+        self.last_trace: dict = {}
 
     def _menu(self) -> list[dict] | None:
         """The list of tool schemas I show the model. None if I have no tools."""
@@ -103,16 +108,44 @@ class AgentLoop:
         """I run the full loop for one user message and return the final text."""
         self.session.add_user(user_message)
 
+        # The run trace (Layer 7). Built as the loop works; every exit path
+        # goes through _finish so the totals are always filled in.
+        run_started = time.monotonic()
+        turns: list[dict] = []
+        self.last_trace = {"engine": "native", "turns": turns, "totals": {}}
+
+        def _finish(answer: str) -> str:
+            self.last_trace["totals"] = {
+                "turns": len(turns),
+                "latency_s": round(time.monotonic() - run_started, 3),
+                "prompt_tokens": sum(t["prompt_tokens"] or 0 for t in turns),
+                "completion_tokens": sum(t["completion_tokens"] or 0
+                                         for t in turns),
+                "tool_calls": sum(len(t["tool_calls"]) for t in turns),
+            }
+            return answer
+
         for _ in range(self.max_iterations):
-            # BEAT 1, ASK.
+            # BEAT 1, ASK — timed, and the token usage OVMS reports per
+            # response is kept instead of dropped.
+            ask_started = time.monotonic()
             reply = self.llm.chat(self.session.messages, tools=self._menu())
+            usage = reply.get("usage") or {}
+            turn = {
+                "latency_s": round(time.monotonic() - ask_started, 3),
+                "finish_reason": reply["finish_reason"],
+                "prompt_tokens": usage.get("prompt_tokens"),
+                "completion_tokens": usage.get("completion_tokens"),
+                "tool_calls": [],
+            }
+            turns.append(turn)
 
             # BEAT 2, READ. If the model did not ask for tools, it answered in
             # words, so I record that answer and I am done. `or ""` because a
             # server can send content=None; the CLI would print literal "None".
             if reply["finish_reason"] != "tool_calls":
                 self.session.add_assistant(content=reply["content"])
-                return reply["content"] or ""
+                return _finish(reply["content"] or "")
 
             # The model wants one or more tools. Guard the malformed case
             # first: finish_reason says tool_calls but the list is empty.
@@ -121,9 +154,9 @@ class AgentLoop:
             tool_calls = reply["tool_calls"] or []
             if not tool_calls:
                 self.session.add_assistant(content=reply["content"])
-                return reply["content"] or (
+                return _finish(reply["content"] or (
                     "Error: the model reported tool_calls but sent none."
-                )
+                ))
 
             # I record its request, serialized into plain dicts, so the
             # history stays valid.
@@ -134,10 +167,11 @@ class AgentLoop:
 
             # BEAT 3 and 4, ACT and REPORT. A single reply can ask for several
             # tools at once, so I run each one and append each result before I
-            # loop back and ask again.
+            # loop back and ask again. Each call is timed for the trace.
             for call in tool_calls:
                 name = call.function.name
                 args = _parse_args(call.function.arguments)
+                tool_started = time.monotonic()
                 if args is None:
                     # Broken JSON from the model: report it AS the tool result
                     # so the model reads its own mistake and can retry.
@@ -145,8 +179,14 @@ class AgentLoop:
                               f"valid JSON: {call.function.arguments!r}")
                 else:
                     result = self._execute(name, args)
+                turn["tool_calls"].append({
+                    "name": name,
+                    "arguments": args,
+                    "duration_s": round(time.monotonic() - tool_started, 3),
+                    "result_chars": len(result),
+                })
                 self.session.add_tool_result(call.id, result)
 
         # If I fall out of the loop I hit my safety cap without a final answer.
-        return (f"Error: I reached my max of {self.max_iterations} steps "
-                f"without a final answer.")
+        return _finish(f"Error: I reached my max of {self.max_iterations} "
+                       f"steps without a final answer.")

@@ -106,6 +106,9 @@ def run(
     input: str = typer.Option(..., "--input", "-i", help="Your question for the agent."),
     dry_run: bool = typer.Option(False, "--dry-run",
                                  help="Build the agent and show it, but do not call the model."),
+    trace: str = typer.Option(None, "--trace",
+                              help="Write a JSON run trace (tokens, latency, "
+                                   "tool calls, peak memory) to this file."),
 ):
     """Run the agent described by CONFIG against your input."""
     # Step 1: YAML -> validated config. A bad file fails loudly right here.
@@ -133,6 +136,36 @@ def run(
         rprint(f"[red]Error talking to OVMS at {cfg.model.ovms_url}[/red]: {exc}")
         raise typer.Exit(code=1)
     rprint(answer)
+
+    if trace:
+        _write_trace(trace, cfg, agent)
+
+
+def _write_trace(path: str, cfg, agent) -> None:
+    """Dump the run trace (Layer 7) as JSON: what the run cost, measured.
+
+    The native loop fills agent.last_trace as it works; peak RSS comes from
+    psutil so the proposal's memory-budget criterion (<8 GB) is a number in a
+    file, not a claim. The react engine does not expose per-turn data yet, so
+    its trace says so honestly instead of writing empty numbers.
+    """
+    import json
+
+    trace_data = getattr(agent, "last_trace", None) or {
+        "engine": "react",
+        "note": "per-turn tracing is only wired for the native loop so far",
+    }
+    trace_data = dict(trace_data)                  # never mutate the agent's copy
+    trace_data["model"] = cfg.model.name
+    try:
+        import psutil
+        rss = psutil.Process().memory_info().rss
+        trace_data["peak_rss_mb"] = round(rss / (1024 * 1024), 1)
+    except ImportError:
+        trace_data["peak_rss_mb"] = None
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(trace_data, f, indent=2)
+    rprint(f"[dim]trace written to[/dim] {path}")
 
 
 @app.command()
@@ -235,14 +268,24 @@ def index(
 def init(
     path: str = typer.Argument("workflow.yml", help="Where to write the starter YAML."),
 ):
-    """Write a starter workflow.yml you can edit."""
+    """Write a starter workflow.yml tuned to THIS machine's hardware."""
     import os
     if os.path.exists(path):
         rprint(f"[red]Refusing to overwrite existing file:[/red] {path}")
         raise typer.Exit(code=1)
+    # DeviceManager picks the LLM device for the hardware we are on: GPU on
+    # an AI PC, CPU on a laptop/Mac. The starter file should run where it
+    # was created, not assume a GPU that may not exist.
+    try:
+        from ovat.core.device_manager import DeviceManager
+        llm_device = DeviceManager().get_llm_device()
+    except Exception:
+        llm_device = "CPU"                       # the universal fallback
+    starter = _STARTER_YAML.replace("device: GPU", f"device: {llm_device}", 1)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(_STARTER_YAML)
-    rprint(f"[green]Wrote starter workflow to[/green] {path}")
+        f.write(starter)
+    rprint(f"[green]Wrote starter workflow to[/green] {path}  "
+           f"[dim](model device: {llm_device}, detected)[/dim]")
 
 
 @app.command()
@@ -301,6 +344,7 @@ def serve(
         device=cfg.model.device,
         tool_parser=cfg.model.tool_parser,
         reasoning_parser=cfg.model.reasoning_parser,
+        enable_prefix_caching=cfg.model.enable_prefix_caching,
     )
     rprint(f"[green]Starting OVMS[/green] for {cfg.model.name} on {cfg.model.device} ...")
     try:

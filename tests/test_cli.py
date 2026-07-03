@@ -24,6 +24,16 @@ def test_init_writes_a_loadable_config(tmp_path):
     assert cfg.model.name == "Qwen3-8B-int4-ov"
 
 
+def test_init_picks_the_device_this_machine_actually_has(tmp_path):
+    # DeviceManager decides the starter's LLM device: CPU here on the Mac,
+    # GPU on an AI PC. The starter file must run where it was created.
+    from ovat.core.device_manager import DeviceManager
+    expected = DeviceManager().get_llm_device()
+    target = tmp_path / "workflow.yml"
+    runner.invoke(app, ["init", str(target)])
+    assert load_workflow(str(target)).model.device == expected
+
+
 def test_init_refuses_to_overwrite(tmp_path):
     target = tmp_path / "workflow.yml"
     target.write_text("model:\n  name: x\n")
@@ -43,3 +53,36 @@ def test_run_dry_run_builds_agent_without_a_server():
 def test_run_with_missing_config_fails():
     result = runner.invoke(app, ["run", "/no/such/file.yml", "-i", "hi"])
     assert result.exit_code != 0
+
+
+def test_run_trace_writes_the_json_report(tmp_path, monkeypatch):
+    # No OVMS here: swap the whole agent for a stub whose run() succeeds and
+    # whose last_trace looks like a real native-loop trace. This tests the
+    # CLI's half of the contract: gather, enrich (model, peak RSS), write.
+    import json
+
+    from ovat.cli import main as cli_main
+
+    class StubAgent:
+        tools = {"search_docs": {}}
+        max_iterations = 5
+        last_trace = {"engine": "native",
+                      "turns": [{"latency_s": 0.1, "finish_reason": "stop",
+                                 "prompt_tokens": 10, "completion_tokens": 5,
+                                 "tool_calls": []}],
+                      "totals": {"turns": 1, "latency_s": 0.1,
+                                 "prompt_tokens": 10, "completion_tokens": 5,
+                                 "tool_calls": 0}}
+
+        def run(self, text):
+            return "stubbed answer"
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, skip_rag=False: StubAgent())
+    trace_path = tmp_path / "trace.json"
+    result = runner.invoke(app, ["run", "examples/workflow.yml", "-i", "hi",
+                                 "--trace", str(trace_path)])
+    assert result.exit_code == 0
+    data = json.loads(trace_path.read_text())
+    assert data["model"] == "Qwen3-8B-int4-ov"      # enriched from the config
+    assert data["totals"]["prompt_tokens"] == 10    # the loop's numbers
+    assert data["peak_rss_mb"] > 0                  # psutil measured something

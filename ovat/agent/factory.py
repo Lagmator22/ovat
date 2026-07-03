@@ -16,16 +16,18 @@ from ovat.agent.loop import AgentLoop
 from ovat.config.workflow import WorkflowConfig
 from ovat.providers.base import EmbeddingsProvider, RetrieverProvider
 from ovat.providers.llm_ovms import OVMSLLMProvider
+from ovat.tools import describe_image as describe_image_tool
 from ovat.tools import search_docs as search_docs_tool
 from ovat.tools import transcribe as transcribe_tool
 
 
 # The schema (the menu the model reads) for each built-in tool. I keep the
 # function-building separate, below, because search_docs needs the retriever
-# bound in while transcribe does not.
+# bound in while the others do not.
 BUILTIN_TOOL_SCHEMAS = {
     "search_docs": search_docs_tool.SCHEMA,
     "transcribe": transcribe_tool.SCHEMA,
+    "describe_image": describe_image_tool.SCHEMA,
 }
 
 
@@ -112,34 +114,65 @@ def _make_transcribe():
     )
 
 
+def _make_mcp_caller(server, tool_name: str):
+    """Bind one remote MCP tool into a plain callable for the loop.
+
+    Default-arg binding on purpose: a lambda closing over loop variables would
+    capture the LAST tool of the server, the classic late-binding trap.
+    """
+    return lambda _server=server, _name=tool_name, **kwargs: (
+        _server.call_tool(_name, kwargs)
+    )
+
+
 def build_tools(config: WorkflowConfig,
                 retriever: RetrieverProvider | None = None) -> dict:
     """I turn the list of tool configs into the dict my loop expects.
 
-    Heads up: only built-in tools are supported right now. If the YAML names a
-    tool I do not have, I raise a clear error instead of silently giving the
-    agent an empty toolbox.
+    Two tool types:
+    - builtin: my own tools, called in-process (the fast path).
+    - mcp_stdio: launch `command` as an MCP server subprocess and import
+      EVERY tool it advertises. This is what makes workflow.yml an open
+      socket — any third-party MCP server plugs in with two YAML lines.
+    The loop consumes the same {schema, function} dict either way; it never
+    learns which side of the wire a tool lives on.
     """
     builders = {
         "search_docs": lambda: _make_search_docs(retriever),
         "transcribe": lambda: _make_transcribe(),
+        "describe_image": lambda: describe_image_tool.describe_image_impl,
     }
     tools = {}
     for tool_cfg in config.tools:
-        if tool_cfg.type != "builtin":
+        if tool_cfg.type == "builtin":
+            if tool_cfg.name not in BUILTIN_TOOL_SCHEMAS:
+                raise ValueError(
+                    f"Unknown builtin tool '{tool_cfg.name}'. "
+                    f"Available: {list(BUILTIN_TOOL_SCHEMAS)}"
+                )
+            tools[tool_cfg.name] = {
+                "schema": BUILTIN_TOOL_SCHEMAS[tool_cfg.name],
+                "function": builders[tool_cfg.name](),
+            }
+        elif tool_cfg.type == "mcp_stdio":
+            if not tool_cfg.command:
+                raise ValueError(
+                    f"Tool '{tool_cfg.name}' has type mcp_stdio but no "
+                    f"command to launch the server with."
+                )
+            from ovat.tools.mcp_client import (MCPStdioServer,
+                                               openai_schema_from_mcp_tool)
+            server = MCPStdioServer(tool_cfg.command)
+            for remote in server.tools:
+                tools[remote.name] = {
+                    "schema": openai_schema_from_mcp_tool(remote),
+                    "function": _make_mcp_caller(server, remote.name),
+                }
+        else:
             raise ValueError(
                 f"Unsupported tool type '{tool_cfg.type}' for '{tool_cfg.name}'. "
-                f"Only 'builtin' is supported right now."
+                f"Supported: builtin, mcp_stdio."
             )
-        if tool_cfg.name not in BUILTIN_TOOL_SCHEMAS:
-            raise ValueError(
-                f"Unknown builtin tool '{tool_cfg.name}'. "
-                f"Available: {list(BUILTIN_TOOL_SCHEMAS)}"
-            )
-        tools[tool_cfg.name] = {
-            "schema": BUILTIN_TOOL_SCHEMAS[tool_cfg.name],
-            "function": builders[tool_cfg.name](),
-        }
     return tools
 
 

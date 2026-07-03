@@ -72,6 +72,23 @@ def check_devices() -> Check:
     return Check("OpenVINO devices", OK, ", ".join(devices) or "none reported")
 
 
+def check_device_routing() -> Check:
+    """Where each model type WOULD run here (the Layer 9 routing table).
+
+    This is DeviceManager doing its job in front of the user: LLM prefers
+    GPU (tool calling, KV cache), embeddings prefer NPU (static shapes, low
+    power), whisper stays on CPU, and everything falls back to CPU.
+    """
+    try:
+        from ovat.core.device_manager import DeviceManager
+        summary = DeviceManager().summary()
+    except Exception as exc:
+        return Check("Device routing", WARN, f"could not compute routing: {exc}")
+    return Check("Device routing", OK,
+                 f"LLM→{summary['llm']}  embeddings→{summary['embeddings']}  "
+                 f"whisper→{summary['whisper']}")
+
+
 def check_ovms_binary() -> Check:
     path = shutil.which("ovms")
     if path:
@@ -155,6 +172,7 @@ def run_checks(config_path: str | None = None) -> list[Check]:
         check_core_deps(),
         check_langchain(),
         check_devices(),
+        check_device_routing(),
         check_ovms_binary(),
     ]
     if config_path:

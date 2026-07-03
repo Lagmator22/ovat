@@ -157,7 +157,8 @@ TUI can be adopted — or removed — without touching the toolkit.
 | | `tool_parser` | how tool calls are decoded (`hermes3` for Qwen3) |
 | | `source_model` | (for `ovat serve`) HF id to download/serve |
 | | `model_repository_path` | (for `ovat serve`) folder where models live |
-| `tools` | `name` / `type` | a built-in tool (`search_docs`, `transcribe`) |
+| `tools` | `name` / `type` | `builtin` (`search_docs`, `transcribe`) or `mcp_stdio` |
+| | `command` | (for `mcp_stdio`) how to launch the MCP server |
 | `agent` | `type` | `native` (built-in loop) or `react` (LangChain) |
 | | `max_iterations` | safety cap on tool-calling turns |
 | | `system_prompt` | the agent's persona |
@@ -219,7 +220,7 @@ AI PC; `ovat chat` is the local retrieval-augmented fallback.
 
 ---
 
-## Built-in tools
+## Tools: built-in and MCP
 
 - **search_docs**: semantic search over your local documents with source
   citations (vector retrieval via the `rag` config).
@@ -227,6 +228,20 @@ AI PC; `ovat chat` is the local retrieval-augmented fallback.
 
 Both are also standalone [MCP](https://modelcontextprotocol.io) servers, so any
 MCP-aware agent can call them, not just OVAT.
+
+And the door swings both ways: OVAT speaks MCP as a **client**. Declare a tool
+with `type: mcp_stdio` and OVAT launches the server, discovers every tool it
+advertises, and hands them to the agent exactly like built-ins:
+
+```yaml
+tools:
+  - name: search_docs          # our own tool, over the wire this time
+    type: mcp_stdio
+    command: ["python", "-m", "ovat.tools.search_docs"]
+  - name: anything_else        # ANY third-party MCP server plugs in the same way
+    type: mcp_stdio
+    command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/docs"]
+```
 
 ---
 
@@ -236,13 +251,14 @@ Honest about where the abstraction holds and where it does not yet:
 
 | Works today | Not yet |
 | --- | --- |
-| `ovat run/chat/init/index/serve/models/doctor` CLI | External `mcp_stdio` tools (built-in only for now) |
-| YAML config + validation | macOS *serving* (OVMS is Windows/Linux only) |
-| Native loop **and** LangChain (`react`) engines | Streaming responses |
-| Real RAG in `search_docs` (vectors + citations) | Re-ranking / hybrid search |
-| Local RAG chat (`ovat chat`, no OVMS) | Approximate vector backends (usearch/hnsw) |
-| `ovat doctor` environment diagnostics | Multi-turn chat memory across calls |
-| Built-in tools run in-process | |
+| `ovat run/chat/init/index/serve/models/doctor` CLI | macOS *serving* (OVMS is Windows/Linux only) |
+| YAML config + strict validation (typos are errors) | LlamaIndex / OpenAI Agents SDK engines |
+| Native loop **and** LangChain (`react`) engines | Streaming from OVMS (local GenAI streams already) |
+| External MCP tools (`type: mcp_stdio`, any server) | Re-ranking / hybrid search |
+| Real RAG in `search_docs` (vectors + citations) | Approximate vector backends (usearch/hnsw) |
+| Local RAG chat (`ovat chat`, no OVMS) | |
+| OVMS lifecycle: `ovat serve` + `--stop` (pidfile) | |
+| `ovat doctor` environment diagnostics | |
 
 OVMS runs on the Intel AI PC (Windows/Linux). On macOS you can develop and run
 the unit tests, but not serve a model.
