@@ -26,10 +26,22 @@ The YAML I am parsing looks like this:
       max_iterations: 10
 """
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class ModelConfig(BaseModel):
+class StrictModel(BaseModel):
+    """Base for every config section: unknown YAML keys are ERRORS.
+
+    pydantic's default silently IGNORES keys it does not know, so a typo like
+    `max_iteration:` (missing s) would just... do nothing, and the default
+    would quietly apply. extra="forbid" turns typos into immediate, named
+    errors — for a config-driven toolkit that is the whole safety story.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ModelConfig(StrictModel):
     """Which model to talk to and how. Mirrors the OVMS serving settings."""
 
     name: str                                   # the model name OVMS serves
@@ -50,7 +62,7 @@ class ModelConfig(BaseModel):
     request_timeout: float = 120.0
 
 
-class ToolConfig(BaseModel):
+class ToolConfig(StrictModel):
     """One tool the agent is allowed to use."""
 
     name: str                       # must match a tool I know how to build
@@ -60,7 +72,7 @@ class ToolConfig(BaseModel):
     command: list[str] | None = None  # only used by mcp_stdio launch later
 
 
-class AgentConfig(BaseModel):
+class AgentConfig(StrictModel):
     """How the agent loop behaves."""
 
     # "native" uses my own loop.py. "react" hands the same job to LangChain.
@@ -69,7 +81,7 @@ class AgentConfig(BaseModel):
     system_prompt: str | None = None    # optional persona for the agent
 
 
-class EmbeddingsConfig(BaseModel):
+class EmbeddingsConfig(StrictModel):
     """Which embedder turns text into vectors, and where it runs.
 
     The whole point of pulling this into config is the ABC swap: change
@@ -85,7 +97,7 @@ class EmbeddingsConfig(BaseModel):
     dim: int = 384              # bge-small emits 384 floats; the table must match
 
 
-class RetrieverConfig(BaseModel):
+class RetrieverConfig(StrictModel):
     """Which vector store holds the chunks and answers nearest-neighbour search."""
 
     # sqlite-vec is the only backend wired today. usearch/hnsw can slot in later
@@ -95,7 +107,7 @@ class RetrieverConfig(BaseModel):
     db_path: str = "ovat_index.db"
 
 
-class ChunkConfig(BaseModel):
+class ChunkConfig(StrictModel):
     """How `ovat index` slices a document before embedding it."""
 
     size: int = 512        # characters per chunk; roughly a paragraph
@@ -103,7 +115,7 @@ class ChunkConfig(BaseModel):
     #                        is not cut in half at a boundary
 
 
-class RagConfig(BaseModel):
+class RagConfig(StrictModel):
     """The retrieval-augmented-generation block that powers search_docs.
 
     Heads up: this whole section is optional. Leave it out and search_docs runs
@@ -116,7 +128,7 @@ class RagConfig(BaseModel):
     chunk: ChunkConfig = Field(default_factory=ChunkConfig)
 
 
-class WorkflowConfig(BaseModel):
+class WorkflowConfig(StrictModel):
     """The whole workflow: one model, some tools, one agent, optional RAG."""
 
     model: ModelConfig

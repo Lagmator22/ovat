@@ -31,6 +31,18 @@ def test_request_timeout_is_configurable():
     assert cfg.model.request_timeout == 30.0
 
 
+def test_typoed_key_is_rejected_not_ignored():
+    # extra="forbid": a misspelled field must be a loud error, never a silent
+    # no-op that leaves the default quietly in charge.
+    with pytest.raises(ValidationError, match="max_iteration"):
+        WorkflowConfig(model={"name": "m"}, agent={"max_iteration": 3})
+
+
+def test_unknown_top_level_section_is_rejected():
+    with pytest.raises(ValidationError, match="modle"):
+        WorkflowConfig(model={"name": "m"}, modle={"name": "typo"})
+
+
 def test_full_config_parses_all_fields():
     cfg = WorkflowConfig(
         model={"name": "m", "device": "GPU", "reasoning_parser": "qwen3"},
