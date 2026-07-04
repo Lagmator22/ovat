@@ -71,17 +71,18 @@ workflow.yml ──load_workflow()──> WorkflowConfig (pydantic, STRICT)
   TUI), theme, `wordmark()` (FIGlet + gradient, graceful without pyfiglet).
 - `ovat/cli/diagnostics.py` — doctor's checks. Platform-aware: macOS gets
   "OVMS does not run here", not "not on PATH".
-- TUI branch only: `ovat/cli/tui.py` (launcher), `ovat/cli/shell.py`
-  (subprocess exec layer + slash TEMPLATES), `ovat/cli/chat_screen.py`
-  (in-process chat: streaming, history, sessions in `.ovat/sessions/`).
+- TUI files (optional, installed via the `[tui]` extra): `ovat/cli/tui.py`
+  (launcher), `ovat/cli/shell.py` (subprocess exec layer + slash TEMPLATES),
+  `ovat/cli/chat_screen.py` (in-process chat: streaming, history, sessions
+  in `.ovat/sessions/`).
 
 ## HARD RULES — breaking these is how you nuke the codebase
 
-1. **Branches**: `main` = the CLI toolkit. `week6-tui` = main + the TUI.
-   Merges flow **main → week6-tui ONLY**. NEVER merge week6-tui into main,
-   never rebase or force-push anything. Engine/core changes go on main (if
-   accidentally written on the TUI branch, cherry-pick them to main so the
-   next merge is clean — this has been done before and works).
+1. **Branches**: everything lives on `main` now — the owner merged the TUI
+   via PR #4 on 2026-07-04, so main IS the full toolkit (CLI + TUI). The
+   old `week6-tui` branch is historical; do not develop on it. Never rebase
+   or force-push anything. The TUI's separability is enforced by rule 3
+   (the [tui] extra + isolation tests), not by branch topology anymore.
 2. **Never push.** The owner pushes via his own tooling. Commit locally only.
 3. **Isolation contract**: the CLI must fully work with NO TUI installed.
    `textual`/`pyfiglet` live in the `[tui]` extra only. No module-level

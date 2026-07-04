@@ -72,10 +72,11 @@ The agent never changes; only the YAML does.
 ## Quickstart
 
 ```bash
-# 1. install (editable, from the repo root). Add the react engine with [langchain]:
-pip install -e ".[langchain]"
+# 1. install (editable, from the repo root). Extras: [langchain] = react
+#    engine, [tui] = the full-screen launcher + chat screen.
+pip install -e ".[langchain,tui]"
 # or, for a global `ovat` you can run from anywhere (no venv to activate):
-#   pipx install ".[langchain]"
+#   pipx install ".[langchain,tui]"
 
 # 2. check your machine is ready (Python, deps, devices, OVMS, a config)
 ovat doctor workflow.yml
@@ -252,13 +253,15 @@ Honest about where the abstraction holds and where it does not yet:
 | Works today | Not yet |
 | --- | --- |
 | `ovat run/chat/init/index/serve/models/doctor` CLI | macOS *serving* (OVMS is Windows/Linux only) |
-| YAML config + strict validation (typos are errors) | LlamaIndex / OpenAI Agents SDK engines |
-| Native loop **and** LangChain (`react`) engines | Streaming from OVMS (local GenAI streams already) |
-| External MCP tools (`type: mcp_stdio`, any server) | Re-ranking / hybrid search |
-| Real RAG in `search_docs` (vectors + citations) | Approximate vector backends (usearch/hnsw) |
-| Local RAG chat (`ovat chat`, no OVMS) | |
-| OVMS lifecycle: `ovat serve` + `--stop` (pidfile) | |
-| `ovat doctor` environment diagnostics | |
+| Full-screen TUI with a native streaming chat screen | LlamaIndex / OpenAI Agents SDK engines |
+| YAML config + strict validation (typos are errors) | Streaming from OVMS (local GenAI streams already) |
+| Native loop **and** LangChain (`react`) engines | Re-ranking / hybrid search |
+| External MCP tools (`type: mcp_stdio`, any server) | Approximate vector backends (usearch/hnsw) |
+| Real RAG in `search_docs` (vectors + citations) | |
+| Local RAG chat + model auto-detection (no OVMS) | |
+| OVMS lifecycle: `ovat serve` + `--stop` (pidfile, no PATH edits) | |
+| Run traces: `ovat run --trace` (tokens, latency, RSS) | |
+| `ovat doctor` platform-aware diagnostics | |
 
 OVMS runs on the Intel AI PC (Windows/Linux). On macOS you can develop and run
 the unit tests, but not serve a model.
