@@ -26,6 +26,9 @@ models/
 .vscode/
 .idea/
 
+# Personal Claude Code bridge to AGENTS.md — not shared, per-machine.
+CLAUDE.local.md
+
 # OVMS process logs
 *.log
 
