@@ -1,4 +1,4 @@
-# CLAUDE.md — read this before touching anything
+# AGENTS.md — read this before touching anything
 
 OVAT = OpenVINO Agentic Toolkit. GSoC 2026 project #18 (Intel/OpenVINO,
 mentors Freddy Chiu & Ravi Panchumarthy). Owner: Gurman (GitHub Lagmator22).
