@@ -7,7 +7,7 @@ Nothing told them "that's not a text LLM". Every exported OpenVINO model
 folder carries the evidence of what it is; this module reads it so commands
 can refuse politely, suggest the right folder, or pick one automatically.
 
-Identification signals (checked in this order — file layout first because it
+Identification signals (checked in this order: file layout first because it
 never lies, then config.json):
   - openvino_vision_*.xml / openvino_language_model.xml  -> a VLM export
   - openvino_encoder_model.xml + openvino_decoder_model.xml -> whisper-style
@@ -15,7 +15,7 @@ never lies, then config.json):
   - architectures ending in ForCausalLM (or a known text model_type) -> llm
 
 Discovery roots for find_models(): the OVAT_MODELS env var (os.pathsep-
-separated folders) first, then ./models and ~/models. One level deep — model
+separated folders) first, then ./models and ~/models. One level deep: model
 folders live inside a models/ dir, not nested labyrinths.
 """
 import json
@@ -44,7 +44,7 @@ def identify_model(path: str) -> tuple[str, str]:
         return "not-a-model", f"unreadable: {exc}"
 
     if not any(f.endswith(".xml") and f.startswith("openvino") for f in files):
-        return "not-a-model", "no openvino*.xml inside — not an exported model"
+        return "not-a-model", "no openvino*.xml inside, not an exported model"
 
     # File layout first: a VLM export has vision/language parts instead of a
     # single openvino_model.xml, and whisper exports encoder+decoder.

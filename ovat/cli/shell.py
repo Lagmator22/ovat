@@ -27,7 +27,7 @@ class SlashTemplate:
     insert: str | None      # the command text it fills in, or None for actions
     description: str
     # Where the cursor should land inside `insert` (None = end of text).
-    # `/run` inserts `ovat run  --input ""` — the user's next keystrokes are
+    # `/run` inserts `ovat run  --input ""`; the user's next keystrokes are
     # the config path, so the cursor belongs in that gap, not at the end.
     cursor: int | None = None
 
@@ -102,7 +102,7 @@ def iter_display_lines(stream, progress_interval: float = 0.5,
 
     Two tricks here:
     - os.read() on the raw fd returns whatever bytes are AVAILABLE (a plain
-      text-mode read(4096) would block until it had all 4096 chars — no
+      text-mode read(4096) would block until it had all 4096 chars; no
       streaming at all).
     - a frame that ends in \\r is a transient redraw. The log is append-only,
       so instead of appending every redraw I let at most one through per

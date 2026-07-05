@@ -53,7 +53,7 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         """Close the SQLite connection and flush everything to disk.
 
         Note to myself: __init__ acquires a real OS resource (the connection),
-        so something must release it — Python has no destructor I can rely on
+        so something must release it; Python has no destructor I can rely on
         the way C++ does. Safe to call twice: closing an already-closed
         connection is a no-op here because I null the handle after the first.
         """
@@ -61,7 +61,7 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
             self.db.close()
             self.db = None
 
-    # `with SQLiteVecRetrieverProvider(...) as r:` — Python's RAII. __exit__
+    # `with SQLiteVecRetrieverProvider(...) as r:` is Python's RAII. __exit__
     # runs on ANY exit from the block, exception or not, like a destructor.
     def __enter__(self) -> "SQLiteVecRetrieverProvider":
         return self

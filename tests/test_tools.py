@@ -84,7 +84,7 @@ def test_transcribe_rejects_wrong_sample_rate(tmp_path):
     assert out.startswith("Error:") and "16 kHz" in out
 
 
-# describe_image (the VLM tool) — impl-level with a fake provider
+# describe_image (the VLM tool): impl-level with a fake provider
 
 def test_describe_image_missing_file_is_a_readable_error():
     from ovat.tools.describe_image import describe_image_impl

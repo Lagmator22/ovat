@@ -94,7 +94,7 @@ class ModelServer:
         self.log_path = log_path
         self._log_file = open(log_path, "w", encoding="utf-8")
         # When launching by full path, prepend the binary's folder to the
-        # child's PATH so OVMS finds its own DLLs/.so files — this is what
+        # child's PATH so OVMS finds its own DLLs/.so files; this is what
         # setupvars.bat does, done for the user automatically.
         env = dict(os.environ)
         binary_dir = os.path.dirname(os.path.abspath(self.binary))
@@ -131,7 +131,7 @@ class ModelServer:
 
         terminate() is only a REQUEST the process may ignore; kill() cannot be
         ignored. The finally makes sure the log file handle is released even if
-        the process fights the whole way down — before this, a TimeoutExpired
+        the process fights the whole way down; before this, a TimeoutExpired
         skipped the close() and leaked the handle.
         """
         try:
@@ -158,11 +158,11 @@ def stop_from_pidfile(pid_path: str = DEFAULT_PID_PATH, wait_seconds: float = 10
     This is for the CLI: the process that STARTED the server is long gone, so
     all we have is the pid number on disk. Same escalation as stop(): SIGTERM,
     give it wait_seconds to exit, then SIGKILL. Every odd state (no file, pid
-    already dead) is reported as a message, not an exception — stopping an
+    already dead) is reported as a message, not an exception; stopping an
     already-stopped server is a boring success, not an error.
     """
     if not os.path.exists(pid_path):
-        return f"No pidfile at {pid_path} — nothing to stop (server not started here?)."
+        return f"No pidfile at {pid_path}; nothing to stop (server not started here?)."
     try:
         pid = int(open(pid_path, encoding="utf-8").read().strip())
     except ValueError:

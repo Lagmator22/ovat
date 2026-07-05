@@ -35,7 +35,7 @@ class StrictModel(BaseModel):
     pydantic's default silently IGNORES keys it does not know, so a typo like
     `max_iteration:` (missing s) would just... do nothing, and the default
     would quietly apply. extra="forbid" turns typos into immediate, named
-    errors — for a config-driven toolkit that is the whole safety story.
+    errors; for a config-driven toolkit that is the whole safety story.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -61,7 +61,7 @@ class ModelConfig(StrictModel):
     # still turns a dead server into a clear error instead of a frozen CLI.
     request_timeout: float = 120.0
     # Prefix caching reuses KV-cache across turns that share a prefix (the
-    # whole conversation history does) — a big multi-turn speedup. A knob
+    # whole conversation history does): a big multi-turn speedup. A knob
     # because not every OVMS build/device supports it; was hardcoded before.
     enable_prefix_caching: bool = True
     # Where the ovms executable lives (file or its folder). On Windows OVMS
@@ -77,7 +77,7 @@ class ToolConfig(StrictModel):
     name: str                       # must match a tool I know how to build
     # "builtin" = one of my own tools (search_docs, transcribe), in-process.
     # "mcp_stdio" = launch `command` as an MCP server subprocess and import
-    # every tool it advertises — ANY MCP server plugs in this way.
+    # every tool it advertises; ANY MCP server plugs in this way.
     type: str = "builtin"
     command: list[str] | None = None  # the mcp_stdio server launch command
 

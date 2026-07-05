@@ -100,15 +100,15 @@ def check_local_genai() -> Check:
         version = getattr(openvino_genai, "__version__", "installed")
     except Exception as exc:
         return Check("Local GenAI", FAIL,
-                     f"openvino_genai not importable ({exc}) — "
+                     f"openvino_genai not importable ({exc}); "
                      f"'ovat chat' and TUI /chat need it")
     return Check("Local GenAI", OK,
-                 f"openvino_genai {version} — local models run here "
+                 f"openvino_genai {version}: local models run here "
                  f"('ovat chat', TUI /chat; no server needed)")
 
 
 def check_ovms_serving(config_binary: str | None = None) -> Check:
-    """Is the OVMS serving path available HERE — and if not, why exactly.
+    """Is the OVMS serving path available HERE, and if not, why exactly.
 
     Platform-aware on purpose: on macOS OVMS simply does not exist, so
     saying "not on PATH" would send the user hunting for a binary they can
@@ -117,7 +117,7 @@ def check_ovms_serving(config_binary: str | None = None) -> Check:
     """
     if sys.platform == "darwin":
         return Check("OVMS serving", WARN,
-                     "OVMS does not run on macOS — develop + chat locally "
+                     "OVMS does not run on macOS; develop + chat locally "
                      "here; run 'ovat serve'/'ovat run' on an AI PC or "
                      "Linux/Windows box")
     from ovat.core.ovms_locator import find_ovms
@@ -125,7 +125,7 @@ def check_ovms_serving(config_binary: str | None = None) -> Check:
     if path:
         return Check("OVMS serving", OK, f"ovms via {how}: {path}")
     return Check("OVMS serving", WARN,
-                 f"ovms {how} — set model.ovms_binary in workflow.yml or "
+                 f"ovms {how}; set model.ovms_binary in workflow.yml or "
                  f"the OVAT_OVMS env var to its folder")
 
 
@@ -157,7 +157,7 @@ def check_config(config_path: str) -> list[Check]:
     if "search_docs" in tool_names and cfg.rag is None:
         checks.append(Check(
             "search_docs mode", WARN,
-            "declared as a tool but no rag: section — it will return stub "
+            "declared as a tool but no rag: section; it will return stub "
             "text, not real retrieval. Add a rag: block and run 'ovat index'.",
         ))
 

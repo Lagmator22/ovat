@@ -133,7 +133,7 @@ def build_tools(config: WorkflowConfig,
     - builtin: my own tools, called in-process (the fast path).
     - mcp_stdio: launch `command` as an MCP server subprocess and import
       EVERY tool it advertises. This is what makes workflow.yml an open
-      socket — any third-party MCP server plugs in with two YAML lines.
+      socket: any third-party MCP server plugs in with two YAML lines.
     The loop consumes the same {schema, function} dict either way; it never
     learns which side of the wire a tool lives on.
     """

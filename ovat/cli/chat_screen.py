@@ -9,7 +9,7 @@ real memory (prior turns go back into the prompt via rag_chat's history).
 Layout: a transcript log, a live "streaming" line that fills as the model
 generates, and an input. Esc stops a generation in flight, or leaves the
 screen when idle. /save and /load persist the conversation as JSON under
-.ovat/sessions/ — finally putting Session.save/load to work.
+.ovat/sessions/, finally putting Session.save/load to work.
 
 The heavy lifting (config → retriever + local LLM) sits behind the
 _build_components seam so tests can swap in fakes and drive the whole screen
@@ -74,11 +74,11 @@ def _build_components(config_path: str, model_path: str, max_tokens: int = 256):
     cfg = load_workflow(config_path)
     if cfg.rag is None:
         raise ValueError(
-            "this workflow has no rag: section — add one and run `ovat index` first"
+            "this workflow has no rag: section; add one and run `ovat index` first"
         )
     # Identify BEFORE the 30-second load. A vision/whisper/embedding folder
     # used to load "fine" and then explode at generate time with a C++
-    # traceback about tensor ports — now it is one readable sentence.
+    # traceback about tensor ports; now it is one readable sentence.
     kind, why = identify_model(model_path)
     if kind not in ("llm", "unknown"):
         _, llms = pick_chat_llm()
@@ -86,7 +86,7 @@ def _build_components(config_path: str, model_path: str, max_tokens: int = 256):
                       if llms else "")
         raise ValueError(
             f"{os.path.basename(model_path.rstrip(os.sep))} is not a text "
-            f"LLM ({why}) — chat needs a text model.{suggestion}"
+            f"LLM ({why}); chat needs a text model.{suggestion}"
         )
     retriever = build_rag(cfg)
     llm = GenAILLMProvider(model_path, device="CPU", max_new_tokens=max_tokens)
@@ -161,7 +161,7 @@ class ChatScreen(Screen):
         except Exception as exc:
             self.app.call_from_thread(self._log, Text(f"Could not start chat: {exc}",
                                                   style=ui.RED))
-            self.app.call_from_thread(self._set_placeholder, "load failed — Esc to go back")
+            self.app.call_from_thread(self._set_placeholder, "load failed; Esc to go back")
             return
         self._components = components
         save_prefs(self._cwd, self._config_path, self._model_path)
@@ -198,7 +198,7 @@ class ChatScreen(Screen):
                            style=ui.YELLOW))
             return
         if self._busy:
-            self._log(Text("Still answering — Esc stops it.", style=ui.YELLOW))
+            self._log(Text("Still answering; Esc stops it.", style=ui.YELLOW))
             return
 
         self._busy = True
@@ -225,7 +225,7 @@ class ChatScreen(Screen):
                 self._log(Text(f"no saved conversation at {path}", style=ui.YELLOW))
                 return
             self._session = Session.load(path)
-            self._log(Text(f"— loaded {path} —", style=ui.DIM))
+            self._log(Text(f"(loaded {path})", style=ui.DIM))
             for message in self._session.messages:
                 if message["role"] == "user":
                     self._log(Text(f"you › {message['content']}",

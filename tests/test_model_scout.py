@@ -2,7 +2,7 @@
 """Tests for model discovery + identification.
 
 Note to myself: the fake folders below copy the REAL file signatures I
-verified on disk — a Qwen2-VL export has openvino_language_model.xml and
+verified on disk; a Qwen2-VL export has openvino_language_model.xml and
 vision parts (no plain openvino_model.xml); a Llama export has
 openvino_model.xml + LlamaForCausalLM in config.json; whisper has
 encoder+decoder; bge has model_type bert. No real model loads here.
@@ -49,7 +49,7 @@ def _whisper(root, name="whisper-base"):
                        {"model_type": "whisper"})
 
 
-# identify_model — one folder, what is it
+# identify_model: one folder, what is it
 
 def test_identifies_all_four_kinds(tmp_path):
     assert identify_model(_llm(tmp_path))[0] == "llm"
@@ -65,13 +65,13 @@ def test_non_model_folders_are_rejected_kindly(tmp_path):
     assert kind == "not-a-model" and "openvino" in why
 
 
-# find_models — scanning the roots
+# find_models: scanning the roots
 
 def test_find_models_scans_ovat_models_env(tmp_path, monkeypatch):
     _llm(tmp_path); _vlm(tmp_path); _embedder(tmp_path)
     (tmp_path / "random-junk").mkdir()               # ignored: no xml inside
     monkeypatch.setenv("OVAT_MODELS", str(tmp_path))
-    monkeypatch.chdir(tmp_path)                      # ./models absent — fine
+    monkeypatch.chdir(tmp_path)                      # ./models absent; fine
     models = find_models()
     assert {m["kind"] for m in models} == {"llm", "vlm", "embeddings"}
     assert [m["kind"] for m in find_models("llm")] == ["llm"]
@@ -84,7 +84,7 @@ def test_env_root_may_be_a_model_folder_itself(tmp_path, monkeypatch):
     assert any(m["path"] == folder for m in find_models("llm"))
 
 
-# pick_chat_llm — the auto-detect choice
+# pick_chat_llm: the auto-detect choice
 
 def test_pick_prefers_instruct_tuned_models(tmp_path, monkeypatch):
     _make_model(tmp_path, "base-llm", ["openvino_model.xml"],
@@ -97,7 +97,7 @@ def test_pick_prefers_instruct_tuned_models(tmp_path, monkeypatch):
     assert len(llms) == 2
 
 
-# resolve_chat_model — the chat command's guard rail
+# resolve_chat_model: the chat command's guard rail
 
 def test_resolve_rejects_a_vision_model_with_a_human_sentence(tmp_path, monkeypatch, capsys):
     from ovat.cli.main import resolve_chat_model

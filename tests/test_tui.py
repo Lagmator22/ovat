@@ -11,7 +11,7 @@ import asyncio
 import pytest
 
 # The TUI is an optional extra (pip install 'ovat[tui]'). Without it these
-# tests skip cleanly — the isolation contract lives in test_tui_isolation.py.
+# tests skip cleanly; the isolation contract lives in test_tui_isolation.py.
 pytest.importorskip("textual")
 
 from textual.widgets import Input, OptionList, RichLog
@@ -219,7 +219,7 @@ def test_escape_terminates_the_child_process():
 # The recursion guard (a TUI inside the TUI)
 
 def test_run_tui_refuses_without_a_real_terminal(capsys):
-    # pytest captures stdout, so isatty() is False here — exactly the situation
+    # pytest captures stdout, so isatty() is False here; exactly the situation
     # inside a TUI subprocess or a pipe. run_tui must print a hint and return
     # instead of starting a full-screen app into the void.
     from ovat.cli.tui import run_tui

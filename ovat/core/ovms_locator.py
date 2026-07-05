@@ -2,14 +2,14 @@
 """Find the ovms executable, wherever a real machine actually keeps it.
 
 The reality on Windows AI PCs: OVMS is unzipped somewhere like
-C:\\Users\\you\\ovms_windows and set up with setupvars.bat — it is almost
+C:\\Users\\you\\ovms_windows and set up with setupvars.bat; it is almost
 never on PATH. So "ovms must be on PATH" fails for basically every new user.
 
 Resolution order (first hit wins), returning (path, how) so doctor and error
 messages can say exactly where it came from:
-  1. an explicit path (the `model.ovms_binary` YAML field) — file or folder
-  2. the OVAT_OVMS environment variable — same semantics
-  3. PATH (shutil.which) — the classic case
+  1. an explicit path (the `model.ovms_binary` YAML field): file or folder
+  2. the OVAT_OVMS environment variable: same semantics
+  3. PATH (shutil.which): the classic case
   4. well-known install folders per OS
 
 Launching by full path works without setupvars.bat for the common case:

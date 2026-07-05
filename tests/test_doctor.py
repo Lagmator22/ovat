@@ -50,7 +50,7 @@ def test_local_genai_check_confirms_the_no_server_path():
 def test_ovms_serving_is_platform_aware(monkeypatch):
     from ovat.cli import diagnostics
 
-    # On macOS: never "not on PATH" — the honest answer is "does not run here".
+    # On macOS: never "not on PATH"; the honest answer is "does not run here".
     monkeypatch.setattr(diagnostics.sys, "platform", "darwin")
     check = diagnostics.check_ovms_serving()
     assert check.status == WARN
@@ -105,7 +105,7 @@ def test_config_check_fails_on_missing_file():
 
 def test_config_check_warns_on_search_docs_without_rag(tmp_path):
     # The stub trap: search_docs declared, no rag: block. Legal, but the tool
-    # would return fake "[stub]" text at runtime — doctor must say so.
+    # would return fake "[stub]" text at runtime; doctor must say so.
     path = _write(tmp_path,
                   "model:\n  name: m\n"
                   "tools:\n  - name: search_docs\n    type: builtin\n")

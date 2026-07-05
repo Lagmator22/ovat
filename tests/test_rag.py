@@ -111,7 +111,7 @@ def test_build_rag_returns_none_when_no_rag_section():
     assert build_rag(WorkflowConfig(model={"name": "m"})) is None
 
 
-# close() — the retriever must release its SQLite connection
+# close(): the retriever must release its SQLite connection
 
 def test_close_releases_the_connection_and_is_idempotent():
     retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384, db_path=":memory:")

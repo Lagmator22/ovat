@@ -29,7 +29,7 @@ def _args_model_from_schema(name: str, schema: dict):
 
     Design note: each tool already ships its full contract in the co-located
     SCHEMA dict (that was the whole point of co-locating it). Deriving the
-    LangChain model from it means ONE source of truth — the old hand-kept
+    LangChain model from it means ONE source of truth: the old hand-kept
     _ARGS_MODELS registry meant every new tool worked on the native path and
     then crashed on react until someone remembered the second list.
 

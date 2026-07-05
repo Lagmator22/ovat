@@ -3,8 +3,8 @@
 
 This is the other half of the MCP story. search_docs.py and transcribe.py can
 already RUN as MCP servers (`python -m ovat.tools.search_docs`); this file is
-the piece that lets an OVAT agent actually CONNECT to one — ours or anyone
-else's — over stdio, using the official `mcp` SDK:
+the piece that lets an OVAT agent actually CONNECT to one, ours or anyone
+else's, over stdio, using the official `mcp` SDK:
 
     tools:
       - name: search_docs
@@ -18,7 +18,7 @@ the difference between a builtin and an MCP tool.
 
 Sync-over-async design note: the mcp SDK is async (anyio). OVAT's loop is
 synchronous. Each server gets ONE background thread running ONE event loop,
-and — the subtle part — one long-lived "manager" coroutine that connects,
+and (the subtle part) one long-lived "manager" coroutine that connects,
 waits, and disconnects. anyio cancel scopes must be entered and exited by the
 SAME task, so close() cannot unwind the connection from outside; it just sets
 an event and the manager unwinds itself.
@@ -63,7 +63,7 @@ class MCPStdioServer:
         atexit.register(self.close)
 
     async def _manager(self, ready: threading.Event) -> None:
-        """Connect, serve until told to stop, then unwind — all in ONE task."""
+        """Connect, serve until told to stop, then unwind: all in ONE task."""
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
 
@@ -79,7 +79,7 @@ class MCPStdioServer:
                 self._shutdown = asyncio.Event()
                 ready.set()
                 await self._shutdown.wait()     # serve until close() fires this
-        except BaseException as exc:            # noqa: broad on purpose —
+        except BaseException as exc:            # noqa: broad on purpose:
             self._error = exc                   # whatever went wrong, report it
             ready.set()
         finally:

@@ -139,7 +139,7 @@ def test_run_trace_records_turns_tokens_and_tool_calls():
 
 
 def test_run_trace_survives_replies_without_usage():
-    # conftest.reply() carries no usage key — exactly what a provider that
+    # conftest.reply() carries no usage key; exactly what a provider that
     # doesn't report tokens looks like. The trace must not crash on it.
     agent = AgentLoop(FakeLLMProvider([reply("stop", content="hi")]), tools={})
     agent.run("hello")

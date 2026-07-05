@@ -95,7 +95,7 @@ def test_stop_escalates_to_kill_and_still_cleans_up(monkeypatch, tmp_path):
     assert not os.path.exists(pid_path)
 
 
-# stop_from_pidfile — the `ovat serve --stop` path, against a real process
+# stop_from_pidfile: the `ovat serve --stop` path, against a real process
 
 def test_stop_from_pidfile_stops_a_real_process(tmp_path):
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])

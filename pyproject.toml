@@ -1,7 +1,7 @@
 [project]
 name = "ovat"
 version = "0.2.0"
-description = "Agentic Toolkit for AI PC with OpenVINO — turn agent boilerplate into one YAML + one command."
+description = "Agentic Toolkit for AI PC with OpenVINO: turn agent boilerplate into one YAML + one command."
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 dependencies = [
@@ -25,7 +25,7 @@ dependencies = [
 # Extras keep the base install light AND encode the isolation contract:
 # - langchain: the react engine (agent.type: react).
 # - tui: the optional full-screen launcher. The plain CLI must work without
-#   it — that is what makes the TUI removable without breaking anything.
+#   it; that is what makes the TUI removable without breaking anything.
 [project.optional-dependencies]
 langchain = ["langchain>=1", "langchain-openai>=1", "langgraph>=1"]
 tui = ["textual", "pyfiglet"]

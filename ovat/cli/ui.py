@@ -15,7 +15,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.theme import Theme
 
-# The raw brand palette, hex by ROLE — the single source of truth. The rich
+# The raw brand palette, hex by ROLE: the single source of truth. The rich
 # theme below derives from it, and the Textual TUI reads the aliases further
 # down for its widgets, so terminal and TUI can never drift.
 PALETTE = {
@@ -29,7 +29,7 @@ PALETTE = {
 }
 
 # Plain-hex aliases for the Textual TUI. Its widgets and CSS cannot read rich
-# theme names, only raw colours — but these are DERIVED, never redefined, so
+# theme names, only raw colours; but these are DERIVED, never redefined, so
 # there is still exactly one palette.
 BLUE = PALETTE["blue"]
 CYAN = PALETTE["cyan"]
@@ -40,8 +40,8 @@ RED = PALETTE["fail"]
 DIM = PALETTE["dim"]
 
 # Named styles derived from the palette. Two kinds of names on purpose:
-#   ovat.*  — role names new code should use ("ovat.ok", not a colour).
-#   green/red/yellow/dim/cyan — remaps of the GENERIC names the existing
+#   ovat.*  : role names new code should use ("ovat.ok", not a colour).
+#   green/red/yellow/dim/cyan: remaps of the GENERIC names the existing
 #   commands already use in markup like "[green]Indexed[/green]". Remapping
 #   them here restyles every command into the brand palette at once, through
 #   the one shared console, without editing every message string.

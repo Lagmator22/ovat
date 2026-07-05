@@ -144,7 +144,7 @@ bare `/chat` just works.
 **Isolation contract:** the plain CLI never needs the TUI. `pip install ovat`
 without the extra installs no TUI dependencies at all, every subcommand works
 identically, and a bare `ovat` prints a pointer instead of a launcher. The
-TUI can be adopted — or removed — without touching the toolkit.
+TUI can be adopted, or removed, without touching the toolkit.
 
 ---
 

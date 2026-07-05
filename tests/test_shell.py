@@ -49,7 +49,7 @@ def test_run_command_runs_in_the_given_directory(tmp_path):
     assert any(tmp_path.name in ln for ln in lines)
 
 
-# iter_display_lines — \r progress bars must neither stall nor flood
+# iter_display_lines: \r progress bars must neither stall nor flood
 
 class _FakeStream:
     """A fileno()-backed stream fed from a real OS pipe, so os.read works."""

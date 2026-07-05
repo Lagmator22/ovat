@@ -1,5 +1,5 @@
 # tests/test_ovms_locator.py
-"""Tests for the ovms binary resolution — config → env → PATH → known spots.
+"""Tests for the ovms binary resolution: config → env → PATH → known spots.
 
 Note to myself: the whole point is that a Windows setupvars.bat install
 (ovms unzipped in some folder, never on PATH) still just works. I fake a

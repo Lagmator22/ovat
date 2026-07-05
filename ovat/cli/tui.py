@@ -85,7 +85,7 @@ class OvatTUI(App):
     """The OVAT launcher: a styled terminal that knows OVAT's commands."""
 
     TITLE = "OVAT"
-    # Textual's default Ctrl-C quits the whole app instantly — mid-command
+    # Textual's default Ctrl-C quits the whole app instantly; mid-command
     # that throws away a run the user only wanted to interrupt. priority=True
     # wins over the built-in binding; the action decides: busy -> cancel the
     # child (terminal muscle memory), idle -> quit like before.
@@ -133,7 +133,7 @@ class OvatTUI(App):
         self._cwd = os.getcwd()
         self._proc = None        # the currently running subprocess, if any
         # The submission gate. Flipped on the MAIN thread BEFORE the worker is
-        # scheduled, so a double-Enter can never pass the guard — _proc alone
+        # scheduled, so a double-Enter can never pass the guard; _proc alone
         # could not do that job, because the worker assigns it only after
         # spawn() returns (a race window the old code had).
         self._busy = False
@@ -170,7 +170,7 @@ class OvatTUI(App):
     def on_key(self, event) -> None:
         # This handler belongs to the LAUNCHER. When another screen is pushed
         # (the chat screen), its widgets are not in the active screen and the
-        # queries below would raise NoMatches on every keypress — breaking the
+        # queries below would raise NoMatches on every keypress; breaking the
         # pushed screen's own key handling. Stand down; the screen owns keys.
         if len(self.screen_stack) > 1:
             return
@@ -218,7 +218,7 @@ class OvatTUI(App):
         # Land the cursor where the next keystrokes belong (e.g. the config
         # path gap in `ovat run | --input ""`), not blindly at the end.
         # call_after_refresh because Input moves its own cursor to the end
-        # asynchronously after a programmatic value change — a synchronous
+        # asynchronously after a programmatic value change; a synchronous
         # assignment here would be overwritten a moment later.
         target = (template.cursor if template.cursor is not None
                   else len(template.insert))
@@ -314,7 +314,7 @@ class OvatTUI(App):
                     log.write(Text("also available: " +
                                    ", ".join(m["name"] for m in llms
                                              if m is not choice) +
-                                   "  —  choose with /chat <config> <path>",
+                                   "  ·  choose with /chat <config> <path>",
                                    style=ui.DIM))
             else:
                 log.write(Text(
@@ -341,7 +341,7 @@ class OvatTUI(App):
     def _start_command(self, cmd: str) -> None:
         # Gate on _busy, which only the main thread flips, BEFORE scheduling
         # the worker. The old check on _proc raced: the worker assigned it
-        # only after spawn(), so a fast double-Enter started two processes —
+        # only after spawn(), so a fast double-Enter started two processes;
         # and exclusive=True then cancelled the first worker THREAD while its
         # OS process kept running, orphaned, with the handle overwritten.
         if self._busy:
@@ -421,7 +421,7 @@ class OvatTUI(App):
             color = ui.GREEN if code == 0 else ui.RED
             self.call_from_thread(log.write, Text(f"[exit {code}]", style=color))
         finally:
-            # Always reopen the gate, even when spawn failed — otherwise one
+            # Always reopen the gate, even when spawn failed; otherwise one
             # typo'd command would lock the TUI forever.
             self.call_from_thread(self._mark_idle)
 

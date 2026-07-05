@@ -1,7 +1,7 @@
 # tests/test_chat_screen.py
 """Tests for the native TUI chat screen, headless via Textual's Pilot.
 
-Note to myself: no real model loads here. _build_components is the seam —
+Note to myself: no real model loads here. _build_components is the seam;
 I monkeypatch it to return a fake retriever and a fake streaming LLM, so the
 whole screen (load → ask → stream → transcript → autosave → /save → /load →
 Esc) runs in milliseconds on any machine.

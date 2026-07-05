@@ -13,7 +13,7 @@ from ovat.cli import ui
 
 def test_theme_styles_derive_from_the_palette():
     # If someone edits a hex in OVAT_THEME directly instead of PALETTE, the
-    # single source of truth is broken — this pins the derivation.
+    # single source of truth is broken; this pins the derivation.
     assert ui.OVAT_THEME.styles["ovat.blue"] == Style.parse(ui.PALETTE["blue"])
     assert ui.OVAT_THEME.styles["ovat.ok"] == Style.parse(f"bold {ui.PALETTE['ok']}")
 

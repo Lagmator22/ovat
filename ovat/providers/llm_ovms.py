@@ -34,7 +34,7 @@ class OVMSLLMProvider(LLMProvider):
         )
         choice = response.choices[0]
         # OVMS reports token usage on every response; keep it instead of
-        # dropping it — the agent loop turns it into the run trace (Layer 7).
+        # dropping it; the agent loop turns it into the run trace (Layer 7).
         usage = getattr(response, "usage", None)
         return {
             "finish_reason": choice.finish_reason,    # "stop" or "tool_calls"

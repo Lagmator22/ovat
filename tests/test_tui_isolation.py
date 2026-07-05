@@ -3,7 +3,7 @@
 
 The TUI is an optional front-end (`pip install 'ovat[tui]'`) that can be taken
 back out at any time. These tests simulate an install without the extra by
-poisoning the module cache — putting None in sys.modules makes any
+poisoning the module cache; putting None in sys.modules makes any
 `import ovat.cli.tui` raise ImportError, exactly what a missing textual does.
 
 Note to myself: this file must never import textual (directly or indirectly),

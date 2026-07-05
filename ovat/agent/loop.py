@@ -75,8 +75,8 @@ class AgentLoop:
         self.max_iterations = max_iterations
         # Each agent owns one conversation memory.
         self.session = Session(system_prompt=system_prompt)
-        # Layer 7 (observability): after every run() this holds what happened
-        # — per-turn latency, token usage (OVMS reports it on each response),
+        # Layer 7 (observability): after every run() this holds what happened:
+        # per-turn latency, token usage (OVMS reports it on each response),
         # and every tool call with its duration. `ovat run --trace` dumps it.
         self.last_trace: dict = {}
 
@@ -126,7 +126,7 @@ class AgentLoop:
             return answer
 
         for _ in range(self.max_iterations):
-            # BEAT 1, ASK — timed, and the token usage OVMS reports per
+            # BEAT 1, ASK: timed, and the token usage OVMS reports per
             # response is kept instead of dropped.
             ask_started = time.monotonic()
             reply = self.llm.chat(self.session.messages, tools=self._menu())

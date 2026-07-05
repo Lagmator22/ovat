@@ -33,7 +33,7 @@ from ovat.providers.llm_ovms import OVMSLLMProvider
 from ovat.providers.embeddings_ovms import OVMSEmbeddingsProvider
 
 # Where the real OpenVINO test models live. OVAT_TEST_MODELS_DIR makes these
-# integration tests runnable on ANY machine (AI PC, a mentor's box) — the old
+# integration tests runnable on ANY machine (AI PC, a mentor's box); the old
 # hardcoded personal path meant they silently skipped everywhere but one Mac.
 MODELS_DIR = os.environ.get(
     "OVAT_TEST_MODELS_DIR", "/Users/lagmator22/OpenvinoDemo/OvaSearch/models"

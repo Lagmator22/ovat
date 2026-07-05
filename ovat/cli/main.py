@@ -19,7 +19,7 @@ from ovat.config.workflow import load_workflow
 
 # Every command prints through the ONE themed console, so the whole CLI wears
 # the brand palette. `rich.print` (the old import) used a default console that
-# ignored the theme — only doctor looked like OVAT, the rest looked stock.
+# ignored the theme; only doctor looked like OVAT, the rest looked stock.
 rprint = console.print
 
 app = typer.Typer(
@@ -40,7 +40,7 @@ def _entry(ctx: typer.Context):
         return
     # Recursion guard: the TUI stamps OVAT_TUI=1 into every child's env (the
     # same trick tmux uses with $TMUX). Typing `ovat` INSIDE the TUI used to
-    # start a second TUI in a piped subprocess — escape codes as garbage, the
+    # start a second TUI in a piped subprocess; escape codes as garbage, the
     # command slot wedged. Now it gets a hint instead, before Textual even
     # gets imported.
     import os
@@ -194,7 +194,7 @@ def resolve_chat_model(model_path: str | None) -> str:
             if others:
                 rprint("[dim]I did find these (wrong kind for chat):[/dim]")
                 for m in others:
-                    rprint(f"  [ovat.dim]{m['name']}  —  {m['kind']}[/ovat.dim]")
+                    rprint(f"  [ovat.dim]{m['name']}  ({m['kind']})[/ovat.dim]")
             rprint("Fix: pass [bold]--model-path <folder>[/bold], or set "
                    "[bold]OVAT_MODELS[/bold] to the folder that holds your "
                    "OpenVINO models.")
@@ -203,14 +203,14 @@ def resolve_chat_model(model_path: str | None) -> str:
                f"  [dim]({choice['path']})[/dim]")
         if len(llms) > 1:
             names = ", ".join(m["name"] for m in llms if m is not choice)
-            rprint(f"[dim]also available: {names} — choose with --model-path[/dim]")
+            rprint(f"[dim]also available: {names}; choose with --model-path[/dim]")
         return choice["path"]
 
     kind, why = identify_model(model_path)
     if kind in ("llm", "unknown"):        # unknown = benefit of the doubt
         return model_path
     rprint(f"[red]{os.path.basename(model_path.rstrip('/'))} is not a text "
-           f"LLM[/red] [dim]({why})[/dim] — chat needs a text model.")
+           f"LLM[/red] [dim]({why})[/dim]; chat needs a text model.")
     _, llms = pick_chat_llm()
     if llms:
         rprint("[dim]Text LLMs found on this machine:[/dim]")
@@ -385,7 +385,7 @@ def _ovms_not_found(how: str) -> None:
     rprint("  2. env var      →  [bold]set OVAT_OVMS=C:\\Users\\you\\ovms_windows[/bold]  "
            "(or export on Linux)")
     rprint("  3. classic      →  add the OVMS folder to PATH")
-    rprint("[dim]macOS note: OVMS does not run on macOS at all — use 'ovat chat' "
+    rprint("[dim]macOS note: OVMS does not run on macOS at all; use 'ovat chat' "
            "locally, or serve from an AI PC / Linux box.[/dim]")
 
 
@@ -398,14 +398,14 @@ def serve(
     """Start OVMS in the background (or stop it again with --stop). AI PC only.
 
     Heads up: serve returns once OVMS is READY and leaves it running in the
-    background — that is the point, so `ovat run` can talk to it. The pid is
+    background; that is the point, so `ovat run` can talk to it. The pid is
     recorded in ovms.pid; `ovat serve <config> --stop` shuts it down cleanly.
     """
     from ovat.core.model_server import ModelServer, stop_from_pidfile
     from ovat.core.ovms_locator import find_ovms
 
     if stop:
-        # Stopping needs no config parsing at all — just the recorded pid.
+        # Stopping needs no config parsing at all; just the recorded pid.
         rprint(stop_from_pidfile())
         return
 
@@ -464,10 +464,10 @@ def doctor(
     from ovat.cli import diagnostics
     from ovat.cli.ui import console, status_text, wordmark
 
-    # The big sign — like the TUI launcher, but this one says what it is.
+    # The big sign, like the TUI launcher, but this one says what it is.
     console.print(wordmark("DOCTOR"))
     console.print("[ovat.brand]⚕ OVAT doctor[/ovat.brand]"
-                  "[ovat.dim]  —  environment & workflow diagnostics[/ovat.dim]")
+                  "[ovat.dim]  ·  environment & workflow diagnostics[/ovat.dim]")
     os_name = {"darwin": "macOS", "win32": "Windows"}.get(
         sys.platform, platform.system())
     console.print(f"[ovat.dim]{os_name} {platform.machine()}  ·  "
@@ -501,11 +501,11 @@ def doctor(
     console.print(summary)
 
     if counts["fail"]:
-        console.print("[ovat.fail]Fix the red rows above — those block "
+        console.print("[ovat.fail]Fix the red rows above; those block "
                       "features.[/ovat.fail]")
         raise typer.Exit(code=1)
     if counts["warn"]:
-        console.print("[ovat.dim]Yellow rows are heads-ups, not blockers — "
+        console.print("[ovat.dim]Yellow rows are heads-ups, not blockers; "
                       "each says what to do about it.[/ovat.dim]")
     else:
         console.print("[ovat.ok]All clear.[/ovat.ok]")

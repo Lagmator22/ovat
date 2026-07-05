@@ -3,7 +3,7 @@
 
 This is what finally puts GenAIVLMProvider (Qwen2-VL) on a path a user can
 reach: declare the tool in workflow.yml and the agent can look at pictures.
-Same design as transcribe.py — the real logic in a plain testable function,
+Same design as transcribe.py: the real logic in a plain testable function,
 a lazily-cached heavy pipeline, a co-located SCHEMA that is the complete
 contract (the LangChain path derives its argument model from it), and a thin
 FastMCP wrapper so it can also serve any MCP-aware agent standalone.
@@ -34,7 +34,7 @@ def describe_image_impl(image_path: str,
                         provider=None) -> str:
     """The real logic, separate from the MCP wrapper so tests can fake the VLM.
 
-    Errors come back as readable strings, not exceptions — the agent loop
+    Errors come back as readable strings, not exceptions; the agent loop
     hands them to the model, which can correct its call on the next turn.
     """
     if not os.path.isfile(image_path):
@@ -50,7 +50,7 @@ def describe_image_impl(image_path: str,
 
 
 # The OpenAI-style schema the agent's menu shows. Co-located and complete
-# (defaults included) — the single source of truth for both engines.
+# (defaults included): the single source of truth for both engines.
 SCHEMA = {
     "type": "function",
     "function": {
