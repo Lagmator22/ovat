@@ -114,11 +114,18 @@ instead of recursing).
 ## Platform truth (answer users honestly)
 
 - **macOS**: dev + tests + `ovat chat` + TUI `/chat` + `index`/`doctor`/
-  `init` all work (openvino_genai runs natively, CPU). OVMS does NOT exist
-  on macOS: no `serve`, no `models`, no agentic `run`.
+  `init` all work (openvino_genai runs natively, CPU). `ovat serve` has no
+  native macOS path: no `serve`, no `models`, no agentic `run` via the
+  binary. OVMS's official Docker image (amd64) DOES run under Rosetta on
+  Apple Silicon (verified 2026-07-11: booted, served a real bge-small model,
+  answered a REST inference request) - there is no arm64 image, so it is
+  x86 emulation, fine for small models but slow for an 8B-class LLM. Useful
+  for running the `live` OVMS tests on a Mac; the native genai pipeline
+  stays the default for local LLM dev.
 - **AI PC / Windows / Linux**: everything, including OVMS serving and
   tool-calling `run`. OVMS is usually NOT on PATH; the locator handles it.
-- OVMS is x86-only; no Docker-OVMS on Apple Silicon (emulation crashes).
+- OVMS is x86-only; no arm64 build. On Apple Silicon it only runs via Docker
+  under Rosetta emulation (see above), never bare metal.
 
 ## Test suite conventions
 
