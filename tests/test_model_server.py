@@ -76,6 +76,40 @@ def test_prefix_caching_is_a_knob_not_a_constant(monkeypatch, tmp_path):
     assert "--enable_prefix_caching" not in captured["cmd"]
 
 
+def test_creation_flags_detach_ovms_on_windows_only(monkeypatch, tmp_path):
+    """serve must leave OVMS running after the console that started it goes.
+
+    On Windows a child is attached to the parent's console, so closing the
+    window or Ctrl-C would take OVMS with it. Off Windows the value must stay
+    0: subprocess raises ValueError on POSIX for any non-zero creationflags,
+    so getting this wrong breaks `ovat serve` on Linux, not just Windows.
+    """
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured.update(kwargs)
+        return FakePopen()
+
+    monkeypatch.setattr("ovat.core.model_server.subprocess.Popen", fake_popen)
+
+    monkeypatch.setattr("ovat.core.model_server.os.name", "posix")
+    _server().start(log_path=str(tmp_path / "a.log"),
+                    pid_path=str(tmp_path / "a.pid"))
+    assert captured["creationflags"] == 0
+
+    # The real Win32 values; they do not exist as attributes off Windows,
+    # which is why the lookup has to stay inside the os.name guard.
+    monkeypatch.setattr("ovat.core.model_server.os.name", "nt")
+    monkeypatch.setattr("ovat.core.model_server.subprocess.DETACHED_PROCESS",
+                        0x00000008, raising=False)
+    monkeypatch.setattr(
+        "ovat.core.model_server.subprocess.CREATE_NEW_PROCESS_GROUP",
+        0x00000200, raising=False)
+    _server().start(log_path=str(tmp_path / "b.log"),
+                    pid_path=str(tmp_path / "b.pid"))
+    assert captured["creationflags"] == 0x00000008 | 0x00000200
+
+
 def test_stop_polite_path_closes_log_and_removes_pidfile(monkeypatch, tmp_path):
     fake = FakePopen()
     server, log_path, pid_path = _start_with_fake(monkeypatch, tmp_path, fake)

@@ -100,8 +100,24 @@ class ModelServer:
         binary_dir = os.path.dirname(os.path.abspath(self.binary))
         if os.path.isdir(binary_dir):
             env["PATH"] = binary_dir + os.pathsep + env.get("PATH", "")
+        # Windows console semantics: a child launched from a console is
+        # ATTACHED to it. Closing that window sends CTRL_CLOSE_EVENT to every
+        # attached process, and a Ctrl-C typed at the parent goes to the whole
+        # process group. serve is meant to hand the prompt back and leave OVMS
+        # running, so both of those would take the server down with the shell.
+        # DETACHED_PROCESS gives OVMS no console to be attached to;
+        # CREATE_NEW_PROCESS_GROUP puts it outside the parent's Ctrl-C group.
+        # (This does NOT cover a parent inside a job object with
+        # KILL_ON_JOB_CLOSE; that would need CREATE_BREAKAWAY_FROM_JOB.)
+        # POSIX has no equivalent and subprocess REJECTS a non-zero value
+        # there with ValueError, so off Windows it stays exactly 0.
+        creationflags = 0
+        if os.name == "nt":
+            creationflags = (subprocess.DETACHED_PROCESS
+                             | subprocess.CREATE_NEW_PROCESS_GROUP)
         self.process = subprocess.Popen(
-            cmd, stdout=self._log_file, stderr=subprocess.STDOUT, env=env
+            cmd, stdout=self._log_file, stderr=subprocess.STDOUT, env=env,
+            creationflags=creationflags,
         )
         # Record the pid so `ovat serve --stop` (a NEW process, long after this
         # one exited) can still find and stop the server.
