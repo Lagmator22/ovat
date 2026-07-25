@@ -14,7 +14,7 @@ import os
 import typer
 
 from ovat.agent.factory import build_agent
-from ovat.cli.ui import console
+from ovat.cli.ui import console, esc
 from ovat.config.workflow import load_workflow
 
 # Every command prints through the ONE themed console, so the whole CLI wears
@@ -123,8 +123,10 @@ def run(
 
     # dry-run lets me prove the wiring on any machine, even with no OVMS server.
     if dry_run:
-        rprint(f"[green]Built agent[/green]  model={cfg.model.name}  "
-               f"tools={list(agent.tools)}  max_iterations={agent.max_iterations}")
+        # Tool names can come from an MCP server, so they are data too.
+        rprint(f"[green]Built agent[/green]  model={esc(cfg.model.name)}  "
+               f"tools={esc(list(agent.tools))}  "
+               f"max_iterations={agent.max_iterations}")
         rprint("[yellow]dry-run:[/yellow] not calling the model.")
         raise typer.Exit()
 
@@ -137,9 +139,10 @@ def run(
     try:
         answer = agent.run(input)
     except Exception as exc:
-        rprint(f"[red]Error talking to OVMS at {cfg.model.ovms_url}[/red]: {exc}")
+        rprint(f"[red]Error talking to OVMS at {esc(cfg.model.ovms_url)}[/red]: "
+               f"{esc(exc)}")
         raise typer.Exit(code=1)
-    rprint(answer)
+    rprint(esc(answer))          # the model's words are data, never markup
 
     if trace:
         _write_trace(trace, cfg, agent)
@@ -169,7 +172,7 @@ def _write_trace(path: str, cfg, agent) -> None:
         trace_data["peak_rss_mb"] = None
     with open(path, "w", encoding="utf-8") as f:
         json.dump(trace_data, f, indent=2)
-    rprint(f"[dim]trace written to[/dim] {path}")
+    rprint(f"[dim]trace written to[/dim] {esc(path)}")
 
 
 def resolve_chat_model(model_path: str | None) -> str:
@@ -194,28 +197,31 @@ def resolve_chat_model(model_path: str | None) -> str:
             if others:
                 rprint("[dim]I did find these (wrong kind for chat):[/dim]")
                 for m in others:
-                    rprint(f"  [ovat.dim]{m['name']}  ({m['kind']})[/ovat.dim]")
+                    rprint(f"  [ovat.dim]{esc(m['name'])}  "
+                           f"({esc(m['kind'])})[/ovat.dim]")
             rprint("Fix: pass [bold]--model-path <folder>[/bold], or set "
                    "[bold]OVAT_MODELS[/bold] to the folder that holds your "
                    "OpenVINO models.")
             raise typer.Exit(code=1)
-        rprint(f"[dim]auto-detected local LLM:[/dim] [bold]{choice['name']}[/bold]"
-               f"  [dim]({choice['path']})[/dim]")
+        rprint(f"[dim]auto-detected local LLM:[/dim] "
+               f"[bold]{esc(choice['name'])}[/bold]"
+               f"  [dim]({esc(choice['path'])})[/dim]")
         if len(llms) > 1:
-            names = ", ".join(m["name"] for m in llms if m is not choice)
+            names = ", ".join(esc(m["name"]) for m in llms if m is not choice)
             rprint(f"[dim]also available: {names}; choose with --model-path[/dim]")
         return choice["path"]
 
     kind, why = identify_model(model_path)
     if kind in ("llm", "unknown"):        # unknown = benefit of the doubt
         return model_path
-    rprint(f"[red]{os.path.basename(model_path.rstrip('/'))} is not a text "
-           f"LLM[/red] [dim]({why})[/dim]; chat needs a text model.")
+    rprint(f"[red]{esc(os.path.basename(model_path.rstrip('/')))} is not a text "
+           f"LLM[/red] [dim]({esc(why)})[/dim]; chat needs a text model.")
     _, llms = pick_chat_llm()
     if llms:
         rprint("[dim]Text LLMs found on this machine:[/dim]")
         for m in llms:
-            rprint(f"  [bold]{m['name']}[/bold]  [ovat.dim]{m['path']}[/ovat.dim]")
+            rprint(f"  [bold]{esc(m['name'])}[/bold]  "
+                   f"[ovat.dim]{esc(m['path'])}[/ovat.dim]")
     raise typer.Exit(code=1)
 
 
@@ -253,12 +259,13 @@ def chat(
     try:
         retriever = build_rag(cfg)
     except Exception as exc:
-        rprint(f"[red]Could not build the retriever:[/red] {exc}")
+        rprint(f"[red]Could not build the retriever:[/red] {esc(exc)}")
         raise typer.Exit(code=1)
     try:
         llm = GenAILLMProvider(model_path, device=device, max_new_tokens=max_tokens)
     except Exception as exc:
-        rprint(f"[red]Could not load the local model at {model_path}:[/red] {exc}")
+        rprint(f"[red]Could not load the local model at "
+               f"{esc(model_path)}:[/red] {esc(exc)}")
         raise typer.Exit(code=1)
 
     # finally: the retriever owns a SQLite connection; close it even if the
@@ -268,9 +275,9 @@ def chat(
                                    system_prompt=cfg.agent.system_prompt)
     finally:
         retriever.close()
-    rprint(answer.strip())
+    rprint(esc(answer.strip()))   # the model's words are data, never markup
     if sources:
-        rprint("\n[dim]sources:[/dim] " + ", ".join(sources))
+        rprint("\n[dim]sources:[/dim] " + ", ".join(esc(s) for s in sources))
 
 
 @app.command()
@@ -298,19 +305,20 @@ def index(
     try:
         retriever = build_rag(cfg)
     except Exception as exc:
-        rprint(f"[red]Could not build the embedder/retriever:[/red] {exc}")
+        rprint(f"[red]Could not build the embedder/retriever:[/red] {esc(exc)}")
         rprint("[yellow]Tip:[/yellow] make sure the embeddings model in "
-               f"[bold]{cfg.rag.embeddings.model}[/bold] exists on disk.")
+               f"[bold]{esc(cfg.rag.embeddings.model)}[/bold] exists on disk.")
         raise typer.Exit(code=1)
 
-    rprint(f"[green]Indexing[/green] {folder} -> {cfg.rag.retriever.db_path} ...")
+    rprint(f"[green]Indexing[/green] {esc(folder)} -> "
+           f"{esc(cfg.rag.retriever.db_path)} ...")
     try:
         summary = index_folder(
             folder, retriever,
             size=cfg.rag.chunk.size, overlap=cfg.rag.chunk.overlap,
         )
     except FileNotFoundError as exc:
-        rprint(f"[red]{exc}[/red]")
+        rprint(f"[red]{esc(exc)}[/red]")
         raise typer.Exit(code=1)
     finally:
         # Close the vector store so every chunk is flushed to the .db file and
@@ -327,7 +335,7 @@ def init(
     """Write a starter workflow.yml tuned to THIS machine's hardware."""
     import os
     if os.path.exists(path):
-        rprint(f"[red]Refusing to overwrite existing file:[/red] {path}")
+        rprint(f"[red]Refusing to overwrite existing file:[/red] {esc(path)}")
         raise typer.Exit(code=1)
     # DeviceManager picks the LLM device for the hardware we are on: GPU on
     # an AI PC, CPU on a laptop/Mac. The starter file should run where it
@@ -340,8 +348,8 @@ def init(
     starter = _STARTER_YAML.replace("device: GPU", f"device: {llm_device}", 1)
     with open(path, "w", encoding="utf-8") as f:
         f.write(starter)
-    rprint(f"[green]Wrote starter workflow to[/green] {path}  "
-           f"[dim](model device: {llm_device}, detected)[/dim]")
+    rprint(f"[green]Wrote starter workflow to[/green] {esc(path)}  "
+           f"[dim](model device: {esc(llm_device)}, detected)[/dim]")
 
 
 @app.command()
@@ -358,19 +366,20 @@ def models(
     if binary is None:
         _ovms_not_found(how)
         raise typer.Exit(code=1)
-    rprint(f"[dim]using ovms from {how}: {binary}[/dim]")
+    rprint(f"[dim]using ovms from {esc(how)}: {esc(binary)}[/dim]")
     mgr = ModelManager(binary)
     try:
         if action == "list":
+            # Both of these are `ovms` subprocess output: data, not markup.
             for name in mgr.list_models():
-                rprint(name)
+                rprint(esc(name))
         elif action == "pull":
             if not source_model:
                 rprint("[red]pull needs --source-model[/red]")
                 raise typer.Exit(code=1)
-            rprint(mgr.pull(source_model))
+            rprint(esc(mgr.pull(source_model)))
         else:
-            rprint(f"[red]Unknown action '{action}'. Use list or pull.[/red]")
+            rprint(f"[red]Unknown action '{esc(action)}'. Use list or pull.[/red]")
             raise typer.Exit(code=1)
     except FileNotFoundError:
         _ovms_not_found(how)
@@ -379,7 +388,7 @@ def models(
 
 def _ovms_not_found(how: str) -> None:
     """One consistent, ACTIONABLE message wherever ovms cannot be found."""
-    rprint(f"[red]Could not find the ovms binary[/red] [dim]({how})[/dim]")
+    rprint(f"[red]Could not find the ovms binary[/red] [dim]({esc(how)})[/dim]")
     rprint("Point OVAT at it one of these ways:")
     rprint("  1. workflow.yml →  [bold]model.ovms_binary: C:\\Users\\you\\ovms_windows[/bold]")
     rprint("  2. env var      →  [bold]set OVAT_OVMS=C:\\Users\\you\\ovms_windows[/bold]  "
@@ -406,7 +415,7 @@ def serve(
 
     if stop:
         # Stopping needs no config parsing at all; just the recorded pid.
-        rprint(stop_from_pidfile())
+        rprint(esc(stop_from_pidfile()))
         return
 
     cfg = load_workflow(config)
@@ -426,21 +435,22 @@ def serve(
         enable_prefix_caching=cfg.model.enable_prefix_caching,
         binary=binary,
     )
-    rprint(f"[green]Starting OVMS[/green] for {cfg.model.name} on {cfg.model.device} "
-           f"[dim](binary via {how})[/dim] ...")
+    rprint(f"[green]Starting OVMS[/green] for {esc(cfg.model.name)} on "
+           f"{esc(cfg.model.device)} [dim](binary via {esc(how)})[/dim] ...")
     try:
         server.start()
     except FileNotFoundError:
         _ovms_not_found(how)
         raise typer.Exit(code=1)
     if server.wait_until_ready():
-        rprint(f"[green]OVMS is ready[/green] at {server.base_url}  "
-               f"[dim](pid {server.process.pid}, logs in {server.log_path})[/dim]")
+        rprint(f"[green]OVMS is ready[/green] at {esc(server.base_url)}  "
+               f"[dim](pid {server.process.pid}, "
+               f"logs in {esc(server.log_path)})[/dim]")
         rprint(f"[dim]It keeps running in the background. Stop it with:[/dim] "
-               f"ovat serve {config} --stop")
+               f"ovat serve {esc(config)} --stop")
     else:
         rprint("[red]OVMS did not become ready in time.[/red] "
-               f"See {server.log_path} for the reason.")
+               f"See {esc(server.log_path)} for the reason.")
         raise typer.Exit(code=1)
 
 
@@ -472,7 +482,7 @@ def doctor(
         sys.platform, platform.system())
     console.print(f"[ovat.dim]{os_name} {platform.machine()}  ·  "
                   f"Python {sys.version.split()[0]}"
-                  + (f"  ·  {config}" if config else "") + "[/ovat.dim]\n")
+                  + (f"  ·  {esc(config)}" if config else "") + "[/ovat.dim]\n")
 
     checks = diagnostics.run_checks(config)
 
@@ -486,8 +496,10 @@ def doctor(
     counts = {"ok": 0, "warn": 0, "fail": 0}
     for c in checks:
         counts[c.status] = counts.get(c.status, 0) + 1
+        # c.detail carries config values, paths and exception text, so it is
+        # data. The column's style still applies to the escaped string.
         table.add_row(Text(c.name, style=_name_style.get(c.status, "ovat.cyan")),
-                      status_text(c.status), c.detail)
+                      status_text(c.status), esc(c.detail))
     console.print(table)
 
     summary = Text()

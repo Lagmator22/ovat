@@ -55,6 +55,64 @@ def test_run_with_missing_config_fails():
     assert result.exit_code != 0
 
 
+def test_run_prints_an_answer_containing_markup(monkeypatch):
+    """ANY model must be printable. [/INST] used to crash run with MarkupError.
+
+    Llama- and Mistral-family models emit [/INST] routinely, and [1] shows up
+    in any citation-style answer. The answer is data; the console must not
+    read it as a format string.
+    """
+    from ovat.cli import main as cli_main
+
+    class MarkupAgent:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            return "Done.[/INST] Use [bold] for [1]."
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: MarkupAgent())
+    result = runner.invoke(app, ["run", "examples/workflow.yml", "-i", "hi"])
+    assert result.exception is None          # no MarkupError traceback
+    assert result.exit_code == 0
+    assert "[/INST]" in result.output        # printed literally...
+    assert "[bold]" in result.output         # ...not swallowed as a style tag
+
+
+def test_chat_prints_an_answer_and_sources_containing_markup(monkeypatch):
+    """Same contract on the local (no-OVMS) path, sources included."""
+    from ovat.agent import factory, rag_chat as rag_chat_mod
+    from ovat.cli import main as cli_main
+    from ovat.providers import llm_genai
+
+    class FakeRetriever:
+        def retrieve(self, query, top_k=5):
+            return []
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(cli_main, "resolve_chat_model", lambda p: "fake-dir")
+    monkeypatch.setattr(factory, "build_rag", lambda cfg: FakeRetriever())
+    monkeypatch.setattr(llm_genai, "GenAILLMProvider", lambda *a, **k: object())
+    monkeypatch.setattr(rag_chat_mod, "rag_chat",
+                        lambda *a, **k: ("Answer[/INST]", ["notes[1].md"]))
+
+    result = runner.invoke(app, ["chat", "examples/workflow.yml", "-i", "hi"])
+    assert result.exception is None
+    assert "Answer[/INST]" in result.output
+    assert "notes[1].md" in result.output     # a source path with brackets
+
+
+def test_doctor_survives_markup_in_a_config(tmp_path):
+    """Config values reach doctor's table, so they are data there too."""
+    cfg = tmp_path / "w.yml"
+    cfg.write_text("model:\n  name: 'Q[/b]8B'\n")
+    result = runner.invoke(app, ["doctor", str(cfg)])
+    assert result.exception is None          # a bracketed model name used to crash
+    assert "Q[/b]8B" in result.output
+
+
 def test_run_trace_writes_the_json_report(tmp_path, monkeypatch):
     # No OVMS here: swap the whole agent for a stub whose run() succeeds and
     # whose last_trace looks like a real native-loop trace. This tests the

@@ -33,6 +33,35 @@ def test_status_text_glyphs():
     assert ui.status_text("mystery").plain == "? mystery"   # unknown stays calm
 
 
+def test_esc_lets_any_model_output_print(capsys):
+    """A model's words are data, so rendering must PRINT them, not parse them."""
+    # [/INST] is what Llama/Mistral-family models emit. Unescaped it raised
+    # MarkupError and killed `ovat run` with a traceback.
+    ui.console.print(ui.esc("Sure![/INST]"))
+    # A style tag used to be swallowed silently: the user saw text nobody wrote.
+    ui.console.print(ui.esc("Use [bold] tags"))
+    out = capsys.readouterr().out
+    assert "Sure![/INST]" in out
+    assert "Use [bold] tags" in out
+
+
+def test_esc_round_trips_any_value_not_just_strings(capsys):
+    """Exceptions, paths and lists reach the console too, so esc() takes them.
+
+    The contract is what the user SEES, not how it is escaped: rich only reads
+    [a-z#/@...] as a tag, so "[1]" was never at risk while "[/INST]" and
+    "[bold]" were. Asserting the round-trip covers both without pinning
+    rich's tag syntax.
+    """
+    for value in [ValueError("bad [tag]"), ["notes[1].md"], "[/INST]", "[bold]x"]:
+        ui.console.print(ui.esc(value))
+    out = capsys.readouterr().out
+    assert "bad [tag]" in out
+    assert "notes[1].md" in out
+    assert "[/INST]" in out
+    assert "[bold]x" in out
+
+
 def test_banner_prints_wordmark_and_subtitle(capsys):
     ui.banner("hello subtitle")
     out = capsys.readouterr().out

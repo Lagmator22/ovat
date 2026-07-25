@@ -11,6 +11,7 @@ the real command output, so changing a colour in one place restyles the whole
 CLI.
 """
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.text import Text
 from rich.theme import Theme
@@ -74,6 +75,29 @@ STATUS_GLYPH = {
     "warn": ("!", "ovat.warn"),
     "fail": ("✗", "ovat.fail"),
 }
+
+
+def esc(value) -> str:
+    """Neutralise rich markup in a value OVAT did not write. Use it on ALL of them.
+
+    rich reads [something] in a printed string as a style tag, exactly the way
+    printf reads % in its format string. So a value must never BE the format
+    string. In C++ terms: this is printf("%s", data), and rprint(f"...{data}")
+    without it is printf(data), with the same class of consequence.
+
+    Two things went wrong before this existed, both on ordinary output:
+      * a Llama-family model ending its answer with [/INST] crashed `ovat run`
+        with a MarkupError traceback (breaking the "errors are for users" rule),
+      * a model writing [bold] had it silently swallowed as a style tag, so the
+        user was shown text the model never wrote.
+
+    Model answers, exception text, file paths, model folder names, tool names
+    imported from an MCP server and `ovms` subprocess output are all DATA. They
+    come through here on the way to the console. Escaping happens at the output
+    edge, not at the source, so the checks and providers stay free to return
+    plain strings.
+    """
+    return escape(str(value))
 
 
 def _hex_to_rgb(value: str) -> tuple:
