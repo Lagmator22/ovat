@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("textual")
 
-from textual.widgets import Input, RichLog
+from textual.widgets import Input, RichLog, Static
 
 from ovat.cli import chat_screen
 from ovat.cli.chat_screen import ChatScreen, load_prefs, save_prefs
@@ -76,6 +76,44 @@ def test_full_turn_streams_answers_and_autosaves(monkeypatch, tmp_path):
             assert "sources: finance.md" in text
             # Every turn autosaves, so a crash never loses the conversation.
             assert os.path.exists(tmp_path / ".ovat" / "sessions" / "last.json")
+    _run(scenario())
+
+
+def test_stream_tail_clips_the_live_line():
+    """The live line shows the TAIL, so it cannot grow without bound."""
+    long_tail = chat_screen._stream_tail(["word "] * 500)
+    assert len(long_tail.plain) <= chat_screen.STREAM_TAIL_CHARS + len("ovat › …")
+    assert long_tail.plain.startswith("ovat › …")     # marked as clipped
+    assert long_tail.plain.endswith("word ")          # and it is the END we kept
+    # A short answer is shown whole, with no ellipsis.
+    assert chat_screen._stream_tail(["hi ", "there"]).plain == "ovat › hi there"
+
+
+def test_live_stream_line_never_squeezes_out_the_log_or_input(monkeypatch, tmp_path):
+    """The regression: a long answer used to push the input off the screen.
+
+    Measured before the fix on a 30-row screen: at 400 streamed tokens
+    #chat-stream had grown to 27 rows, #chat-log was down to 0, and the input
+    sat at y=31, i.e. below the bottom edge. max-height plus the tail render
+    keep the live line small enough that the transcript and input survive.
+    """
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(size=(100, 30)) as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            log = screen.query_one("#chat-log", RichLog)
+            stream = screen.query_one("#chat-stream", Static)
+            inp = screen.query_one("#chat-input", Input)
+
+            stream.update(chat_screen._stream_tail(["token "] * 400))
+            await pilot.pause()
+            await pilot.pause()          # let the layout settle before measuring
+
+            assert stream.size.height <= 6                  # capped
+            assert log.size.height >= 10                    # transcript survives
+            assert inp.region.y + inp.size.height <= app.size.height   # still visible
     _run(scenario())
 
 

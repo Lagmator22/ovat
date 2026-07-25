@@ -17,6 +17,7 @@ headless in milliseconds.
 """
 import json
 import os
+import time
 
 from rich.text import Text
 from textual import work
@@ -33,6 +34,27 @@ from ovat.cli import ui
 # project's chats and preferences stay with that project.
 PREFS_FILE = "chat_prefs.json"
 SESSIONS_DIR = "sessions"
+
+# The live "streaming" line is a preview of the answer in flight, NOT the
+# transcript; the finished answer goes to the log. So it renders only the TAIL
+# of what has arrived so far. Without this the widget grew one row per wrapped
+# line: a 400-token answer collapsed the transcript to zero rows and pushed the
+# input off the bottom of the screen. #chat-stream's max-height is the hard
+# guarantee; this budget keeps the content near that size.
+STREAM_TAIL_CHARS = 320
+# Repainting on every token means one blocking main-thread hop per token, which
+# throttles generation to the UI's refresh rate. Sample instead, the same trick
+# shell.iter_display_lines uses for \r progress frames. Dropped frames cost
+# nothing: the full answer is committed to the log when generation ends.
+STREAM_REFRESH_S = 0.05
+
+
+def _stream_tail(parts: list) -> Text:
+    """The live line: the last STREAM_TAIL_CHARS of the answer so far."""
+    text = "".join(parts)
+    clipped = text[-STREAM_TAIL_CHARS:]
+    prefix = "ovat › " if len(clipped) == len(text) else "ovat › …"
+    return Text(prefix + clipped, style=ui.DIM)
 
 
 def _ovat_dir(cwd: str) -> str:
@@ -106,7 +128,9 @@ class ChatScreen(Screen):
         padding: 0 1;
         margin: 1 2 0 2;
     }
-    #chat-stream { height: auto; margin: 0 2; padding: 0 1; }
+    /* max-height is load-bearing: the live line must never grow enough to
+       squeeze the 1fr transcript or push the input off the screen. */
+    #chat-stream { height: auto; max-height: 6; margin: 0 2; padding: 0 1; }
     #chat-input { margin: 0 2 1 2; border: round #8F5CFF; }
     """
 
@@ -151,6 +175,20 @@ class ChatScreen(Screen):
         self._stop_stream = False
         self._set_placeholder("ask about your docs  ·  /save /load /back  ·  "
                               "Esc stops / leaves")
+
+    def _commit_turn(self, answer: str, sources: list) -> None:
+        """Retire the live line and commit the answer, in ONE main-thread pass.
+
+        Clearing the stream and writing the log used to be separate
+        call_from_thread hops, so the screen repainted with neither showing:
+        a visible flicker between the streamed text vanishing and the answer
+        appearing. Batched, the swap happens within a single refresh.
+        """
+        self.query_one("#chat-stream", Static).update("")
+        self._log(Text(f"ovat › {answer}"))
+        if sources:
+            self._log(Text("sources: " + ", ".join(sources), style=ui.DIM))
+        self._mark_idle()
 
     # ---- loading ----------------------------------------------------------
 
@@ -241,13 +279,18 @@ class ChatScreen(Screen):
         cfg, retriever, llm = self._components
         stream_line = self.query_one("#chat-stream", Static)
         parts: list = []
+        last_render = 0.0
 
         def on_token(token: str):
+            nonlocal last_render
             if self._stop_stream:
                 return True              # tell openvino_genai to stop generating
             parts.append(token)
-            self.app.call_from_thread(stream_line.update,
-                                  Text("ovat › " + "".join(parts), style=ui.DIM))
+            now = time.monotonic()
+            if now - last_render < STREAM_REFRESH_S:
+                return False             # too soon to repaint; the token is kept
+            last_render = now
+            self.app.call_from_thread(stream_line.update, _stream_tail(parts))
             return False
 
         try:
@@ -272,9 +315,4 @@ class ChatScreen(Screen):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         self._session.save(path)
 
-        self.app.call_from_thread(stream_line.update, "")
-        self.app.call_from_thread(self._log, Text(f"ovat › {answer}"))
-        if sources:
-            self.app.call_from_thread(self._log, Text("sources: " + ", ".join(sources),
-                                                  style=ui.DIM))
-        self.app.call_from_thread(self._mark_idle)
+        self.app.call_from_thread(self._commit_turn, answer, sources)
