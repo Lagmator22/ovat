@@ -17,6 +17,7 @@ headless in milliseconds.
 """
 import json
 import os
+import re
 import time
 
 from rich.text import Text
@@ -24,11 +25,25 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import Input, RichLog, Static
+from textual.widgets import Input, OptionList, RichLog, Static
+from textual.widgets.option_list import Option
 
 from ovat.agent.rag_chat import rag_chat
 from ovat.agent.session import Session
 from ovat.cli import ui
+
+# The slash menu for this screen. Unlike the doctor screen's, choosing one
+# INSERTS it rather than running it: most of these take an argument
+# (/tokens 2048, /save demo, /copy all), so the useful next step is typing,
+# not executing. Enter on the bare command still runs it.
+CHAT_COMMANDS = [
+    ("/thinking", "show or hide the model's reasoning"),
+    ("/copy", "copy the last answer  (or 'me' / 'all')"),
+    ("/tokens", "answer length cap  (0 = no cap)"),
+    ("/save", "save this conversation"),
+    ("/load", "load a saved conversation"),
+    ("/back", "return to the launcher"),
+]
 
 # Both live under .ovat/ in the directory the user launched from, so a
 # project's chats and preferences stay with that project.
@@ -47,6 +62,32 @@ STREAM_TAIL_CHARS = 320
 # shell.iter_display_lines uses for \r progress frames. Dropped frames cost
 # nothing: the full answer is committed to the log when generation ends.
 STREAM_REFRESH_S = 0.05
+
+
+# Reasoning models narrate before they answer. Qwen3 and the DeepSeek-R1
+# family wrap that narration in <think>…</think>; some exports spell it
+# <thinking>. Both spellings, any case, across newlines.
+_THINK_BLOCK = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>",
+                          re.DOTALL | re.IGNORECASE)
+_THINK_OPEN = re.compile(r"<think(?:ing)?>", re.IGNORECASE)
+
+
+def strip_thinking(text: str) -> str:
+    """Drop the reasoning blocks, leaving the answer.
+
+    Interesting once, clutter every time after: a single Qwen3 answer can
+    spend fifteen lines deciding what the question meant before saying
+    anything. This affects the DISPLAY only. The session keeps the raw text,
+    so /thinking on can bring it back and /save never loses it.
+    """
+    cleaned = _THINK_BLOCK.sub("", text)
+    # An unclosed block means generation stopped mid-thought: Esc, or the
+    # token cap ran out. Everything from the opening tag on is reasoning, so
+    # it goes too, rather than leaving a dangling "<think>" in the transcript.
+    match = _THINK_OPEN.search(cleaned)
+    if match:
+        cleaned = cleaned[:match.start()]
+    return cleaned.strip()
 
 
 def _stream_tail(parts: list) -> Text:
@@ -131,6 +172,19 @@ class ChatScreen(Screen):
     /* max-height is load-bearing: the live line must never grow enough to
        squeeze the 1fr transcript or push the input off the screen. */
     #chat-stream { height: auto; max-height: 6; margin: 0 2; padding: 0 1; }
+    #chat-palette {
+        display: none;
+        height: auto;
+        max-height: 7;
+        margin: 0 2;
+        border: round #8F5CFF;
+        background: #0d1117;
+    }
+    #chat-palette > .option-list--option-highlighted {
+        background: #0068B5;
+        color: #ffffff;
+        text-style: bold;
+    }
     #chat-input { margin: 0 2 1 2; border: round #8F5CFF; }
     """
 
@@ -145,6 +199,7 @@ class ChatScreen(Screen):
         self._session = Session()        # the transcript; system stays in rag_chat
         self._busy = False
         self._stop_stream = False        # Esc mid-generation sets this
+        self._show_thinking = False      # /thinking; hidden is the useful default
 
     def compose(self) -> ComposeResult:
         header = Text()
@@ -154,6 +209,7 @@ class ChatScreen(Screen):
         yield Static(header, id="chat-header")
         yield RichLog(id="chat-log", highlight=False, markup=False, wrap=True)
         yield Static("", id="chat-stream")
+        yield OptionList(id="chat-palette")
         yield Input(placeholder="loading the model…", id="chat-input")
 
     def on_mount(self) -> None:
@@ -167,14 +223,37 @@ class ChatScreen(Screen):
     def _log(self, text: Text) -> None:
         self.query_one("#chat-log", RichLog).write(text)
 
+    def _for_display(self, text: str) -> str:
+        """One place decides whether reasoning is on screen or not."""
+        return text if self._show_thinking else strip_thinking(text)
+
+    def _replay(self) -> None:
+        """Redraw the whole transcript from the session.
+
+        RichLog is append-only, so a /thinking toggle that only changed
+        FUTURE answers would leave the reasoning you just hid sitting on
+        screen. Replaying from the session (which always holds the raw text)
+        makes the toggle mean what it says. /load reuses this.
+        """
+        log = self.query_one("#chat-log", RichLog)
+        log.clear()
+        for message in self._session.messages:
+            content = message.get("content")
+            if not content:
+                continue
+            if message["role"] == "user":
+                log.write(Text(f"you › {content}", style=f"bold {ui.CYAN}"))
+            elif message["role"] == "assistant":
+                log.write(Text(f"ovat › {self._for_display(content)}"))
+
     def _set_placeholder(self, text: str) -> None:
         self.query_one("#chat-input", Input).placeholder = text
 
     def _mark_idle(self) -> None:
         self._busy = False
         self._stop_stream = False
-        self._set_placeholder("ask about your docs  ·  /save /load /tokens "
-                              "/copy /back  ·  Esc stops / leaves")
+        self._set_placeholder("ask about your docs  ·  type / for commands"
+                              "  ·  Esc stops / leaves")
 
     def _commit_turn(self, answer: str, sources: list) -> None:
         """Retire the live line and commit the answer, in ONE main-thread pass.
@@ -185,7 +264,13 @@ class ChatScreen(Screen):
         appearing. Batched, the swap happens within a single refresh.
         """
         self.query_one("#chat-stream", Static).update("")
-        self._log(Text(f"ovat › {answer}"))
+        shown = self._for_display(answer)
+        if answer and not shown:
+            # Everything that came back was reasoning, so the cap ran out
+            # before the model reached its answer. Say which knobs help.
+            shown = ("(only reasoning came back before generation stopped; "
+                     "/thinking on to read it, or raise /tokens)")
+        self._log(Text(f"ovat › {shown}"))
         if sources:
             self._log(Text("sources: " + ", ".join(sources), style=ui.DIM))
         self._mark_idle()
@@ -209,7 +294,59 @@ class ChatScreen(Screen):
 
     # ---- leaving / cancelling ---------------------------------------------
 
+    # ---- the slash menu ----------------------------------------------------
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        palette = self.query_one("#chat-palette", OptionList)
+        value = event.value
+        if value.startswith("/") and " " not in value:
+            matches = [(name, help_text) for name, help_text in CHAT_COMMANDS
+                       if name.startswith(value.lower())]
+            palette.clear_options()
+            if matches:
+                palette.add_options([
+                    Option(ui.slash_label(name, help_text, width=10),
+                           id=name.lstrip("/"))
+                    for name, help_text in matches
+                ])
+                palette.display = True
+                return
+        palette.display = False
+
+    def on_key(self, event) -> None:
+        """Down steps into the menu, matching the launcher and doctor screen."""
+        if event.key != "down":
+            return
+        palette = self.query_one("#chat-palette", OptionList)
+        inp = self.query_one("#chat-input", Input)
+        if palette.display and self.focused is inp:
+            palette.focus()
+            if palette.option_count:
+                palette.highlighted = 0
+            event.stop()
+
+    def on_option_list_option_selected(self,
+                                       event: OptionList.OptionSelected) -> None:
+        """Fill the line in, ready for an argument, rather than running it.
+
+        /tokens, /save, /load and /copy all take one, so executing on
+        selection would mean picking from the menu could never reach the
+        useful form of most of these commands.
+        """
+        palette = self.query_one("#chat-palette", OptionList)
+        inp = self.query_one("#chat-input", Input)
+        palette.display = False
+        inp.value = f"/{event.option.id} "
+        inp.focus()
+        self.call_after_refresh(setattr, inp, "cursor_position", len(inp.value))
+
     def action_back(self) -> None:
+        # Esc closes the menu first, so opening it is not a one-way trip.
+        palette = self.query_one("#chat-palette", OptionList)
+        if palette.display:
+            palette.display = False
+            self.query_one("#chat-input", Input).focus()
+            return
         if self._busy:
             # First Esc stops the generation (the streamer sees the flag and
             # returns True to openvino_genai); the screen stays.
@@ -224,6 +361,7 @@ class ChatScreen(Screen):
         line = event.value.strip()
         inp = self.query_one("#chat-input", Input)
         inp.value = ""
+        self.query_one("#chat-palette", OptionList).display = False
         if not line:
             return
 
@@ -263,13 +401,8 @@ class ChatScreen(Screen):
                 self._log(Text(f"no saved conversation at {path}", style=ui.YELLOW))
                 return
             self._session = Session.load(path)
+            self._replay()
             self._log(Text(f"(loaded {path})", style=ui.DIM))
-            for message in self._session.messages:
-                if message["role"] == "user":
-                    self._log(Text(f"you › {message['content']}",
-                                   style=f"bold {ui.CYAN}"))
-                elif message["role"] == "assistant" and message.get("content"):
-                    self._log(Text(f"ovat › {message['content']}"))
             return
         if head == "/tokens":
             self._set_token_cap(rest.strip())
@@ -277,9 +410,32 @@ class ChatScreen(Screen):
         if head == "/copy":
             self._copy(rest.strip().lower())
             return
-        self._log(Text(f"unknown chat command {head}. "
-                       f"I know /save /load /tokens /copy /back.",
+        if head in ("/thinking", "/think"):
+            self._toggle_thinking(rest.strip().lower())
+            return
+        known = " ".join(name for name, _ in CHAT_COMMANDS)
+        self._log(Text(f"unknown chat command {head}. I know {known}.",
                        style=ui.YELLOW))
+
+    def _toggle_thinking(self, value: str) -> None:
+        """/thinking [on|off]: show or hide the model's reasoning blocks.
+
+        Bare /thinking flips it. The transcript is redrawn either way, so the
+        reasoning you just hid actually leaves the screen.
+        """
+        if value in ("", "toggle"):
+            self._show_thinking = not self._show_thinking
+        elif value in ("on", "show", "yes"):
+            self._show_thinking = True
+        elif value in ("off", "hide", "no"):
+            self._show_thinking = False
+        else:
+            self._log(Text(f"/thinking takes on, off, or nothing, "
+                           f"not {value!r}.", style=ui.YELLOW))
+            return
+        self._replay()
+        state = "shown" if self._show_thinking else "hidden"
+        self._log(Text(f"reasoning is now {state}.", style=ui.GREEN))
 
     def _last(self, role: str) -> str:
         """The most recent message from `role`, or "" if there is none yet."""
@@ -296,13 +452,17 @@ class ChatScreen(Screen):
         keeping. The transcript already holds every turn, so copying from it
         beats dragging a mouse across a scrollback.
         """
+        # Copying follows what is ON SCREEN, so with reasoning hidden you get
+        # the answer, and /thinking on then /copy gets the reasoning too.
         if what in ("", "last", "answer", "it"):
-            text, label = self._last("assistant"), "the last answer"
+            text = self._for_display(self._last("assistant"))
+            label = "the last answer"
         elif what in ("me", "mine", "my", "user", "question"):
             text, label = self._last("user"), "your last question"
         elif what in ("all", "everything", "chat"):
             text = "\n\n".join(
-                f"{m['role']}: {m['content']}"
+                f"{m['role']}: "
+                f"{self._for_display(m['content']) if m['role'] == 'assistant' else m['content']}"
                 for m in self._session.messages if m.get("content"))
             label = "the whole conversation"
         else:
