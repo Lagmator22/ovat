@@ -72,7 +72,11 @@ def test_full_turn_streams_answers_and_autosaves(monkeypatch, tmp_path):
 
             text = _log_text(screen)
             assert "you › how did revenue do?" in text
-            assert "ovat › ANSWER" in text
+            # The speaker label and the answer are separate lines now: the
+            # answer is rendered as markdown, and a markdown block cannot be
+            # prefixed inline.
+            assert "ovat ›" in text
+            assert "ANSWER" in text
             assert "sources: finance.md" in text
             # Every turn autosaves, so a crash never loses the conversation.
             assert os.path.exists(tmp_path / ".ovat" / "sessions" / "last.json")
@@ -577,4 +581,43 @@ def test_escape_closes_the_chat_menu_before_leaving(monkeypatch, tmp_path):
             await pilot.press("escape")
             await pilot.pause()
             assert app.screen is not screen
+    _run(scenario())
+
+
+def test_split_thinking_separates_reasoning_from_the_answer():
+    """They render differently: markdown eats <think> as an HTML tag."""
+    reasoning, answer = chat_screen.split_thinking(THINKY)
+    assert "Let me check the context" in reasoning
+    assert answer == "Revenue grew 12% in Q3."
+    # No narration at all: nothing to show separately.
+    assert chat_screen.split_thinking("plain") == ("", "plain")
+    # Unclosed: the tail is reasoning, and the answer before it survives.
+    assert chat_screen.split_thinking("hi <think>cut off") == ("<think>cut off", "hi")
+
+
+def test_markdown_in_an_answer_is_rendered_not_printed(monkeypatch, tmp_path):
+    """The AI PC transcript was full of literal ### and | table | rows."""
+    class MarkdownLLM:
+        def chat(self, messages, tools=None, on_token=None):
+            return {"finish_reason": "stop", "tool_calls": None,
+                    "content": "## Heading\n\nRevenue grew **12%** in Q3."}
+
+    monkeypatch.setattr(
+        chat_screen, "_build_components",
+        lambda c, m, max_tokens=256: (WorkflowConfig(model={"name": "m"}),
+                                      FakeRetriever(), MarkdownLLM()))
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(size=(80, 30)) as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            screen.query_one("#chat-input", Input).value = "hi"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            text = _log_text(screen)
+            assert "Heading" in text
+            assert "12%" in text
+            assert "##" not in text        # rendered as a heading...
+            assert "**" not in text        # ...and as bold, not asterisks
     _run(scenario())

@@ -20,6 +20,7 @@ import os
 import re
 import time
 
+from rich.markdown import Markdown
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
@@ -88,6 +89,22 @@ def strip_thinking(text: str) -> str:
     if match:
         cleaned = cleaned[:match.start()]
     return cleaned.strip()
+
+
+def split_thinking(text: str) -> tuple:
+    """(reasoning, answer). Reasoning is "" when the model did not narrate.
+
+    The two halves want different rendering. An answer is markdown and should
+    be rendered as such; reasoning is wrapped in <think> tags, which markdown
+    reads as HTML and silently swallows, so showing it verbatim is the only
+    way /thinking on actually shows anything.
+    """
+    reasoning = [match.group(0) for match in _THINK_BLOCK.finditer(text)]
+    remainder = _THINK_BLOCK.sub("", text)
+    unclosed = _THINK_OPEN.search(remainder)
+    if unclosed:
+        reasoning.append(remainder[unclosed.start():])
+    return "\n".join(reasoning).strip(), strip_thinking(text)
 
 
 def _stream_tail(parts: list) -> Text:
@@ -216,6 +233,12 @@ class ChatScreen(Screen):
         self.query_one("#chat-input", Input).focus()
         self._log(Text("Loading retriever + local model (first load can take a "
                        "while)…", style=ui.DIM))
+        # Textual's own animated overlay, on the STREAM line rather than the
+        # transcript. Textual's `loading` replaces a widget's content while it
+        # is on, which on the transcript blanked every message written during
+        # the load; the stream line is empty until an answer arrives, so it is
+        # the right place for it and the log stays readable underneath.
+        self.query_one("#chat-stream", Static).loading = True
         self._load_components()
 
     # ---- helpers ----------------------------------------------------------
@@ -226,6 +249,35 @@ class ChatScreen(Screen):
     def _for_display(self, text: str) -> str:
         """One place decides whether reasoning is on screen or not."""
         return text if self._show_thinking else strip_thinking(text)
+
+    def _stop_loading(self) -> None:
+        self.query_one("#chat-stream", Static).loading = False
+
+    def _write_answer(self, text: str) -> None:
+        """Write one answer as rendered MARKDOWN, not as raw characters.
+
+        Instruction-tuned models answer in markdown whether or not you ask:
+        the AI PC transcript was full of literal "### **1. Overview**" and
+        pipe-delimited table rows, which is the model formatting for a reader
+        that never arrived. RichLog takes any rich renderable, so rendering
+        costs nothing structurally: headings become headings, ** becomes
+        bold, and a markdown table becomes a drawn one.
+
+        The speaker label is its own line because a markdown block cannot be
+        prefixed inline. Plain answers therefore look almost exactly as
+        before; only formatted ones change.
+        """
+        log = self.query_one("#chat-log", RichLog)
+        log.write(Text("ovat ›", style=f"bold {ui.CYAN}"))
+        if not text:
+            return
+        reasoning, answer = split_thinking(text)
+        if reasoning:
+            # Verbatim and dim. Markdown would read <think> as an HTML tag and
+            # drop the whole block, so /thinking on would show nothing at all.
+            log.write(Text(reasoning, style=ui.DIM))
+        if answer:
+            log.write(Markdown(answer))
 
     def _replay(self) -> None:
         """Redraw the whole transcript from the session.
@@ -244,7 +296,7 @@ class ChatScreen(Screen):
             if message["role"] == "user":
                 log.write(Text(f"you › {content}", style=f"bold {ui.CYAN}"))
             elif message["role"] == "assistant":
-                log.write(Text(f"ovat › {self._for_display(content)}"))
+                self._write_answer(self._for_display(content))
 
     def _set_placeholder(self, text: str) -> None:
         self.query_one("#chat-input", Input).placeholder = text
@@ -270,7 +322,7 @@ class ChatScreen(Screen):
             # before the model reached its answer. Say which knobs help.
             shown = ("(only reasoning came back before generation stopped; "
                      "/thinking on to read it, or raise /tokens)")
-        self._log(Text(f"ovat › {shown}"))
+        self._write_answer(shown)
         if sources:
             self._log(Text("sources: " + ", ".join(sources), style=ui.DIM))
         self._mark_idle()
@@ -282,11 +334,15 @@ class ChatScreen(Screen):
         try:
             components = _build_components(self._config_path, self._model_path)
         except Exception as exc:
+            # The spinner has to stop on the FAILURE path too, or a bad config
+            # leaves the transcript spinning forever behind the error message.
+            self.app.call_from_thread(self._stop_loading)
             self.app.call_from_thread(self._log, Text(f"Could not start chat: {exc}",
                                                   style=ui.RED))
             self.app.call_from_thread(self._set_placeholder, "load failed; Esc to go back")
             return
         self._components = components
+        self.app.call_from_thread(self._stop_loading)
         save_prefs(self._cwd, self._config_path, self._model_path)
         self.app.call_from_thread(self._log, Text("Ready. Ask a question about your "
                                               "indexed documents.", style=ui.GREEN))

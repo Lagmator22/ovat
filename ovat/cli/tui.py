@@ -12,6 +12,7 @@ so you get shortcuts without losing the ability to run any command at all.
 import os
 import subprocess
 import threading
+import time
 
 from rich.text import Text
 from textual import work
@@ -31,6 +32,11 @@ _FALLBACK_WORDMARK = [
     "██  ██  ████  ██  ██   ██  ",
     "██████   ██   ██  ██   ██  ",
 ]
+# How long a first Ctrl-C stays "armed" for the confirming second press.
+# Long enough to read the hint, short enough that an unrelated Ctrl-C minutes
+# later is not treated as the second half of a quit.
+QUIT_CONFIRM_S = 3.0
+
 _CYAN_RGB = (0, 199, 253)
 _BLUE_RGB = (0, 104, 181)
 
@@ -126,10 +132,24 @@ class OvatTUI(App):
             self.notify(message)
 
     def action_cancel_or_quit(self) -> None:
+        """Busy: cancel the child. Idle: quit, but only on a SECOND press.
+
+        One stray Ctrl-C used to close the whole app, which in a terminal is
+        the keystroke people hit reflexively to interrupt something. Now the
+        first press says what a second one will do, and the intent has to be
+        repeated within QUIT_CONFIRM_S to count.
+        """
         if self._busy:
             self._cancel_running()
-        else:
+            return
+        now = time.monotonic()
+        if now - self._last_quit_press < QUIT_CONFIRM_S:
             self.exit()
+            return
+        self._last_quit_press = now
+        self.query_one("#output", RichLog).write(
+            Text("Press Ctrl-C again to quit  ·  /exit works too",
+                 style=ui.YELLOW))
 
     CSS = """
     Screen { background: #0b0e14; }
@@ -171,6 +191,7 @@ class OvatTUI(App):
         # could not do that job, because the worker assigns it only after
         # spawn() returns (a race window the old code had).
         self._busy = False
+        self._last_quit_press = 0.0    # when Ctrl-C was last pressed while idle
 
     def compose(self) -> ComposeResult:
         yield Static(_banner(), id="banner")
