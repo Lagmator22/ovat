@@ -64,7 +64,12 @@ def test_screenshot_writes_an_svg_and_reports_where(tmp_path):
             await pilot.pause()
             files = list(tmp_path.glob("*.svg"))
             assert len(files) == 1                       # a real file landed
-            assert files[0].read_text().lstrip().startswith("<")
+            # encoding="utf-8" is load-bearing, not decoration. Textual writes
+            # the SVG as UTF-8 and the screenshot contains OVAT's box-drawing
+            # wordmark, so reading it back with the PLATFORM default decoded as
+            # cp1252 on Windows and died on byte 0x90 mid-glyph. The same
+            # assumption ui.enable_windows_utf8() exists to fix, made in a test.
+            assert files[0].read_text(encoding="utf-8").lstrip().startswith("<")
             log = "\n".join(str(ln) for ln
                             in app.query_one("#output", RichLog).lines)
             assert "screenshot saved" in log             # and it said where
