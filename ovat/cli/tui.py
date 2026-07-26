@@ -73,12 +73,11 @@ def _banner() -> Text:
 
 
 def _option(template) -> Option:
-    """Build one dropdown row: the slash name in purple, its help in grey."""
-    label = Text()
-    label.append(f"{template.name:<9} ", style=f"bold {ui.PURPLE}")
-    label.append(template.description, style=ui.DIM)
+    """Build one dropdown row. Styling is shared with the doctor screen's menu
+    via ui.slash_label, so the two menus cannot drift apart."""
     # ids cannot contain a slash cleanly, so I key options by the bare name.
-    return Option(label, id=template.name.lstrip("/"))
+    return Option(ui.slash_label(template.name, template.description),
+                  id=template.name.lstrip("/"))
 
 
 class OvatTUI(App):
