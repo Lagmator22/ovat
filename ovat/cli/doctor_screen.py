@@ -92,10 +92,15 @@ class DoctorScreen(Screen):
     Footer { background: #0d1117; color: #00C7FD; }
     """
 
+    # Only NON-PRINTABLE keys can be bindings here. The input is focused so the
+    # user can type slash commands, and a focused Input consumes every
+    # printable character, so "r" and "c" bindings never fired: the letter went
+    # into the box and came back as "unknown doctor command r". The footer was
+    # advertising keys that did nothing. f5 is the usual "refresh" key and is
+    # not printable, so it reaches the screen. Copying stays a slash command.
     BINDINGS = [
         Binding("escape", "back", "Back", show=True),
-        Binding("r", "refresh_checks", "Re-run", show=True),
-        Binding("c", "copy_report", "Copy", show=True),
+        Binding("f5", "refresh_checks", "Re-run", show=True),
     ]
 
     def __init__(self, config_path: str | None = None):
@@ -108,7 +113,7 @@ class DoctorScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Static(_header(self._config_path), id="doc-header")
         yield RichLog(id="doc-log", highlight=False, markup=False, wrap=True)
-        yield Input(placeholder="r re-run  ·  c copy  ·  Esc back  ·  "
+        yield Input(placeholder="F5 re-run  ·  Esc back  ·  "
                                 "/refresh /copy /clear /back", id="doc-input")
         yield Footer()
 
