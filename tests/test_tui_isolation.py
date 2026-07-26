@@ -59,3 +59,23 @@ def test_cli_modules_never_import_textual_at_module_level():
         if not line.startswith((" ", "\t")):          # module level only
             assert "textual" not in line, f"top-level textual import: {line!r}"
     assert "textual" not in shell_src
+
+
+def test_the_cli_never_pulls_in_a_tui_only_module(monkeypatch, tmp_path):
+    """The contract has to hold as the TUI grows, not just for tui.py.
+
+    doctor_screen, chat_screen and commands all import textual at module
+    level, which is fine ONLY while nothing on the CLI path imports them.
+    Poisoning each one turns any such import into an ImportError, so if a
+    future edit reaches for one from main.py, a plain `ovat doctor` breaks
+    here instead of on a user's TUI-less install.
+    """
+    _no_tui(monkeypatch)
+    for name in ("ovat.cli.commands", "ovat.cli.doctor_screen",
+                 "ovat.cli.chat_screen"):
+        monkeypatch.setitem(sys.modules, name, None)
+
+    target = tmp_path / "workflow.yml"
+    assert runner.invoke(app, ["init", str(target)]).exit_code == 0
+    assert runner.invoke(app, ["doctor", str(target)]).exit_code == 0
+    assert runner.invoke(app, ["--help"]).exit_code == 0

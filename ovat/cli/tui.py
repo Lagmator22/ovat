@@ -21,6 +21,7 @@ from textual.widgets import Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from ovat.cli import shell, ui
+from ovat.cli.commands import OvatCommands
 
 # A dependency-free fallback, used only if pyfiglet is somehow unavailable.
 _FALLBACK_WORDMARK = [
@@ -84,11 +85,45 @@ class OvatTUI(App):
     """The OVAT launcher: a styled terminal that knows OVAT's commands."""
 
     TITLE = "OVAT"
+    # OVAT's palette entries join Textual's built-in system commands rather
+    # than replacing them, so Ctrl-P still offers "change theme", "quit" etc.
+    COMMANDS = App.COMMANDS | {OvatCommands}
+
     # Textual's default Ctrl-C quits the whole app instantly; mid-command
     # that throws away a run the user only wanted to interrupt. priority=True
     # wins over the built-in binding; the action decides: busy -> cancel the
     # child (terminal muscle memory), idle -> quit like before.
-    BINDINGS = [Binding("ctrl+c", "cancel_or_quit", show=False, priority=True)]
+    #
+    # alt+p is a SECOND way into the palette, not a replacement: Textual's own
+    # COMMAND_PALETTE_BINDING stays ctrl+p, which is the one that always works.
+    # Alt bindings depend on the terminal sending a real Meta key, and macOS
+    # Terminal composes Option+p into "π" unless "Use Option as Meta" is on, so
+    # ctrl+p remains the documented one.
+    BINDINGS = [
+        Binding("ctrl+c", "cancel_or_quit", show=False, priority=True),
+        Binding("alt+p", "command_palette", "Palette", show=False),
+    ]
+
+    def action_save_ovat_screenshot(self) -> None:
+        """Palette entry: write the live screen to an SVG next to the project."""
+        try:
+            path = self.save_screenshot(path=self._cwd)
+        except Exception as exc:
+            self._notify_action(f"could not save the screenshot: {exc}", ui.RED)
+            return
+        self._notify_action(f"screenshot saved to {path}", ui.GREEN)
+
+    def _notify_action(self, message: str, colour: str) -> None:
+        """Report a palette action in the log, or fall back to a toast.
+
+        The palette works on every screen, but #output only exists on the
+        launcher. On the chat or doctor screen the query would raise, so those
+        get Textual's own notification instead of an exception.
+        """
+        try:
+            self.query_one("#output", RichLog).write(Text(message, style=colour))
+        except Exception:
+            self.notify(message)
 
     def action_cancel_or_quit(self) -> None:
         if self._busy:
