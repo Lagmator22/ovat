@@ -62,6 +62,50 @@ def test_esc_round_trips_any_value_not_just_strings(capsys):
     assert "[bold]x" in out
 
 
+def test_windows_utf8_setup_is_a_noop_everywhere_else(monkeypatch):
+    """It must not touch stdout on macOS/Linux, where the encoding is fine."""
+    touched = []
+
+    class Stream:
+        def reconfigure(self, **kwargs):
+            touched.append(kwargs)
+
+    monkeypatch.setattr(ui.sys, "platform", "darwin")
+    monkeypatch.setattr(ui.sys, "stdout", Stream())
+    monkeypatch.setattr(ui.sys, "stderr", Stream())
+    ui.enable_windows_utf8()
+    assert touched == []
+
+
+def test_windows_utf8_setup_reconfigures_both_streams(monkeypatch):
+    touched = []
+
+    class Stream:
+        def reconfigure(self, **kwargs):
+            touched.append(kwargs)
+
+    monkeypatch.setattr(ui.sys, "platform", "win32")
+    monkeypatch.setattr(ui.sys, "stdout", Stream())
+    monkeypatch.setattr(ui.sys, "stderr", Stream())
+    ui.enable_windows_utf8()          # ctypes.windll is absent here: must not raise
+    assert touched == [{"encoding": "utf-8"}, {"encoding": "utf-8"}]
+
+
+def test_windows_utf8_setup_survives_a_console_that_refuses(monkeypatch):
+    """A locked-down console means plainer output, never a CLI that cannot start."""
+    class Hostile:
+        def reconfigure(self, **kwargs):
+            raise OSError("console refused")
+
+    class NoReconfigure:
+        pass                          # e.g. a captured or replaced stream
+
+    monkeypatch.setattr(ui.sys, "platform", "win32")
+    monkeypatch.setattr(ui.sys, "stdout", Hostile())
+    monkeypatch.setattr(ui.sys, "stderr", NoReconfigure())
+    ui.enable_windows_utf8()          # must return normally
+
+
 def test_banner_prints_wordmark_and_subtitle(capsys):
     ui.banner("hello subtitle")
     out = capsys.readouterr().out
