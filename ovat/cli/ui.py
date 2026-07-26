@@ -10,11 +10,58 @@ Nothing here is decorative-only. The styles below are referenced by name from
 the real command output, so changing a colour in one place restyles the whole
 CLI.
 """
+import sys
+
 from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
 from rich.text import Text
 from rich.theme import Theme
+
+
+def enable_windows_utf8() -> None:
+    """Let a Windows console print OVAT's output instead of crashing on it.
+
+    Almost everything OVAT prints is non-ASCII: doctor's table borders, the
+    status glyphs (✓ ! ✗), the FIGlet wordmark, the → in the routing row, the
+    · separators. A Windows console still defaults to a legacy code page
+    (cp1252 in most locales), and encoding those characters for it raises
+    UnicodeEncodeError, which kills the command part-way through a table.
+
+    Both halves are needed and they do different jobs:
+      * reconfigure() makes PYTHON encode its output as UTF-8;
+      * SetConsoleOutputCP(65001) makes the CONSOLE decode it as UTF-8.
+    With only the first, python stops raising but the console renders mojibake;
+    with only the second, python still refuses to encode.
+
+    Deliberately NOT done here, both of which appear in the usual recipe:
+    SetConsoleCP, which changes the INPUT code page and belongs to whatever
+    else is reading that console; and os.system(""), the trick for switching on
+    VT sequences, which spawns an entire shell as an import side effect. rich
+    already enables VT on Windows itself.
+
+    Never raises. A console we cannot reconfigure is a reason for plainer
+    output, not a reason for the whole CLI to fail to start.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    except Exception:
+        pass
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            # No reconfigure (a captured or replaced stream), or the console
+            # refused. Either way rich falls back to what it can render.
+            pass
+
+
+# Before the Console below is built, so its first write already has a console
+# that can accept the glyphs.
+enable_windows_utf8()
 
 # The raw brand palette, hex by ROLE: the single source of truth. The rich
 # theme below derives from it, and the Textual TUI reads the aliases further
