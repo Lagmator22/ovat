@@ -140,7 +140,10 @@ def test_run_trace_writes_the_json_report(tmp_path, monkeypatch):
     result = runner.invoke(app, ["run", "examples/workflow.yml", "-i", "hi",
                                  "--trace", str(trace_path)])
     assert result.exit_code == 0
-    data = json.loads(trace_path.read_text())
+    # _write_trace writes UTF-8, so read UTF-8 rather than trusting the
+    # platform default (cp1252 on Windows), which would break the moment a
+    # model name or a tool name carried a non-ASCII character.
+    data = json.loads(trace_path.read_text(encoding="utf-8"))
     assert data["model"] == "Qwen3-8B-int4-ov"      # enriched from the config
     assert data["totals"]["prompt_tokens"] == 10    # the loop's numbers
     # psutil is a declared dependency, so a None here means the environment is
