@@ -23,6 +23,7 @@ from textual.widgets.option_list import Option
 
 from ovat.cli import shell, ui
 from ovat.cli.commands import OvatCommands
+from ovat.cli.theme import OVAT_THEME
 
 # A dependency-free fallback, used only if pyfiglet is somehow unavailable.
 _FALLBACK_WORDMARK = [
@@ -201,6 +202,12 @@ class OvatTUI(App):
                     id="prompt")
 
     def on_mount(self) -> None:
+        # Register the brand palette AS a Textual theme and select it, so every
+        # widget can be written against $primary/$success and still come out in
+        # OVAT colours, while a theme picked from the command palette actually
+        # recolours them.
+        self.register_theme(OVAT_THEME)
+        self.theme = OVAT_THEME.name
         log = self.query_one("#output", RichLog)
         log.write(Text("Type any command and press Enter; it runs in the venv.",
                        style=ui.CYAN))
