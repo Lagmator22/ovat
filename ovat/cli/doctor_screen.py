@@ -33,9 +33,20 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import Footer, Input, RichLog, Static
+from textual.widgets import Footer, Input, OptionList, RichLog, Static
+from textual.widgets.option_list import Option
 
 from ovat.cli import ui
+
+# The slash menu for this screen. Same shape as shell.TEMPLATES in the
+# launcher: name, one-line help. Every one is a UI action, so unlike the
+# launcher's menu none of these insert text to be edited.
+DOCTOR_COMMANDS = [
+    ("/refresh", "re-run the checks"),
+    ("/copy", "copy the report to the clipboard"),
+    ("/clear", "empty the log"),
+    ("/back", "return to the launcher"),
+]
 
 # Derived from ui's palette aliases, never redefined here.
 _STATUS_COLOUR = {"ok": ui.GREEN, "warn": ui.YELLOW, "fail": ui.RED}
@@ -88,6 +99,19 @@ class DoctorScreen(Screen):
         padding: 0 1;
         margin: 1 2 0 2;
     }
+    #doc-palette {
+        display: none;
+        height: auto;
+        max-height: 6;
+        margin: 0 2;
+        border: round #8F5CFF;
+        background: #0d1117;
+    }
+    #doc-palette > .option-list--option-highlighted {
+        background: #0068B5;
+        color: #ffffff;
+        text-style: bold;
+    }
     #doc-input { margin: 0 2 1 2; border: round #0068B5; }
     Footer { background: #0d1117; color: #00C7FD; }
     """
@@ -113,8 +137,9 @@ class DoctorScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Static(_header(self._config_path), id="doc-header")
         yield RichLog(id="doc-log", highlight=False, markup=False, wrap=True)
-        yield Input(placeholder="F5 re-run  ·  Esc back  ·  "
-                                "/refresh /copy /clear /back", id="doc-input")
+        yield OptionList(id="doc-palette")
+        yield Input(placeholder="type / for commands  ·  F5 re-run  ·  Esc back",
+                    id="doc-input")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -129,6 +154,13 @@ class DoctorScreen(Screen):
     # ---- actions ----------------------------------------------------------
 
     def action_back(self) -> None:
+        # Esc closes the menu first if it is open, then leaves the screen.
+        # Otherwise opening the menu would be a one-way trip without a mouse.
+        palette = self.query_one("#doc-palette", OptionList)
+        if palette.display:
+            palette.display = False
+            self.query_one("#doc-input", Input).focus()
+            return
         self.app.pop_screen()
 
     def action_refresh_checks(self) -> None:
@@ -200,21 +232,63 @@ class DoctorScreen(Screen):
 
     # ---- the slash line ----------------------------------------------------
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Show the menu, filtered, as soon as the line starts with a slash."""
+        palette = self.query_one("#doc-palette", OptionList)
+        value = event.value
+        if value.startswith("/") and " " not in value:
+            matches = [(name, help_text) for name, help_text in DOCTOR_COMMANDS
+                       if name.startswith(value.lower())]
+            palette.clear_options()
+            if matches:
+                palette.add_options([
+                    Option(ui.slash_label(name, help_text), id=name.lstrip("/"))
+                    for name, help_text in matches
+                ])
+                palette.display = True
+                return
+        palette.display = False
+
+    def on_key(self, event) -> None:
+        """Down steps from the input into the menu, like the launcher."""
+        if event.key != "down":
+            return
+        palette = self.query_one("#doc-palette", OptionList)
+        inp = self.query_one("#doc-input", Input)
+        if palette.display and self.focused is inp:
+            palette.focus()
+            if palette.option_count:
+                palette.highlighted = 0
+            event.stop()
+
+    def on_option_list_option_selected(self,
+                                       event: OptionList.OptionSelected) -> None:
+        self._close_menu()
+        self._dispatch("/" + (event.option.id or ""))
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         line = event.value.strip()
-        self.query_one("#doc-input", Input).value = ""
-        if not line:
-            return
-        head = line.partition(" ")[0]
-        if head in ("/back", "/exit"):
+        self._close_menu()
+        if line:
+            self._dispatch(line.partition(" ")[0])
+
+    def _close_menu(self) -> None:
+        self.query_one("#doc-palette", OptionList).display = False
+        inp = self.query_one("#doc-input", Input)
+        inp.value = ""
+        inp.focus()
+
+    def _dispatch(self, name: str) -> None:
+        """Run one doctor command. The menu and the typed line share this."""
+        if name in ("/back", "/exit"):
             self.app.pop_screen()
-        elif head == "/refresh":
+        elif name == "/refresh":
             self.action_refresh_checks()
-        elif head == "/copy":
+        elif name == "/copy":
             self.action_copy_report()
-        elif head == "/clear":
+        elif name == "/clear":
             self.query_one("#doc-log", RichLog).clear()
         else:
-            self._log(Text(f"unknown doctor command {head}. "
-                           f"I know /refresh /copy /clear /back.",
+            known = " ".join(cmd for cmd, _ in DOCTOR_COMMANDS)
+            self._log(Text(f"unknown doctor command {name}. I know {known}.",
                            style=ui.YELLOW))

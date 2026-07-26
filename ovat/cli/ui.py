@@ -198,6 +198,20 @@ def banner(subtitle: str | None = None) -> None:
     console.print(Panel(body, title=title, border_style="ovat.blue", expand=False))
 
 
+def slash_label(name: str, description: str, width: int = 9) -> Text:
+    """One row of a slash-command dropdown: the name in purple, help in grey.
+
+    Shared by every screen that offers a "/" menu (the launcher and the doctor
+    screen) so the menus cannot drift apart in look. Raw hex, not theme names:
+    these render inside Textual widgets, against the app's console rather than
+    the CLI's themed one, where a name like "ovat.purple" means nothing.
+    """
+    label = Text()
+    label.append(f"{name:<{width}} ", style=f"bold {PURPLE}")
+    label.append(description, style=DIM)
+    return label
+
+
 def status_text(status: str) -> Text:
     """Build the coloured glyph + label for a check status (ok/warn/fail)."""
     glyph, style = STATUS_GLYPH.get(status, ("?", "ovat.dim"))

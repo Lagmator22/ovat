@@ -10,7 +10,7 @@ import pytest
 
 pytest.importorskip("textual")
 
-from textual.widgets import Input, RichLog
+from textual.widgets import Input, OptionList, RichLog
 
 from ovat.cli import diagnostics
 from ovat.cli.diagnostics import Check
@@ -221,3 +221,79 @@ def test_report_text_is_readable_without_a_terminal():
     report = _report_text(FAKE_CHECKS)
     assert "Python" in report and "ok" in report
     assert "1 ok · 1 warn · 1 fail" in report
+
+
+# The slash menu
+
+def test_typing_slash_opens_a_filtered_menu(monkeypatch):
+    monkeypatch.setattr(diagnostics, "run_checks", lambda cfg=None: FAKE_CHECKS)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            palette = screen.query_one("#doc-palette", OptionList)
+            assert palette.display is False
+
+            screen.query_one("#doc-input", Input).value = "/"
+            await pilot.pause()
+            assert palette.display is True
+            assert palette.option_count == 4          # every command
+
+            screen.query_one("#doc-input", Input).value = "/c"
+            await pilot.pause()
+            assert palette.option_count == 2          # /copy and /clear
+    _run(scenario())
+
+
+def test_choosing_from_the_menu_runs_the_command(monkeypatch):
+    runs = []
+
+    def counting(cfg=None):
+        runs.append(cfg)
+        return FAKE_CHECKS
+    monkeypatch.setattr(diagnostics, "run_checks", counting)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            inp = screen.query_one("#doc-input", Input)
+            palette = screen.query_one("#doc-palette", OptionList)
+
+            inp.value = "/ref"
+            await pilot.pause()
+            await pilot.press("down")                 # step into the menu
+            await pilot.pause()
+            await pilot.press("enter")                # choose /refresh
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert len(runs) == 2                     # it really re-ran
+            assert palette.display is False           # menu closed after use
+            assert inp.value == ""                    # and the line was cleared
+    _run(scenario())
+
+
+def test_escape_closes_the_menu_before_leaving_the_screen(monkeypatch):
+    """Otherwise opening the menu is a one-way trip without a mouse."""
+    monkeypatch.setattr(diagnostics, "run_checks", lambda cfg=None: FAKE_CHECKS)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            palette = screen.query_one("#doc-palette", OptionList)
+            screen.query_one("#doc-input", Input).value = "/"
+            await pilot.pause()
+            assert palette.display is True
+
+            await pilot.press("escape")               # first Esc: close menu
+            await pilot.pause()
+            assert palette.display is False
+            assert app.screen is screen               # still on the screen
+
+            await pilot.press("escape")               # second Esc: leave
+            await pilot.pause()
+            assert app.screen is not screen
+    _run(scenario())
