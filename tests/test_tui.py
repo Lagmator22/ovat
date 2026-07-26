@@ -43,11 +43,31 @@ def test_tab_fills_the_command_template():
         app = OvatTUI()
         async with app.run_test() as pilot:
             inp = app.query_one("#prompt", Input)
-            inp.value = "/doc"
+            # /index still INSERTS text; /doctor is now a UI action that opens
+            # the doctor screen, so it is not the example to use here.
+            inp.value = "/ind"
             await pilot.pause()
             await pilot.press("tab")
             await pilot.pause()
-            assert inp.value == "ovat doctor "         # template inserted, ready to edit
+            assert inp.value == "ovat index  "         # template inserted, ready to edit
+    _run(scenario())
+
+
+def test_tab_on_an_action_template_runs_it_instead_of_inserting_text():
+    """/doctor is an action, so completing it opens the screen, not text."""
+    from ovat.cli.doctor_screen import DoctorScreen
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = "/doc"
+            await pilot.pause()
+            await pilot.press("tab")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert isinstance(app.screen, DoctorScreen)
+            assert inp.value == "/doc"                 # nothing was inserted
     _run(scenario())
 
 
