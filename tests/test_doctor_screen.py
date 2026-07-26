@@ -83,6 +83,55 @@ def test_refresh_re_runs_the_checks(monkeypatch):
     _run(scenario())
 
 
+def test_the_advertised_key_actually_re_runs_the_checks(monkeypatch):
+    """Press the key, do not call the action. That is the whole regression.
+
+    The screen first advertised "r re-run" and "c copy", but the input is
+    focused so the user can type slash commands, and a focused Input eats
+    every printable character. Pressing r put an "r" in the box and the log
+    answered "unknown doctor command r". Only a non-printable key reaches the
+    screen, so the binding is f5.
+    """
+    runs = []
+
+    def counting(cfg=None):
+        runs.append(cfg)
+        return FAKE_CHECKS
+    monkeypatch.setattr(diagnostics, "run_checks", counting)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            assert len(runs) == 1
+            await pilot.press("f5")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert len(runs) == 2                    # the key really fired
+            assert screen.query_one("#doc-input", Input).value == ""
+    _run(scenario())
+
+
+def test_a_printable_key_types_into_the_box_and_does_not_act(monkeypatch):
+    """The other half: r must NOT be a shortcut, or it could not be typed."""
+    runs = []
+
+    def counting(cfg=None):
+        runs.append(cfg)
+        return FAKE_CHECKS
+    monkeypatch.setattr(diagnostics, "run_checks", counting)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            await pilot.press("r")
+            await pilot.pause()
+            assert len(runs) == 1                    # nothing re-ran
+            assert screen.query_one("#doc-input", Input).value == "r"
+    _run(scenario())
+
+
 def test_checks_that_blow_up_are_reported_not_crashed(monkeypatch):
     def exploding(cfg=None):
         raise RuntimeError("openvino import died")
