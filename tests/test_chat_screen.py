@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("textual")
 
-from textual.widgets import Input, RichLog, Static
+from textual.widgets import Input, OptionList, RichLog, Static
 
 from ovat.cli import chat_screen
 from ovat.cli.chat_screen import ChatScreen, load_prefs, save_prefs
@@ -366,3 +366,215 @@ def test_copy_with_a_bad_argument_explains_itself(monkeypatch, tmp_path):
     copied = _copy_scenario(monkeypatch, tmp_path, ["/copy sideways"])
     assert copied == []
     assert "takes nothing, 'me' or 'all'" in _copy_scenario.log
+
+
+# /thinking: reasoning models narrate before answering
+
+THINKY = ("<think>\nThe user asked about revenue. Let me check the context.\n"
+          "</think>\n\nRevenue grew 12% in Q3.")
+
+
+class ThinkingLLM:
+    def chat(self, messages, tools=None, on_token=None):
+        if on_token is not None:
+            on_token(THINKY)
+        return {"finish_reason": "stop", "content": THINKY, "tool_calls": None}
+
+
+def _thinking_components(config_path, model_path, max_tokens=256):
+    return WorkflowConfig(model={"name": "m"}), FakeRetriever(), ThinkingLLM()
+
+
+def test_strip_thinking_removes_the_block_not_the_answer():
+    assert chat_screen.strip_thinking(THINKY) == "Revenue grew 12% in Q3."
+    # <thinking> is the other spelling, and case must not matter.
+    assert chat_screen.strip_thinking("<Thinking>hm</THINKING> hi") == "hi"
+    # No block at all: the answer is returned untouched.
+    assert chat_screen.strip_thinking("just an answer") == "just an answer"
+
+
+def test_strip_thinking_drops_an_unclosed_block():
+    """Generation stopped mid-thought (Esc, or the token cap ran out).
+
+    Keeping the fragment would leave a dangling "<think>" and a wall of
+    reasoning presented as if it were the answer.
+    """
+    assert chat_screen.strip_thinking("answer <think>still going...") == "answer"
+    assert chat_screen.strip_thinking("<think>only reasoning") == ""
+
+
+def _thinking_turn(monkeypatch, tmp_path, commands=()):
+    monkeypatch.setattr(chat_screen, "_build_components", _thinking_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", Input)
+            inp.value = "how did revenue do?"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            for command in commands:
+                inp.value = command
+                await pilot.press("enter")
+                await pilot.pause()
+            _thinking_turn.screen = screen
+            _thinking_turn.log = _log_text(screen)
+    _run(scenario())
+    return _thinking_turn
+
+
+def test_reasoning_is_hidden_by_default_but_kept_in_the_session(monkeypatch, tmp_path):
+    result = _thinking_turn(monkeypatch, tmp_path)
+    assert "Revenue grew 12% in Q3." in result.log
+    assert "Let me check the context" not in result.log     # hidden on screen
+    # ...but the raw text is still in the session, so /save keeps everything
+    # and /thinking on can bring it back.
+    assert "<think>" in result.screen._session.messages[-1]["content"]
+
+
+def test_thinking_on_redraws_the_transcript_to_show_it(monkeypatch, tmp_path):
+    """A toggle that only changed FUTURE answers would leave the reasoning
+    you just hid sitting on an append-only log."""
+    result = _thinking_turn(monkeypatch, tmp_path, ["/thinking on"])
+    assert "Let me check the context" in result.log
+    assert "reasoning is now shown" in result.log
+
+
+def test_bare_thinking_flips_it_back(monkeypatch, tmp_path):
+    result = _thinking_turn(monkeypatch, tmp_path, ["/thinking on", "/thinking"])
+    assert "reasoning is now hidden" in result.log
+    assert "Let me check the context" not in result.log      # redrawn without it
+
+
+def test_thinking_rejects_nonsense(monkeypatch, tmp_path):
+    result = _thinking_turn(monkeypatch, tmp_path, ["/thinking maybe"])
+    assert "takes on, off, or nothing" in result.log
+
+
+def test_copy_follows_what_is_on_screen(monkeypatch, tmp_path):
+    """Copy the answer you can see; /thinking on then /copy gets the rest."""
+    monkeypatch.setattr(chat_screen, "_build_components", _thinking_components)
+    copied = []
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
+            inp = screen.query_one("#chat-input", Input)
+            inp.value = "how did revenue do?"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            inp.value = "/copy"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert copied[-1] == "Revenue grew 12% in Q3."     # no reasoning
+
+            inp.value = "/thinking on"
+            await pilot.press("enter")
+            await pilot.pause()
+            inp.value = "/copy"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert "<think>" in copied[-1]                     # now it is there
+    _run(scenario())
+
+
+def test_an_answer_that_is_only_reasoning_says_which_knobs_help(monkeypatch, tmp_path):
+    """The token cap ran out before the model finished thinking."""
+    class OnlyThinking:
+        def chat(self, messages, tools=None, on_token=None):
+            return {"finish_reason": "stop", "content": "<think>still going",
+                    "tool_calls": None}
+
+    monkeypatch.setattr(
+        chat_screen, "_build_components",
+        lambda c, m, max_tokens=256: (WorkflowConfig(model={"name": "m"}),
+                                      FakeRetriever(), OnlyThinking()))
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            screen.query_one("#chat-input", Input).value = "hi"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            text = _log_text(screen)
+            assert "only reasoning came back" in text
+            assert "/tokens" in text                 # names the fix
+    _run(scenario())
+
+
+# The chat slash menu
+
+def test_typing_slash_opens_a_filtered_chat_menu(monkeypatch, tmp_path):
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            palette = screen.query_one("#chat-palette", OptionList)
+            assert palette.display is False
+
+            screen.query_one("#chat-input", Input).value = "/"
+            await pilot.pause()
+            assert palette.display is True
+            assert palette.option_count == len(chat_screen.CHAT_COMMANDS)
+
+            screen.query_one("#chat-input", Input).value = "/t"
+            await pilot.pause()
+            assert palette.option_count == 2          # /thinking and /tokens
+    _run(scenario())
+
+
+def test_choosing_from_the_chat_menu_fills_the_line_for_an_argument(
+        monkeypatch, tmp_path):
+    """/tokens and /save need a value, so selection inserts, not executes."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", Input)
+            palette = screen.query_one("#chat-palette", OptionList)
+
+            inp.value = "/tok"
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+
+            assert inp.value == "/tokens "            # ready for the number
+            assert palette.display is False
+    _run(scenario())
+
+
+def test_escape_closes_the_chat_menu_before_leaving(monkeypatch, tmp_path):
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            palette = screen.query_one("#chat-palette", OptionList)
+            screen.query_one("#chat-input", Input).value = "/"
+            await pilot.pause()
+            assert palette.display is True
+
+            await pilot.press("escape")
+            await pilot.pause()
+            assert palette.display is False
+            assert app.screen is screen               # still in chat
+
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.screen is not screen
+    _run(scenario())
