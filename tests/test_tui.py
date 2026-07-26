@@ -16,6 +16,7 @@ pytest.importorskip("textual")
 
 from textual.widgets import Input, OptionList, RichLog
 
+from ovat.cli import tui as tui_module
 from ovat.cli.tui import OvatTUI
 from tests.conftest import py_command
 
@@ -107,13 +108,35 @@ def test_ctrl_c_cancels_the_child_but_keeps_the_app_alive():
     _run(scenario())
 
 
-def test_ctrl_c_quits_when_idle():
+def test_one_ctrl_c_warns_and_the_second_quits():
+    """Ctrl-C is the reflex for "interrupt", so one press must not end the app."""
     async def scenario():
         app = OvatTUI()
         async with app.run_test() as pilot:
             await pilot.press("ctrl+c")
             await pilot.pause()
+            assert app.is_running is True              # still here
+            log_text = "\n".join(str(ln) for ln
+                                 in app.query_one("#output", RichLog).lines)
+            assert "again to quit" in log_text         # and it said what to do
+
+            await pilot.press("ctrl+c")
+            await pilot.pause()
         assert app.is_running is False
+
+
+def test_a_stale_first_ctrl_c_does_not_count_as_half_a_quit():
+    """Two presses minutes apart are two interrupts, not one quit."""
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+c")
+            await pilot.pause()
+            # Age the first press past the confirmation window.
+            app._last_quit_press -= tui_module.QUIT_CONFIRM_S + 1
+            await pilot.press("ctrl+c")
+            await pilot.pause()
+            assert app.is_running is True              # warned again, not quit
     _run(scenario())
 
 
