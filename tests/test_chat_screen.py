@@ -238,3 +238,63 @@ def test_prefs_round_trip(tmp_path):
     save_prefs(str(tmp_path), "cfg.yml", "models/llm")
     prefs = load_prefs(str(tmp_path))
     assert prefs == {"config": "cfg.yml", "model_path": "models/llm"}
+
+
+# /tokens: retune the answer cap without a model reload
+
+class _CapLLM(FakeLLM):
+    max_new_tokens = 256
+
+
+def _components_with_cap(config_path, model_path, max_tokens=256):
+    cfg = WorkflowConfig(model={"name": "m"})
+    return cfg, FakeRetriever(), _CapLLM()
+
+
+def _send(screen, pilot, text):
+    screen.query_one("#chat-input", Input).value = text
+    return pilot.press("enter")
+
+
+def test_tokens_command_retunes_the_live_provider(monkeypatch, tmp_path):
+    """The screen loaded with a 256 cap and no way to change it, so long
+    answers were simply cut off. /tokens must take effect with no reload."""
+    monkeypatch.setattr(chat_screen, "_build_components", _components_with_cap)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            llm = screen._components[2]
+            assert llm.max_new_tokens == 256
+
+            await _send(screen, pilot, "/tokens 2048")
+            await pilot.pause()
+            assert llm.max_new_tokens == 2048          # same object, no reload
+
+            await _send(screen, pilot, "/tokens 0")
+            await pilot.pause()
+            assert llm.max_new_tokens is None          # 0 means no cap
+            assert "no tokens" in _log_text(screen)
+    _run(scenario())
+
+
+def test_tokens_command_refuses_nonsense_without_crashing(monkeypatch, tmp_path):
+    monkeypatch.setattr(chat_screen, "_build_components", _components_with_cap)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            llm = screen._components[2]
+
+            await _send(screen, pilot, "/tokens lots")
+            await pilot.pause()
+            assert "wants a number" in _log_text(screen)
+            assert llm.max_new_tokens == 256           # unchanged
+
+            await _send(screen, pilot, "/tokens -1")
+            await pilot.pause()
+            assert "cannot be negative" in _log_text(screen)
+            assert llm.max_new_tokens == 256
+    _run(scenario())

@@ -149,3 +149,42 @@ def test_run_trace_writes_the_json_report(tmp_path, monkeypatch):
     assert data["peak_rss_mb"] is not None, \
         "psutil missing from this env; reinstall with: pip install -e '.[dev]'"
     assert data["peak_rss_mb"] > 0                  # psutil measured something
+
+
+def test_chat_max_tokens_zero_means_no_cap(monkeypatch):
+    """0 is the documented way to ask for an uncapped answer."""
+    from ovat.agent import factory, rag_chat as rag_chat_mod
+    from ovat.cli import main as cli_main
+    from ovat.providers import llm_genai
+
+    built = {}
+
+    class FakeRetriever:
+        def retrieve(self, query, top_k=5):
+            return []
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(cli_main, "resolve_chat_model", lambda p: "fake-dir")
+    monkeypatch.setattr(factory, "build_rag", lambda cfg: FakeRetriever())
+    monkeypatch.setattr(rag_chat_mod, "rag_chat", lambda *a, **k: ("ok", []))
+    monkeypatch.setattr(
+        llm_genai, "GenAILLMProvider",
+        lambda path, device=None, max_new_tokens=None:
+            built.update(max_new_tokens=max_new_tokens) or object())
+
+    runner.invoke(app, ["chat", "examples/workflow.yml", "-i", "hi",
+                        "--max-tokens", "0"])
+    assert built["max_new_tokens"] is None            # uncapped
+
+    runner.invoke(app, ["chat", "examples/workflow.yml", "-i", "hi",
+                        "--max-tokens", "900"])
+    assert built["max_new_tokens"] == 900
+
+
+def test_chat_rejects_a_negative_token_cap():
+    result = runner.invoke(app, ["chat", "examples/workflow.yml", "-i", "hi",
+                                 "--max-tokens", "-5"])
+    assert result.exit_code == 1
+    assert "cannot be negative" in result.output

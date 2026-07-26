@@ -173,8 +173,8 @@ class ChatScreen(Screen):
     def _mark_idle(self) -> None:
         self._busy = False
         self._stop_stream = False
-        self._set_placeholder("ask about your docs  ·  /save /load /back  ·  "
-                              "Esc stops / leaves")
+        self._set_placeholder("ask about your docs  ·  /save /load /tokens /back"
+                              "  ·  Esc stops / leaves")
 
     def _commit_turn(self, answer: str, sources: list) -> None:
         """Retire the live line and commit the answer, in ONE main-thread pass.
@@ -271,8 +271,37 @@ class ChatScreen(Screen):
                 elif message["role"] == "assistant" and message.get("content"):
                     self._log(Text(f"ovat › {message['content']}"))
             return
-        self._log(Text(f"unknown chat command {head}. I know /save /load /back.",
-                       style=ui.YELLOW))
+        if head == "/tokens":
+            self._set_token_cap(rest.strip())
+            return
+        self._log(Text(f"unknown chat command {head}. "
+                       f"I know /save /load /tokens /back.", style=ui.YELLOW))
+
+    def _set_token_cap(self, value: str) -> None:
+        """/tokens N: retune the answer-length cap, 0 for none.
+
+        The screen loaded the model with a 256-token cap and offered no way to
+        change it, so a long answer was simply cut off mid-sentence. The
+        provider re-reads max_new_tokens on every call, so setting it on the
+        live object takes effect on the next question with NO model reload,
+        which would otherwise cost ~30 seconds.
+        """
+        if self._components is None:
+            self._log(Text("still loading; try /tokens once the model is ready.",
+                           style=ui.YELLOW))
+            return
+        try:
+            cap = int(value)
+        except ValueError:
+            self._log(Text(f"/tokens wants a number (0 = no cap), not {value!r}.",
+                           style=ui.YELLOW))
+            return
+        if cap < 0:
+            self._log(Text("/tokens cannot be negative. Use 0 for no cap.",
+                           style=ui.YELLOW))
+            return
+        self._components[2].max_new_tokens = cap or None
+        self._log(Text(f"answer cap: {cap or 'no'} tokens", style=ui.GREEN))
 
     @work(thread=True)
     def _ask(self, question: str) -> None:

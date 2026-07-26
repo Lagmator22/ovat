@@ -25,6 +25,7 @@ from ovat.providers.base import (
     RetrieverProvider,
     VLMProvider,
 )
+from ovat.providers import llm_genai
 from ovat.providers.llm_genai import GenAILLMProvider
 from ovat.providers.embeddings_genai import GenAIEmbeddingsProvider
 from ovat.providers.retriever_sqlitevec import SQLiteVecRetrieverProvider
@@ -142,3 +143,63 @@ def test_genai_vlm_describes_image():
         "Describe this image in one sentence.", [DOG_IMG]
     )
     assert "dog" in out.lower()
+
+
+# The generation cap: a number caps the answer, None means "until EOS".
+
+class _FakePipe:
+    """Records the kwargs GenAILLMProvider hands openvino_genai."""
+
+    def __init__(self):
+        self.calls = []
+
+    def generate(self, prompt, **kwargs):
+        self.calls.append(kwargs)
+        return "generated"
+
+
+def _fake_genai_provider(monkeypatch, **kwargs):
+    pipe = _FakePipe()
+    monkeypatch.setattr(llm_genai.ov_genai, "LLMPipeline",
+                        lambda path, device: pipe)
+    return GenAILLMProvider("model-dir", **kwargs), pipe
+
+
+def test_generation_is_capped_by_default(monkeypatch):
+    """The default must stay a real cap, not openvino_genai's 2**64-1.
+
+    A base model or a bad chat template can fail to emit EOS, and uncapped
+    that means minutes of CPU generation with the UI frozen.
+    """
+    provider, pipe = _fake_genai_provider(monkeypatch)
+    assert provider.max_new_tokens == 256
+    provider.chat([{"role": "user", "content": "hi"}])
+    assert pipe.calls[-1]["max_new_tokens"] == 256
+
+
+def test_none_omits_the_cap_entirely(monkeypatch):
+    # Passing None through would not be read as a number: the argument has to
+    # be absent for openvino_genai to mean "no cap".
+    provider, pipe = _fake_genai_provider(monkeypatch, max_new_tokens=None)
+    provider.chat([{"role": "user", "content": "hi"}])
+    assert "max_new_tokens" not in pipe.calls[-1]
+
+
+def test_the_cap_is_re_read_per_call_so_it_can_be_retuned_live(monkeypatch):
+    # This is what lets the TUI's /tokens work without a ~30s model reload.
+    provider, pipe = _fake_genai_provider(monkeypatch)
+    provider.chat([{"role": "user", "content": "hi"}])
+    provider.max_new_tokens = 1024
+    provider.chat([{"role": "user", "content": "hi"}])
+    provider.max_new_tokens = None
+    provider.chat([{"role": "user", "content": "hi"}])
+    assert pipe.calls[0]["max_new_tokens"] == 256
+    assert pipe.calls[1]["max_new_tokens"] == 1024
+    assert "max_new_tokens" not in pipe.calls[2]
+
+
+def test_the_cap_applies_on_the_streaming_path_too(monkeypatch):
+    provider, pipe = _fake_genai_provider(monkeypatch, max_new_tokens=64)
+    provider.chat([{"role": "user", "content": "hi"}], on_token=lambda t: False)
+    assert pipe.calls[-1]["max_new_tokens"] == 64
+    assert "streamer" in pipe.calls[-1]        # still streaming
