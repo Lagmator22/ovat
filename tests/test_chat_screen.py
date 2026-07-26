@@ -14,6 +14,7 @@ import pytest
 pytest.importorskip("textual")
 
 from textual.widgets import Input, OptionList, RichLog, Static
+from textual.containers import VerticalScroll
 
 from ovat.cli import chat_screen
 from ovat.cli.chat_screen import ChatScreen, load_prefs, save_prefs
@@ -45,8 +46,20 @@ def _fake_components(config_path, model_path, max_tokens=256):
 
 
 def _log_text(screen) -> str:
-    log = screen.query_one("#chat-log", RichLog)
-    return "\n".join(str(line) for line in log.lines)
+    """Everything in the transcript, as text.
+
+    The transcript is a VerticalScroll of message widgets now, so this reads
+    each one's source: ChatMessage keeps the markdown it was given, and the
+    status/reasoning lines are Statics whose renderable is their text.
+    """
+    view = screen.query_one("#chat-view", VerticalScroll)
+    parts = []
+    for child in view.children:
+        text = getattr(child, "text", None)          # Prompt / Response
+        if text is None:
+            text = str(getattr(child, "renderable", ""))   # Reasoning / Sources
+        parts.append(text)
+    return "\n".join(parts)
 
 
 async def _push_ready_screen(app, pilot, tmp_path):
@@ -71,54 +84,16 @@ def test_full_turn_streams_answers_and_autosaves(monkeypatch, tmp_path):
             await pilot.pause()
 
             text = _log_text(screen)
-            assert "you › how did revenue do?" in text
-            # The speaker label and the answer are separate lines now: the
-            # answer is rendered as markdown, and a markdown block cannot be
-            # prefixed inline.
-            assert "ovat ›" in text
-            assert "ANSWER" in text
-            assert "sources: finance.md" in text
+            assert "how did revenue do?" in text          # the Prompt widget
+            assert "ANSWER" in text                       # the Response widget
+            assert "finance.md" in text
             # Every turn autosaves, so a crash never loses the conversation.
             assert os.path.exists(tmp_path / ".ovat" / "sessions" / "last.json")
     _run(scenario())
 
 
-def test_stream_tail_clips_the_live_line():
-    """The live line shows the TAIL, so it cannot grow without bound."""
-    long_tail = chat_screen._stream_tail(["word "] * 500)
-    assert len(long_tail.plain) <= chat_screen.STREAM_TAIL_CHARS + len("ovat › …")
-    assert long_tail.plain.startswith("ovat › …")     # marked as clipped
-    assert long_tail.plain.endswith("word ")          # and it is the END we kept
-    # A short answer is shown whole, with no ellipsis.
-    assert chat_screen._stream_tail(["hi ", "there"]).plain == "ovat › hi there"
 
 
-def test_live_stream_line_never_squeezes_out_the_log_or_input(monkeypatch, tmp_path):
-    """The regression: a long answer used to push the input off the screen.
-
-    Measured before the fix on a 30-row screen: at 400 streamed tokens
-    #chat-stream had grown to 27 rows, #chat-log was down to 0, and the input
-    sat at y=31, i.e. below the bottom edge. max-height plus the tail render
-    keep the live line small enough that the transcript and input survive.
-    """
-    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
-
-    async def scenario():
-        app = OvatTUI()
-        async with app.run_test(size=(100, 30)) as pilot:
-            screen = await _push_ready_screen(app, pilot, tmp_path)
-            log = screen.query_one("#chat-log", RichLog)
-            stream = screen.query_one("#chat-stream", Static)
-            inp = screen.query_one("#chat-input", Input)
-
-            stream.update(chat_screen._stream_tail(["token "] * 400))
-            await pilot.pause()
-            await pilot.pause()          # let the layout settle before measuring
-
-            assert stream.size.height <= 6                  # capped
-            assert log.size.height >= 10                    # transcript survives
-            assert inp.region.y + inp.size.height <= app.size.height   # still visible
-    _run(scenario())
 
 
 def test_save_and_load_round_trip(monkeypatch, tmp_path):
@@ -615,9 +590,91 @@ def test_markdown_in_an_answer_is_rendered_not_printed(monkeypatch, tmp_path):
             await pilot.press("enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
-            text = _log_text(screen)
-            assert "Heading" in text
-            assert "12%" in text
-            assert "##" not in text        # rendered as a heading...
-            assert "**" not in text        # ...and as bold, not asterisks
+            # The answer lives in a Response, which IS a Markdown widget, so
+            # Textual renders the heading and the bold. Asserting the widget
+            # type is the honest check now: asserting on characters would be
+            # testing Textual's markdown parser, not OVAT.
+            from ovat.cli.chat_screen import Response
+            answers = list(screen.query(Response))
+            assert len(answers) == 1
+            assert answers[0].text == "## Heading\n\nRevenue grew **12%** in Q3."
+    _run(scenario())
+
+
+# The widget transcript: one Prompt and one Response per turn
+
+def test_a_turn_produces_a_prompt_and_a_response_widget(monkeypatch, tmp_path):
+    from ovat.cli.chat_screen import Prompt, Response
+
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            screen.query_one("#chat-input", Input).value = "how did revenue do?"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            prompts = list(screen.query(Prompt))
+            answers = list(screen.query(Response))
+            assert [p.text for p in prompts] == ["how did revenue do?"]
+            assert [a.text for a in answers] == ["ANSWER"]
+    _run(scenario())
+
+
+def test_streaming_updates_the_response_widget_in_place(monkeypatch, tmp_path):
+    """No separate stream line any more: the answer grows where it will stay.
+
+    That is what retired the tail-clipping and the max-height guard, which
+    only existed because the old live line could grow until it pushed the
+    input off the bottom of the screen.
+    """
+    from ovat.cli.chat_screen import Response
+
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+    monkeypatch.setattr(chat_screen, "STREAM_REFRESH_S", 0.0)   # never skip a frame
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            assert not screen.query("#chat-stream")     # the old widget is gone
+            screen.query_one("#chat-input", Input).value = "hi"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            # One widget held the answer the whole way through.
+            assert len(list(screen.query(Response))) == 1
+    _run(scenario())
+
+
+def test_the_transcript_scrolls_rather_than_squeezing_the_input(monkeypatch, tmp_path):
+    """The regression the old layout had: a long answer stole the screen."""
+    from ovat.cli.chat_screen import Response
+
+    class LongLLM:
+        def chat(self, messages, tools=None, on_token=None):
+            return {"finish_reason": "stop", "tool_calls": None,
+                    "content": "word " * 800}
+
+    monkeypatch.setattr(
+        chat_screen, "_build_components",
+        lambda c, m, max_tokens=256: (WorkflowConfig(model={"name": "m"}),
+                                      FakeRetriever(), LongLLM()))
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(size=(100, 30)) as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", Input)
+            inp.value = "hi"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.pause()
+            assert len(list(screen.query(Response))) == 1
+            # The input is still on screen; the scroll view absorbed the answer.
+            assert inp.region.y + inp.size.height <= app.size.height
     _run(scenario())

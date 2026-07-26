@@ -116,3 +116,32 @@ def test_palette_actions_report_safely_from_a_screen_without_the_log(
             await pilot.pause()
             assert len(list(tmp_path.glob("*.svg"))) == 1
     _run(scenario())
+
+
+def test_ovat_palette_is_registered_as_the_default_theme():
+    """Widgets are written against $primary/$success, so the brand has to BE
+    a theme; otherwise picking Dracula recoloured Textual's chrome and left
+    OVAT's widgets hardcoded Intel blue on top of it."""
+    from ovat.cli.theme import OVAT_THEME
+    from ovat.cli import ui
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            assert app.theme == "ovat"
+            theme = app.get_theme("ovat")
+            assert theme.primary == ui.BLUE          # derived from ui.PALETTE
+            assert theme.success == ui.GREEN
+            assert theme.error == ui.RED
+    _run(scenario())
+
+
+def test_switching_theme_from_the_palette_still_works():
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            entries = {title: cb for title, _, cb in await _entries(app)}
+            entries["Theme: dracula"]()
+            await pilot.pause()
+            assert app.theme == "dracula"            # the chat widgets follow it
+    _run(scenario())
