@@ -142,7 +142,11 @@ def run(
         rprint(f"[red]Error talking to OVMS at {esc(cfg.model.ovms_url)}[/red]: "
                f"{esc(exc)}")
         raise typer.Exit(code=1)
-    rprint(esc(answer))          # the model's words are data, never markup
+    # esc() stops the answer being read as markup; highlight=False stops rich
+    # RE-styling it afterwards. Its highlighter treats plain text as a python
+    # repr, so it bolds every bracket and colours bare numbers, which puts
+    # escape codes INSIDE the model's words: bad to read, and worse to pipe.
+    rprint(esc(answer), highlight=False)
 
     if trace:
         _write_trace(trace, cfg, agent)
@@ -275,7 +279,7 @@ def chat(
                                    system_prompt=cfg.agent.system_prompt)
     finally:
         retriever.close()
-    rprint(esc(answer.strip()))   # the model's words are data, never markup
+    rprint(esc(answer.strip()), highlight=False)   # see run(): printed as written
     if sources:
         rprint("\n[dim]sources:[/dim] " + ", ".join(esc(s) for s in sources))
 

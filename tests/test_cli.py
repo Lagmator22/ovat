@@ -143,4 +143,9 @@ def test_run_trace_writes_the_json_report(tmp_path, monkeypatch):
     data = json.loads(trace_path.read_text())
     assert data["model"] == "Qwen3-8B-int4-ov"      # enriched from the config
     assert data["totals"]["prompt_tokens"] == 10    # the loop's numbers
+    # psutil is a declared dependency, so a None here means the environment is
+    # incomplete, not that the trace is wrong. Say so, instead of letting the
+    # comparison below fail with a bare TypeError that names nothing.
+    assert data["peak_rss_mb"] is not None, \
+        "psutil missing from this env; reinstall with: pip install -e '.[dev]'"
     assert data["peak_rss_mb"] > 0                  # psutil measured something
