@@ -16,13 +16,14 @@ import time
 
 from rich.text import Text
 from textual import work
-from textual.app import App, ComposeResult
+from typing import Iterable
+
+from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
-from textual.widgets import Input, OptionList, RichLog, Static
+from textual.widgets import Footer, Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from ovat.cli import shell, ui
-from ovat.cli.commands import OvatCommands
 from ovat.cli.theme import OVAT_THEME
 
 # A dependency-free fallback, used only if pyfiglet is somehow unavailable.
@@ -92,9 +93,6 @@ class OvatTUI(App):
     """The OVAT launcher: a styled terminal that knows OVAT's commands."""
 
     TITLE = "OVAT"
-    # OVAT's palette entries join Textual's built-in system commands rather
-    # than replacing them, so Ctrl-P still offers "change theme", "quit" etc.
-    COMMANDS = App.COMMANDS | {OvatCommands}
 
     # Textual's default Ctrl-C quits the whole app instantly; mid-command
     # that throws away a run the user only wanted to interrupt. priority=True
@@ -108,29 +106,29 @@ class OvatTUI(App):
     # ctrl+p remains the documented one.
     BINDINGS = [
         Binding("ctrl+c", "cancel_or_quit", show=False, priority=True),
-        Binding("alt+p", "command_palette", "Palette", show=False),
+        # show=True so the Footer names it: this is the discoverability half.
+        Binding("ctrl+p", "command_palette", "Palette", show=True,
+                priority=True),
     ]
 
-    def action_save_ovat_screenshot(self) -> None:
-        """Palette entry: write the live screen to an SVG next to the project."""
-        try:
-            path = self.save_screenshot(path=self._cwd)
-        except Exception as exc:
-            self._notify_action(f"could not save the screenshot: {exc}", ui.RED)
-            return
-        self._notify_action(f"screenshot saved to {path}", ui.GREEN)
+    def get_system_commands(self, screen) -> Iterable[SystemCommand]:
+        """App-wide palette entries, on top of Textual's own.
 
-    def _notify_action(self, message: str, colour: str) -> None:
-        """Report a palette action in the log, or fall back to a toast.
+        Only things that make sense from anywhere. Screen-specific commands
+        live on the screens themselves (Screen.COMMANDS), so the palette shows
+        "Copy the last answer" while you are in a chat and not before.
 
-        The palette works on every screen, but #output only exists on the
-        launcher. On the chat or doctor screen the query would raise, so those
-        get Textual's own notification instead of an exception.
+        Nothing here re-implements a built-in: Textual already provides Theme,
+        Screenshot, Quit and Keys, and an earlier version of this shipped its
+        own worse copies of the first two.
         """
-        try:
-            self.query_one("#output", RichLog).write(Text(message, style=colour))
-        except Exception:
-            self.notify(message)
+        yield from super().get_system_commands(screen)
+        yield SystemCommand("Doctor",
+                            "run the environment and workflow checks",
+                            lambda: self._open_doctor(""))
+        yield SystemCommand("Chat",
+                            "chat with your indexed documents",
+                            lambda: self._open_chat(""))
 
     def action_cancel_or_quit(self) -> None:
         """Busy: cancel the child. Idle: quit, but only on a SECOND press.
@@ -200,6 +198,10 @@ class OvatTUI(App):
         yield OptionList(id="palette")
         yield Input(placeholder="Run any command (e.g. ovat doctor)  ·  type / for shortcuts",
                     id="prompt")
+        # Textual's Footer lists the active bindings, including ^p for the
+        # command palette. Without it the palette existed but nothing on
+        # screen ever said so.
+        yield Footer()
 
     def on_mount(self) -> None:
         # Register the brand palette AS a Textual theme and select it, so every
@@ -211,8 +213,9 @@ class OvatTUI(App):
         log = self.query_one("#output", RichLog)
         log.write(Text("Type any command and press Enter; it runs in the venv.",
                        style=ui.CYAN))
-        log.write(Text("Type /  for OVAT shortcuts  ·  Esc cancels a running "
-                       "command  ·  /exit to quit.", style=ui.DIM))
+        log.write(Text("Type /  for OVAT shortcuts  ·  Ctrl-P  for the command "
+                       "palette  ·  Esc cancels a running command.",
+                       style=ui.DIM))
         self.query_one("#prompt", Input).focus()
 
     # The live slash dropdown
