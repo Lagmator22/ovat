@@ -1,15 +1,18 @@
 # tests/test_commands.py
-"""Tests for OVAT's Textual command-palette entries."""
+"""Tests for OVAT's command-palette entries.
+
+Two mechanisms, per Textual's docs: App.get_system_commands for app-wide
+entries, and a Screen.COMMANDS provider for entries that only apply while a
+particular screen is up.
+"""
 import asyncio
-import os
 
 import pytest
 
 pytest.importorskip("textual")
 
-from textual.widgets import RichLog
-
-from ovat.cli.commands import OvatCommands
+from ovat.cli import diagnostics
+from ovat.cli.diagnostics import Check
 from ovat.cli.tui import OvatTUI
 
 
@@ -17,131 +20,172 @@ def _run(coro):
     asyncio.run(coro)
 
 
-async def _entries(app):
-    """(title, help, callback) for every palette entry OVAT contributes."""
-    provider = OvatCommands(app.screen)
-    return provider._entries
+def _titles(app):
+    return [c.title for c in app.get_system_commands(app.screen)]
 
 
-def test_ovat_commands_are_added_not_substituted():
-    """Ctrl-P must still offer Textual's own system commands as well."""
-    from textual.app import App
-    assert OvatCommands in OvatTUI.COMMANDS
-    assert App.COMMANDS <= OvatTUI.COMMANDS      # the built-ins survived
+def _fake_chat(monkeypatch):
+    from ovat.cli import chat_screen
+    from ovat.config.workflow import WorkflowConfig
+
+    class R:
+        def retrieve(self, q, top_k=5):
+            return []
+
+    class L:
+        def chat(self, m, tools=None, on_token=None):
+            return {"finish_reason": "stop", "content": "A", "tool_calls": None}
+
+    monkeypatch.setattr(chat_screen, "_build_components",
+                        lambda c, m, max_tokens=256:
+                        (WorkflowConfig(model={"name": "m"}), R(), L()))
 
 
-def test_palette_offers_a_screenshot_and_every_theme():
+def test_textual_builtins_are_kept_not_replaced():
+    """Theme, Screenshot, Quit and Keys are Textual's own.
+
+    An earlier version of this shipped an OVAT "Save screenshot" and 21
+    "Theme: name" entries, which put two palette entries in front of the user
+    for one job and gave the worse one first.
+    """
     async def scenario():
         app = OvatTUI()
         async with app.run_test() as pilot:
-            titles = [title for title, _, _ in await _entries(app)]
-            assert "Save screenshot" in titles
-            for theme in app.available_themes:
-                assert f"Theme: {theme}" in titles
+            titles = _titles(app)
+            for builtin in ("Theme", "Quit", "Screenshot", "Keys"):
+                assert builtin in titles
+            assert titles.count("Theme") == 1
+            assert titles.count("Screenshot") == 1
+            assert not any(t.startswith("Theme: ") for t in titles)
     _run(scenario())
 
 
-def test_each_theme_entry_applies_its_own_theme():
-    """The late-binding trap: a closure over the loop variable would make
-    every entry set the LAST theme in the list."""
+def test_ovat_adds_its_own_app_wide_entries():
     async def scenario():
         app = OvatTUI()
         async with app.run_test() as pilot:
-            entries = {title: cb for title, _, cb in await _entries(app)}
-            for name in ("nord", "dracula", "gruvbox"):
-                entries[f"Theme: {name}"]()
-                await pilot.pause()
-                assert app.theme == name
+            titles = _titles(app)
+            assert "Doctor" in titles
+            assert "Chat" in titles
     _run(scenario())
 
 
-def test_screenshot_writes_an_svg_and_reports_where(tmp_path):
-    async def scenario():
-        app = OvatTUI()
-        async with app.run_test() as pilot:
-            app._cwd = str(tmp_path)
-            app.action_save_ovat_screenshot()
-            await pilot.pause()
-            files = list(tmp_path.glob("*.svg"))
-            assert len(files) == 1                       # a real file landed
-            # encoding="utf-8" is load-bearing, not decoration. Textual writes
-            # the SVG as UTF-8 and the screenshot contains OVAT's box-drawing
-            # wordmark, so reading it back with the PLATFORM default decoded as
-            # cp1252 on Windows and died on byte 0x90 mid-glyph. The same
-            # assumption ui.enable_windows_utf8() exists to fix, made in a test.
-            assert files[0].read_text(encoding="utf-8").lstrip().startswith("<")
-            log = "\n".join(str(ln) for ln
-                            in app.query_one("#output", RichLog).lines)
-            assert "screenshot saved" in log             # and it said where
-    _run(scenario())
-
-
-def test_a_failing_screenshot_reports_instead_of_raising(monkeypatch):
-    async def scenario():
-        app = OvatTUI()
-        async with app.run_test() as pilot:
-            def boom(*a, **k):
-                raise OSError("disk full")
-            monkeypatch.setattr(app, "save_screenshot", boom)
-            app.action_save_ovat_screenshot()            # must not raise
-            await pilot.pause()
-            log = "\n".join(str(ln) for ln
-                            in app.query_one("#output", RichLog).lines)
-            assert "could not save the screenshot" in log
-            assert "disk full" in log
-    _run(scenario())
-
-
-def test_palette_actions_report_safely_from_a_screen_without_the_log(
-        monkeypatch, tmp_path):
-    """#output only exists on the launcher, but the palette works everywhere."""
+def test_the_doctor_entry_opens_the_doctor_screen(monkeypatch):
     from ovat.cli.doctor_screen import DoctorScreen
-    from ovat.cli import diagnostics
-    from ovat.cli.diagnostics import Check
-
-    # monkeypatch, never a bare assignment: a plain `diagnostics.run_checks =`
-    # here leaked the fake into every later test in the session, and
-    # test_doctor's bad-config case stopped failing as it should.
     monkeypatch.setattr(diagnostics, "run_checks",
-                        lambda cfg=None: [Check("x", "ok", "y")])
+                        lambda cfg=None: [Check("Python", "ok", "3.11")])
 
     async def scenario():
         app = OvatTUI()
         async with app.run_test() as pilot:
-            app._cwd = str(tmp_path)
+            command = next(c for c in app.get_system_commands(app.screen)
+                           if c.title == "Doctor")
+            command.callback()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert isinstance(app.screen, DoctorScreen)
+    _run(scenario())
+
+
+# Screen-scoped commands
+
+def test_chat_commands_are_scoped_to_the_chat_screen(monkeypatch, tmp_path):
+    """"Copy the last answer" means nothing on the launcher, so it must not
+    be offered there."""
+    from ovat.cli.chat_screen import ChatCommands, ChatScreen
+    _fake_chat(monkeypatch)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            assert ChatCommands not in OvatTUI.COMMANDS      # not app-wide
+            screen = ChatScreen("w.yml", "m", cwd=str(tmp_path))
+            app.push_screen(screen)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert ChatCommands in ChatScreen.COMMANDS       # scoped to here
+
+            titles = [t for t, _, _ in ChatCommands(screen).commands()]
+            assert "Copy the last answer" in titles
+            assert "Show reasoning" in titles
+    _run(scenario())
+
+
+def test_the_reasoning_entry_describes_what_it_will_do(monkeypatch, tmp_path):
+    """Show while hidden, Hide while shown: the palette never offers to do
+    the thing that already happened."""
+    from ovat.cli.chat_screen import ChatCommands, ChatScreen
+    _fake_chat(monkeypatch)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = ChatScreen("w.yml", "m", cwd=str(tmp_path))
+            app.push_screen(screen)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert "Show reasoning" in [t for t, _, _
+                                        in ChatCommands(screen).commands()]
+            screen._show_thinking = True
+            assert "Hide reasoning" in [t for t, _, _
+                                        in ChatCommands(screen).commands()]
+    _run(scenario())
+
+
+def test_doctor_commands_are_scoped_to_the_doctor_screen(monkeypatch):
+    from ovat.cli.doctor_screen import DoctorCommands, DoctorScreen
+    monkeypatch.setattr(diagnostics, "run_checks",
+                        lambda cfg=None: [Check("Python", "ok", "3.11")])
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = DoctorScreen()
+            app.push_screen(screen)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert DoctorCommands in DoctorScreen.COMMANDS
+            titles = [t for t, _, _ in DoctorCommands(screen).commands()]
+            assert titles == ["Re-run the checks", "Copy the report"]
+    _run(scenario())
+
+
+# Discoverability: a palette nobody knows about is no feature at all
+
+def test_the_footer_advertises_the_palette_on_every_screen(monkeypatch):
+    from textual.widgets import Footer
+    from ovat.cli.doctor_screen import DoctorScreen
+    monkeypatch.setattr(diagnostics, "run_checks",
+                        lambda cfg=None: [Check("Python", "ok", "3.11")])
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            assert app.query(Footer)                     # the launcher
             app.push_screen(DoctorScreen())
             await app.workers.wait_for_complete()
             await pilot.pause()
-            app.action_save_ovat_screenshot()            # falls back to notify
-            await pilot.pause()
-            assert len(list(tmp_path.glob("*.svg"))) == 1
+            assert app.screen.query(Footer)              # and the doctor screen
     _run(scenario())
 
 
-def test_ovat_palette_is_registered_as_the_default_theme():
-    """Widgets are written against $primary/$success, so the brand has to BE
-    a theme; otherwise picking Dracula recoloured Textual's chrome and left
-    OVAT's widgets hardcoded Intel blue on top of it."""
-    from ovat.cli.theme import OVAT_THEME
-    from ovat.cli import ui
+def test_the_palette_binding_is_shown_not_hidden():
+    """show=True is what puts it in the Footer. show=False would leave the
+    palette existing with nothing on screen ever mentioning it."""
+    palette = [b for b in OvatTUI.BINDINGS
+               if getattr(b, "action", None) == "command_palette"]
+    assert palette, "no binding for the command palette"
+    assert all(b.show for b in palette)
+
+
+def test_the_welcome_text_names_the_shortcut():
+    from textual.widgets import RichLog
 
     async def scenario():
         app = OvatTUI()
         async with app.run_test() as pilot:
-            assert app.theme == "ovat"
-            theme = app.get_theme("ovat")
-            assert theme.primary == ui.BLUE          # derived from ui.PALETTE
-            assert theme.success == ui.GREEN
-            assert theme.error == ui.RED
-    _run(scenario())
-
-
-def test_switching_theme_from_the_palette_still_works():
-    async def scenario():
-        app = OvatTUI()
-        async with app.run_test() as pilot:
-            entries = {title: cb for title, _, cb in await _entries(app)}
-            entries["Theme: dracula"]()
-            await pilot.pause()
-            assert app.theme == "dracula"            # the chat widgets follow it
+            log = "\n".join(str(line) for line
+                            in app.query_one("#output", RichLog).lines)
+            assert "Ctrl-P" in log
     _run(scenario())

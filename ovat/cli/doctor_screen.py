@@ -37,6 +37,7 @@ from textual.widgets import Footer, Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from ovat.cli import ui
+from ovat.cli.commands import ScreenCommands
 
 # The slash menu for this screen. Same shape as shell.TEMPLATES in the
 # launcher: name, one-line help. Every one is a UI action, so unlike the
@@ -86,8 +87,23 @@ def _report_text(checks: list) -> str:
     return "\n".join(lines)
 
 
+class DoctorCommands(ScreenCommands):
+    """Palette entries for the doctor screen only."""
+
+    def commands(self) -> list:
+        screen = self.screen
+        return [
+            ("Re-run the checks", "diagnose the environment again",
+             screen.action_refresh_checks),
+            ("Copy the report", "put the plain-text report on the clipboard",
+             screen.action_copy_report),
+        ]
+
+
 class DoctorScreen(Screen):
     """`ovat doctor`, in-app and re-runnable."""
+
+    COMMANDS = {DoctorCommands}
 
     DEFAULT_CSS = """
     DoctorScreen { background: #0b0e14; }

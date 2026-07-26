@@ -35,12 +35,13 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
 from textual.containers import VerticalScroll
-from textual.widgets import Input, Markdown, OptionList, Static
+from textual.widgets import Footer, Input, Markdown, OptionList, Static
 from textual.widgets.option_list import Option
 
 from ovat.agent.rag_chat import rag_chat
 from ovat.agent.session import Session
 from ovat.cli import ui
+from ovat.cli.commands import ScreenCommands
 
 # The slash menu for this screen. Unlike the doctor screen's, choosing one
 # INSERTS it rather than running it: most of these take an argument
@@ -226,8 +227,35 @@ class Note(TranscriptLine):
     """A status line: confirmations, refusals, errors."""
 
 
+class ChatCommands(ScreenCommands):
+    """Palette entries that only exist while a chat is open.
+
+    These duplicate the slash commands ON PURPOSE. The slash menu is for
+    someone already typing; the palette is for someone who does not yet know
+    the slash menu exists, which is most people the first time.
+    """
+
+    def commands(self) -> list:
+        screen = self.screen
+        showing = screen._show_thinking
+        return [
+            (f"{'Hide' if showing else 'Show'} reasoning",
+             "the <think> narration a reasoning model writes before answering",
+             lambda: screen.run_worker(screen._toggle_thinking(""))),
+            ("Copy the last answer", "put it on the clipboard",
+             lambda: screen._copy("")),
+            ("Copy the whole conversation", "every turn, with roles",
+             lambda: screen._copy("all")),
+            ("Save this conversation", "write it to .ovat/sessions/last.json",
+             lambda: screen.run_worker(screen._slash("/save"))),
+        ]
+
+
 class ChatScreen(Screen):
     """One conversation with the indexed documents, streaming and stateful."""
+
+    # Screen-scoped, so these appear in the palette here and nowhere else.
+    COMMANDS = {ChatCommands}
 
     # Every colour here is a THEME variable, never a hex literal. ovat/cli/
     # theme.py registers OVAT's palette as the default Textual theme, so these
@@ -307,6 +335,7 @@ class ChatScreen(Screen):
         yield VerticalScroll(id="chat-view")
         yield OptionList(id="chat-palette")
         yield Input(placeholder="loading the model…", id="chat-input")
+        yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#chat-input", Input).focus()
