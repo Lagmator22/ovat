@@ -9,6 +9,7 @@ import os
 import sys
 
 from ovat.cli import shell
+from tests.conftest import py_command
 
 
 def test_venv_env_puts_venv_bin_first_and_keeps_colour():
@@ -38,13 +39,15 @@ def test_run_command_streams_output_and_returns_zero(tmp_path):
 
 def test_run_command_reports_nonzero_exit():
     lines = []
-    code = shell.run_command("exit 3", os.getcwd(), lines.append)
+    code = shell.run_command(py_command("import sys;sys.exit(3)"),
+                             os.getcwd(), lines.append)
     assert code == 3
 
 
 def test_run_command_runs_in_the_given_directory(tmp_path):
     lines = []
-    shell.run_command("pwd", str(tmp_path), lines.append)
+    shell.run_command(py_command("import os;print(os.getcwd())"),
+                      str(tmp_path), lines.append)
     # macOS may resolve /tmp to /private/tmp, so I match the leaf directory name.
     assert any(tmp_path.name in ln for ln in lines)
 
@@ -117,7 +120,12 @@ def test_windows_line_endings_and_eof_tail_are_handled():
 
 def test_run_command_streams_a_real_progress_bar_without_flooding():
     lines = []
-    code = shell.run_command(r"printf 'x\ry\rz\rfinal\n'", os.getcwd(), lines.append)
+    # chr(13)/chr(10): a literal \r survives neither cmd.exe nor two levels
+    # of quoting, and this is the same byte stream either way.
+    code = shell.run_command(
+        py_command("import sys;sys.stdout.write('x'+chr(13)+'y'+chr(13)"
+                   "+'z'+chr(13)+'final'+chr(10))"),
+        os.getcwd(), lines.append)
     assert code == 0
     assert lines[-1] == "final"      # the real line always arrives
     assert len(lines) <= 4           # never more frames than were sent
