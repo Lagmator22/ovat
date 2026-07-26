@@ -173,8 +173,8 @@ class ChatScreen(Screen):
     def _mark_idle(self) -> None:
         self._busy = False
         self._stop_stream = False
-        self._set_placeholder("ask about your docs  ·  /save /load /tokens /back"
-                              "  ·  Esc stops / leaves")
+        self._set_placeholder("ask about your docs  ·  /save /load /tokens "
+                              "/copy /back  ·  Esc stops / leaves")
 
     def _commit_turn(self, answer: str, sources: list) -> None:
         """Retire the live line and commit the answer, in ONE main-thread pass.
@@ -274,8 +274,47 @@ class ChatScreen(Screen):
         if head == "/tokens":
             self._set_token_cap(rest.strip())
             return
+        if head == "/copy":
+            self._copy(rest.strip().lower())
+            return
         self._log(Text(f"unknown chat command {head}. "
-                       f"I know /save /load /tokens /back.", style=ui.YELLOW))
+                       f"I know /save /load /tokens /copy /back.",
+                       style=ui.YELLOW))
+
+    def _last(self, role: str) -> str:
+        """The most recent message from `role`, or "" if there is none yet."""
+        for message in reversed(self._session.messages):
+            if message.get("role") == role and message.get("content"):
+                return message["content"]
+        return ""
+
+    def _copy(self, what: str) -> None:
+        """/copy [me|all]: the last answer, your last question, or everything.
+
+        A terminal's own selection is awkward for a long streamed answer that
+        wrapped over dozens of lines, which is exactly the output worth
+        keeping. The transcript already holds every turn, so copying from it
+        beats dragging a mouse across a scrollback.
+        """
+        if what in ("", "last", "answer", "it"):
+            text, label = self._last("assistant"), "the last answer"
+        elif what in ("me", "mine", "my", "user", "question"):
+            text, label = self._last("user"), "your last question"
+        elif what in ("all", "everything", "chat"):
+            text = "\n\n".join(
+                f"{m['role']}: {m['content']}"
+                for m in self._session.messages if m.get("content"))
+            label = "the whole conversation"
+        else:
+            self._log(Text(f"/copy takes nothing, 'me' or 'all', not {what!r}.",
+                           style=ui.YELLOW))
+            return
+
+        if not text:
+            self._log(Text("nothing to copy yet.", style=ui.YELLOW))
+            return
+        self.app.copy_to_clipboard(text)
+        self._log(Text(f"copied {label} ({len(text)} chars).", style=ui.GREEN))
 
     def _set_token_cap(self, value: str) -> None:
         """/tokens N: retune the answer-length cap, 0 for none.

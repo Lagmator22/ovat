@@ -298,3 +298,71 @@ def test_tokens_command_refuses_nonsense_without_crashing(monkeypatch, tmp_path)
             assert "cannot be negative" in _log_text(screen)
             assert llm.max_new_tokens == 256
     _run(scenario())
+
+
+# /copy: last answer, last question, or the whole conversation
+
+def _copy_scenario(monkeypatch, tmp_path, commands):
+    """Run one turn, then a list of /copy commands; return what was copied."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+    copied = []
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
+            inp = screen.query_one("#chat-input", Input)
+            inp.value = "how did revenue do?"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            for command in commands:
+                inp.value = command
+                await pilot.press("enter")
+                await pilot.pause()
+            _copy_scenario.log = _log_text(screen)
+    _run(scenario())
+    return copied
+
+
+def test_copy_takes_the_last_answer_by_default(monkeypatch, tmp_path):
+    copied = _copy_scenario(monkeypatch, tmp_path, ["/copy"])
+    assert copied == ["ANSWER"]
+    assert "copied the last answer" in _copy_scenario.log
+
+
+def test_copy_me_takes_your_last_question(monkeypatch, tmp_path):
+    copied = _copy_scenario(monkeypatch, tmp_path, ["/copy me"])
+    assert copied == ["how did revenue do?"]
+
+
+def test_copy_all_takes_the_whole_conversation(monkeypatch, tmp_path):
+    copied = _copy_scenario(monkeypatch, tmp_path, ["/copy all"])
+    assert len(copied) == 1
+    assert "how did revenue do?" in copied[0]
+    assert "ANSWER" in copied[0]
+
+
+def test_copy_with_nothing_to_copy_says_so(monkeypatch, tmp_path):
+    """Before the first turn the transcript is empty; that is not an error."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+    copied = []
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
+            screen.query_one("#chat-input", Input).value = "/copy"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert copied == []
+            assert "nothing to copy yet" in _log_text(screen)
+    _run(scenario())
+
+
+def test_copy_with_a_bad_argument_explains_itself(monkeypatch, tmp_path):
+    copied = _copy_scenario(monkeypatch, tmp_path, ["/copy sideways"])
+    assert copied == []
+    assert "takes nothing, 'me' or 'all'" in _copy_scenario.log
