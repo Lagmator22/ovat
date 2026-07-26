@@ -238,7 +238,9 @@ def chat(
                                         "auto-detect (OVAT_MODELS, ./models, ~/models)."),
     device: str = typer.Option("CPU", "--device", help="CPU, or GPU/NPU on the AI PC."),
     top_k: int = typer.Option(4, "--top-k", help="How many chunks to retrieve."),
-    max_tokens: int = typer.Option(256, "--max-tokens", help="Answer length cap."),
+    max_tokens: int = typer.Option(256, "--max-tokens",
+                                   help="Answer length cap; 0 means no cap "
+                                        "(generate until the model stops)."),
 ):
     """Chat with your documents using a LOCAL OpenVINO model (no OVMS needed).
 
@@ -255,6 +257,10 @@ def chat(
     if cfg.rag is None:
         rprint("[red]This workflow has no [bold]rag:[/bold] section to chat against.[/red]")
         raise typer.Exit(code=1)
+    if max_tokens < 0:
+        rprint("[red]--max-tokens cannot be negative.[/red] Use a positive cap, "
+               "or 0 for no cap.")
+        raise typer.Exit(code=1)
 
     # Resolve + identify BEFORE any heavy loading, so a wrong model kind or a
     # missing model is a one-second answer, not a 30s load then a traceback.
@@ -266,7 +272,9 @@ def chat(
         rprint(f"[red]Could not build the retriever:[/red] {esc(exc)}")
         raise typer.Exit(code=1)
     try:
-        llm = GenAILLMProvider(model_path, device=device, max_new_tokens=max_tokens)
+        # 0 -> None: the provider reads None as "no cap".
+        llm = GenAILLMProvider(model_path, device=device,
+                               max_new_tokens=max_tokens or None)
     except Exception as exc:
         rprint(f"[red]Could not load the local model at "
                f"{esc(model_path)}:[/red] {esc(exc)}")

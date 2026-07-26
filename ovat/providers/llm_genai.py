@@ -17,15 +17,26 @@ from ovat.providers.base import LLMProvider
 class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
     """Runs a local text LLM via openvino_genai.LLMPipeline."""
 
-    def __init__(self, model_path: str, device: str = "CPU", max_new_tokens: int = 256):
+    def __init__(self, model_path: str, device: str = "CPU",
+                 max_new_tokens: int | None = 256):
         """
-        init (Constructor) runs once here to load the converted model onto a device. 
+        init (Constructor) runs once here to load the converted model onto a device.
         This is the same call made in [PoC] OvaSearch's C++:
         ov::genai::LLMPipeline pipe(path, "CPU"). CPU is default path.
-        'self' in Python == 'this' keyword in C++ 
+        'self' in Python == 'this' keyword in C++
+
+        max_new_tokens=None means "no cap": generate until the model emits its
+        end-of-sequence token. That is opt-in rather than the default on
+        purpose. openvino_genai's own default is 2**64-1 tokens, so a model
+        that never emits EOS (a base rather than instruct model, or a bad chat
+        template) would generate until it exhausts the context window, which on
+        CPU is minutes with the UI frozen and only Esc to get out. A cap you
+        can raise beats an unbounded default you have to discover.
         """
         self.pipe = ov_genai.LLMPipeline(model_path, device)
-        self.max_new_tokens = max_new_tokens #to remember/use the max_new_tokens limit for later
+        # Read fresh on every chat() call, so a caller can retune the cap on a
+        # live provider without paying to rebuild the pipeline.
+        self.max_new_tokens = max_new_tokens
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None,
              on_token=None) -> dict:
@@ -37,15 +48,18 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
         The final return dict is identical either way.
         """
         prompt = self._format(messages)
+        # Omitting the argument entirely is what "no cap" means to
+        # openvino_genai; passing None would not be read as a number.
+        limit = ({} if self.max_new_tokens is None
+                 else {"max_new_tokens": self.max_new_tokens})
         if on_token is None:
-            text = self.pipe.generate(prompt, max_new_tokens=self.max_new_tokens)
+            text = self.pipe.generate(prompt, **limit)
         else:
             def _streamer(token: str):
                 # on_token may return True to STOP generation early (that is
                 # openvino_genai's streamer contract); None/False continues.
                 return bool(on_token(token))
-            text = self.pipe.generate(prompt, max_new_tokens=self.max_new_tokens,
-                                      streamer=_streamer)
+            text = self.pipe.generate(prompt, streamer=_streamer, **limit)
         return {
             "finish_reason": "stop", # as genai directly can't request tools so writes
             "content": str(text),    # text only then stops
