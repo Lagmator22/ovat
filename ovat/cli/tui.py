@@ -243,15 +243,22 @@ class OvatTUI(App):
         if line.startswith("/"):
             head, _, rest = line.partition(" ")
             template = shell.TEMPLATES_BY_NAME.get(head)
-            if template is None:
+            if template is not None:
+                if template.insert is None:
+                    self._do_action(head, rest.strip())
+                    return
+                line = ((template.insert + rest).strip() if rest
+                        else template.insert.strip())
+            elif head.count("/") == 1:
+                # One slash and no others: "/doctr" is a shortcut they typo'd,
+                # so say so. More slashes means an absolute PATH like
+                # /usr/bin/env or /opt/homebrew/bin/foo, and this promised to
+                # run any command you type; it used to swallow every one of
+                # them as an unknown shortcut instead. Fall through and run it.
                 self.query_one("#output", RichLog).write(
                     Text(f"Unknown shortcut {head}. Type / to see them, or just "
                          f"type a normal command.", style=ui.YELLOW))
                 return
-            if template.insert is None:
-                self._do_action(head, rest.strip())
-                return
-            line = (template.insert + rest).strip() if rest else template.insert.strip()
 
         if self._maybe_cd(line):
             return

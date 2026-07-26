@@ -17,6 +17,7 @@ pytest.importorskip("textual")
 from textual.widgets import Input, OptionList, RichLog
 
 from ovat.cli.tui import OvatTUI
+from tests.conftest import py_command
 
 
 def _run(coro):
@@ -71,7 +72,7 @@ def test_ctrl_c_cancels_the_child_but_keeps_the_app_alive():
         app = OvatTUI()
         async with app.run_test() as pilot:
             inp = app.query_one("#prompt", Input)
-            inp.value = "sleep 30"
+            inp.value = py_command("import time;time.sleep(30)")
             await pilot.press("enter")
             for _ in range(100):
                 if app._proc is not None:
@@ -103,7 +104,7 @@ def test_placeholder_shows_running_state_and_restores():
             inp = app.query_one("#prompt", Input)
             # sleep, not echo: an echo can FINISH before the assertion runs,
             # and then we would see the already-restored placeholder.
-            inp.value = "sleep 30"
+            inp.value = py_command("import time;time.sleep(30)")
             await pilot.press("enter")
             assert "running" in inp.placeholder    # set synchronously on submit
             app._cancel_running()
@@ -161,7 +162,7 @@ def test_second_submit_while_busy_is_refused_not_double_spawned():
         app = OvatTUI()
         async with app.run_test() as pilot:
             inp = app.query_one("#prompt", Input)
-            inp.value = "sleep 5"
+            inp.value = py_command("import time;time.sleep(5)")
             await pilot.press("enter")            # gate closes on this thread,
             first_proc_gate = app._busy           # synchronously
             inp.value = "echo should_be_refused"
@@ -199,7 +200,7 @@ def test_escape_terminates_the_child_process():
         app = OvatTUI()
         async with app.run_test() as pilot:
             inp = app.query_one("#prompt", Input)
-            inp.value = "sleep 30"
+            inp.value = py_command("import time;time.sleep(30)")
             await pilot.press("enter")
             # Wait until the worker has actually spawned the process.
             for _ in range(100):
@@ -213,6 +214,48 @@ def test_escape_terminates_the_child_process():
             await pilot.pause()
             assert proc.poll() is not None        # the child is really dead
             assert app._busy is False             # and the gate reopened
+    _run(scenario())
+
+
+def test_absolute_path_command_runs_instead_of_being_read_as_a_shortcut():
+    """"/usr/bin/env foo" is a command, not a typo'd shortcut.
+
+    The TUI promises that anything you type runs as a real command, but every
+    line starting with "/" was matched against the slash templates and, when
+    it did not match, refused. On macOS/Linux that swallowed EVERY
+    absolute-path command. One slash still means a shortcut; more than one
+    means a path.
+    """
+    import sys as _sys
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = f"{_sys.executable} -c \"print('OVAT_ABS_PATH_OK')\""
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            log_text = "\n".join(str(ln) for ln
+                                 in app.query_one("#output", RichLog).lines)
+            assert "OVAT_ABS_PATH_OK" in log_text      # it really ran
+            assert "Unknown shortcut" not in log_text
+    _run(scenario())
+
+
+def test_a_mistyped_slash_shortcut_still_gets_a_hint():
+    """The other half of the same rule: "/doctr" must not be run as a command."""
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = "/doctr"
+            await pilot.press("enter")
+            await pilot.pause()
+            log_text = "\n".join(str(ln) for ln
+                                 in app.query_one("#output", RichLog).lines)
+            assert "Unknown shortcut" in log_text
+            assert app._proc is None                   # nothing was spawned
     _run(scenario())
 
 

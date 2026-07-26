@@ -8,11 +8,31 @@ entire loop logic in milliseconds, on any machine, Mac or AI PC.
 """
 import json
 import os
+import shlex
+import sys
 from types import SimpleNamespace
 
 import pytest
 
 from ovat.providers.base import LLMProvider
+
+
+def py_command(code: str) -> str:
+    """A shell command string that runs `code` in THIS interpreter, anywhere.
+
+    The TUI's shell layer takes a command STRING, so a test has to name a real
+    command, and the obvious ones are POSIX-only: cmd.exe has no sleep, no pwd
+    and no printf. Routing through sys.executable gives one command that
+    behaves identically on both platforms, quoted for whichever shell will
+    parse it. Using THIS interpreter also means the child is the venv python,
+    the same one venv_env() puts first on PATH.
+
+    Keep `code` free of double quotes: cmd.exe cannot nest them, so use
+    chr(13)/chr(10) rather than escaped literals.
+    """
+    if os.name == "nt":
+        return f'"{sys.executable}" -c "{code}"'
+    return f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}"
 
 
 @pytest.fixture(autouse=True)
