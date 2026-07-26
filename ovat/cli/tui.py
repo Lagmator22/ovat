@@ -286,6 +286,21 @@ class OvatTUI(App):
             self.exit()
         elif name == "/chat":
             self._open_chat(args)
+        elif name == "/doctor":
+            self._open_doctor(args)
+
+    def _open_doctor(self, args: str) -> None:
+        """Push the in-app doctor screen: `/doctor [config]`.
+
+        Imported here, not at module scope, for the same reason as the chat
+        screen: this module must stay importable without the [tui] extra.
+        """
+        from ovat.cli.doctor_screen import DoctorScreen
+
+        config = args.strip()
+        if config and not os.path.isabs(config):
+            config = os.path.normpath(os.path.join(self._cwd, config))
+        self.push_screen(DoctorScreen(config_path=config or None))
 
     def _open_chat(self, args: str) -> None:
         """Push the native chat screen: `/chat [config] [model-path]`.

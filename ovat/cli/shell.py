@@ -36,7 +36,10 @@ class SlashTemplate:
 # user can finish and run. /clear and /exit are handled by the TUI itself.
 TEMPLATES = [
     SlashTemplate("/chat", None, "chat with your indexed docs (local model)"),
-    SlashTemplate("/doctor", "ovat doctor ", "check env + an optional config"),
+    # insert=None makes this a UI ACTION: the TUI opens its own doctor screen,
+    # which can re-run the checks in place. `/validate` below still inserts the
+    # subprocess form for anyone who wants `ovat doctor <config>` in the log.
+    SlashTemplate("/doctor", None, "environment + config checks, in-app"),
     SlashTemplate("/run", "ovat run  --input \"\"", "run the agent on a config",
                   cursor=len("ovat run ")),
     SlashTemplate("/index", "ovat index  ", "index a docs folder for search_docs",
