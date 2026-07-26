@@ -81,14 +81,25 @@ def spawn(cmd: str, cwd: str, env: dict | None = None) -> subprocess.Popen:
     I route through the user's shell so pipes, globs, and redirects work like a
     normal terminal. stdin is closed so an interactive program gets EOF and
     exits instead of hanging the UI.
+
+    The `executable` argument is POSIX-only ON PURPOSE. It does not mean the
+    same thing on both platforms: with shell=True, POSIX uses it to pick WHICH
+    shell interprets the command, but Windows uses it to REPLACE cmd.exe. And
+    SHELL is a POSIX convention that is normally unset on Windows, so the old
+    unconditional `executable=env.get("SHELL", "/bin/sh")` handed Windows a
+    path that does not exist there: every command typed into the TUI died with
+    FileNotFoundError. Leaving it off lets Windows use COMSPEC (cmd.exe), which
+    is the shell a Windows user is expecting anyway.
     """
     env = env or venv_env()
-    shell = env.get("SHELL", "/bin/sh")
+    kwargs = {}
+    if os.name != "nt":
+        kwargs["executable"] = env.get("SHELL", "/bin/sh")
     return subprocess.Popen(
-        cmd, shell=True, executable=shell, cwd=cwd, env=env,
+        cmd, shell=True, cwd=cwd, env=env,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1,
+        text=True, bufsize=1, **kwargs,
     )
 
 

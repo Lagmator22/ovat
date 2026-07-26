@@ -49,6 +49,35 @@ def test_run_command_runs_in_the_given_directory(tmp_path):
     assert any(tmp_path.name in ln for ln in lines)
 
 
+def test_spawn_never_hands_windows_a_posix_shell(monkeypatch):
+    """`executable` means different things per platform, so it is POSIX-only.
+
+    With shell=True, POSIX uses executable to choose WHICH shell runs the
+    command; Windows uses it to REPLACE cmd.exe. SHELL is normally unset on
+    Windows, so passing "/bin/sh" there made every TUI command die with
+    FileNotFoundError before it ran.
+    """
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured.clear()
+        captured.update(kwargs)
+        captured["cmd"] = cmd
+        return object()
+
+    monkeypatch.setattr(shell.subprocess, "Popen", fake_popen)
+    env = {"SHELL": "/bin/zsh"}
+
+    monkeypatch.setattr(shell.os, "name", "posix")
+    shell.spawn("echo hi", os.getcwd(), env)
+    assert captured["executable"] == "/bin/zsh"      # the user's own shell
+
+    monkeypatch.setattr(shell.os, "name", "nt")
+    shell.spawn("echo hi", os.getcwd(), env)
+    assert "executable" not in captured             # cmd.exe, via COMSPEC
+    assert captured["shell"] is True                # still a shell command
+
+
 # iter_display_lines: \r progress bars must neither stall nor flood
 
 class _FakeStream:
