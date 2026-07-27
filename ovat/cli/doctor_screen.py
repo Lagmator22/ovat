@@ -123,6 +123,7 @@ class DoctorScreen(Screen):
         border: round $secondary;
         background: $surface;
     }
+    #doc-palette > .option-list--option-hover { background: $primary 30%; }
     #doc-palette > .option-list--option-highlighted {
         background: $primary;
         color: $foreground;
@@ -152,7 +153,10 @@ class DoctorScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Static(_header(self._config_path), id="doc-header")
-        yield RichLog(id="doc-log", highlight=False, markup=False, wrap=True)
+        log = RichLog(id="doc-log", highlight=False, markup=False, wrap=True)
+        log.border_title = "diagnostics"
+        log.border_subtitle = "F5 re-run"
+        yield log
         yield OptionList(id="doc-palette")
         yield Input(placeholder="type / for commands  ·  F5 re-run  ·  Esc back",
                     id="doc-input")

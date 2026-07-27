@@ -1105,3 +1105,32 @@ def test_the_pulse_stops_rescheduling_once_removed(monkeypatch, tmp_path):
             await pilot.pause()
             pulse._pulse(Thinking.DEEP)            # must be a no-op, not raise
     _run(scenario())
+
+
+def test_reasoning_is_folded_away_rather_than_dumped(monkeypatch, tmp_path):
+    """/thinking on used to solve "I cannot see it" by creating "I cannot
+    see past it". It is a Collapsible now: present, titled, and shut."""
+    from textual.widgets import Collapsible
+    from ovat.cli.chat_screen import Reasoning
+
+    monkeypatch.setattr(chat_screen, "_build_components", _thinking_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            screen.query_one("#chat-input", Input).value = "hi"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            await _send(screen, pilot, "/thinking on")
+            await pilot.pause()
+
+            blocks = list(screen.query(Reasoning))
+            assert len(blocks) == 1
+            assert isinstance(blocks[0], Collapsible)
+            assert blocks[0].collapsed is True          # out of the way
+            assert "reasoning" in blocks[0].title       # but labelled
+            assert "Let me check the context" in blocks[0].text
+    _run(scenario())

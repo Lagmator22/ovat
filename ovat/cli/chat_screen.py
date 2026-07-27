@@ -36,7 +36,8 @@ from textual.binding import Binding
 from textual.color import Color
 from textual.screen import ModalScreen, Screen
 from textual.containers import Vertical, VerticalScroll
-from textual.widgets import Footer, Input, Label, Markdown, OptionList, Static
+from textual.widgets import (Collapsible, Footer, Input, Label, Markdown,
+                             OptionList, Static)
 from textual.widgets.option_list import Option
 
 from ovat.agent.rag_chat import rag_chat
@@ -431,12 +432,28 @@ class TranscriptLine(Static):
         self.text = text
 
 
-class Reasoning(TranscriptLine):
-    """A model's <think> narration, shown verbatim when /thinking is on.
+class Reasoning(Collapsible):
+    """A model's <think> narration, folded away behind a title.
 
-    Not a Markdown widget on purpose: markdown reads <think> as an HTML tag
-    and drops the whole block, so rendering it would show nothing at all.
+    /thinking on used to dump fifteen lines of narration above every answer,
+    which solved "I cannot see it" by creating "I cannot see past it". A
+    Collapsible keeps it one keypress away and out of the way until asked
+    for, so showing reasoning no longer costs you the conversation.
+
+    The body is a Static, not a Markdown widget: markdown reads <think> as
+    an HTML tag and drops the whole block, so rendering it would show
+    nothing at all.
     """
+
+    def __init__(self, text: str) -> None:
+        lines = text.count("\n") + 1
+        super().__init__(
+            Static(text, classes="reasoning-body"),
+            title=f"reasoning · {lines} line{'' if lines == 1 else 's'}",
+            collapsed=True,
+        )
+        # The transcript reads this back for /thinking redraws and tests.
+        self.text = text
 
 
 class Sources(TranscriptLine):
@@ -523,6 +540,10 @@ class ChatScreen(Screen):
     }
     /* The user, indented from the right so the two speakers are legible at a
        glance without reading a word of them. */
+    /* Hover feedback: the transcript is selectable and copyable, so a row
+       that lights under the pointer tells you it is a thing, not a print. */
+    Prompt:hover { background: $primary 25%; }
+    Response:hover { background: $success 14%; }
     Prompt {
         background: $primary 15%;
         color: $foreground;
@@ -538,10 +559,12 @@ class ChatScreen(Screen):
         padding: 0 2;
     }
     Reasoning {
-        color: $text-muted;
         margin: 1 1 0 8;
-        padding: 0 2;
+        background: $surface;
+        border: none;
     }
+    Reasoning:hover { background: $boost; }
+    .reasoning-body { color: $text-muted; padding: 0 1; }
     Sources { color: $text-muted; margin: 0 1 0 8; padding: 0 2; }
     Note { color: $text-muted; margin: 0 1 0 2; padding: 0 2; }
     Thinking { margin: 0 1 0 8; padding: 0 2; text-style: italic; }
@@ -588,7 +611,10 @@ class ChatScreen(Screen):
                       f"  ·  {os.path.basename(self._model_path)}"
                       f"  ·  engine: {self._engine_name}", style=ui.DIM)
         yield Static(header, id="chat-header")
-        yield VerticalScroll(id="chat-view")
+        transcript = VerticalScroll(id="chat-view")
+        transcript.border_title = "conversation"
+        transcript.border_subtitle = "Ctrl-P for commands"
+        yield transcript
         yield OptionList(id="chat-palette")
         yield PasteInput(placeholder="loading the model…", id="chat-input")
         yield Footer()
