@@ -20,12 +20,10 @@ from typing import Iterable
 
 from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
-from textual.containers import Horizontal
 from textual.widgets import Footer, Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from ovat.cli import shell, ui
-from ovat.cli.animated_gif import AnimatedGif
 from ovat.cli.editing import InputHistory
 from ovat.cli.widgets import PasteInput
 from ovat.cli.theme import OVAT_THEME
@@ -182,9 +180,7 @@ class OvatTUI(App):
 
     CSS = """
     Screen { background: $background; }
-    #masthead { height: auto; padding: 1 2 0 2; align: center middle; }
-    #banner { width: auto; height: auto; }
-    #intel-animation { margin: 0 0 0 4; }
+    #banner { padding: 1 2 0 2; height: auto; }
     #output {
         height: 1fr;
         border: round $primary;
@@ -228,13 +224,12 @@ class OvatTUI(App):
         self._history = InputHistory() # Up/Down recall, like the shell it wraps
 
     def compose(self) -> ComposeResult:
-        with Horizontal(id="masthead"):
-            yield Static(_banner(), id="banner")
-            # The source has a large blue canvas; crop it to the Intel mark so
-            # the compact inline animation keeps the command area spacious.
-            yield AnimatedGif(columns=28, crop=(200, 160, 604, 440),
-                              solid_final_frame=True,
-                              id="intel-animation")
+        # Textual deliberately has no built-in raster-image widget.  Do not
+        # approximate the Intel asset with Unicode cells here: in ConHost that
+        # produces a visibly broken logo and, worse, takes space from commands.
+        # A future native graphics integration must live behind its own optional
+        # extra, never in this baseline TUI.
+        yield Static(_banner(), id="banner")
         output = RichLog(id="output", highlight=False, markup=False, wrap=True)
         output.border_title = "output"
         output.border_subtitle = "Ctrl-P palette · / shortcuts"

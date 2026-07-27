@@ -14,12 +14,9 @@ import pytest
 # tests skip cleanly; the isolation contract lives in test_tui_isolation.py.
 pytest.importorskip("textual")
 
-from textual.widgets import Input, OptionList, RichLog
-from rich.text import Text
-from textual.app import App, ComposeResult
+from textual.widgets import Input, OptionList, RichLog, Static
 
 from ovat.cli import tui as tui_module
-from ovat.cli.animated_gif import AnimatedGif
 from ovat.cli.tui import OvatTUI
 from tests.conftest import py_command
 
@@ -28,65 +25,14 @@ def _run(coro):
     asyncio.run(coro)
 
 
-def test_animated_gif_plays_once_and_preserves_frame_durations(tmp_path):
-    """The startup GIF caches its frames then leaves its final frame static."""
-    from PIL import Image
-
-    source = tmp_path / "animation.gif"
-    Image.new("RGB", (4, 4), "red").save(
-        source,
-        save_all=True,
-        append_images=[Image.new("RGB", (4, 4), "blue")],
-        duration=[20, 80],
-        loop=0,
-    )
-
-    class GifApp(App):
-        def compose(self) -> ComposeResult:
-            yield AnimatedGif(source, columns=4, id="animation",
-                              settled_renderable=Text("finished"))
-
+def test_default_tui_has_no_terminal_image_component():
+    """The baseline TUI must stay text-only and safe in every terminal."""
     async def scenario():
-        app = GifApp()
-        async with app.run_test() as pilot:
-            animation = app.query_one("#animation", AnimatedGif)
-            animation.pause()
-            assert animation.frame_count == 2
-            assert [frame.duration for frame in animation._frames] == [0.02, 0.08]
-            first = animation.render()
-            animation.play()
-            await pilot.pause(0.04)
-            animation.pause()
-            assert animation.frame_index == 1
-            assert animation.render() is not first
-            animation.play()
-            await pilot.pause(0.1)
-            assert animation.frame_index == 1
-            assert animation.is_playing is False
-            assert animation.render().plain == "finished"
-            animation.restart()
-            assert animation.is_playing is True
+        app = OvatTUI()
+        async with app.run_test():
+            assert app.query_one("#banner", Static)
+            assert not app.query("#intel-animation")
     _run(scenario())
-
-
-def test_animated_gif_can_settle_on_solid_quadrant_blocks(tmp_path):
-    """The Intel end mark is continuous, not a dotted Braille logo."""
-    from PIL import Image
-
-    source = tmp_path / "logo.gif"
-    blue = Image.new("RGB", (8, 6), "#0071C5")
-    final = blue.copy()
-    final.paste("white", (2, 1, 6, 5))
-    blue.save(source, save_all=True, append_images=[final], duration=[20, 20])
-
-    animation = AnimatedGif(source, columns=8, solid_final_frame=True)
-    animation._decode_frames()
-    static = animation._settled_renderable
-
-    assert static is not None
-    assert "█" in static.plain
-    assert not any(0x2800 <= ord(character) <= 0x28FF
-                       for character in static.plain)
 
 
 def test_slash_opens_a_dropdown_of_templates():
