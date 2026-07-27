@@ -189,3 +189,24 @@ def test_the_welcome_text_names_the_shortcut():
                             in app.query_one("#output", RichLog).lines)
             assert "Ctrl-P" in log
     _run(scenario())
+
+
+def test_a_reset_theme_command_appears_only_once_you_have_left_ovat():
+    """Several built-in themes fight OVAT's greens and blues, and finding
+    "ovat" again in an alphabetical list of 22 is a chore."""
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            assert app.theme == "ovat"
+            assert "Reset theme" not in _titles(app)   # nothing to reset yet
+
+            app.theme = "dracula"
+            await pilot.pause()
+            assert "Reset theme" in _titles(app)
+
+            command = next(c for c in app.get_system_commands(app.screen)
+                           if c.title == "Reset theme")
+            command.callback()
+            await pilot.pause()
+            assert app.theme == "ovat"
+    _run(scenario())
