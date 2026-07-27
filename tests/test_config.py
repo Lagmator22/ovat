@@ -101,3 +101,50 @@ def test_load_workflow_reads_the_example_file(tmp_path):
     assert cfg.model.device == "GPU"
     assert cfg.tools[0].name == "search_docs"
     assert cfg.agent.max_iterations == 7
+
+
+# The shipped examples must stay loadable, on every engine they advertise
+
+def test_every_shipped_example_parses():
+    """An example that no longer matches the schema is worse than no example:
+    it is the first thing a new user runs, and strict validation means a
+    stale key is a hard error, not a warning."""
+    import glob
+    from ovat.config.workflow import load_workflow
+
+    examples = sorted(glob.glob("examples/*.yml"))
+    assert examples, "no examples found to check"
+    for path in examples:
+        load_workflow(path)          # raises if the file has drifted
+
+
+def test_the_document_qa_sample_has_what_it_claims():
+    """The sample agent is the proposal's Document Q&A deliverable, so the
+    parts that make it that (retrieval, citations, a grounding prompt) are
+    the parts worth asserting."""
+    from ovat.config.workflow import load_workflow
+
+    cfg = load_workflow("examples/document-qa.yml")
+    assert cfg.rag is not None, "a Q&A sample with no retrieval is not one"
+    assert [t.name for t in cfg.tools] == ["search_docs", "transcribe"]
+    prompt = (cfg.agent.system_prompt or "").lower()
+    # Grounding is the whole point: cite, and admit when the docs do not say.
+    assert "cite" in prompt
+    assert "search_docs" in prompt
+
+
+def test_the_document_qa_sample_builds_on_every_engine():
+    """The claim the sample makes is "change one line and it runs on another
+    framework". If that is not true, the file is advertising a lie."""
+    import pytest
+    from ovat.agent.factory import AGENT_TYPES, build_agent
+    from ovat.config.workflow import load_workflow
+
+    for engine in AGENT_TYPES:
+        cfg = load_workflow("examples/document-qa.yml")
+        cfg.agent.type = engine
+        try:
+            agent = build_agent(cfg, skip_rag=True)
+        except RuntimeError as exc:
+            pytest.skip(f"{engine} not installed: {exc}")
+        assert list(agent.tools) == ["search_docs", "transcribe"]

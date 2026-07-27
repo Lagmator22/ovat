@@ -12,6 +12,9 @@ my question, print the answer. That single line is the midterm demo.
 import os
 
 import typer
+from rich import box
+from rich.table import Table
+from rich.text import Text
 from rich.progress import (BarColumn, Progress, SpinnerColumn,
                            TaskProgressColumn, TextColumn,
                            TimeRemainingColumn)
@@ -586,6 +589,78 @@ def tui():
     """Open the full-screen OVAT launcher (same as running `ovat` with no args)."""
     from ovat.cli.tui import run_tui
     run_tui()
+
+
+@app.command()
+def bench(
+    config: str = typer.Argument(..., help="Path to a workflow YAML."),
+    input: str = typer.Option(..., "--input", "-i",
+                              help="The question to run through every engine."),
+    engines: str = typer.Option(
+        "native,react,llamaindex,openai-agents", "--engines",
+        help="Comma-separated engines to compare."),
+    out: str = typer.Option(None, "--out",
+                            help="Write the full report as JSON to this file."),
+):
+    """Run one question through several engines and compare what each costs.
+
+    This is the AI PC profiling deliverable: the claim is "one YAML, any
+    framework, the same OVMS backend", and the only way to make that claim
+    mean anything is the same question through every engine against the same
+    server, side by side.
+    """
+    import json
+
+    from ovat.bench import benchmark
+
+    cfg = load_workflow(config)
+    names = [e.strip() for e in engines.split(",") if e.strip()]
+    if not names:
+        rprint("[red]No engines to run.[/red] Pass --engines native,react")
+        raise typer.Exit(code=1)
+
+    rprint(f"[green]Benchmarking[/green] {esc(cfg.model.name)} at "
+           f"{esc(cfg.model.ovms_url)}  [dim]({len(names)} engines)[/dim]")
+    report = benchmark(cfg, input, names)
+
+    table = Table(header_style=f"bold {ui.BLUE}", border_style=ui.BLUE,
+                  box=box.ROUNDED)
+    for column in ("Engine", "Build s", "Answer s", "Peak MB", "Prompt tok",
+                   "Reply tok", "Tools"):
+        table.add_column(column, no_wrap=True)
+    table.add_column("Result", no_wrap=True)
+    for row in report["results"]:
+        # A dash, never a zero: "unknown" and "none" are different claims, and
+        # only the native loop records token usage.
+        def cell(key):
+            value = row[key]
+            return "-" if value is None else str(value)
+        # The table is a SUMMARY: a whole exception message here squeezes the
+        # numeric columns to one character each on an 80-column terminal and
+        # loses the measurements the table exists for. The full text is in
+        # the JSON report, which is the record.
+        if row["ok"]:
+            status = Text("ok", style=f"bold {ui.GREEN}")
+        else:
+            brief = (row["error"] or "failed").split(":")[0][:24]
+            status = Text(brief, style=ui.RED)
+        table.add_row(Text(row["engine"], style=ui.CYAN), cell("build_s"),
+                      cell("latency_s"), cell("peak_rss_mb"),
+                      cell("prompt_tokens"), cell("completion_tokens"),
+                      cell("tool_calls"), status)
+    console.print(table)
+
+    if any(not r["ok"] for r in report["results"]) and not out:
+        rprint("[dim]Pass --out report.json for the full error text.[/dim]")
+    if any(r["ok"] and r["prompt_tokens"] is None for r in report["results"]):
+        rprint("[dim]Token counts come from OVMS's usage field, which only "
+               "the native loop records; the frameworks own their own request "
+               "loops and do not hand it back.[/dim]")
+
+    if out:
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2)
+        rprint(f"[dim]report written to[/dim] {esc(out)}")
 
 
 if __name__ == "__main__":

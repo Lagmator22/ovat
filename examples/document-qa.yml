@@ -1,0 +1,60 @@
+# Sample Agent 1: Local Document Q&A
+#
+# Ask questions about your own files, on your own machine. Nothing leaves it.
+#
+#   ovat index ./docs examples/document-qa.yml     # embed the folder once
+#   ovat serve examples/document-qa.yml            # start OVMS (not on macOS)
+#   ovat run examples/document-qa.yml --input "what does the readme say about NPU?"
+#
+# The same file drives all four engines. Change one line, agent.type, and the
+# question runs through a different framework against the same server:
+#
+#   ovat bench examples/document-qa.yml -i "what is OVMS?" --out report.json
+#
+# On macOS there is no OVMS, so use the local path instead, which needs no
+# server and no tool calling:
+#
+#   ovat chat examples/document-qa.yml
+
+model:
+  name: Qwen3-8B-int4-ov
+  device: GPU                     # NPU cannot do tool calling; see AGENTS.md
+  ovms_url: http://localhost:8000/v3
+  tool_parser: hermes3            # how OVMS decodes Qwen3's tool calls
+  source_model: OpenVINO/Qwen3-8B-int4-ov
+  model_repository_path: models
+  request_timeout: 120            # an 8B model on first token is not quick
+
+tools:
+  # The retrieval half. search_docs answers from the folder you indexed and
+  # returns the source path with every hit, which is what makes the answers
+  # checkable rather than merely plausible.
+  - name: search_docs
+    type: builtin
+  # Audio in the folder is searchable too: ask about a .wav and the model can
+  # transcribe it first, then answer from the text.
+  - name: transcribe
+    type: builtin
+
+agent:
+  # native | react | llamaindex | openai-agents. All four run this same file.
+  type: native
+  max_iterations: 10
+  system_prompt: >-
+    You answer questions about the user's own documents. Always call
+    search_docs before answering a question about their files, and cite the
+    source path you used. If the documents do not contain the answer, say so
+    plainly rather than guessing from general knowledge.
+
+rag:
+  embeddings:
+    provider: genai               # runs in-process; no server needed to index
+    model: models/bge-small-en-v1.5
+    device: CPU                   # NPU works here too if the driver is stable
+    dim: 384
+  retriever:
+    provider: sqlite-vec
+    db_path: document_qa.db
+  chunk:
+    size: 512
+    overlap: 64
