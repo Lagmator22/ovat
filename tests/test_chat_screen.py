@@ -1025,3 +1025,83 @@ def test_load_with_nothing_saved_says_so(monkeypatch, tmp_path):
             await pilot.pause()
             assert "no saved conversations yet" in _log_text(screen)
     _run(scenario())
+
+
+# The thinking pulse
+
+def test_the_thinking_pulse_appears_while_generating_and_leaves_after(
+        monkeypatch, tmp_path):
+    """Static text says the app is alive; a moving one says it still is,
+    which is the question you have thirty seconds into a CPU generation."""
+    from ovat.cli.chat_screen import Thinking
+
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+    seen = []
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            assert not screen.query(Thinking)      # nothing before a question
+
+            original = screen._commit_turn
+
+            def spy(*args, **kwargs):
+                seen.append(len(list(screen.query(Thinking))))
+                return original(*args, **kwargs)
+            monkeypatch.setattr(screen, "_commit_turn", spy)
+
+            screen.query_one("#chat-input", Input).value = "hi"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert seen == [1]                     # it was up during the answer
+            assert not screen.query(Thinking)      # and gone once it landed
+    _run(scenario())
+
+
+def test_the_pulse_is_removed_when_the_answer_errors(monkeypatch, tmp_path):
+    """Otherwise a failed turn leaves it breathing forever."""
+    from ovat.cli.chat_screen import Thinking
+
+    class BrokenLLM:
+        def chat(self, messages, tools=None, on_token=None):
+            raise RuntimeError("model exploded")
+
+    monkeypatch.setattr(
+        chat_screen, "_build_components",
+        lambda c, m, max_tokens=1024: (WorkflowConfig(model={"name": "m"}),
+                                       FakeRetriever(), BrokenLLM()))
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            screen.query_one("#chat-input", Input).value = "hi"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert not screen.query(Thinking)
+            assert app.is_running is True
+    _run(scenario())
+
+
+def test_the_pulse_stops_rescheduling_once_removed(monkeypatch, tmp_path):
+    """The animation reschedules itself, so it must notice it is gone or it
+    fires callbacks at a dead widget forever."""
+    from ovat.cli.chat_screen import Thinking
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            monkeypatch.setattr(chat_screen, "_build_components",
+                                _fake_components)
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            pulse = Thinking("● thinking…")
+            await screen._view.mount(pulse)
+            await pilot.pause()
+            await pulse.remove()
+            await pilot.pause()
+            pulse._pulse(Thinking.DEEP)            # must be a no-op, not raise
+    _run(scenario())

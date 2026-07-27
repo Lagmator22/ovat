@@ -13,6 +13,8 @@ pytest.importorskip("textual")
 
 from ovat.cli import diagnostics
 from ovat.cli.diagnostics import Check
+from textual.widgets import Input
+
 from ovat.cli.tui import OvatTUI
 
 
@@ -248,3 +250,47 @@ def test_no_hardcoded_hex_survives_in_any_screen_css():
         css = getattr(module, "CSS", "") or getattr(module, "DEFAULT_CSS", "")
         leftover = re.findall(r"#[0-9A-Fa-f]{6}", css)
         assert not leftover, f"{module.__name__} pins {leftover}"
+
+
+def test_a_no_theme_entry_hands_colour_back_to_the_terminal():
+    """ansi-dark maps onto the sixteen colours your terminal already
+    defines, so OVAT stops arguing with a scheme you already chose."""
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            assert "No theme" in _titles(app)
+            command = next(c for c in app.get_system_commands(app.screen)
+                           if c.title == "No theme")
+            command.callback()
+            await pilot.pause()
+            assert app.theme == "ansi-dark"
+            # And once you are there it stops offering itself, but does offer
+            # the way back.
+            assert "No theme" not in _titles(app)
+            assert "Reset theme" in _titles(app)
+    _run(scenario())
+
+
+def test_child_commands_are_told_a_width_that_fits_the_scrollbar():
+    """A rich Panel drawn to the full width lost its right edge and bottom
+    corner behind Textual's overlaying scrollbar, and the box came apart."""
+    from textual.widgets import RichLog
+
+    captured = {}
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(size=(100, 24)) as pilot:
+            log = app.query_one("#output", RichLog)
+
+            def fake_run(cmd, cols):
+                captured["cols"] = cols
+            app._run_command = fake_run
+            app.query_one("#prompt", Input).value = "echo hi"
+            await pilot.press("enter")
+            await pilot.pause()
+
+            assert captured["cols"] == (log.content_size.width
+                                        - log.scrollbar_size_vertical)
+            assert captured["cols"] < log.content_size.width   # room reserved
+    _run(scenario())

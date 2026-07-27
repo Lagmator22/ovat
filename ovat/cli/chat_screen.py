@@ -33,6 +33,7 @@ from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.color import Color
 from textual.screen import ModalScreen, Screen
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Footer, Input, Label, Markdown, OptionList, Static
@@ -446,6 +447,36 @@ class Note(TranscriptLine):
     """A status line: confirmations, refusals, errors."""
 
 
+class Thinking(Static):
+    """A pulsing bar shown while the model is generating.
+
+    A static "thinking…" tells you the app is alive; a moving one tells you
+    it is still alive, which is the question you actually have thirty
+    seconds into a CPU generation. It breathes between two oranges rather
+    than blinking, because a blink reads as an alarm and this is not one.
+
+    The animation reschedules itself from on_complete instead of running on
+    a timer, so it stops the moment the widget is removed and never leaves a
+    callback firing at a dead widget.
+    """
+
+    PALE = "#FFB86C"
+    DEEP = "#C2410C"
+    STEP = 0.65        # seconds per half-cycle
+
+    def on_mount(self) -> None:
+        self.styles.color = Color.parse(self.PALE)
+        self._pulse(self.DEEP)
+
+    def _pulse(self, target: str) -> None:
+        if not self.is_mounted:
+            return
+        nxt = self.PALE if target == self.DEEP else self.DEEP
+        self.styles.animate("color", value=Color.parse(target),
+                            duration=self.STEP,
+                            on_complete=lambda: self._pulse(nxt))
+
+
 class ChatCommands(ScreenCommands):
     """Palette entries that only exist while a chat is open.
 
@@ -513,6 +544,7 @@ class ChatScreen(Screen):
     }
     Sources { color: $text-muted; margin: 0 1 0 8; padding: 0 2; }
     Note { color: $text-muted; margin: 0 1 0 2; padding: 0 2; }
+    Thinking { margin: 0 1 0 8; padding: 0 2; text-style: italic; }
     Note.ok { color: $success; }
     Note.warn { color: $warning; }
     Note.error { color: $error; }
@@ -772,6 +804,7 @@ class ChatScreen(Screen):
         # long answer keeps itself in sight as it grows. This is what replaced
         # the separate streaming line and its tail-clipping.
         response.anchor()
+        await view.mount(Thinking("● thinking…"))
         # Built HERE, on the main thread: get_stream starts a background task.
         self._ask(line, response, Markdown.get_stream(response))
 
@@ -969,9 +1002,15 @@ class ChatScreen(Screen):
         self.app.copy_to_clipboard(text)
         self._note(f"copied {label} ({len(text)} chars).", "ok")
 
+    def _clear_thinking(self) -> None:
+        """Remove the pulse. Safe to call twice; the error path also calls it."""
+        for widget in list(self.query(Thinking)):
+            widget.remove()
+
     def _commit_turn(self, response: "Response", answer: str,
                      sources: list) -> None:
         """Put the finished answer in place, in ONE main-thread pass."""
+        self._clear_thinking()
         reasoning, shown = split_thinking(self._for_display(answer))
         if answer and not shown:
             # Everything that came back was reasoning, so the cap ran out
@@ -1018,6 +1057,7 @@ class ChatScreen(Screen):
                                          on_token)
         except Exception as exc:
             self.app.call_from_thread(stream.stop)
+            self.app.call_from_thread(self._clear_thinking)
             self.app.call_from_thread(response.update, f"*error: {exc}*")
             self.app.call_from_thread(self._mark_idle)
             return

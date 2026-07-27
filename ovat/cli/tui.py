@@ -138,6 +138,18 @@ class OvatTUI(App):
             yield SystemCommand("Reset theme",
                                 "back to OVAT's own colours",
                                 self.action_reset_theme)
+        if self.theme != "ansi-dark":
+            # A real "no theme": ansi-dark maps everything onto the sixteen
+            # colours your terminal already defines, so OVAT inherits your
+            # terminal's scheme instead of imposing one. The right answer for
+            # anyone who has already themed their terminal and wants OVAT to
+            # stop arguing with it.
+            yield SystemCommand("No theme",
+                                "use your terminal's own colours",
+                                self.action_no_theme)
+
+    def action_no_theme(self) -> None:
+        self.theme = "ansi-dark"
 
     def action_reset_theme(self) -> None:
         self.theme = OVAT_THEME.name
@@ -234,6 +246,12 @@ class OvatTUI(App):
                        "palette  ·  Esc cancels a running command.",
                        style=ui.DIM))
         self.query_one("#prompt", Input).focus()
+        # The wordmark fades up rather than snapping in. 250ms: slow enough
+        # to register as an entrance, fast enough not to delay the prompt,
+        # which is focused and usable throughout.
+        banner = self.query_one("#banner", Static)
+        banner.styles.opacity = 0.0
+        banner.styles.animate("opacity", value=1.0, duration=0.25)
 
     # The live slash dropdown
 
@@ -483,7 +501,16 @@ class OvatTUI(App):
         # (serve can sit silent for two minutes) the empty prompt says so.
         self.query_one("#prompt", Input).placeholder = \
             "running…  Esc cancels  ·  output streams above"
-        cols = max(80, self.size.width - 8)
+        # Width the CHILD is told to render at. Taken from the log's own
+        # content box minus the scrollbar, not from the app width: once
+        # output overflows, Textual's scrollbar OVERLAYS the last two
+        # columns, so a rich Panel drawn to the full width had its right
+        # edge and bottom corner swallowed and the box came apart. Reserving
+        # for the scrollbar up front means boxes fit whether it is there or
+        # not, at the cost of two unused columns before it appears.
+        log = self.query_one("#output", RichLog)
+        usable = log.content_size.width - log.scrollbar_size_vertical
+        cols = max(40, usable)
         self._run_command(cmd, cols)
 
     def _cancel_running(self) -> None:
