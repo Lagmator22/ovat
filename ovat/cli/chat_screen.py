@@ -950,6 +950,9 @@ class ChatScreen(Screen):
         self.app.push_screen(SessionPicker(sessions), chosen)
 
     async def _load_named(self, name: str) -> None:
+        if self._busy:
+            self._note("still answering; Esc stops it before loading.", "warn")
+            return
         path = _session_path(self._cwd, name)
         if not os.path.exists(path):
             self._note(f"no saved conversation at {path}", "warn")
@@ -1007,6 +1010,11 @@ class ChatScreen(Screen):
             self._show_thinking = False
         else:
             self._note(f"/thinking takes on, off, or nothing, not {value!r}.",
+                       "warn")
+            return
+        if self._busy:
+            # The redraw would remove the answer being streamed into.
+            self._note("still answering; the change applies once it lands.",
                        "warn")
             return
         await self._replay()
@@ -1112,13 +1120,28 @@ class ChatScreen(Screen):
             # before the model reached its answer. Say which knobs help.
             shown = ("*only reasoning came back before generation stopped; "
                      "/thinking on to read it, or raise /tokens*")
+        # The answer widget can be GONE by the time the answer arrives:
+        # /thinking and /load both rebuild the transcript, and if either ran
+        # mid-generation this Response was removed with everything else.
+        # Mounting relative to an orphan raises MountError and takes the app
+        # down, so check for a parent and fall back to appending.
+        alive = response.parent is not None
         if reasoning:
-            self._view.mount(Reasoning(reasoning), before=response)
-        response.update(shown)
+            if alive:
+                self._view.mount(Reasoning(reasoning), before=response)
+            else:
+                self._view.mount(Reasoning(reasoning))
+        if alive:
+            response.update(shown)
+        else:
+            self._view.mount(Response(shown))
         if sources:
             label = self._engine.footnote_label if self._engine else "sources"
-            self._view.mount(Sources(f"{label}: " + ", ".join(sources)),
-                             after=response)
+            footnote = Sources(f"{label}: " + ", ".join(sources))
+            if alive:
+                self._view.mount(footnote, after=response)
+            else:
+                self._view.mount(footnote)
         self._mark_idle()
 
     @work(thread=True)

@@ -1318,3 +1318,61 @@ def test_loading_a_long_conversation_stays_bounded(monkeypatch, tmp_path):
             assert len(rich) + len(plain) == 25
             assert "Heading" in plain[0].text
     _run(scenario())
+
+
+def test_rebuilding_the_transcript_mid_answer_does_not_crash(monkeypatch, tmp_path):
+    """The crash you hit: /thinking while generating called _replay, which
+    removed the Response being streamed into, and committing the answer then
+    mounted relative to an orphan.
+
+    MountError: Unable to find relative location of Response() because it has
+    no parent -- and the whole TUI went down with it.
+    """
+    from ovat.cli.chat_screen import Response
+
+    monkeypatch.setattr(chat_screen, "_build_components", _thinking_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            screen.query_one("#chat-input", ChatInput).value = "hi"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            # Orphan the answer widget the way a mid-flight _replay would,
+            # then commit into it exactly as the worker does.
+            orphan = Response("partial")
+            assert orphan.parent is None
+            screen._commit_turn(orphan, THINKY, ["finance.md"])
+            await pilot.pause()
+
+            assert app.is_running is True                  # no MountError
+            text = _log_text(screen)
+            assert "Revenue grew 12% in Q3." in text       # answer landed
+            assert "finance.md" in text                    # sources too
+    _run(scenario())
+
+
+def test_thinking_and_load_stand_down_while_an_answer_is_running(
+        monkeypatch, tmp_path):
+    """Both rebuild the transcript, which would delete the widget the answer
+    is streaming into."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+    _saved(tmp_path, "demo", ["something"])
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            screen._busy = True                            # mid-generation
+
+            await screen._toggle_thinking("on")
+            await pilot.pause()
+            assert "still answering" in _log_text(screen)
+
+            await screen._load_named("demo")
+            await pilot.pause()
+            assert "Esc stops it before loading" in _log_text(screen)
+    _run(scenario())
