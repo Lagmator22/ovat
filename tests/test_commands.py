@@ -172,13 +172,14 @@ def test_the_footer_advertises_the_palette_on_every_screen(monkeypatch):
     _run(scenario())
 
 
-def test_the_palette_binding_is_shown_not_hidden():
-    """show=True is what puts it in the Footer. show=False would leave the
-    palette existing with nothing on screen ever mentioning it."""
-    palette = [b for b in OvatTUI.BINDINGS
-               if getattr(b, "action", None) == "command_palette"]
-    assert palette, "no binding for the command palette"
-    assert all(b.show for b in palette)
+def test_the_palette_binding_is_textuals_own_not_a_duplicate():
+    """Declaring our own ctrl+p listed "^p Palette" TWICE in the footer, once
+    at each end, because Textual already binds it via COMMAND_PALETTE_BINDING
+    and shows it."""
+    ours = [b for b in OvatTUI.BINDINGS
+            if getattr(b, "action", None) == "command_palette"]
+    assert ours == [], "the palette binding is Textual's; do not re-declare it"
+    assert OvatTUI.COMMAND_PALETTE_BINDING == "ctrl+p"
 
 
 def test_the_welcome_text_names_the_shortcut():

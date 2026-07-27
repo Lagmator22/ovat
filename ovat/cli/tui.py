@@ -108,9 +108,9 @@ class OvatTUI(App):
     # ctrl+p remains the documented one.
     BINDINGS = [
         Binding("ctrl+c", "cancel_or_quit", show=False, priority=True),
-        # show=True so the Footer names it: this is the discoverability half.
-        Binding("ctrl+p", "command_palette", "Palette", show=True,
-                priority=True),
+        # No ctrl+p binding here. Textual already provides one via
+        # COMMAND_PALETTE_BINDING and the Footer shows it, so declaring our
+        # own listed "^p Palette" TWICE, once at each end of the footer.
     ]
 
     def get_system_commands(self, screen) -> Iterable[SystemCommand]:
