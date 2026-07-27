@@ -44,6 +44,8 @@ class AnimatedGif(Widget):
 
     def __init__(self, source: str | Path = _DEFAULT_SOURCE, *, columns: int = 28,
                  crop: tuple[int, int, int, int] | None = None, loop: bool = False,
+                 solid_final_frame: bool = False,
+                 settled_renderable: Text | None = None,
                  name: str | None = None, id: str | None = None,
                  classes: str | None = None, disabled: bool = False) -> None:
         """Create the widget.
@@ -53,6 +55,10 @@ class AnimatedGif(Widget):
             columns: Terminal-cell width used to rasterize the animation.
             crop: Optional Pillow crop rectangle, applied before rasterizing.
             loop: Whether playback restarts after its final GIF frame.
+            solid_final_frame: Render the final frame with contiguous Unicode
+                quadrant blocks instead of dotted Braille cells.
+            settled_renderable: Optional Rich renderable to show after a
+                non-looping animation completes.
         """
         if columns < 2:
             raise ValueError("columns must be at least 2")
@@ -61,10 +67,13 @@ class AnimatedGif(Widget):
         self._columns = columns
         self._crop = crop
         self._loop = loop
+        self._solid_final_frame = solid_final_frame
+        self._settled_renderable = settled_renderable
         self._frames: list[_Frame] = []
         self._frame_index = 0
         self._timer: Timer | None = None
         self._playing = False
+        self._settled = False
 
     @property
     def frame_count(self) -> int:
@@ -98,6 +107,7 @@ class AnimatedGif(Widget):
 
         self._render_error: Text | None = None
         self._frame_index = 0
+        self._settled = False
         self._playing = True
         self.refresh()
         self._schedule_next_frame()
@@ -110,9 +120,13 @@ class AnimatedGif(Widget):
         self._playing = False
 
     def play(self) -> None:
-        """Resume playback without changing the displayed frame."""
+        """Resume playback, or begin again after a completed one-shot GIF."""
         if not self._frames or self._playing:
             return
+        if self._settled:
+            self._settled = False
+            self._frame_index = 0
+            self.refresh()
         self._playing = True
         if self._timer is None:
             self._schedule_next_frame()
@@ -131,8 +145,9 @@ class AnimatedGif(Widget):
             self._timer.stop()
             self._timer = None
         self._playing = False
-        if self._frames and self._frame_index != 0:
+        if self._frames and (self._frame_index != 0 or self._settled):
             self._frame_index = 0
+            self._settled = False
             self.refresh()
 
     def restart(self) -> None:
@@ -142,6 +157,8 @@ class AnimatedGif(Widget):
 
     def render(self) -> RenderResult:
         """Return the current cached Rich renderable; decoding never happens here."""
+        if self._settled and self._settled_renderable is not None:
+            return self._settled_renderable
         if self._frames:
             return self._frames[self._frame_index].renderable
         return getattr(self, "_render_error", Text(""))
@@ -166,6 +183,9 @@ class AnimatedGif(Widget):
         if next_index == len(self._frames):
             if not self._loop:
                 self._playing = False
+                if self._settled_renderable is not None:
+                    self._settled = True
+                    self.refresh()
                 return
             next_index = 0
         if next_index != self._frame_index:
@@ -176,6 +196,7 @@ class AnimatedGif(Widget):
     def _decode_frames(self) -> list[_Frame]:
         """Read every Pillow frame and convert it to a cached Rich ``Text``."""
         frames: list[_Frame] = []
+        final_frame: Image.Image | None = None
         with Image.open(self._source) as image:
             default_duration = image.info.get("duration", 100)
             for frame in ImageSequence.Iterator(image):
@@ -184,35 +205,87 @@ class AnimatedGif(Widget):
                 # timer interval. One millisecond preserves its intent best.
                 duration = max(float(duration_ms) / 1000, 0.001)
                 frames.append(_Frame(self._to_renderable(frame), duration))
+                final_frame = frame.copy()
+        if self._solid_final_frame and final_frame is not None:
+            self._settled_renderable = self._to_quadrant_renderable(final_frame)
         return frames
 
     def _to_renderable(self, frame: Image.Image) -> Text:
         """Rasterize a Pillow frame into 2×4-dot Braille terminal cells."""
-        if self._crop is not None:
-            frame = frame.crop(self._crop)
-        cell_rows = max(1, round(self._columns * 0.5 * frame.height / frame.width))
-        image = frame.convert("RGBA").resize(
-            (self._columns * 2, cell_rows * 4), Image.Resampling.LANCZOS
-        )
-        background = Image.new("RGBA", image.size, _TRANSPARENT_BACKGROUND)
-        background.alpha_composite(image)
-        pixels = list(background.convert("RGB").get_flattened_data())
-        base = pixels[0]
+        pixels, cell_rows, base = self._scaled_pixels(frame, vertical_pixels=4)
 
         text = Text(no_wrap=True)
         for row in range(cell_rows):
             for column in range(self._columns):
                 mask, foregrounds = self._braille_cell(pixels, base, column, row)
-                foreground = (sum(pixel[0] for pixel in foregrounds) // len(foregrounds),
-                              sum(pixel[1] for pixel in foregrounds) // len(foregrounds),
-                              sum(pixel[2] for pixel in foregrounds) // len(foregrounds)) \
-                    if foregrounds else base
+                foreground = self._average(foregrounds, base)
                 text.append(chr(0x2800 + mask), Style(
                     color=Color.from_rgb(*foreground), bgcolor=Color.from_rgb(*base)
                 ))
             if row + 1 < cell_rows:
                 text.append("\n")
         return text
+
+    def _to_quadrant_renderable(self, frame: Image.Image) -> Text:
+        """Render a final frame with solid 2×2 Unicode block quadrants.
+
+        Braille is ideal while the GIF moves because it preserves detail in a
+        small area. Its circular dots are a poor final logo, though. Quadrant
+        blocks retain twice the horizontal detail of half blocks while making
+        Intel's white letters and oval continuous rather than dotted.
+        """
+        pixels, cell_rows, base = self._scaled_pixels(frame, vertical_pixels=2)
+        glyphs = (" ", "▘", "▝", "▀", "▖", "▌", "▞", "▛",
+                  "▗", "▚", "▐", "▜", "▄", "▙", "▟", "█")
+        text = Text(no_wrap=True)
+        pixel_width = self._columns * 2
+        for row in range(cell_rows):
+            for column in range(self._columns):
+                mask = 0
+                foregrounds: list[tuple[int, int, int]] = []
+                for x, y, bit in ((0, 0, 0x01), (1, 0, 0x02),
+                                  (0, 1, 0x04), (1, 1, 0x08)):
+                    pixel = pixels[(row * 2 + y) * pixel_width + column * 2 + x]
+                    if self._is_foreground(pixel, base):
+                        mask |= bit
+                        foregrounds.append(pixel)
+                text.append(glyphs[mask], Style(
+                    color=Color.from_rgb(*self._average(foregrounds, base)),
+                    bgcolor=Color.from_rgb(*base),
+                ))
+            if row + 1 < cell_rows:
+                text.append("\n")
+        return text
+
+    def _scaled_pixels(self, frame: Image.Image, *, vertical_pixels: int
+                       ) -> tuple[list[tuple[int, int, int]], int,
+                                  tuple[int, int, int]]:
+        """Crop, scale, and composite a frame without retaining Pillow state."""
+        if self._crop is not None:
+            frame = frame.crop(self._crop)
+        cell_rows = max(1, round(self._columns * 0.5 * frame.height / frame.width))
+        image = frame.convert("RGBA").resize(
+            (self._columns * 2, cell_rows * vertical_pixels), Image.Resampling.LANCZOS
+        )
+        background = Image.new("RGBA", image.size, _TRANSPARENT_BACKGROUND)
+        background.alpha_composite(image)
+        pixels = list(background.convert("RGB").get_flattened_data())
+        return pixels, cell_rows, pixels[0]
+
+    @staticmethod
+    def _average(pixels: list[tuple[int, int, int]],
+                 fallback: tuple[int, int, int]) -> tuple[int, int, int]:
+        """Return a representative RGB foreground colour for one terminal cell."""
+        if not pixels:
+            return fallback
+        return tuple(sum(pixel[channel] for pixel in pixels) // len(pixels)
+                     for channel in range(3))
+
+    @staticmethod
+    def _is_foreground(pixel: tuple[int, int, int],
+                       base: tuple[int, int, int]) -> bool:
+        """Treat pixels materially different from the frame background as ink."""
+        return sum((pixel[channel] - base[channel]) ** 2 for channel in range(3)) > 900
 
     def _braille_cell(self, pixels: list[tuple[int, int, int]],
                       base: tuple[int, int, int], column: int,
@@ -225,7 +298,7 @@ class AnimatedGif(Widget):
         pixel_width = self._columns * 2
         for x, y, bit in dots:
             pixel = pixels[(row * 4 + y) * pixel_width + column * 2 + x]
-            if sum((pixel[channel] - base[channel]) ** 2 for channel in range(3)) > 900:
+            if self._is_foreground(pixel, base):
                 mask |= bit
                 foregrounds.append(pixel)
         return mask, foregrounds

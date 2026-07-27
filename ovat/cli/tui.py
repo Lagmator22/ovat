@@ -233,6 +233,7 @@ class OvatTUI(App):
             # The source has a large blue canvas; crop it to the Intel mark so
             # the compact inline animation keeps the command area spacious.
             yield AnimatedGif(columns=28, crop=(200, 160, 604, 440),
+                              solid_final_frame=True,
                               id="intel-animation")
         output = RichLog(id="output", highlight=False, markup=False, wrap=True)
         output.border_title = "output"

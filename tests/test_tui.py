@@ -15,6 +15,7 @@ import pytest
 pytest.importorskip("textual")
 
 from textual.widgets import Input, OptionList, RichLog
+from rich.text import Text
 from textual.app import App, ComposeResult
 
 from ovat.cli import tui as tui_module
@@ -42,7 +43,8 @@ def test_animated_gif_plays_once_and_preserves_frame_durations(tmp_path):
 
     class GifApp(App):
         def compose(self) -> ComposeResult:
-            yield AnimatedGif(source, columns=4, id="animation")
+            yield AnimatedGif(source, columns=4, id="animation",
+                              settled_renderable=Text("finished"))
 
     async def scenario():
         app = GifApp()
@@ -61,9 +63,30 @@ def test_animated_gif_plays_once_and_preserves_frame_durations(tmp_path):
             await pilot.pause(0.1)
             assert animation.frame_index == 1
             assert animation.is_playing is False
+            assert animation.render().plain == "finished"
             animation.restart()
             assert animation.is_playing is True
     _run(scenario())
+
+
+def test_animated_gif_can_settle_on_solid_quadrant_blocks(tmp_path):
+    """The Intel end mark is continuous, not a dotted Braille logo."""
+    from PIL import Image
+
+    source = tmp_path / "logo.gif"
+    blue = Image.new("RGB", (8, 6), "#0071C5")
+    final = blue.copy()
+    final.paste("white", (2, 1, 6, 5))
+    blue.save(source, save_all=True, append_images=[final], duration=[20, 20])
+
+    animation = AnimatedGif(source, columns=8, solid_final_frame=True)
+    animation._decode_frames()
+    static = animation._settled_renderable
+
+    assert static is not None
+    assert "█" in static.plain
+    assert not any(0x2800 <= ord(character) <= 0x28FF
+                       for character in static.plain)
 
 
 def test_slash_opens_a_dropdown_of_templates():
