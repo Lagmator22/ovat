@@ -12,8 +12,12 @@ my question, print the answer. That single line is the midterm demo.
 import os
 
 import typer
+from rich.progress import (BarColumn, Progress, SpinnerColumn,
+                           TaskProgressColumn, TextColumn,
+                           TimeRemainingColumn)
 
 from ovat.agent.factory import build_agent
+from ovat.cli import ui
 from ovat.cli.ui import console, esc
 from ovat.config.workflow import load_workflow
 
@@ -304,7 +308,7 @@ def index(
     chunks. After this, `ovat run` can answer questions from those documents.
     """
     from ovat.agent.factory import build_rag
-    from ovat.rag.indexer import index_folder
+    from ovat.rag.indexer import index_folder, iter_text_files
 
     cfg = load_workflow(config)
     if cfg.rag is None:
@@ -325,10 +329,35 @@ def index(
     rprint(f"[green]Indexing[/green] {esc(folder)} -> "
            f"{esc(cfg.rag.retriever.db_path)} ...")
     try:
-        summary = index_folder(
-            folder, retriever,
-            size=cfg.rag.chunk.size, overlap=cfg.rag.chunk.overlap,
-        )
+        # A bar, not silence. Embedding a few hundred files is minutes of an
+        # unmoving cursor, and there was no way to tell that from a hang.
+        # transient=True so the finished bar does not outlive the run and
+        # compete with the summary line for the reader's attention.
+        # Count the files BEFORE starting. index_folder only reveals the total
+        # with its first callback, and until then the bar reads "0/None",
+        # which on a large folder is several seconds of what looks like a
+        # broken bar. Walking the tree twice costs nothing next to embedding.
+        file_count = len(list(iter_text_files(folder)))
+        with Progress(
+            SpinnerColumn(style=ui.BLUE),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(complete_style=ui.GREEN, finished_style=ui.GREEN),
+            TaskProgressColumn(),
+            TextColumn("{task.completed}/{task.total} files"),
+            TimeRemainingColumn(),
+            console=console, transient=True,
+        ) as progress:
+            task = progress.add_task("embedding", total=file_count)
+
+            def tick(done: int, total: int, path: str) -> None:
+                progress.update(task, completed=done, total=total,
+                                description=os.path.basename(path)[:30])
+
+            summary = index_folder(
+                folder, retriever,
+                size=cfg.rag.chunk.size, overlap=cfg.rag.chunk.overlap,
+                on_progress=tick,
+            )
     except FileNotFoundError as exc:
         rprint(f"[red]{esc(exc)}[/red]")
         raise typer.Exit(code=1)

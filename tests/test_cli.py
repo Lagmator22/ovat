@@ -191,3 +191,86 @@ def test_chat_rejects_a_negative_token_cap():
                                  "--max-tokens", "-5"])
     assert result.exit_code == 1
     assert "cannot be negative" in result.output
+
+
+# `ovat index` must show progress, because embedding looks like a hang
+
+def _rag_config(tmp_path) -> str:
+    """A workflow with a rag: section, pointing nowhere real.
+
+    build_rag is stubbed in these tests, so the embedding model never has to
+    exist: what is under test is the CLI's progress wiring, not OpenVINO.
+    """
+    config = tmp_path / "w.yml"
+    config.write_text(
+        "model:\n  name: m\n"
+        "rag:\n"
+        "  embeddings:\n    provider: genai\n    model: nope\n"
+        "    device: CPU\n    dim: 384\n"
+        "  retriever:\n    provider: sqlite-vec\n    db_path: ':memory:'\n"
+        "  chunk:\n    size: 512\n    overlap: 0\n", encoding="utf-8")
+    return str(config)
+
+
+class _CountingRetriever:
+    def __init__(self):
+        self.added = 0
+
+    def add(self, texts, sources=None):
+        self.added += len(texts)
+
+    def close(self):
+        pass
+
+
+def test_index_reports_progress_for_every_file(monkeypatch, tmp_path):
+    """The regression this guards: wrapping the call in a Progress context is
+    exactly the sort of change that swallows an exception or forgets to pass
+    the callback, leaving the bar frozen at zero while work happens."""
+    from ovat.cli import main as cli_main
+
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    for name in ("a.md", "b.md", "c.md"):
+        (docs / name).write_text("some text", encoding="utf-8")
+
+    retriever = _CountingRetriever()
+    monkeypatch.setattr(cli_main, "build_agent", lambda *a, **k: None)
+    monkeypatch.setattr("ovat.agent.factory.build_rag",
+                        lambda cfg: retriever)
+
+    ticks = []
+    import ovat.rag.indexer as indexer
+    real_index_folder = indexer.index_folder
+
+    def watching(folder, retr, size=512, overlap=64, on_progress=None):
+        assert on_progress is not None, (
+            "the CLI built a progress bar but never passed the callback, so "
+            "it would sit at zero for the whole run")
+        return real_index_folder(
+            folder, retr, size=size, overlap=overlap,
+            on_progress=lambda d, t, p: (ticks.append((d, t)),
+                                         on_progress(d, t, p))[1])
+
+    monkeypatch.setattr(indexer, "index_folder", watching)
+
+    result = runner.invoke(app, ["index", str(docs), _rag_config(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert ticks == [(1, 3), (2, 3), (3, 3)]
+    assert "Indexed 3 chunks from 3 files" in result.output
+
+
+def test_index_still_reports_a_missing_folder_rather_than_a_bar(monkeypatch,
+                                                                tmp_path):
+    """The file count is taken BEFORE the bar starts, so a missing folder now
+    raises inside the try block. It must still be the friendly message."""
+    from ovat.cli import main as cli_main
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda *a, **k: None)
+    monkeypatch.setattr("ovat.agent.factory.build_rag",
+                        lambda cfg: _CountingRetriever())
+
+    result = runner.invoke(
+        app, ["index", str(tmp_path / "nope"), _rag_config(tmp_path)])
+    assert result.exit_code == 1
+    assert "No such folder to index" in result.output

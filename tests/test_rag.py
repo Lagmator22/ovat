@@ -141,3 +141,75 @@ def test_base_retriever_close_is_a_safe_default_noop():
         def retrieve(self, query, top_k=5): return []
 
     NothingRetriever().close()                       # must not raise
+
+
+# Progress reporting: indexing must never look like a hang
+
+def test_on_progress_reports_every_file_once_and_ends_at_the_total(tmp_path):
+    """The contract a progress bar depends on.
+
+    Embedding a few hundred files is minutes of an unmoving cursor, so the
+    count has to be exact: one call per file, strictly increasing, finishing
+    on the total. A bar that stalls at 8/10 reads as a crash.
+    """
+    for name in ("a.md", "b.txt", "c.markdown"):
+        (tmp_path / name).write_text("some words here", encoding="utf-8")
+    (tmp_path / "skipme.bin").write_text("not indexed", encoding="utf-8")
+
+    retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384,
+                                           db_path=":memory:")
+    seen = []
+    index_folder(str(tmp_path), retriever, size=512, overlap=0,
+                 on_progress=lambda done, total, path: seen.append(
+                     (done, total, path)))
+
+    assert [done for done, _, _ in seen] == [1, 2, 3]
+    assert {total for _, total, _ in seen} == {3}, "the total must not move"
+    assert seen[-1][0] == seen[-1][1], "the bar must reach its total"
+    # The .bin file is not a text file and must not be counted into the total,
+    # or the bar would stop one short of full every time.
+    assert not any(p.endswith(".bin") for _, _, p in seen)
+
+
+def test_an_empty_file_still_ticks_the_progress(tmp_path):
+    """It contributes no chunks, but a bar that silently stops short of its
+    total reads as a failure, so it must still be counted."""
+    (tmp_path / "full.md").write_text("real content", encoding="utf-8")
+    (tmp_path / "empty.md").write_text("   ", encoding="utf-8")
+
+    retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384,
+                                           db_path=":memory:")
+    seen = []
+    summary = index_folder(str(tmp_path), retriever, size=512, overlap=0,
+                           on_progress=lambda d, t, p: seen.append((d, t)))
+
+    assert summary["files"] == 1          # only one file had anything in it
+    assert seen == [(1, 2), (2, 2)]       # but the bar still reached 2 of 2
+
+
+def test_progress_is_reported_after_the_file_is_stored_not_before(tmp_path):
+    """Reporting before the work would claim a file was done while its
+    vectors were still being computed, which is how a bar ends up sitting at
+    100% for thirty seconds."""
+    (tmp_path / "a.md").write_text("one", encoding="utf-8")
+    (tmp_path / "b.md").write_text("two", encoding="utf-8")
+
+    order = []
+
+    class Watching(SQLiteVecRetrieverProvider):
+        def add(self, texts, sources=None):
+            order.append("add")
+            return super().add(texts, sources=sources)
+
+    retriever = Watching(FakeEmbedder(), dim=384, db_path=":memory:")
+    index_folder(str(tmp_path), retriever, size=512, overlap=0,
+                 on_progress=lambda d, t, p: order.append(f"tick{d}"))
+    assert order == ["add", "tick1", "add", "tick2"]
+
+
+def test_index_folder_still_works_with_no_callback(tmp_path):
+    """on_progress is optional; the CLI passed nothing before this existed."""
+    (tmp_path / "a.md").write_text("content", encoding="utf-8")
+    retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384,
+                                           db_path=":memory:")
+    assert index_folder(str(tmp_path), retriever) == {"files": 1, "chunks": 1}

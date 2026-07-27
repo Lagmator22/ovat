@@ -67,7 +67,8 @@ def iter_text_files(folder: str):
 
 
 def index_folder(folder: str, retriever: RetrieverProvider,
-                 size: int = 512, overlap: int = 64) -> dict:
+                 size: int = 512, overlap: int = 64,
+                 on_progress=None) -> dict:
     """Index every text file under `folder` into `retriever`.
 
     Returns a small summary dict so the CLI can print something honest like
@@ -75,17 +76,33 @@ def index_folder(folder: str, retriever: RetrieverProvider,
 
     The source I store is the file path. That is what lets search_docs answer
     "where did this come from", which is the citation half of RAG.
+
+    `on_progress(done, total, path)` is called once per file, after that file
+    has been embedded and stored. It exists because embedding is slow enough
+    to look like a hang: a few hundred files is minutes of an unmoving cursor,
+    and there was previously NO way to tell indexing from a crash. Reporting
+    after the work, not before, means the count never claims a file is done
+    while its vectors are still being computed.
+
+    Note the deliberate cost: the file list is materialised up front so a
+    total exists. A progress bar without a denominator is just a spinner, and
+    walking the tree twice is far cheaper than embedding anything.
     """
+    paths = list(iter_text_files(folder))
+    total = len(paths)
     total_files = 0
     total_chunks = 0
-    for path in iter_text_files(folder):
+    for done, path in enumerate(paths, start=1):
         text = path.read_text(encoding="utf-8", errors="ignore")
         chunks = chunk_text(text, size=size, overlap=overlap)
-        if not chunks:
-            continue
-        # One source string per chunk, all pointing back at this file.
-        sources = [str(path)] * len(chunks)
-        retriever.add(chunks, sources=sources)
-        total_files += 1
-        total_chunks += len(chunks)
+        if chunks:
+            # One source string per chunk, all pointing back at this file.
+            sources = [str(path)] * len(chunks)
+            retriever.add(chunks, sources=sources)
+            total_files += 1
+            total_chunks += len(chunks)
+        if on_progress is not None:
+            # Empty files are reported too. They cost nothing to skip, but a
+            # bar that silently stops short of its total reads as a failure.
+            on_progress(done, total, str(path))
     return {"files": total_files, "chunks": total_chunks}
