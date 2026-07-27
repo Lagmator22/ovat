@@ -196,6 +196,8 @@ class OvatTUI(App):
         border: round $secondary;
         background: $surface;
     }
+    /* The pointer says "this is clickable" before you click it. */
+    #palette > .option-list--option-hover { background: $primary 30%; }
     #palette > .option-list--option-highlighted {
         background: $primary;
         color: $foreground;
@@ -223,7 +225,10 @@ class OvatTUI(App):
 
     def compose(self) -> ComposeResult:
         yield Static(_banner(), id="banner")
-        yield RichLog(id="output", highlight=False, markup=False, wrap=True)
+        output = RichLog(id="output", highlight=False, markup=False, wrap=True)
+        output.border_title = "output"
+        output.border_subtitle = "Ctrl-P palette · / shortcuts"
+        yield output
         yield OptionList(id="palette")
         yield PasteInput(placeholder="Run any command (e.g. ovat doctor)"
                                      "  ·  type / for shortcuts", id="prompt")
