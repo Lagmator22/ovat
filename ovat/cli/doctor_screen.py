@@ -38,6 +38,7 @@ from textual.widgets.option_list import Option
 
 from ovat.cli import ui
 from ovat.cli.commands import ScreenCommands
+from ovat.cli.widgets import SelectableRichLog
 
 # The slash menu for this screen. Same shape as shell.TEMPLATES in the
 # launcher: name, one-line help. Every one is a UI action, so unlike the
@@ -153,13 +154,19 @@ class DoctorScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Static(_header(self._config_path), id="doc-header")
-        log = RichLog(id="doc-log", highlight=False, markup=False, wrap=True)
+        log = SelectableRichLog(id="doc-log", highlight=False,
+                                markup=False, wrap=True)
         log.border_title = "diagnostics"
         log.border_subtitle = "F5 re-run"
         yield log
         yield OptionList(id="doc-palette")
-        yield Input(placeholder="type / for commands  ·  F5 re-run  ·  Esc back",
-                    id="doc-input")
+        doc_input = Input(
+            placeholder="type / for commands  ·  F5 re-run  ·  Esc back",
+            id="doc-input")
+        doc_input.tooltip = ("Checks run in the background, so the screen\n"
+                             "stays usable while they do\n"
+                             "/copy puts the whole report on the clipboard")
+        yield doc_input
         yield Footer()
 
     def on_mount(self) -> None:

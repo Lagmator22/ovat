@@ -37,7 +37,7 @@ from textual.color import Color
 from textual.screen import ModalScreen, Screen
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import (Collapsible, Footer, Input, Label, Markdown,
-                             OptionList, Static)
+                             OptionList, Rule, Static)
 from textual.widgets.option_list import Option
 
 from ovat.agent.rag_chat import rag_chat
@@ -483,6 +483,21 @@ class Note(TranscriptLine):
     """A status line: confirmations, refusals, errors."""
 
 
+class TurnRule(Rule):
+    """A hairline between one turn and the next.
+
+    Twenty turns of scrollback read as one wall of text: the indentation says
+    who spoke, but nothing says where a question-and-answer ends. A rule gives
+    the transcript a rhythm you can skim by, and it costs one static line that
+    is painted once and never animates, which matters on a screen that is
+    usually being watched over SSH.
+
+    Its own class rather than a bare Rule so the screen's CSS can retune the
+    spacing without reaching into any other rule the app might grow later, and
+    so both the live path and _replay can find them again.
+    """
+
+
 class Thinking(Static):
     """A pulsing bar shown while the model is generating.
 
@@ -598,6 +613,10 @@ class ChatScreen(Screen):
         color: $foreground 85%;
         border-left: outer $success 50%;
     }
+    /* Textual's Rule ships margin: 1 0, which would cost three rows per turn
+       on top of Prompt's own top margin. Zero it: the Prompt below already
+       leaves the gap, and the tint keeps the line quiet enough to skim past. */
+    #chat-view TurnRule { margin: 0; color: $primary 40%; }
     Note { color: $text-muted; margin: 0 1 0 2; padding: 0 2; }
     Thinking { margin: 0 1 0 8; padding: 0 2; text-style: italic; }
     Note.ok { color: $success; }
@@ -668,7 +687,13 @@ class ChatScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#chat-input", ChatInput).focus()
+        chat_input = self.query_one("#chat-input", ChatInput)
+        # A tooltip that restates the placeholder is noise. This one carries
+        # the things the one-line placeholder has no room for.
+        chat_input.tooltip = ("Enter sends  ·  Shift-Enter for a new line\n"
+                              "Up/Down recalls what you asked before\n"
+                              "Esc stops an answer mid-flight")
+        chat_input.focus()
         view = self.query_one("#chat-view", VerticalScroll)
         # Textual's animated overlay on the transcript is fine HERE, unlike on
         # the old append-only log: nothing has been written yet, so there is
@@ -735,6 +760,12 @@ class ChatScreen(Screen):
             if not content:
                 continue
             if message["role"] == "user":
+                if any(isinstance(w, Prompt) for w in widgets):
+                    # The SAME test as the live path, deliberately. A replay
+                    # starts from an empty view with no banner in it, so
+                    # "anything already there" would not mean the same thing
+                    # in both places and a rebuild would shift every rule.
+                    widgets.append(TurnRule())
                 widgets.append(Prompt(content))
             elif message["role"] == "assistant":
                 reasoning, answer = split_thinking(self._for_display(content))
@@ -889,6 +920,12 @@ class ChatScreen(Screen):
         self._busy = True
         self._set_placeholder("thinking…  Esc stops the answer")
         view = self._view
+        # Separator goes before the QUESTION, so it divides turn from turn.
+        # The test is "is there already a TURN", not "is there anything": the
+        # ready banner and any /note are children too, and keying off those
+        # drew a rule above the very first question, under nothing.
+        if view.query(Prompt):
+            await view.mount(TurnRule())
         await view.mount(Prompt(line))
         response = Response()
         await view.mount(response)

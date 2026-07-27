@@ -2,7 +2,7 @@
 """Small widget subclasses shared by the TUI screens."""
 from textual.binding import Binding
 from textual.message import Message
-from textual.widgets import Input, TextArea
+from textual.widgets import Input, RichLog, TextArea
 
 from ovat.cli.editing import read_clipboard
 
@@ -100,3 +100,24 @@ class ChatInput(TextArea):
         text = read_clipboard() or self.app.clipboard
         if text:
             self.insert(text)
+
+
+class SelectableRichLog(RichLog):
+    """A RichLog whose selected text can actually be copied out.
+
+    Textual's generic Widget.get_selection() renders the widget and extracts
+    from the result, but only when that result is a Text or Content. RichLog
+    is a LINE-API widget: it renders to Strips, so the generic path returns
+    None and there is nothing to copy. The effect was that dragging across
+    the log highlighted it, ctrl+c/cmd+c fired, and the clipboard stayed
+    empty, which reads as "selection is broken" rather than "this widget
+    cannot extract".
+
+    RichLog already keeps every rendered line in self.lines, and a Strip
+    knows its own text, so joining them gives exactly the document the
+    selection offsets are measured against.
+    """
+
+    def get_selection(self, selection):
+        text = "\n".join(strip.text for strip in self.lines)
+        return selection.extract(text), "\n"

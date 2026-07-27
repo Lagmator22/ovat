@@ -1516,3 +1516,109 @@ def test_the_stream_is_only_stopped_once(monkeypatch, tmp_path):
             await pilot.pause()
             assert len(stops) == 1, f"stopped {len(stops)} times"
     _run(scenario())
+
+
+# Turn separators: a rule between one exchange and the next
+
+def _rules(screen):
+    from ovat.cli.chat_screen import TurnRule
+    return list(screen.query(TurnRule))
+
+
+def test_no_rule_appears_before_the_first_question(monkeypatch, tmp_path):
+    """A rule at the very top would be a line drawn under nothing."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            screen.query_one("#chat-input", ChatInput).value = "first"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert _rules(screen) == []
+    _run(scenario())
+
+
+def test_a_rule_separates_each_turn_from_the_next(monkeypatch, tmp_path):
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            for question in ("one", "two", "three"):
+                screen.query_one("#chat-input", ChatInput).value = question
+                await pilot.press("enter")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            # Three turns, two gaps between them.
+            assert len(_rules(screen)) == 2
+    _run(scenario())
+
+
+def test_rebuilding_the_transcript_does_not_double_the_rules(monkeypatch,
+                                                              tmp_path):
+    """/thinking rebuilds the whole transcript from the session. If the live
+    path and the replay path disagreed, toggling it would either lose the
+    separators or stack a second one on every turn."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            for question in ("one", "two", "three"):
+                screen.query_one("#chat-input", ChatInput).value = question
+                await pilot.press("enter")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            before = len(_rules(screen))
+
+            screen.query_one("#chat-input", ChatInput).value = "/thinking on"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert len(_rules(screen)) == before, "the rebuild changed the count"
+    _run(scenario())
+
+
+def test_the_rule_costs_one_row_not_three(monkeypatch, tmp_path):
+    """Textual's Rule ships margin: 1 0. Left alone that is three rows per
+    turn on top of Prompt's own margin, which on a small terminal is most of
+    the screen spent on separators."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(size=(80, 30)) as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            for question in ("one", "two"):
+                screen.query_one("#chat-input", ChatInput).value = question
+                await pilot.press("enter")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+            rule = _rules(screen)[0]
+            assert rule.outer_size.height == 1, (
+                f"the separator takes {rule.outer_size.height} rows")
+    _run(scenario())
+
+
+def test_the_chat_input_has_a_tooltip_that_adds_to_the_placeholder(monkeypatch,
+                                                                    tmp_path):
+    """A tooltip restating the placeholder is noise. This one has to carry
+    what the single placeholder line has no room for."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            chat_input = screen.query_one("#chat-input", ChatInput)
+            assert chat_input.tooltip
+            assert chat_input.tooltip != chat_input.placeholder
+            # Things the placeholder does not mention.
+            assert "Up/Down" in chat_input.tooltip
+            assert "Esc" in chat_input.tooltip
+    _run(scenario())

@@ -33,7 +33,7 @@ from textual.widgets.option_list import Option
 
 from ovat.cli import shell, ui
 from ovat.cli.editing import InputHistory
-from ovat.cli.widgets import PasteInput
+from ovat.cli.widgets import PasteInput, SelectableRichLog
 from ovat.cli.theme import OVAT_THEME
 
 # A dependency-free fallback, used only if pyfiglet is somehow unavailable.
@@ -543,13 +543,26 @@ class OvatTUI(App):
         self.theme = OVAT_THEME.name
 
     def action_cancel_or_quit(self) -> None:
-        """Busy: cancel the child. Idle: quit, but only on a SECOND press.
+        """Selection: copy it. Busy: cancel the child. Idle: quit on a SECOND
+        press.
 
         One stray Ctrl-C used to close the whole app, which in a terminal is
         the keystroke people hit reflexively to interrupt something. Now the
         first press says what a second one will do, and the intent has to be
         repeated within QUIT_CONFIRM_S to count.
+
+        Copy comes first because this binding is priority=True and therefore
+        SHADOWS Textual's own "ctrl+c,super+c -> screen.copy_text" on every
+        screen. Without this branch, selecting text and pressing Ctrl-C
+        armed a quit instead of copying, which is the opposite of what every
+        terminal does. Copying also clears the selection, so a second Ctrl-C
+        goes back to meaning cancel-or-quit.
         """
+        if self.screen.get_selected_text():
+            self.screen.action_copy_text()
+            self.screen.clear_selection()
+            self.notify("Copied the selection.", timeout=2)
+            return
         if self._busy:
             self._cancel_running()
             return
@@ -648,13 +661,20 @@ class OvatTUI(App):
             yield Static(_startup_updates(), id="updates-panel")
             with Vertical(id="intel-panel"):
                 yield _StartupIntelAnimation(id="intel-animation")
-        output = RichLog(id="output", highlight=False, markup=False, wrap=True)
+        output = SelectableRichLog(id="output", highlight=False,
+                                   markup=False, wrap=True)
         output.border_title = "output"
         output.border_subtitle = "Ctrl-P palette · / shortcuts"
         yield output
         yield OptionList(id="palette")
-        yield PasteInput(placeholder="Run any command (e.g. ovat doctor)"
-                                     "  ·  type / for shortcuts", id="prompt")
+        prompt = PasteInput(placeholder="Run any command (e.g. ovat doctor)"
+                                        "  ·  type / for shortcuts",
+                            id="prompt")
+        # What the placeholder has no room to say.
+        prompt.tooltip = ("Any shell command runs here, inside the venv\n"
+                          "Esc cancels a running command\n"
+                          "Up/Down recalls previous commands")
+        yield prompt
         # Textual's Footer lists the active bindings, including ^p for the
         # command palette. Without it the palette existed but nothing on
         # screen ever said so.

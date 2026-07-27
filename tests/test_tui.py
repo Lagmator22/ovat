@@ -627,3 +627,95 @@ def test_a_missing_font_costs_a_size_not_the_masthead():
     assert tui._figlet_lines("OVMS", font="no-such-font-exists") == []
     # And the caller still produces something renderable.
     assert tui._attribution_wordmark("OVMS").plain.strip()
+
+
+# Selecting text and copying it out
+
+def _drag(screen, x1, y1, x2, y2):
+    """Drive a mouse drag through the SCREEN's own event routing.
+
+    Not post_message: selection is handled in Screen._forward_event, which
+    posting straight to the screen bypasses entirely. A probe that posts
+    events sees no selection and wrongly concludes the feature is broken.
+    """
+    from textual.events import MouseDown, MouseMove, MouseUp
+
+    def event(cls, x, y):
+        return cls(None, x, y, 0, 0, 1, False, False, False,
+                   screen_x=x, screen_y=y)
+
+    screen._forward_event(event(MouseDown, x1, y1))
+    screen._forward_event(event(MouseMove, x2, y2))
+    screen._forward_event(event(MouseUp, x2, y2))
+
+
+def test_dragging_over_the_log_yields_text_that_can_be_copied():
+    """RichLog is a LINE-API widget, so Textual's generic get_selection()
+    returns None for it and the clipboard came back empty. Highlighting
+    worked, copying did not, which reads as "selection is broken"."""
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(size=(100, 34)) as pilot:
+            log = app.query_one("#output")
+            log.write("SELECT THIS LINE OF TEXT PLEASE")
+            await pilot.pause()
+            region = log.region
+            _drag(app.screen, region.x + 2, region.y + 1,
+                  region.x + 28, region.y + 2)
+            await pilot.pause()
+            assert app.screen.get_selected_text(), "nothing was selected"
+    _run(scenario())
+
+
+def test_ctrl_c_copies_a_selection_instead_of_arming_a_quit():
+    """The app's ctrl+c binding is priority=True and SHADOWS Textual's own
+    "ctrl+c,super+c -> screen.copy_text" on every screen. Without an explicit
+    branch, selecting text and pressing Ctrl-C armed a quit, which is the
+    opposite of what every terminal does."""
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(size=(100, 34)) as pilot:
+            log = app.query_one("#output")
+            log.write("COPY ME PLEASE")
+            await pilot.pause()
+            region = log.region
+            _drag(app.screen, region.x + 2, region.y + 1,
+                  region.x + 28, region.y + 2)
+            await pilot.pause()
+
+            await pilot.press("ctrl+c")
+            await pilot.pause()
+            assert app.clipboard, "ctrl+c did not copy the selection"
+            assert app.is_running is True, "it quit instead of copying"
+            # Cleared, so the NEXT ctrl+c means cancel-or-quit again and the
+            # user is not stuck copying the same stale selection forever.
+            assert not app.screen.get_selected_text()
+
+            await pilot.press("ctrl+c")
+            await pilot.pause()
+            assert any("again to quit" in str(n.message)
+                       for n in app._notifications)
+    _run(scenario())
+
+
+def test_ctrl_c_with_no_selection_still_arms_the_quit():
+    """The copy branch must not swallow the plain case."""
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+c")
+            await pilot.pause()
+            assert app.is_running is True
+            assert any("again to quit" in str(n.message)
+                       for n in app._notifications)
+    _run(scenario())
+
+
+def test_the_launcher_prompt_has_a_tooltip():
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            prompt = app.query_one("#prompt", Input)
+            assert prompt.tooltip and prompt.tooltip != prompt.placeholder
+            assert "Esc" in prompt.tooltip
+    _run(scenario())
