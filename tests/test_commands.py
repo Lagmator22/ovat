@@ -210,3 +210,41 @@ def test_a_reset_theme_command_appears_only_once_you_have_left_ovat():
             await pilot.pause()
             assert app.theme == "ovat"
     _run(scenario())
+
+
+def test_every_screen_follows_the_theme_not_just_the_chat():
+    """The chat was converted to theme variables; the launcher and doctor
+    screen were not, so picking Dracula recoloured one screen and left the
+    other two Intel blue. Every screen's chrome is a theme variable now."""
+    from ovat.cli.doctor_screen import DoctorScreen
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            launcher = app.query_one("#output")
+            ovat_blue = launcher.styles.border[0][1]
+
+            app.theme = "dracula"
+            await pilot.pause()
+            await pilot.pause()
+            dracula = launcher.styles.border[0][1]
+            assert dracula != ovat_blue          # the launcher moved
+
+            app.push_screen(DoctorScreen())
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            doctor = app.screen.query_one("#doc-log")
+            assert doctor.styles.border[0][1] == dracula   # and agrees
+    _run(scenario())
+
+
+def test_no_hardcoded_hex_survives_in_any_screen_css():
+    """A literal hex in CSS is a colour a theme cannot reach."""
+    import re
+    from ovat.cli import chat_screen, doctor_screen, tui
+
+    for module in (tui.OvatTUI, doctor_screen.DoctorScreen,
+                   chat_screen.ChatScreen, chat_screen.SessionPicker):
+        css = getattr(module, "CSS", "") or getattr(module, "DEFAULT_CSS", "")
+        leftover = re.findall(r"#[0-9A-Fa-f]{6}", css)
+        assert not leftover, f"{module.__name__} pins {leftover}"

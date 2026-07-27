@@ -106,12 +106,12 @@ class DoctorScreen(Screen):
     COMMANDS = {DoctorCommands}
 
     DEFAULT_CSS = """
-    DoctorScreen { background: #0b0e14; }
+    DoctorScreen { background: $background; }
     #doc-header { padding: 1 2 0 2; height: auto; }
     #doc-log {
         height: 1fr;
-        border: round #0068B5;
-        background: #0d1117;
+        border: round $primary;
+        background: $surface;
         padding: 0 1;
         margin: 1 2 0 2;
     }
@@ -120,16 +120,16 @@ class DoctorScreen(Screen):
         height: auto;
         max-height: 6;
         margin: 0 2;
-        border: round #8F5CFF;
-        background: #0d1117;
+        border: round $secondary;
+        background: $surface;
     }
     #doc-palette > .option-list--option-highlighted {
-        background: #0068B5;
-        color: #ffffff;
+        background: $primary;
+        color: $foreground;
         text-style: bold;
     }
-    #doc-input { margin: 0 2 1 2; border: round #0068B5; }
-    Footer { background: #0d1117; color: #00C7FD; }
+    #doc-input { margin: 0 2 1 2; border: round $primary; }
+    Footer { background: $surface; color: $accent; }
     """
 
     # Only NON-PRINTABLE keys can be bindings here. The input is focused so the

@@ -167,12 +167,12 @@ class OvatTUI(App):
                     severity="warning", timeout=QUIT_CONFIRM_S)
 
     CSS = """
-    Screen { background: #0b0e14; }
+    Screen { background: $background; }
     #banner { padding: 1 2 0 2; height: auto; }
     #output {
         height: 1fr;
-        border: round #0068B5;
-        background: #0d1117;
+        border: round $primary;
+        background: $surface;
         padding: 0 1;
         margin: 1 2 0 2;
     }
@@ -181,17 +181,17 @@ class OvatTUI(App):
         height: auto;
         max-height: 9;
         margin: 0 2;
-        border: round #8F5CFF;
-        background: #0d1117;
+        border: round $secondary;
+        background: $surface;
     }
     #palette > .option-list--option-highlighted {
-        background: #0068B5;
-        color: #ffffff;
+        background: $primary;
+        color: $foreground;
         text-style: bold;
     }
     #prompt {
         margin: 0 2 1 2;
-        border: round #0068B5;
+        border: round $primary;
     }
     """
 
@@ -528,7 +528,7 @@ class OvatTUI(App):
         enforced by the _busy gate instead.
         """
         log = self.query_one("#output", RichLog)
-        self.call_from_thread(log.write, Text(f"$ {cmd}", style="bold #FFFFFF"))
+        self.call_from_thread(log.write, Text(f"$ {cmd}", style=f"bold {ui.CYAN}"))
         try:
             try:
                 proc = shell.spawn(cmd, self._cwd, shell.venv_env(columns=cols))
