@@ -493,3 +493,85 @@ def test_the_launcher_recalls_commands_with_up_and_down():
             await pilot.pause()
             assert inp.value == "unfinished"
     _run(scenario())
+
+
+# The masthead hierarchy: three type sizes, largest to smallest
+
+def _rows(text) -> list:
+    return text.plain.rstrip("\n").split("\n")
+
+
+def _styles(text) -> set:
+    return {str(span.style) for span in text.spans}
+
+
+def test_the_masthead_has_three_distinct_type_sizes():
+    """A terminal has ONE glyph size, so hierarchy can only come from picking
+    faces of different heights. OVMS was previously set in the same six-row
+    face as OVAT, which gave the panel two headlines and no focal point."""
+    from ovat.cli import tui
+
+    ovat = len(tui._ansi_shadow_lines("OVAT"))
+    openvino = len(_rows(tui._attribution_wordmark("OpenVINO")))
+    assert ovat > openvino, "the attribution must be smaller than the wordmark"
+    assert openvino > 1, "and bigger than the one-line 'powered by' credit"
+
+
+def test_the_attribution_marks_are_darker_than_the_wordmark():
+    """They sit directly under OVAT, so they have to read as subordinate."""
+    from ovat.cli import tui
+
+    def brightness(hex_colour: str) -> int:
+        return sum(int(hex_colour[i:i + 2], 16) for i in (1, 3, 5))
+
+    attribution = [s for s in _styles(tui._attribution_wordmark("OVMS"))]
+    assert attribution, "the mark carries no colour at all"
+    darkest_wordmark = "#%02X%02X%02X" % tui._BLUE_RGB
+    for style in attribution:
+        shade = style.split()[-1]
+        assert brightness(shade) < brightness(darkest_wordmark), (
+            f"{shade} is not darker than the wordmark's darkest {darkest_wordmark}")
+
+
+def test_powered_by_is_the_smallest_and_purple():
+    """Connective tissue between two marks, not a heading: one plain row."""
+    from ovat.cli import tui
+
+    banner = tui._banner()
+    assert "powered by" in banner.plain
+    line = [r for r in _rows(banner) if "powered by" in r]
+    assert line == ["powered by"], "it must be plain text, not a FIGlet mark"
+    assert any(tui.ui.PURPLE in str(s.style) and "bold" not in str(s.style)
+               for s in banner.spans), "the credit line should not be bold"
+
+
+def test_updates_uses_the_ovat_face_in_green():
+    """It heads its own panel, so it keeps the headline face; green because
+    it is the part of the masthead that will carry news."""
+    from ovat.cli import tui
+
+    updates = tui._startup_updates()
+    assert len(_rows(updates)) == len(tui._ansi_shadow_lines("Updates"))
+    assert _styles(updates) == {f"bold {tui.ui.GREEN}"}
+
+
+def test_the_banner_fits_inside_its_panel():
+    """#brand-panel is 32% of the screen and the masthead is 17 rows. A mark
+    wider than the panel does not clip, it WRAPS, which shears the glyphs."""
+    from ovat.cli import tui
+
+    banner = _rows(tui._banner())
+    # 17 rows of masthead, less the round border top and bottom.
+    assert len(banner) <= 15, f"{len(banner)} rows will not fit in the panel"
+    # 32% of an 80-column terminal, less the panel's own padding.
+    assert max(len(r) for r in banner) <= 36, "wider than the panel at 80 cols"
+
+
+def test_a_missing_font_costs_a_size_not_the_masthead():
+    """pyfiglet ships different font sets depending on packaging, so an
+    unknown font name must degrade, never raise."""
+    from ovat.cli import tui
+
+    assert tui._figlet_lines("OVMS", font="no-such-font-exists") == []
+    # And the caller still produces something renderable.
+    assert tui._attribution_wordmark("OVMS").plain.strip()

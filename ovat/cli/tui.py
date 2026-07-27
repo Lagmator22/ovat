@@ -51,6 +51,10 @@ QUIT_CONFIRM_S = 3.0
 
 _CYAN_RGB = (0, 199, 253)
 _BLUE_RGB = (0, 104, 181)
+# One step DARKER than where the OVAT gradient ends. The attribution marks sit
+# directly under the wordmark, so they need to read as subordinate to it; at
+# the same blue they competed with it and the panel had no focal point.
+_DEEP_BLUE_RGB = (0, 71, 133)
 _INTEL_PHASE_SOURCES: Final = (
     Path(__file__).resolve().parent.parent / "assets" / "intel-phase-1.png",
     Path(__file__).resolve().parent.parent / "assets" / "intel-phase-2.png",
@@ -295,21 +299,32 @@ def _lerp_hex(a: tuple, b: tuple, t: float) -> str:
     )
 
 
-def _ansi_shadow_lines(label: str) -> list[str]:
-    """Return one unwrapped ANSI Shadow wordmark, or no lines on fallback."""
+def _figlet_lines(label: str, font: str = "ansi_shadow") -> list[str]:
+    """Return one unwrapped FIGlet wordmark, or no lines on fallback.
+
+    The font IS the type size here. A terminal has one glyph size, so the only
+    way to build a visual hierarchy is to pick faces of different heights:
+    ansi_shadow is six rows and carries the OVAT wordmark, mini is three or
+    four and carries the attribution marks beneath it.
+    """
     try:
         import pyfiglet
         # ``width`` controls FIGlet's wrapping, not its font size. Keep it
         # deliberately wide so a label is either rendered as its real mark or
         # handled by the caller; wrapping would break the glyph geometry.
         lines = [line for line in pyfiglet.figlet_format(
-            label, font="ansi_shadow", width=200
+            label, font=font, width=200
         ).split("\n") if line.strip()]
         if lines:
             return lines
     except Exception:
         return []
     return []
+
+
+def _ansi_shadow_lines(label: str) -> list[str]:
+    """The six-row headline face, kept as its own name for readability."""
+    return _figlet_lines(label, font="ansi_shadow")
 
 
 def _wordmark_lines() -> list[str]:
@@ -332,29 +347,67 @@ def _wordmark_from_lines(lines: Sequence[str], *, top: tuple[int, int, int],
     return text
 
 
-def _secondary_wordmark(label: str, *, color: str) -> Text:
-    """Use the actual OVAT FIGlet face for each secondary masthead label."""
-    lines = _ansi_shadow_lines(label)
+def _secondary_wordmark(label: str, *, color: str,
+                        font: str = "ansi_shadow") -> Text:
+    """A masthead label in a real FIGlet face, in one flat colour."""
+    lines = _figlet_lines(label, font=font)
     if not lines:
         return Text(label, style=f"bold {color}")
     rgb = tuple(int(color[index:index + 2], 16) for index in (1, 3, 5))
     return _wordmark_from_lines(lines, top=rgb, bottom=rgb)
 
 
+# Mid-size faces for the attribution marks, best first. "pagga" is the one
+# that belongs here: three rows to OVAT's six, and drawn with the SAME solid
+# block glyphs, so it reads as the same family one size down. The line-art
+# faces (mini, straight) fit too, but next to a block wordmark they look like
+# a different typeface altogether, which is what made the panel look broken.
+_ATTRIBUTION_FONTS = ("pagga", "smblock", "mini")
+
+
+def _attribution_wordmark(label: str) -> Text:
+    """One attribution mark: mid-size block face, deep blue, flat.
+
+    Falls through the font list rather than trusting one name: pyfiglet ships
+    a different font set depending on how it was packaged, and a missing font
+    must cost us a size, never the whole masthead.
+    """
+    for font in _ATTRIBUTION_FONTS:
+        lines = _figlet_lines(label, font=font)
+        if lines:
+            return _wordmark_from_lines(lines, top=_DEEP_BLUE_RGB,
+                                        bottom=_DEEP_BLUE_RGB)
+    return Text(f"{label}\n", style=f"bold {ui.BLUE}")
+
+
 def _banner() -> Text:
-    """Header: OVAT plus the compact OpenVINO / OVMS lockup."""
+    """Header: OVAT over its "powered by" lockup.
+
+    Three type sizes, largest to smallest, which is the whole point: OVAT in
+    the six-row headline face, OpenVINO and OVMS in a mid-size face beneath
+    it, and the words "powered by" as plain text. Previously OVMS was set in
+    the SAME face as OVAT, so the panel had two headlines and no hierarchy,
+    and the attribution read as a second product name rather than a credit.
+    """
     out = _wordmark_text()
-    # OpenVINO is the compact purple attribution; OVMS gets the same six-line
-    # ANSI Shadow treatment as OVAT. Rendering "OpenVINO + OVMS" as one mark
-    # would be wider than this fixed panel and FIGlet would wrap it.
-    out.append("Powered by OpenVINO\n", style=f"bold {ui.PURPLE}")
-    out.append_text(_secondary_wordmark("OVMS", color=ui.BLUE))
+    # Lower case and unstyled weight on purpose: this line is connective
+    # tissue between two marks, not a heading of its own.
+    out.append("powered by\n", style=ui.PURPLE)
+    # Stacked rather than set as one "OpenVINO + OVMS" mark: combined, even
+    # the mid-size face is 44 columns wide and this panel is 32% of the
+    # screen, so FIGlet would wrap and shear the glyphs.
+    out.append_text(_attribution_wordmark("OpenVINO"))
+    out.append_text(_attribution_wordmark("OVMS"))
     return out
 
 
 def _startup_updates() -> Text:
-    """A deliberately empty board, ready for future toolkit updates."""
-    return _secondary_wordmark("Updates", color=ui.PURPLE)
+    """A deliberately empty board, ready for future toolkit updates.
+
+    Set in the OVAT headline face because it heads its own panel, and green
+    because it is the one part of the masthead that will carry news.
+    """
+    return _secondary_wordmark("Updates", color=ui.GREEN)
 
 
 def _option(template) -> Option:
