@@ -671,12 +671,7 @@ class ChatScreen(Screen):
         self._autosave = time.strftime("auto-%Y%m%d-%H%M%S")
 
     def compose(self) -> ComposeResult:
-        header = Text()
-        header.append("OVAT chat", style=f"bold {ui.CYAN}")
-        header.append(f"  ·  {os.path.basename(self._config_path)}"
-                      f"  ·  {os.path.basename(self._model_path)}"
-                      f"  ·  engine: {self._engine_name}", style=ui.DIM)
-        yield Static(header, id="chat-header")
+        yield Static(self._header_text(), id="chat-header")
         transcript = VerticalScroll(id="chat-view")
         transcript.border_title = "conversation"
         transcript.border_subtitle = "Ctrl-P for commands"
@@ -687,13 +682,7 @@ class ChatScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        chat_input = self.query_one("#chat-input", ChatInput)
-        # A tooltip that restates the placeholder is noise. This one carries
-        # the things the one-line placeholder has no room for.
-        chat_input.tooltip = ("Enter sends  ·  Shift-Enter for a new line\n"
-                              "Up/Down recalls what you asked before\n"
-                              "Esc stops an answer mid-flight")
-        chat_input.focus()
+        self.query_one("#chat-input", ChatInput).focus()
         view = self.query_one("#chat-view", VerticalScroll)
         # Textual's animated overlay on the transcript is fine HERE, unlike on
         # the old append-only log: nothing has been written yet, so there is
@@ -716,13 +705,22 @@ class ChatScreen(Screen):
         self._view.mount(Note(message, classes=role))
         self._view.scroll_end(animate=False)
 
-    def _refresh_header(self) -> None:
+    def _header_text(self) -> Text:
+        """The title line. ONE place builds it.
+
+        It used to be assembled twice, once in compose and once here, which
+        is how the two came to disagree: only the compose copy ever ran, so
+        the header still said "engine: local" after switching to OVMS.
+        """
         header = Text()
         header.append("OVAT chat", style=f"bold {ui.CYAN}")
         header.append(f"  ·  {os.path.basename(self._config_path)}"
                       f"  ·  {os.path.basename(self._model_path)}"
                       f"  ·  engine: {self._engine_name}", style=ui.DIM)
-        self.query_one("#chat-header", Static).update(header)
+        return header
+
+    def _refresh_header(self) -> None:
+        self.query_one("#chat-header", Static).update(self._header_text())
 
     def _set_placeholder(self, text: str) -> None:
         self.query_one("#chat-input", ChatInput).placeholder = text
@@ -1098,6 +1096,12 @@ class ChatScreen(Screen):
                            "warn")
         self._engine = None
         self._engine_name = value
+        # The header is the only thing on screen that says which engine is
+        # live, and it was built once at compose time and never touched
+        # again: after /engine ovms it still read "engine: local" while the
+        # transcript said OVMS. The status line and the header disagreeing
+        # about something this important is worse than having neither.
+        self._refresh_header()
         self._note(f"switching to {value}…")
         self._view.loading = True
         self._set_placeholder("loading the engine…")

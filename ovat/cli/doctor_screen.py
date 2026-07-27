@@ -195,20 +195,13 @@ class DoctorScreen(Screen):
         table = DataTable(id="doc-table", cursor_type="row", zebra_stripes=True)
         table.border_title = "diagnostics"
         table.border_subtitle = "F5 re-run  ·  F6 sort  ·  Enter copies a row"
-        table.tooltip = ("Select a row and press Enter to copy just that "
-                         "check\n/copy takes the whole report")
         yield table
         log = SelectableRichLog(id="doc-log", highlight=False,
                                 markup=False, wrap=True)
         yield log
         yield OptionList(id="doc-palette")
-        doc_input = Input(
-            placeholder="type / for commands  ·  F5 re-run  ·  Esc back",
-            id="doc-input")
-        doc_input.tooltip = ("Checks run in the background, so the screen\n"
-                             "stays usable while they do\n"
-                             "/copy puts the whole report on the clipboard")
-        yield doc_input
+        yield Input(placeholder="type / for commands  ·  F5 re-run  ·  Esc back",
+                    id="doc-input")
         yield Footer()
 
     def on_mount(self) -> None:

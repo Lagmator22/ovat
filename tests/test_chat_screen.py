@@ -1605,20 +1605,78 @@ def test_the_rule_costs_one_row_not_three(monkeypatch, tmp_path):
     _run(scenario())
 
 
-def test_the_chat_input_has_a_tooltip_that_adds_to_the_placeholder(monkeypatch,
-                                                                    tmp_path):
-    """A tooltip restating the placeholder is noise. This one has to carry
-    what the single placeholder line has no room for."""
+def test_the_input_has_no_hover_tooltip(monkeypatch, tmp_path):
+    """A tooltip was tried here and had to come out.
+
+    Textual renders it as an unstyled block floating over whatever is behind
+    it, anchored to the pointer. Over the transcript it covered the last
+    answer, and its own text wrapped mid-phrase ("Shift-Enter for a / new
+    line"), so the thing meant to explain the input obscured the conversation
+    instead. The placeholder already carries the essentials and costs nothing.
+    """
     monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
 
     async def scenario():
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            chat_input = screen.query_one("#chat-input", ChatInput)
-            assert chat_input.tooltip
-            assert chat_input.tooltip != chat_input.placeholder
-            # Things the placeholder does not mention.
-            assert "Up/Down" in chat_input.tooltip
-            assert "Esc" in chat_input.tooltip
+            assert screen.query_one("#chat-input", ChatInput).tooltip is None
     _run(scenario())
+
+
+# The header must agree with the engine that is actually loaded
+
+def _header_plain(header) -> str:
+    """Static keeps its content under different names across Textual
+    versions, so read whichever one this build actually has."""
+    for attr in ("renderable", "_renderable", "_content", "content"):
+        value = getattr(header, attr, None)
+        if value is not None:
+            return getattr(value, "plain", str(value))
+    return str(header.render())
+
+
+def test_switching_engine_updates_the_header(monkeypatch, tmp_path):
+    """The header is the only thing on screen that names the live engine, and
+    it was built once at compose time and never touched again. After
+    /engine ovms it still read "engine: local" while the transcript said
+    OVMS. Two places disagreeing about that is worse than having neither.
+    """
+    from textual.widgets import Static
+
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    built = []
+
+    def fake_build_engine(config_path, model_path, engine="local",
+                          max_tokens=chat_screen.DEFAULT_MAX_TOKENS):
+        built.append(engine)
+        return chat_screen.LocalEngine(
+            *_fake_components(config_path, model_path, max_tokens))
+
+    monkeypatch.setattr(chat_screen, "_build_engine", fake_build_engine)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            header = screen.query_one("#chat-header", Static)
+            assert "engine: local" in _header_plain(header)
+
+            screen.query_one("#chat-input", ChatInput).value = "/engine ovms"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert "engine: ovms" in _header_plain(header), (
+                f"header still says {_header_plain(header)!r}")
+            assert "ovms" in built, "the switch never reached _build_engine"
+    _run(scenario())
+
+
+def test_the_header_is_built_in_exactly_one_place():
+    """The duplication is what let the two copies drift apart."""
+    import inspect
+
+    source = inspect.getsource(chat_screen)
+    assert source.count('header.append("OVAT chat"') == 1

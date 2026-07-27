@@ -674,14 +674,8 @@ class OvatTUI(App):
         output.border_subtitle = "Ctrl-P palette · / shortcuts"
         yield output
         yield OptionList(id="palette")
-        prompt = PasteInput(placeholder="Run any command (e.g. ovat doctor)"
-                                        "  ·  type / for shortcuts",
-                            id="prompt")
-        # What the placeholder has no room to say.
-        prompt.tooltip = ("Any shell command runs here, inside the venv\n"
-                          "Esc cancels a running command\n"
-                          "Up/Down recalls previous commands")
-        yield prompt
+        yield PasteInput(placeholder="Run any command (e.g. ovat doctor)"
+                                     "  ·  type / for shortcuts", id="prompt")
         # Textual's Footer lists the active bindings, including ^p for the
         # command palette. Without it the palette existed but nothing on
         # screen ever said so.

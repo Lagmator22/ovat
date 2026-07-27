@@ -719,11 +719,18 @@ def test_ctrl_c_with_no_selection_still_arms_the_quit():
     _run(scenario())
 
 
-def test_the_launcher_prompt_has_a_tooltip():
+def test_no_widget_carries_a_hover_tooltip():
+    """Tooltips were tried across the TUI and had to come out.
+
+    Textual renders one as an unstyled block floating over whatever is
+    behind it, anchored to the pointer, and wraps its text mid-phrase. On a
+    full-screen app every tooltip therefore covers content the user is
+    reading. The placeholders already say what matters.
+    """
     async def scenario():
         app = OvatTUI()
         async with app.run_test() as pilot:
-            prompt = app.query_one("#prompt", Input)
-            assert prompt.tooltip and prompt.tooltip != prompt.placeholder
-            assert "Esc" in prompt.tooltip
+            for widget in app.screen.query("*"):
+                assert widget.tooltip is None, (
+                    f"{widget!r} grew a tooltip again")
     _run(scenario())
