@@ -20,6 +20,7 @@ from textual.containers import VerticalScroll
 from ovat.cli import chat_screen
 from ovat.cli.chat_screen import ChatScreen, load_prefs, save_prefs
 from ovat.cli.tui import OvatTUI
+from ovat.cli.widgets import ChatInput
 from ovat.config.workflow import WorkflowConfig
 
 
@@ -83,7 +84,7 @@ def test_full_turn_streams_answers_and_autosaves(monkeypatch, tmp_path):
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            inp = screen.query_one("#chat-input", Input)
+            inp = screen.query_one("#chat-input", ChatInput)
             inp.value = "how did revenue do?"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
@@ -93,8 +94,11 @@ def test_full_turn_streams_answers_and_autosaves(monkeypatch, tmp_path):
             assert "how did revenue do?" in text          # the Prompt widget
             assert "ANSWER" in text                       # the Response widget
             assert "finance.md" in text
-            # Every turn autosaves, so a crash never loses the conversation.
-            assert os.path.exists(tmp_path / ".ovat" / "sessions" / "last.json")
+            # Every turn autosaves, into THIS conversation's own slot rather
+            # than a shared "last" that each new chat would overwrite.
+            saved = list((tmp_path / ".ovat" / "sessions").glob("auto-*.json"))
+            assert len(saved) == 1
+            assert screen._autosave in saved[0].name
     _run(scenario())
 
 
@@ -109,7 +113,7 @@ def test_save_and_load_round_trip(monkeypatch, tmp_path):
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            inp = screen.query_one("#chat-input", Input)
+            inp = screen.query_one("#chat-input", ChatInput)
             inp.value = "remember me"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
@@ -121,7 +125,7 @@ def test_save_and_load_round_trip(monkeypatch, tmp_path):
             # A brand-new screen loads the same conversation back.
             app.pop_screen()
             fresh = await _push_ready_screen(app, pilot, tmp_path)
-            fresh.query_one("#chat-input", Input).value = "/load demo"
+            fresh.query_one("#chat-input", ChatInput).value = "/load demo"
             await pilot.press("enter")
             await pilot.pause()
             assert "remember me" in _log_text(fresh)
@@ -237,7 +241,7 @@ def _components_with_cap(config_path, model_path, max_tokens=256):
 
 
 def _send(screen, pilot, text):
-    screen.query_one("#chat-input", Input).value = text
+    screen.query_one("#chat-input", ChatInput).value = text
     return pilot.press("enter")
 
 
@@ -297,7 +301,7 @@ def _copy_scenario(monkeypatch, tmp_path, commands):
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
             monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
-            inp = screen.query_one("#chat-input", Input)
+            inp = screen.query_one("#chat-input", ChatInput)
             inp.value = "how did revenue do?"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
@@ -339,7 +343,7 @@ def test_copy_with_nothing_to_copy_says_so(monkeypatch, tmp_path):
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
             monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
-            screen.query_one("#chat-input", Input).value = "/copy"
+            screen.query_one("#chat-input", ChatInput).value = "/copy"
             await pilot.press("enter")
             await pilot.pause()
             assert copied == []
@@ -395,7 +399,7 @@ def _thinking_turn(monkeypatch, tmp_path, commands=()):
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            inp = screen.query_one("#chat-input", Input)
+            inp = screen.query_one("#chat-input", ChatInput)
             inp.value = "how did revenue do?"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
@@ -448,7 +452,7 @@ def test_copy_follows_what_is_on_screen(monkeypatch, tmp_path):
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
             monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
-            inp = screen.query_one("#chat-input", Input)
+            inp = screen.query_one("#chat-input", ChatInput)
             inp.value = "how did revenue do?"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
@@ -485,7 +489,7 @@ def test_an_answer_that_is_only_reasoning_says_which_knobs_help(monkeypatch, tmp
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            screen.query_one("#chat-input", Input).value = "hi"
+            screen.query_one("#chat-input", ChatInput).value = "hi"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -507,12 +511,12 @@ def test_typing_slash_opens_a_filtered_chat_menu(monkeypatch, tmp_path):
             palette = screen.query_one("#chat-palette", OptionList)
             assert palette.display is False
 
-            screen.query_one("#chat-input", Input).value = "/"
+            screen.query_one("#chat-input", ChatInput).value = "/"
             await pilot.pause()
             assert palette.display is True
             assert palette.option_count == len(chat_screen.CHAT_COMMANDS)
 
-            screen.query_one("#chat-input", Input).value = "/t"
+            screen.query_one("#chat-input", ChatInput).value = "/t"
             await pilot.pause()
             assert palette.option_count == 2          # /thinking and /tokens
     _run(scenario())
@@ -527,7 +531,7 @@ def test_choosing_from_the_chat_menu_fills_the_line_for_an_argument(
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            inp = screen.query_one("#chat-input", Input)
+            inp = screen.query_one("#chat-input", ChatInput)
             palette = screen.query_one("#chat-palette", OptionList)
 
             inp.value = "/tok"
@@ -550,7 +554,7 @@ def test_escape_closes_the_chat_menu_before_leaving(monkeypatch, tmp_path):
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
             palette = screen.query_one("#chat-palette", OptionList)
-            screen.query_one("#chat-input", Input).value = "/"
+            screen.query_one("#chat-input", ChatInput).value = "/"
             await pilot.pause()
             assert palette.display is True
 
@@ -592,7 +596,7 @@ def test_markdown_in_an_answer_is_rendered_not_printed(monkeypatch, tmp_path):
         app = OvatTUI()
         async with app.run_test(size=(80, 30)) as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            screen.query_one("#chat-input", Input).value = "hi"
+            screen.query_one("#chat-input", ChatInput).value = "hi"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -618,7 +622,7 @@ def test_a_turn_produces_a_prompt_and_a_response_widget(monkeypatch, tmp_path):
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            screen.query_one("#chat-input", Input).value = "how did revenue do?"
+            screen.query_one("#chat-input", ChatInput).value = "how did revenue do?"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -646,7 +650,7 @@ def test_streaming_updates_the_response_widget_in_place(monkeypatch, tmp_path):
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
             assert not screen.query("#chat-stream")     # the old widget is gone
-            screen.query_one("#chat-input", Input).value = "hi"
+            screen.query_one("#chat-input", ChatInput).value = "hi"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -673,7 +677,7 @@ def test_the_transcript_scrolls_rather_than_squeezing_the_input(monkeypatch, tmp
         app = OvatTUI()
         async with app.run_test(size=(100, 30)) as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            inp = screen.query_one("#chat-input", Input)
+            inp = screen.query_one("#chat-input", ChatInput)
             inp.value = "hi"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
@@ -716,7 +720,7 @@ def test_a_clicked_link_is_copied_not_opened(monkeypatch, tmp_path):
             monkeypatch.setattr(app, "open_url",
                                 lambda *a, **k: opened.append(a))
             monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
-            screen.query_one("#chat-input", Input).value = "hi"
+            screen.query_one("#chat-input", ChatInput).value = "hi"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -865,7 +869,7 @@ def test_up_and_down_recall_what_you_asked(monkeypatch, tmp_path):
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            inp = screen.query_one("#chat-input", Input)
+            inp = screen.query_one("#chat-input", ChatInput)
             for question in ("first question", "second question"):
                 inp.value = question
                 await pilot.press("enter")
@@ -896,7 +900,7 @@ def test_down_still_steps_into_the_slash_menu(monkeypatch, tmp_path):
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            inp = screen.query_one("#chat-input", Input)
+            inp = screen.query_one("#chat-input", ChatInput)
             palette = screen.query_one("#chat-palette", OptionList)
             inp.value = "asked something"
             await pilot.press("enter")
@@ -1051,7 +1055,7 @@ def test_the_thinking_pulse_appears_while_generating_and_leaves_after(
                 return original(*args, **kwargs)
             monkeypatch.setattr(screen, "_commit_turn", spy)
 
-            screen.query_one("#chat-input", Input).value = "hi"
+            screen.query_one("#chat-input", ChatInput).value = "hi"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -1078,7 +1082,7 @@ def test_the_pulse_is_removed_when_the_answer_errors(monkeypatch, tmp_path):
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            screen.query_one("#chat-input", Input).value = "hi"
+            screen.query_one("#chat-input", ChatInput).value = "hi"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -1119,7 +1123,7 @@ def test_reasoning_is_folded_away_rather_than_dumped(monkeypatch, tmp_path):
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            screen.query_one("#chat-input", Input).value = "hi"
+            screen.query_one("#chat-input", ChatInput).value = "hi"
             await pilot.press("enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -1133,4 +1137,109 @@ def test_reasoning_is_folded_away_rather_than_dumped(monkeypatch, tmp_path):
             assert blocks[0].collapsed is True          # out of the way
             assert "reasoning" in blocks[0].title       # but labelled
             assert "Let me check the context" in blocks[0].text
+    _run(scenario())
+
+
+# Multi-line prompts, and conversations that accumulate
+
+def test_shift_enter_makes_a_new_line_and_enter_sends(monkeypatch, tmp_path):
+    """A chat box that cannot send on Enter is not a chat box; one that
+    cannot make a new line cannot compose a long prompt."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", ChatInput)
+            inp.focus()
+            inp.value = "first line"
+            await pilot.press("shift+enter")
+            inp.insert("second line")
+            await pilot.pause()
+            assert "\n" in inp.value                # still composing
+
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert inp.value == ""                  # sent and cleared
+            assert "first line" in _log_text(screen)
+    _run(scenario())
+
+
+def test_arrows_edit_a_multi_line_draft_instead_of_recalling(monkeypatch, tmp_path):
+    """History must not steal the keys that move the cursor once there is
+    more than one line to move around in."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", ChatInput)
+            inp.focus()
+            inp.value = "asked before"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            inp.value = "line one\nline two"        # a multi-line draft
+            await pilot.press("up")
+            await pilot.pause()
+            assert inp.value == "line one\nline two"   # untouched by history
+    _run(scenario())
+
+
+def test_each_conversation_gets_its_own_autosave(monkeypatch, tmp_path):
+    """Every chat wrote to "last", so the picker could only ever offer the
+    newest and every earlier conversation was silently gone."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            first = await _push_ready_screen(app, pilot, tmp_path)
+            first.query_one("#chat-input", ChatInput).value = "conversation one"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            app.pop_screen()
+
+            second = ChatScreen("w.yml", "m", cwd=str(tmp_path))
+            second._autosave = "auto-different"      # a later second
+            app.push_screen(second)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            second.query_one("#chat-input", ChatInput).value = "conversation two"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            names = {s["name"] for s in chat_screen.list_sessions(str(tmp_path))}
+            assert len(names) == 2                   # both survived
+    _run(scenario())
+
+
+def test_loading_an_old_conversation_keeps_writing_to_it(monkeypatch, tmp_path):
+    """Adding to an old chat should extend it, not fork a new autosave."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+    _saved(tmp_path, "yesterday", ["an older question"])
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            await _send(screen, pilot, "/load yesterday")
+            await pilot.pause()
+            assert screen._autosave == "yesterday"
+
+            screen.query_one("#chat-input", ChatInput).value = "a new question"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            by_name = {s["name"]: s for s
+                       in chat_screen.list_sessions(str(tmp_path))}
+            assert by_name["yesterday"]["turns"] == 2    # extended, not forked
+            assert not [n for n in by_name if n.startswith("auto-")]
     _run(scenario())

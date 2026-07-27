@@ -45,7 +45,7 @@ from ovat.agent.session import Session
 from ovat.cli import ui
 from ovat.cli.commands import ScreenCommands
 from ovat.cli.editing import InputHistory
-from ovat.cli.widgets import PasteInput
+from ovat.cli.widgets import ChatInput
 
 # The slash menu for this screen. Unlike the doctor screen's, choosing one
 # INSERTS it rather than running it: most of these take an argument
@@ -584,7 +584,15 @@ class ChatScreen(Screen):
         color: $foreground;
         text-style: bold;
     }
-    #chat-input { margin: 0 2 1 2; border: round $secondary; }
+    /* Grows with the prompt and stops before it owns the screen; past
+       eight lines it scrolls instead. */
+    #chat-input {
+        margin: 0 2 1 2;
+        border: round $secondary;
+        height: auto;
+        max-height: 8;
+    }
+    #chat-input:focus { border: round $accent; }
     """
 
     BINDINGS = [
@@ -603,6 +611,13 @@ class ChatScreen(Screen):
         self._show_thinking = False      # /thinking; hidden is the useful default
         self._engine_name = "local"      # /engine; ovms adds tool calling
         self._history = InputHistory()   # Up/Down recall, like a shell
+        # Its own autosave slot, so conversations accumulate instead of
+        # overwriting each other. Every chat used to autosave to "last",
+        # which meant the picker could only ever offer the newest one and
+        # every earlier conversation was silently gone. The name is fixed at
+        # open, so switching engines mid-conversation keeps writing to the
+        # same file rather than forking the history.
+        self._autosave = time.strftime("auto-%Y%m%d-%H%M%S")
 
     def compose(self) -> ComposeResult:
         header = Text()
@@ -616,11 +631,12 @@ class ChatScreen(Screen):
         transcript.border_subtitle = "Ctrl-P for commands"
         yield transcript
         yield OptionList(id="chat-palette")
-        yield PasteInput(placeholder="loading the model…", id="chat-input")
+        yield ChatInput(placeholder="loading the model…", id="chat-input",
+                       soft_wrap=True, compact=True)
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#chat-input", PasteInput).focus()
+        self.query_one("#chat-input", ChatInput).focus()
         view = self.query_one("#chat-view", VerticalScroll)
         # Textual's animated overlay on the transcript is fine HERE, unlike on
         # the old append-only log: nothing has been written yet, so there is
@@ -652,7 +668,7 @@ class ChatScreen(Screen):
         self.query_one("#chat-header", Static).update(header)
 
     def _set_placeholder(self, text: str) -> None:
-        self.query_one("#chat-input", PasteInput).placeholder = text
+        self.query_one("#chat-input", ChatInput).placeholder = text
 
     def _stop_loading(self) -> None:
         self._view.loading = False
@@ -660,8 +676,8 @@ class ChatScreen(Screen):
     def _mark_idle(self) -> None:
         self._busy = False
         self._stop_stream = False
-        self._set_placeholder("ask about your docs  ·  type / for commands"
-                              "  ·  Esc stops / leaves")
+        self._set_placeholder("ask about your docs  ·  / for commands  ·  "
+                              "Shift-Enter for a new line")
 
     def _for_display(self, text: str) -> str:
         """One place decides whether reasoning is on screen or not."""
@@ -719,7 +735,7 @@ class ChatScreen(Screen):
         palette = self.query_one("#chat-palette", OptionList)
         if palette.display:
             palette.display = False
-            self.query_one("#chat-input", PasteInput).focus()
+            self.query_one("#chat-input", ChatInput).focus()
             return
         if self._busy:
             # First Esc stops the generation (the streamer sees the flag and
@@ -742,9 +758,9 @@ class ChatScreen(Screen):
 
     # ---- the slash menu ----------------------------------------------------
 
-    def on_input_changed(self, event: Input.Changed) -> None:
+    def on_text_area_changed(self, event) -> None:
         palette = self.query_one("#chat-palette", OptionList)
-        value = event.value
+        value = event.text_area.text
         if value.startswith("/") and " " not in value:
             matches = [(name, help_text) for name, help_text in CHAT_COMMANDS
                        if name.startswith(value.lower())]
@@ -764,7 +780,7 @@ class ChatScreen(Screen):
         if event.key not in ("up", "down"):
             return
         palette = self.query_one("#chat-palette", OptionList)
-        inp = self.query_one("#chat-input", PasteInput)
+        inp = self.query_one("#chat-input", ChatInput)
         if self.focused is not inp:
             return                       # the menu owns its own arrows
         if event.key == "down" and palette.display:
@@ -775,6 +791,9 @@ class ChatScreen(Screen):
             return
         if palette.display:
             return                       # browsing the menu, not the history
+        if "\n" in inp.value:
+            return                       # multi-line draft: arrows move the
+            #                              cursor, as they must to edit it
         recalled = (self._history.previous(inp.value) if event.key == "up"
                     else self._history.next())
         if recalled is None:
@@ -792,7 +811,7 @@ class ChatScreen(Screen):
         useful form of most of these commands.
         """
         palette = self.query_one("#chat-palette", OptionList)
-        inp = self.query_one("#chat-input", PasteInput)
+        inp = self.query_one("#chat-input", ChatInput)
         palette.display = False
         inp.value = f"/{event.option.id} "
         inp.focus()
@@ -800,9 +819,9 @@ class ChatScreen(Screen):
 
     # ---- the conversation --------------------------------------------------
 
-    async def on_input_submitted(self, event: Input.Submitted) -> None:
+    async def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         line = event.value.strip()
-        inp = self.query_one("#chat-input", PasteInput)
+        inp = self.query_one("#chat-input", ChatInput)
         inp.value = ""
         self.query_one("#chat-palette", OptionList).display = False
         if not line:
@@ -894,6 +913,9 @@ class ChatScreen(Screen):
             # A hand-edited or truncated file is a bad load, not a crash.
             self._note(f"could not read {path}: {exc}", "error")
             return
+        # Continue writing to the conversation you just opened, so adding to
+        # an old chat extends it instead of forking a new autosave.
+        self._autosave = name
         await self._replay()
         self._note(f"loaded {name} ({len(self._session.messages)} messages)",
                    "ok")
@@ -1092,7 +1114,7 @@ class ChatScreen(Screen):
         self._session.add_user(question)
         self._session.add_assistant(answer)
         # Autosave after every turn, so a crash never loses the conversation.
-        path = _session_path(self._cwd, "last")
+        path = _session_path(self._cwd, self._autosave)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         self._session.save(path)
 
