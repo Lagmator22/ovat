@@ -58,24 +58,6 @@ _INTEL_PHASE_SOURCES: Final = (
 )
 _INTEL_GIF_SOURCE: Final = Path(__file__).resolve().parent.parent / "assets" / "intel.gif"
 _INTEL_GIF_CROP: Final = (200, 170, 600, 430)
-_PIXEL_GLYPHS: Final = {
-    "A": ("010", "101", "111", "101"), "B": ("110", "101", "110", "101"),
-    "C": ("011", "100", "100", "011"), "D": ("110", "101", "101", "110"),
-    "E": ("111", "100", "110", "111"), "F": ("111", "100", "110", "100"),
-    "G": ("011", "100", "101", "011"), "H": ("101", "101", "111", "101"),
-    "I": ("111", "010", "010", "111"), "J": ("001", "001", "101", "010"),
-    "K": ("101", "110", "101", "101"), "L": ("100", "100", "100", "111"),
-    "M": ("111", "111", "101", "101"), "N": ("101", "111", "111", "101"),
-    "O": ("010", "101", "101", "010"), "P": ("110", "101", "110", "100"),
-    "Q": ("010", "101", "011", "001"), "R": ("110", "101", "110", "101"),
-    "S": ("011", "100", "010", "110"), "T": ("111", "010", "010", "010"),
-    "U": ("101", "101", "101", "010"), "V": ("101", "101", "101", "010"),
-    "W": ("101", "111", "111", "101"), "X": ("101", "010", "010", "101"),
-    "Y": ("101", "010", "010", "010"), "Z": ("111", "010", "100", "111"),
-    "+": ("010", "010", "111", "010"), " ": ("000", "000", "000", "000"),
-}
-
-
 @dataclass(frozen=True)
 class _StartupFrame:
     """One cached startup image and the delay before its successor."""
@@ -313,56 +295,66 @@ def _lerp_hex(a: tuple, b: tuple, t: float) -> str:
     )
 
 
-def _wordmark_lines() -> list:
-    """Render OVAT with a real FIGlet font (ansi_shadow), the stylish block look."""
+def _ansi_shadow_lines(label: str) -> list[str]:
+    """Return one unwrapped ANSI Shadow wordmark, or no lines on fallback."""
     try:
         import pyfiglet
-        lines = [ln for ln in pyfiglet.figlet_format("OVAT", font="ansi_shadow").split("\n")
-                 if ln.strip()]
+        # ``width`` controls FIGlet's wrapping, not its font size. Keep it
+        # deliberately wide so a label is either rendered as its real mark or
+        # handled by the caller; wrapping would break the glyph geometry.
+        lines = [line for line in pyfiglet.figlet_format(
+            label, font="ansi_shadow", width=200
+        ).split("\n") if line.strip()]
         if lines:
             return lines
     except Exception:
-        pass
-    return _FALLBACK_WORDMARK
+        return []
+    return []
 
 
-def _pixel_logo_text(label: str, *, style: str) -> Text:
-    """Render compact block letters that match the OVAT mark's pixel language."""
-    text = Text()
-    glyphs = [_PIXEL_GLYPHS.get(character, _PIXEL_GLYPHS[" "])
-              for character in label.upper()]
-    for row in range(4):
-        for index, glyph in enumerate(glyphs):
-            text.append(glyph[row].replace("1", "█").replace("0", " "), style=style)
-            if index + 1 < len(glyphs):
-                text.append(" ", style=style)
-        if row < 3:
-            text.append("\n")
-    return text
+def _wordmark_lines() -> list[str]:
+    """Render OVAT with the same real FIGlet mark used in every panel."""
+    return _ansi_shadow_lines("OVAT") or _FALLBACK_WORDMARK
 
 
 def _wordmark_text() -> Text:
     """The wordmark as Rich Text, shaded top-to-bottom from cyan to Intel blue."""
-    lines = _wordmark_lines()
+    return _wordmark_from_lines(_wordmark_lines(), top=_CYAN_RGB, bottom=_BLUE_RGB)
+
+
+def _wordmark_from_lines(lines: Sequence[str], *, top: tuple[int, int, int],
+                         bottom: tuple[int, int, int]) -> Text:
+    """Style a real FIGlet wordmark without changing its built-in geometry."""
     text = Text()
     last = max(len(lines) - 1, 1)
     for i, line in enumerate(lines):
-        text.append(line + "\n", style=f"bold {_lerp_hex(_CYAN_RGB, _BLUE_RGB, i / last)}")
+        text.append(line + "\n", style=f"bold {_lerp_hex(top, bottom, i / last)}")
     return text
 
 
+def _secondary_wordmark(label: str, *, color: str) -> Text:
+    """Use the actual OVAT FIGlet face for each secondary masthead label."""
+    lines = _ansi_shadow_lines(label)
+    if not lines:
+        return Text(label, style=f"bold {color}")
+    rgb = tuple(int(color[index:index + 2], 16) for index in (1, 3, 5))
+    return _wordmark_from_lines(lines, top=rgb, bottom=rgb)
+
+
 def _banner() -> Text:
-    """Header: the OVAT wordmark and a compact OpenVINO / OVMS lockup."""
+    """Header: OVAT plus the compact OpenVINO / OVMS lockup."""
     out = _wordmark_text()
-    out.append_text(_pixel_logo_text("Powered by", style=ui.PURPLE))
-    out.append("\n")
-    out.append_text(_pixel_logo_text("OpenVINO+OVMS", style=ui.BLUE))
+    # OpenVINO is the compact purple attribution; OVMS gets the same six-line
+    # ANSI Shadow treatment as OVAT. Rendering "OpenVINO + OVMS" as one mark
+    # would be wider than this fixed panel and FIGlet would wrap it.
+    out.append("Powered by OpenVINO\n", style=f"bold {ui.PURPLE}")
+    out.append_text(_secondary_wordmark("OVMS", color=ui.BLUE))
     return out
 
 
 def _startup_updates() -> Text:
     """A deliberately empty board, ready for future toolkit updates."""
-    return _pixel_logo_text("Updates", style=ui.PURPLE)
+    return _secondary_wordmark("Updates", color=ui.PURPLE)
 
 
 def _option(template) -> Option:
@@ -478,7 +470,7 @@ class OvatTUI(App):
     #updates-panel {
         width: 1fr;
         height: 1fr;
-        padding: 1 1;
+        padding: 1 0;
         border-right: tall $primary;
         content-align: left top;
     }

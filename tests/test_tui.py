@@ -18,7 +18,7 @@ from textual.containers import Horizontal
 from textual.widgets import Input, OptionList, RichLog, Static
 
 from ovat.cli import tui as tui_module
-from ovat.cli.tui import OvatTUI, _StartupIntelAnimation, _pixel_logo_text
+from ovat.cli.tui import OvatTUI, _StartupIntelAnimation, _secondary_wordmark
 from tests.conftest import py_command
 
 
@@ -39,10 +39,11 @@ def test_launcher_has_isolated_three_panel_startup_header():
     _run(scenario())
 
 
-def test_secondary_startup_labels_use_the_block_pixel_lettering():
-    """Sub-brands and Updates must match OVAT's solid block visual language."""
-    assert "█" in _pixel_logo_text("OpenVINO+OVMS", style="blue").plain
-    assert "/" not in _pixel_logo_text("Updates", style="purple").plain
+def test_secondary_startup_labels_reuse_the_real_ovat_wordmark_face():
+    """Sub-brands and Updates use ANSI Shadow rather than a generic block font."""
+    label = _secondary_wordmark("Updates", color="#8F5CFF")
+    assert label.plain.count("\n") == 6
+    assert "█" in label.plain
 
 
 def test_startup_mark_plays_gif_then_three_cached_phases_and_settles(tmp_path):
