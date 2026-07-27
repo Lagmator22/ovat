@@ -604,32 +604,7 @@ class ChatScreen(Screen):
 
     BINDINGS = [
         Binding("escape", "back", show=False),
-        # The input holds focus so you can type, which means the transcript
-        # never receives a key and could only be scrolled with the mouse.
-        # priority=True so these reach the screen past the focused TextArea;
-        # a draft is capped at eight lines, so paging belongs to the
-        # conversation, not the draft.
-        Binding("pageup", "scroll_transcript(-1)", "Scroll up",
-                priority=True, show=False),
-        Binding("pagedown", "scroll_transcript(1)", "Scroll down",
-                priority=True, show=False),
-        Binding("ctrl+home", "scroll_transcript(-2)", "Top",
-                priority=True, show=False),
-        Binding("ctrl+end", "scroll_transcript(2)", "Bottom",
-                priority=True, show=False),
     ]
-
-    def action_scroll_transcript(self, direction: int) -> None:
-        """Page or jump through the conversation from the input."""
-        view = self._view
-        if direction == -2:
-            view.scroll_home(animate=False)
-        elif direction == 2:
-            view.scroll_end(animate=False)
-        elif direction < 0:
-            view.scroll_page_up()
-        else:
-            view.scroll_page_down()
 
     def __init__(self, config_path: str, model_path: str, cwd: str | None = None):
         super().__init__()

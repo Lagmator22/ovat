@@ -1252,35 +1252,6 @@ def test_loading_an_old_conversation_keeps_writing_to_it(monkeypatch, tmp_path):
     _run(scenario())
 
 
-def test_the_transcript_scrolls_from_the_keyboard(monkeypatch, tmp_path):
-    """The input holds focus so you can type, so without these the
-    conversation could only be scrolled with a mouse."""
-    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
-
-    async def scenario():
-        app = OvatTUI()
-        async with app.run_test(size=(90, 20)) as pilot:
-            screen = await _push_ready_screen(app, pilot, tmp_path)
-            inp = screen.query_one("#chat-input", ChatInput)
-            for n in range(6):                     # fill past one screen
-                inp.value = f"question {n}"
-                await pilot.press("enter")
-                await app.workers.wait_for_complete()
-                await pilot.pause()
-
-            view = screen._view
-            view.scroll_home(animate=False)
-            await pilot.pause()
-            assert view.scroll_offset.y == 0
-
-            await pilot.press("pagedown")          # from the focused input
-            await pilot.pause()
-            assert view.scroll_offset.y > 0        # the conversation moved
-
-            await pilot.press("ctrl+home")
-            await pilot.pause()
-            assert view.scroll_offset.y == 0
-    _run(scenario())
 
 
 def test_the_thinking_indicator_actually_changes_colour():
