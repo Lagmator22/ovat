@@ -38,10 +38,14 @@ def test_launcher_has_isolated_three_panel_startup_header():
     _run(scenario())
 
 
-def test_startup_mark_plays_three_cached_phases_then_stays_on_the_last(tmp_path):
-    """Only two timers run: Gemini -> clipboard -> static ChatGPT frame."""
+def test_startup_mark_plays_gif_then_three_cached_phases_and_settles(tmp_path):
+    """GIF frames preserve timing before Gemini -> clipboard -> static ChatGPT."""
     from PIL import Image
 
+    intro = tmp_path / "intro.gif"
+    first = Image.new("RGB", (12, 8), "#001e5a")
+    first.save(intro, save_all=True, append_images=[Image.new("RGB", (12, 8), "#0071c5")],
+               duration=[20, 80], loop=0)
     sources = []
     for index, colour in enumerate(("#001e5a", "#0071c5", "#ffffff"), start=1):
         source = tmp_path / f"phase-{index}.png"
@@ -50,24 +54,26 @@ def test_startup_mark_plays_three_cached_phases_then_stays_on_the_last(tmp_path)
 
     class StartupApp(tui_module.App):
         def compose(self):
-            yield _StartupIntelAnimation(sources, columns=4, phase_seconds=0.03,
-                                         id="startup")
+            yield _StartupIntelAnimation(sources, intro_source=intro, columns=4,
+                                         phase_seconds=0.03, id="startup")
 
     async def scenario():
         app = StartupApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             startup = app.query_one("#startup", _StartupIntelAnimation)
-            assert startup.phase_count == 3
-            assert startup.phase_index == 0
+            assert startup.frame_count == 5
+            assert [frame.duration for frame in startup._frames] == [0.02, 0.08, 0.03, 0.03, None]
+            assert startup.frame_index == 0
             assert startup.is_animating is True
-            await pilot.pause(0.05)
-            assert startup.phase_index == 1
-            await pilot.pause(0.05)
-            assert startup.phase_index == 2
+            for expected_index in range(1, 5):
+                startup._cancel_timer()
+                startup._advance()
+                assert startup.frame_index == expected_index
             assert startup.is_animating is False
             final = startup.render()
-            await pilot.pause(0.05)
             assert startup.render() is final
+            assert not any(0x2800 <= ord(character) <= 0x28FF
+                           for character in final.plain)
     _run(scenario())
 
 

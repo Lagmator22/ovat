@@ -13,10 +13,11 @@ import os
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Iterable, Sequence
+from typing import ClassVar, Final, Iterable, Sequence
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageSequence, UnidentifiedImageError
 from rich.color import Color
 from rich.style import Style
 from rich.text import Text
@@ -55,6 +56,16 @@ _INTEL_PHASE_SOURCES: Final = (
     Path(__file__).resolve().parent.parent / "assets" / "intel-phase-2.png",
     Path(__file__).resolve().parent.parent / "assets" / "intel-phase-3-static.png",
 )
+_INTEL_GIF_SOURCE: Final = Path(__file__).resolve().parent.parent / "assets" / "intel.gif"
+_INTEL_GIF_CROP: Final = (200, 170, 600, 430)
+
+
+@dataclass(frozen=True)
+class _StartupFrame:
+    """One cached startup image and the delay before its successor."""
+
+    renderable: Text
+    duration: float | None
 
 
 class _StartupIntelAnimation(Widget):
@@ -62,9 +73,9 @@ class _StartupIntelAnimation(Widget):
 
     This class intentionally stays in ``tui.py``: it is part of the optional
     Textual launcher, has no process or CLI side effects, and cannot be imported
-    by a normal ``ovat`` command. Images are decoded once at mount time. Two
-    widget-owned timers swap cached Rich renderables, then the final phase is
-    left untouched for the rest of the TUI session.
+    by a normal ``ovat`` command. The bundled GIF and three boards are decoded
+    once at mount time. Widget-owned timers swap cached Rich renderables, then
+    the final board is left untouched for the rest of the TUI session.
     """
 
     DEFAULT_CSS = """
@@ -74,9 +85,12 @@ class _StartupIntelAnimation(Widget):
         content-align: center middle;
     }
     """
+    _frame_cache: ClassVar[dict[tuple[Path, tuple[Path, ...], int, float],
+                                tuple[_StartupFrame, ...]]] = {}
 
     def __init__(self, sources: Sequence[str | Path] = _INTEL_PHASE_SOURCES,
-                 *, columns: int = 46, phase_seconds: float = 0.7,
+                 *, intro_source: str | Path = _INTEL_GIF_SOURCE, columns: int = 46,
+                 phase_seconds: float = 0.7,
                  name: str | None = None, id: str | None = None,
                  classes: str | None = None, disabled: bool = False) -> None:
         if len(sources) != 3:
@@ -87,38 +101,43 @@ class _StartupIntelAnimation(Widget):
             raise ValueError("phase_seconds must be positive")
         super().__init__(name=name, id=id, classes=classes, disabled=disabled)
         self._sources = tuple(Path(source) for source in sources)
+        self._intro_source = Path(intro_source)
         self._columns = columns
         self._phase_seconds = phase_seconds
-        self._frames: tuple[Text, ...] = ()
-        self._phase_index = 0
+        self._frames: tuple[_StartupFrame, ...] = ()
+        self._frame_index = 0
         self._timer: Timer | None = None
         self._error: Text | None = None
 
     @property
-    def phase_index(self) -> int:
-        """The visible phase: 0 (Gemini), 1 (clipboard), or 2 (static)."""
-        return self._phase_index
+    def frame_index(self) -> int:
+        """The visible cached GIF or board frame."""
+        return self._frame_index
 
     @property
-    def phase_count(self) -> int:
-        """Number of cached source images, zero if loading failed."""
+    def frame_count(self) -> int:
+        """Number of cached GIF and board frames, zero if loading failed."""
         return len(self._frames)
 
     @property
     def is_animating(self) -> bool:
-        """Whether either of the two startup transitions remains scheduled."""
+        """Whether another cached frame transition remains scheduled."""
         return self._timer is not None
 
     def on_mount(self) -> None:
         """Decode and rasterize each source exactly once before scheduling."""
         try:
-            self._frames = tuple(self._load_renderable(source)
-                                 for source in self._sources)
+            cache_key = (self._intro_source, self._sources, self._columns,
+                         self._phase_seconds)
+            self._frames = self._frame_cache.get(cache_key, ())
+            if not self._frames:
+                self._frames = self._decode_frames()
+                self._frame_cache[cache_key] = self._frames
         except (OSError, UnidentifiedImageError) as error:
             self._error = Text(f"Intel startup mark unavailable: {error}", style="red")
             self.refresh()
             return
-        self._phase_index = 0
+        self._frame_index = 0
         self.refresh()
         self._schedule_advance()
 
@@ -127,29 +146,31 @@ class _StartupIntelAnimation(Widget):
         self._cancel_timer()
 
     def restart(self) -> None:
-        """Replay the three phases without re-decoding their cached frames."""
+        """Replay the GIF and three boards without re-decoding cached frames."""
         if not self._frames:
             return
         self._cancel_timer()
-        self._phase_index = 0
+        self._frame_index = 0
         self.refresh()
         self._schedule_advance()
 
     def render(self) -> RenderResult:
         """Return a cached frame only; this method never opens an image file."""
         if self._frames:
-            return self._frames[self._phase_index]
+            return self._frames[self._frame_index].renderable
         return self._error or Text("")
 
     def _schedule_advance(self) -> None:
-        if self._phase_index < len(self._frames) - 1:
-            self._timer = self.set_timer(self._phase_seconds, self._advance)
+        if self._frame_index < len(self._frames) - 1:
+            duration = self._frames[self._frame_index].duration
+            if duration is not None:
+                self._timer = self.set_timer(duration, self._advance)
 
     def _advance(self) -> None:
         self._timer = None
-        if self._phase_index >= len(self._frames) - 1:
+        if self._frame_index >= len(self._frames) - 1:
             return
-        self._phase_index += 1
+        self._frame_index += 1
         self.refresh()
         self._schedule_advance()
 
@@ -158,32 +179,48 @@ class _StartupIntelAnimation(Widget):
             self._timer.stop()
             self._timer = None
 
-    def _load_renderable(self, source: Path) -> Text:
+    def _decode_frames(self) -> tuple[_StartupFrame, ...]:
+        """Decode the original GIF, then append the three requested boards."""
+        frames: list[_StartupFrame] = []
+        with Image.open(self._intro_source) as image:
+            default_duration_ms = image.info.get("duration", 100)
+            for raw_frame in ImageSequence.Iterator(image):
+                duration_ms = raw_frame.info.get("duration", default_duration_ms)
+                frames.append(_StartupFrame(
+                    self._to_braille_renderable(raw_frame.crop(_INTEL_GIF_CROP)),
+                    max(float(duration_ms) / 1000, 0.001),
+                ))
+        for source in self._sources[:-1]:
+            with Image.open(source) as image:
+                frames.append(_StartupFrame(
+                    self._to_braille_renderable(image), self._phase_seconds
+                ))
+        with Image.open(self._sources[-1]) as image:
+            # The non-dotted quadrant glyphs give the static Intel "e" a clean
+            # opening instead of turning its white stroke into Braille specks.
+            frames.append(_StartupFrame(self._to_quadrant_renderable(image), None))
+        return tuple(frames)
+
+    def _to_braille_renderable(self, image: Image.Image) -> Text:
         """Resample one source into a high-density two-colour Braille image.
 
         A terminal cell has a foreground and background colour. Choosing the
         nearest of two per-cell palette colours preserves the Intel artwork's
         blue and white details much better than a global-background threshold.
         """
-        with Image.open(source) as image:
-            rows = max(1, round(self._columns * image.height / image.width / 2))
-            scaled = image.convert("RGB").resize(
-                (self._columns * 2, rows * 4), Image.Resampling.LANCZOS
-            )
-            pixels = list(scaled.get_flattened_data())
+        rows = max(1, round(self._columns * image.height / image.width / 2))
+        scaled = image.convert("RGB").resize(
+            (self._columns * 2, rows * 4), Image.Resampling.LANCZOS
+        )
+        pixels = list(scaled.get_flattened_data())
 
         text = Text(no_wrap=True)
         for row in range(rows):
             for column in range(self._columns):
-                cell = [pixels[(row * 4 + y) * self._columns * 2 + column * 2 + x]
-                        for x, y in ((0, 0), (0, 1), (0, 2), (0, 3),
-                                     (1, 0), (1, 1), (1, 2), (1, 3))]
-                dark, light = self._cell_palette(cell)
-                mask = 0
-                for pixel, bit in zip(cell, (0x01, 0x02, 0x04, 0x40,
-                                             0x08, 0x10, 0x20, 0x80)):
-                    if self._distance(pixel, light) < self._distance(pixel, dark):
-                        mask |= bit
+                cell = self._cell_pixels(pixels, row, column, vertical_pixels=4)
+                dark, light, mask = self._two_colour_mask(
+                    cell, (0x01, 0x08, 0x02, 0x10, 0x04, 0x20, 0x40, 0x80)
+                )
                 text.append(chr(0x2800 + mask), Style(
                     color=Color.from_rgb(*light), bgcolor=Color.from_rgb(*dark)
                 ))
@@ -191,12 +228,62 @@ class _StartupIntelAnimation(Widget):
                 text.append("\n")
         return text
 
-    @staticmethod
-    def _cell_palette(pixels: list[tuple[int, int, int]]) -> tuple[
+    def _to_quadrant_renderable(self, image: Image.Image) -> Text:
+        """Render the settled board with contiguous 2×2 blocks, not dots."""
+        rows = max(1, round(self._columns * image.height / image.width / 2))
+        scaled = image.convert("RGB").resize(
+            (self._columns * 2, rows * 2), Image.Resampling.LANCZOS
+        )
+        pixels = list(scaled.get_flattened_data())
+        glyphs = (" ", "▘", "▝", "▀", "▖", "▌", "▞", "▛",
+                  "▗", "▚", "▐", "▜", "▄", "▙", "▟", "█")
+        text = Text(no_wrap=True)
+        for row in range(rows):
+            for column in range(self._columns):
+                cell = self._cell_pixels(pixels, row, column, vertical_pixels=2)
+                dark, light, mask = self._two_colour_mask(cell, (0x01, 0x02, 0x04, 0x08))
+                text.append(glyphs[mask], Style(
+                    color=Color.from_rgb(*light), bgcolor=Color.from_rgb(*dark)
+                ))
+            if row + 1 < rows:
+                text.append("\n")
+        return text
+
+    def _cell_pixels(self, pixels: list[tuple[int, int, int]], row: int, column: int,
+                     *, vertical_pixels: int) -> list[tuple[int, int, int]]:
+        """Return the source pixels corresponding to one terminal cell."""
+        return [pixels[(row * vertical_pixels + y) * self._columns * 2 + column * 2 + x]
+                for y in range(vertical_pixels) for x in range(2)]
+
+    @classmethod
+    def _two_colour_mask(cls, pixels: list[tuple[int, int, int]], bits: Sequence[int]) -> tuple[
+            tuple[int, int, int], tuple[int, int, int], int]:
+        """Cluster a cell into its two representative colours and dot mask."""
+        dark, light = cls._cell_palette(pixels)
+        mask = 0
+        for pixel, bit in zip(pixels, bits):
+            if cls._distance(pixel, light) < cls._distance(pixel, dark):
+                mask |= bit
+        return dark, light, mask
+
+    @classmethod
+    def _cell_palette(cls, pixels: list[tuple[int, int, int]]) -> tuple[
             tuple[int, int, int], tuple[int, int, int]]:
-        """Return the darkest and lightest source colours for one cell."""
+        """Use two small k-means passes instead of picking colour outliers."""
         luminance = lambda pixel: 299 * pixel[0] + 587 * pixel[1] + 114 * pixel[2]
-        return min(pixels, key=luminance), max(pixels, key=luminance)
+        dark, light = min(pixels, key=luminance), max(pixels, key=luminance)
+        for _ in range(2):
+            dark_group, light_group = [], []
+            for pixel in pixels:
+                (light_group if cls._distance(pixel, light) < cls._distance(pixel, dark)
+                 else dark_group).append(pixel)
+            if not dark_group or not light_group:
+                break
+            dark = tuple(sum(pixel[channel] for pixel in dark_group) // len(dark_group)
+                         for channel in range(3))
+            light = tuple(sum(pixel[channel] for pixel in light_group) // len(light_group)
+                          for channel in range(3))
+        return (dark, light) if luminance(dark) <= luminance(light) else (light, dark)
 
     @staticmethod
     def _distance(first: tuple[int, int, int], second: tuple[int, int, int]) -> int:

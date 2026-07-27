@@ -52,4 +52,4 @@ build-backend = "setuptools.build_meta"
 include = ["ovat*"]
 
 [tool.setuptools.package-data]
-ovat = ["assets/*.png"]
+ovat = ["assets/*.gif", "assets/*.png"]
