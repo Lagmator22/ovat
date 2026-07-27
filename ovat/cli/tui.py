@@ -55,6 +55,29 @@ _BLUE_RGB = (0, 104, 181)
 # directly under the wordmark, so they need to read as subordinate to it; at
 # the same blue they competed with it and the panel had no focal point.
 _DEEP_BLUE_RGB = (0, 71, 133)
+_DEEPER_BLUE_RGB = (0, 45, 92)
+# The "powered by" credit, in the purple family so it separates the two blue
+# marks it sits between rather than blending into either.
+_LILAC_RGB = (143, 92, 255)
+_VIOLET_RGB = (88, 46, 178)
+# Updates: bright green down to a deep one, and a darker still shade for the
+# bullet text so the heading stays the brightest thing in its panel.
+_MINT_RGB = (61, 214, 140)
+_FOREST_RGB = (21, 122, 79)
+_DARK_GREEN = "#1B7A50"
+
+# What the Updates panel actually says. A list, not prose, because it is read
+# at a glance on startup; kept here so adding a line is a one-line change.
+# Newest first, and only things a USER would notice: this is a changelog for
+# the person typing, not for the person committing.
+TUI_UPDATES = [
+    "/engine swaps chat between local genai and OVMS tools",
+    "/load picks any past conversation, not just the last",
+    "multi-line input, real paste, Up/Down history",
+    "reasoning folds away; /thinking shows it",
+    "indexing shows a progress bar instead of hanging",
+    "Ctrl-P command palette, themes, /copy /save /tokens",
+]
 _INTEL_PHASE_SOURCES: Final = (
     Path(__file__).resolve().parent.parent / "assets" / "intel-phase-1.png",
     Path(__file__).resolve().parent.parent / "assets" / "intel-phase-2.png",
@@ -292,6 +315,18 @@ class _StartupIntelAnimation(Widget):
         return sum((first[channel] - second[channel]) ** 2 for channel in range(3))
 
 
+def _maybe_abs(path: str, cwd: str) -> str:
+    """Resolve `path` against `cwd` unless it is already absolute.
+
+    Pulled out of _open_chat so the "does this actually exist" check and the
+    push both agree on what the path resolves to. When they disagreed, the
+    check passed on one string and the screen was handed another.
+    """
+    if os.path.isabs(path):
+        return path
+    return os.path.normpath(os.path.join(cwd, path))
+
+
 def _lerp_hex(a: tuple, b: tuple, t: float) -> str:
     """Blend two RGB colours by fraction t in 0..1 and return a hex string."""
     return "#{:02X}{:02X}{:02X}".format(
@@ -363,21 +398,39 @@ def _secondary_wordmark(label: str, *, color: str,
 # faces (mini, straight) fit too, but next to a block wordmark they look like
 # a different typeface altogether, which is what made the panel look broken.
 _ATTRIBUTION_FONTS = ("pagga", "smblock", "mini")
+# The credit line. "emboss2" is the only short face that draws with the SAME
+# corner-and-rule glyphs as ANSI Shadow, so it carries the wordmark's shadow
+# and lining at a third of the height. It is an OUTLINE face where pagga is
+# solid, and that weight difference is what ranks it below the two marks it
+# sits between: at this size there is no shorter block face to fall back on.
+_CREDIT_FONTS = ("emboss2", "smblock", "mini")
+
+
+def _gradient_mark(label: str, fonts: tuple, top: tuple, bottom: tuple,
+                   fallback: str) -> Text:
+    """One masthead mark, shaded top to bottom, with a font fallback chain.
+
+    Falling through a list rather than trusting one name matters: pyfiglet
+    ships a different font set depending on how it was packaged, and a
+    missing font must cost us a size, never the whole masthead.
+    """
+    for font in fonts:
+        lines = _figlet_lines(label, font=font)
+        if lines:
+            return _wordmark_from_lines(lines, top=top, bottom=bottom)
+    return Text(f"{label}\n", style=f"bold {fallback}")
 
 
 def _attribution_wordmark(label: str) -> Text:
-    """One attribution mark: mid-size block face, deep blue, flat.
+    """One attribution mark: mid-size block face, shaded deep blue."""
+    return _gradient_mark(label, _ATTRIBUTION_FONTS,
+                          _DEEP_BLUE_RGB, _DEEPER_BLUE_RGB, ui.BLUE)
 
-    Falls through the font list rather than trusting one name: pyfiglet ships
-    a different font set depending on how it was packaged, and a missing font
-    must cost us a size, never the whole masthead.
-    """
-    for font in _ATTRIBUTION_FONTS:
-        lines = _figlet_lines(label, font=font)
-        if lines:
-            return _wordmark_from_lines(lines, top=_DEEP_BLUE_RGB,
-                                        bottom=_DEEP_BLUE_RGB)
-    return Text(f"{label}\n", style=f"bold {ui.BLUE}")
+
+def _credit_wordmark(label: str) -> Text:
+    """The "powered by" credit: short outline face, shaded purple."""
+    return _gradient_mark(label, _CREDIT_FONTS,
+                          _LILAC_RGB, _VIOLET_RGB, ui.PURPLE)
 
 
 def _banner() -> Text:
@@ -390,9 +443,7 @@ def _banner() -> Text:
     and the attribution read as a second product name rather than a credit.
     """
     out = _wordmark_text()
-    # Lower case and unstyled weight on purpose: this line is connective
-    # tissue between two marks, not a heading of its own.
-    out.append("powered by\n", style=ui.PURPLE)
+    out.append_text(_credit_wordmark("powered by"))
     # Stacked rather than set as one "OpenVINO + OVMS" mark: combined, even
     # the mid-size face is 44 columns wide and this panel is 32% of the
     # screen, so FIGlet would wrap and shear the glyphs.
@@ -402,12 +453,22 @@ def _banner() -> Text:
 
 
 def _startup_updates() -> Text:
-    """A deliberately empty board, ready for future toolkit updates.
+    """The Updates board: a shaded heading over what actually changed.
 
-    Set in the OVAT headline face because it heads its own panel, and green
-    because it is the one part of the masthead that will carry news.
+    The heading drops to the mid-size face rather than the six-row one it
+    used to use. It is not competing with OVAT for attention, and the rows it
+    gives back are what make room for the list underneath, which is the part
+    with something to say. The panel used to be a heading over nothing.
     """
-    return _secondary_wordmark("Updates", color=ui.GREEN)
+    out = _gradient_mark("Updates", _ATTRIBUTION_FONTS,
+                         _MINT_RGB, _FOREST_RGB, ui.GREEN)
+    out.append("\n")
+    for line in TUI_UPDATES:
+        # Darker than the heading so the eye lands on the heading first, and
+        # dark enough to sit quietly behind the wordmark on the left.
+        out.append("  › ", style=f"bold {_DARK_GREEN}")
+        out.append(f"{line}\n", style=_DARK_GREEN)
+    return out
 
 
 def _option(template) -> Option:
@@ -508,6 +569,12 @@ class OvatTUI(App):
     CSS = """
     Screen { background: $background; }
     #masthead {
+        /* 17 exactly: the round border eats two rows, leaving 15 for the
+           brand stack, which is 15 rows. It fits with nothing to spare, and
+           the test below is what keeps it that way.
+           Do NOT raise this to 18. At 80x24, an 18-row masthead leaves the
+           output pane no room and the app HANGS on startup rather than
+           laying out; measured, and 24 rows is a default terminal. */
         height: 17;
         margin: 1 2 0 2;
         border: round $primary;
@@ -809,6 +876,18 @@ class OvatTUI(App):
         parts = args.split()
         config = parts[0] if parts else prefs.get("config", "workflow.yml")
         model = parts[1] if len(parts) > 1 else prefs.get("model_path")
+        if model and not parts[1:] and not os.path.isdir(_maybe_abs(model,
+                                                                    self._cwd)):
+            # A REMEMBERED path that no longer resolves. This produced the
+            # worst error in the app: the stale relative path was joined onto
+            # the current directory and the user was shown a doubled-up
+            # nonsense path like
+            #   C:\Users\me\models\openvino\Users\me\models\OpenVINO\Qwen3...
+            # and told their model "is not a text LLM". Forget it and
+            # re-detect instead of arguing with a path nobody typed.
+            log.write(Text(f"remembered model path no longer exists ({model}); "
+                           "detecting again.", style=ui.DIM))
+            model = None
         if not model:
             # Friendliest path last: AUTO-DETECT a local text LLM instead of
             # demanding a path a new user does not know.
@@ -825,9 +904,15 @@ class OvatTUI(App):
                                    "  ·  choose with /chat <config> <path>",
                                    style=ui.DIM))
             else:
-                log.write(Text(
-                    "No local text LLM found (scanned OVAT_MODELS, ./models, "
-                    "~/models).", style=ui.YELLOW))
+                from ovat.core.model_scout import searched_roots
+                log.write(Text("No local text LLM found.", style=ui.YELLOW))
+                # Name the REAL folders, not the env var. "scanned
+                # OVAT_MODELS, ./models, ~/models" left the user with no way
+                # to tell which paths that came out to, and on Windows the
+                # answer is rarely the one they assumed.
+                for root in searched_roots():
+                    mark = "" if os.path.isdir(root) else "  (does not exist)"
+                    log.write(Text(f"  scanned: {root}{mark}", style=ui.DIM))
                 others = find_models()
                 if others:
                     log.write(Text("Found, but wrong kind for chat: " +
@@ -839,11 +924,8 @@ class OvatTUI(App):
                     style=ui.DIM))
                 return
 
-        def _resolve(p: str) -> str:
-            return p if os.path.isabs(p) else os.path.normpath(
-                os.path.join(self._cwd, p))
-
-        self.push_screen(ChatScreen(_resolve(config), _resolve(model),
+        self.push_screen(ChatScreen(_maybe_abs(config, self._cwd),
+                                    _maybe_abs(model, self._cwd),
                                     cwd=self._cwd))
 
     def _start_command(self, cmd: str) -> None:

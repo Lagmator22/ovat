@@ -505,16 +505,64 @@ def _styles(text) -> set:
     return {str(span.style) for span in text.spans}
 
 
-def test_the_masthead_has_three_distinct_type_sizes():
-    """A terminal has ONE glyph size, so hierarchy can only come from picking
-    faces of different heights. OVMS was previously set in the same six-row
-    face as OVAT, which gave the panel two headlines and no focal point."""
+def test_the_masthead_ranks_its_marks_by_size_then_weight():
+    """A terminal has ONE glyph size, so hierarchy comes from the FACE.
+
+    OVAT is the six-row solid-with-shadow face. The attribution marks are
+    half that height in a solid face. The credit is the same height as the
+    attribution but drawn as an OUTLINE, which is what ranks it below them:
+    at three rows there is no shorter block face to drop to.
+    """
     from ovat.cli import tui
 
     ovat = len(tui._ansi_shadow_lines("OVAT"))
     openvino = len(_rows(tui._attribution_wordmark("OpenVINO")))
+    credit = len(_rows(tui._credit_wordmark("powered by")))
     assert ovat > openvino, "the attribution must be smaller than the wordmark"
-    assert openvino > 1, "and bigger than the one-line 'powered by' credit"
+    assert credit <= openvino, "the credit must not outrank the attribution"
+
+    def ink(text):
+        """Share of drawn cells: an outline face inks far fewer than a solid
+        one, which is the weight difference the eye actually reads."""
+        rows = _rows(text)
+        cells = sum(len(r) for r in rows)
+        return sum(c not in " " for r in rows for c in r) / cells
+
+    assert ink(tui._credit_wordmark("powered by")) < \
+        ink(tui._attribution_wordmark("OpenVINO")), \
+        "the credit should be lighter than the marks it sits between"
+
+
+def test_every_masthead_mark_is_shaded_not_flat():
+    """Each mark carries a gradient, like the OVAT wordmark, rather than one
+    flat colour: that is what gives the block glyphs their depth."""
+    from ovat.cli import tui
+
+    for mark in (tui._credit_wordmark("powered by"),
+                 tui._attribution_wordmark("OpenVINO"),
+                 tui._startup_updates()):
+        assert len(_styles(mark)) > 1, f"{mark.plain[:12]!r} is a flat colour"
+
+
+def test_the_updates_panel_actually_lists_updates():
+    """It used to be a heading over nothing at all."""
+    from ovat.cli import tui
+
+    panel = tui._startup_updates().plain
+    assert tui.TUI_UPDATES, "no updates are defined"
+    for line in tui.TUI_UPDATES:
+        assert line in panel
+    assert panel.count("\u203a") == len(tui.TUI_UPDATES), "one bullet per line"
+
+
+def test_the_updates_panel_fits_its_column():
+    """#updates-panel is 1fr between two fixed panels; at 120 columns that is
+    about 47, and an over-long line would wrap into the bullet below it."""
+    from ovat.cli import tui
+
+    rows = _rows(tui._startup_updates())
+    assert len(rows) <= 16
+    assert max(len(r) for r in rows) <= 60
 
 
 def test_the_attribution_marks_are_darker_than_the_wordmark():
@@ -533,26 +581,28 @@ def test_the_attribution_marks_are_darker_than_the_wordmark():
             f"{shade} is not darker than the wordmark's darkest {darkest_wordmark}")
 
 
-def test_powered_by_is_the_smallest_and_purple():
-    """Connective tissue between two marks, not a heading: one plain row."""
+def test_the_credit_is_a_shaded_purple_mark_with_shadow():
+    """It sits between two blue marks, so purple separates it from both."""
     from ovat.cli import tui
 
-    banner = tui._banner()
-    assert "powered by" in banner.plain
-    line = [r for r in _rows(banner) if "powered by" in r]
-    assert line == ["powered by"], "it must be plain text, not a FIGlet mark"
-    assert any(tui.ui.PURPLE in str(s.style) and "bold" not in str(s.style)
-               for s in banner.spans), "the credit line should not be bold"
+    credit = tui._credit_wordmark("powered by")
+    assert len(_rows(credit)) > 1, "the credit should be a real FIGlet mark"
+    # Shadow-and-lining glyphs, the same ones the OVAT face draws with.
+    assert any(c in credit.plain for c in "\u2554\u2550\u2551\u255d")
+    for style in _styles(credit):
+        shade = style.split()[-1]
+        r, g, b = (int(shade[i:i + 2], 16) for i in (1, 3, 5))
+        assert b > g and r > g, f"{shade} is not in the purple family"
 
 
-def test_updates_uses_the_ovat_face_in_green():
-    """It heads its own panel, so it keeps the headline face; green because
-    it is the part of the masthead that will carry news."""
+def test_updates_is_green_throughout():
+    """Green is the panel's identity: heading and bullets alike."""
     from ovat.cli import tui
 
-    updates = tui._startup_updates()
-    assert len(_rows(updates)) == len(tui._ansi_shadow_lines("Updates"))
-    assert _styles(updates) == {f"bold {tui.ui.GREEN}"}
+    for style in _styles(tui._startup_updates()):
+        shade = style.split()[-1]
+        r, g, b = (int(shade[i:i + 2], 16) for i in (1, 3, 5))
+        assert g > r and g > b, f"{shade} is not a green"
 
 
 def test_the_banner_fits_inside_its_panel():
@@ -561,7 +611,9 @@ def test_the_banner_fits_inside_its_panel():
     from ovat.cli import tui
 
     banner = _rows(tui._banner())
-    # 17 rows of masthead, less the round border top and bottom.
+    # 17 rows of masthead, less the round border top and bottom. This is an
+    # EXACT fit, which is why it is asserted: one extra row and the stack is
+    # clipped, and raising the masthead to make room hangs the app at 80x24.
     assert len(banner) <= 15, f"{len(banner)} rows will not fit in the panel"
     # 32% of an 80-column terminal, less the panel's own padding.
     assert max(len(r) for r in banner) <= 36, "wider than the panel at 80 cols"

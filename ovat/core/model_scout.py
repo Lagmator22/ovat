@@ -87,6 +87,42 @@ def _roots() -> list[str]:
     return [os.path.expanduser(r) for r in roots]
 
 
+# How far below a discovery root a model folder may sit.
+#
+# Two, not one, and this is the whole reason chat could not find a model on
+# the AI PC. `ovms --pull` lays models out by ORG: the repository ends up as
+# models/OpenVINO/Qwen3-8B-int4-ov, which `ovat models list` prints as
+# "OpenVINO\Qwen3-8B-int4-ov". A one-level scan looked at models/OpenVINO,
+# found no openvino*.xml in it, wrote it off as not-a-model and never went
+# deeper, so the model sitting right there was reported as "no local text LLM
+# found". Three levels would start crawling unrelated trees for no benefit.
+_MAX_DEPTH = 2
+
+
+def _walk_candidates(root: str, depth: int = _MAX_DEPTH):
+    """Yield folders at or below `root`, at most `depth` levels down.
+
+    A folder that IS a model is never descended into: an exported model can
+    contain subfolders and there is nothing below it worth finding.
+    """
+    yield root
+    if depth <= 0:
+        return
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError:
+        return                      # unreadable root: not fatal, just empty
+    for entry in entries:
+        child = os.path.join(root, entry)
+        if not os.path.isdir(child):
+            continue
+        yield child
+        if identify_model(child)[0] == "not-a-model":
+            # Only an ORG-style container is worth opening. Recursing under a
+            # real model would list its subfolders as siblings of itself.
+            yield from _walk_candidates(child, depth - 1)
+
+
 def find_models(kind: str | None = None) -> list[dict]:
     """Scan the discovery roots for model folders. Optionally filter by kind.
 
@@ -97,10 +133,9 @@ def find_models(kind: str | None = None) -> list[dict]:
     for root in _roots():
         if not os.path.isdir(root):
             continue
-        # The root itself may BE a model folder (OVAT_MODELS=.../Llama-3B).
-        candidates = [root] + [os.path.join(root, entry)
-                               for entry in sorted(os.listdir(root))]
-        for candidate in candidates:
+        # The root itself may BE a model folder (OVAT_MODELS=.../Llama-3B),
+        # which _walk_candidates yields first.
+        for candidate in _walk_candidates(root):
             real = os.path.realpath(candidate)
             if real in found or not os.path.isdir(candidate):
                 continue
@@ -113,6 +148,16 @@ def find_models(kind: str | None = None) -> list[dict]:
     if kind:
         models = [m for m in models if m["kind"] == kind]
     return models
+
+
+def searched_roots() -> list[str]:
+    """The folders find_models() actually looks in, for error messages.
+
+    Naming the real paths beats naming the env var: "scanned OVAT_MODELS,
+    ./models, ~/models" left the user with no idea WHICH folders that came
+    out to, and on Windows the answer is rarely what they assumed.
+    """
+    return list(_roots())
 
 
 def pick_chat_llm() -> tuple[dict | None, list[dict]]:

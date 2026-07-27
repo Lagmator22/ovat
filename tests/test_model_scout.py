@@ -132,3 +132,121 @@ def test_resolve_with_nothing_found_gives_the_fix(tmp_path, monkeypatch, capsys)
     assert "No local text LLM found" in out
     assert "OVAT_MODELS" in out                      # names the fix
     assert "vlm" in out                              # shows what WAS found
+
+# Models nested one folder deeper: the layout `ovms --pull` actually creates
+
+@pytest.fixture
+def only_these_models(tmp_path, monkeypatch):
+    """Isolate the scan from this machine.
+
+    _roots() ALWAYS includes cwd/models and ~/models, so without this the
+    repo's own models/bge-small-en-v1.5 turns up in every assertion and the
+    tests describe the developer's disk rather than the code.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "nohome"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "nohome"))
+    return tmp_path
+
+
+
+def _export(folder, model_type="qwen3", arch="Qwen3ForCausalLM"):
+    """Write the minimum that identify_model() calls a text LLM."""
+    import json
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "openvino_model.xml").write_text("<net/>", encoding="utf-8")
+    (folder / "config.json").write_text(
+        json.dumps({"model_type": model_type, "architectures": [arch]}),
+        encoding="utf-8")
+    return folder
+
+
+def test_a_model_nested_under_an_org_folder_is_found(only_these_models, tmp_path, monkeypatch):
+    """The bug that made chat unusable on the AI PC.
+
+    `ovms --pull` lays models out by ORG: models/OpenVINO/Qwen3-8B-int4-ov,
+    which `ovat models list` prints as "OpenVINO\\Qwen3-8B-int4-ov". A
+    one-level scan looked at models/OpenVINO, found no openvino*.xml in it,
+    wrote it off and never went deeper, so a model sitting right there was
+    reported as "No local text LLM found".
+    """
+    from ovat.core.model_scout import find_models, pick_chat_llm
+
+    _export(tmp_path / "models" / "OpenVINO" / "Qwen3-8B-int4-ov")
+    monkeypatch.setenv("OVAT_MODELS", str(tmp_path / "models"))
+
+    names = [m["name"] for m in find_models()]
+    assert "Qwen3-8B-int4-ov" in names, (
+        f"the org-nested model was not found; saw {names}")
+    choice, _ = pick_chat_llm()
+    assert choice is not None and choice["name"] == "Qwen3-8B-int4-ov"
+
+
+def test_a_model_directly_in_the_root_still_works(only_these_models, tmp_path, monkeypatch):
+    """The flat layout must not regress while fixing the nested one."""
+    from ovat.core.model_scout import find_models
+
+    _export(tmp_path / "models" / "Llama-3B-instruct")
+    monkeypatch.setenv("OVAT_MODELS", str(tmp_path / "models"))
+    assert [m["name"] for m in find_models()] == ["Llama-3B-instruct"]
+
+
+def test_the_root_itself_being_a_model_still_works(only_these_models, tmp_path, monkeypatch):
+    """OVAT_MODELS pointed straight at one model folder."""
+    from ovat.core.model_scout import find_models
+
+    _export(tmp_path / "Llama-3B")
+    monkeypatch.setenv("OVAT_MODELS", str(tmp_path / "Llama-3B"))
+    assert [m["name"] for m in find_models()] == ["Llama-3B"]
+
+
+def test_scanning_does_not_descend_into_a_model_folder(only_these_models, tmp_path, monkeypatch):
+    """An export can contain subfolders. Listing them as siblings of the model
+    itself would fill the picker with junk the user cannot use."""
+    from ovat.core.model_scout import find_models
+
+    model = _export(tmp_path / "models" / "Qwen3-8B")
+    (model / "openvino_tokenizer").mkdir()
+    (model / "openvino_tokenizer" / "openvino_model.xml").write_text(
+        "<net/>", encoding="utf-8")
+    monkeypatch.setenv("OVAT_MODELS", str(tmp_path / "models"))
+    assert [m["name"] for m in find_models()] == ["Qwen3-8B"]
+
+
+def test_a_third_level_is_not_scanned(only_these_models, tmp_path, monkeypatch):
+    """Two levels covers the org layout. Deeper would start crawling
+    unrelated trees for no benefit, which on a big disk is slow."""
+    from ovat.core.model_scout import find_models
+
+    _export(tmp_path / "models" / "a" / "b" / "TooDeep")
+    monkeypatch.setenv("OVAT_MODELS", str(tmp_path / "models"))
+    assert [m["name"] for m in find_models()] == []
+
+
+def test_searched_roots_names_the_real_folders(only_these_models, tmp_path, monkeypatch):
+    """The error message used to say "scanned OVAT_MODELS, ./models,
+    ~/models", which left the user unable to tell which paths that was."""
+    from ovat.core.model_scout import searched_roots
+
+    monkeypatch.setenv("OVAT_MODELS", str(tmp_path / "one"))
+    roots = searched_roots()
+    assert str(tmp_path / "one") in roots
+    assert any(r.endswith("models") for r in roots)
+
+
+def test_an_unreadable_folder_is_skipped_not_fatal(only_these_models, tmp_path, monkeypatch):
+    """A permission error mid-scan must cost that folder, not the command."""
+    from ovat.core import model_scout
+
+    _export(tmp_path / "models" / "OpenVINO" / "Qwen3-8B")
+    monkeypatch.setenv("OVAT_MODELS", str(tmp_path / "models"))
+
+    real_listdir = model_scout.os.listdir
+
+    def deny(path):
+        if path.endswith("OpenVINO"):
+            raise PermissionError("denied")
+        return real_listdir(path)
+
+    monkeypatch.setattr(model_scout.os, "listdir", deny)
+    assert model_scout.find_models() == []      # empty, but no exception
