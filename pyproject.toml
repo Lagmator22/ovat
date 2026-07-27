@@ -28,6 +28,8 @@ dependencies = [
 #   it; that is what makes the TUI removable without breaking anything.
 [project.optional-dependencies]
 langchain = ["langchain>=1", "langchain-openai>=1", "langgraph>=1"]
+llamaindex = ["llama-index-core>=0.14", "llama-index-llms-openai-like>=0.5"]
+openai-agents = ["openai-agents>=0.1"]
 tui = ["textual", "pyfiglet"]
 dev = ["pytest", "pytest-cov", "langchain>=1", "langchain-openai>=1",
        "langgraph>=1", "textual", "pyfiglet"]

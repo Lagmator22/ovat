@@ -85,7 +85,14 @@ class ToolConfig(StrictModel):
 class AgentConfig(StrictModel):
     """How the agent loop behaves."""
 
-    # "native" uses my own loop.py. "react" hands the same job to LangChain.
+    # Which engine runs the loop. "native" is my own loop.py; the rest hand
+    # the same job to a framework:
+    #   react          LangChain      (pip install 'ovat[langchain]')
+    #   llamaindex     LlamaIndex     (pip install 'ovat[llamaindex]')
+    #   openai-agents  OpenAI Agents  (pip install 'ovat[openai-agents]')
+    # Not a Literal on purpose: an unknown value must fail in the factory,
+    # where the message can name every supported engine and the extra that
+    # installs it, rather than as a pydantic type error at parse time.
     type: str = "native"
     max_iterations: int = 10            # the safety cap from my loop
     system_prompt: str | None = None    # optional persona for the agent

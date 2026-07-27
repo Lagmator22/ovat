@@ -73,3 +73,50 @@ def test_unsupported_tool_type_is_rejected():
     # real tool type now (see test_mcp_client.py), so a made-up type stands in.
     with pytest.raises(ValueError, match="Unsupported tool type"):
         build_tools(_cfg(tools=[{"name": "search_docs", "type": "telepathy"}]))
+
+
+# Engine dispatch: the factory is the one place that knows the engine names
+
+def test_every_supported_engine_name_is_dispatched():
+    """AGENT_TYPES feeds the error message, so a name listed there but not
+    handled below would advertise an engine that then fails as 'unknown'."""
+    from ovat.agent.factory import AGENT_TYPES, build_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    for name in AGENT_TYPES:
+        cfg = WorkflowConfig(model={"name": "m"}, agent={"type": name})
+        try:
+            build_agent(cfg, skip_rag=True)
+        except RuntimeError as exc:
+            # A missing optional framework is fine and must say how to fix it.
+            assert "pip install" in str(exc), exc
+        except ValueError as exc:                       # pragma: no cover
+            raise AssertionError(f"{name} is listed but not dispatched: {exc}")
+
+
+def test_an_unknown_engine_names_the_ones_that_exist():
+    """The user mistyped. Telling them only that it is wrong is useless."""
+    import pytest
+    from ovat.agent.factory import AGENT_TYPES, build_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    cfg = WorkflowConfig(model={"name": "m"}, agent={"type": "langchian"})
+    with pytest.raises(ValueError) as excinfo:
+        build_agent(cfg, skip_rag=True)
+    for name in AGENT_TYPES:
+        assert name in str(excinfo.value)
+
+
+def test_the_new_engines_build_without_touching_the_network():
+    """`ovat run --dry-run` has to work on a laptop with no OVMS."""
+    import pytest
+    from ovat.agent.factory import build_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    for name, module in (("llamaindex", "llama_index.core"),
+                         ("openai-agents", "agents")):
+        pytest.importorskip(module)
+        cfg = WorkflowConfig(model={"name": "m"}, agent={"type": name})
+        agent = build_agent(cfg, skip_rag=True)
+        assert hasattr(agent, "run"), f"{name} has no .run()"
+        assert hasattr(agent, "tools"), f"{name} cannot report its tools"

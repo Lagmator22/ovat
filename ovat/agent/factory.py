@@ -176,6 +176,11 @@ def build_tools(config: WorkflowConfig,
     return tools
 
 
+# Every engine the factory can build. Named here so the error message, the
+# config docs and the dispatch below cannot drift apart.
+AGENT_TYPES = ("native", "react", "llamaindex", "openai-agents")
+
+
 def build_agent(config: WorkflowConfig, skip_rag: bool = False):
     """I assemble the full agent from a config: the one call the CLI makes.
 
@@ -205,11 +210,23 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False):
             system_prompt=config.agent.system_prompt,
             max_iterations=config.agent.max_iterations,
         )
+    # Each framework is imported INSIDE its branch so the native path never
+    # pays the import cost of a framework it does not use, and so a machine
+    # with only one of them installed still runs the others' configs' errors
+    # as readable text rather than an ImportError at module load.
     if agent_type == "react":
-        # Imported here so the native path never pays the LangChain import cost.
         from ovat.agent.langchain_agent import build_react_agent
         return build_react_agent(config, tools)
 
+    if agent_type == "llamaindex":
+        from ovat.agent.llamaindex_agent import build_llamaindex_agent
+        return build_llamaindex_agent(config, tools)
+
+    if agent_type == "openai-agents":
+        from ovat.agent.openai_agents_agent import build_openai_agents_agent
+        return build_openai_agents_agent(config, tools)
+
     raise ValueError(
-        f"Unknown agent type '{agent_type}'. Supported: native, react."
+        f"Unknown agent type '{agent_type}'. Supported: "
+        f"{', '.join(AGENT_TYPES)}."
     )

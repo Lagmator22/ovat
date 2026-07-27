@@ -87,10 +87,10 @@ def test_build_react_agent_exposes_native_like_interface():
 
 def test_args_model_derived_from_schema_matches_the_contract():
     from pydantic import ValidationError
-    from ovat.agent.langchain_agent import _args_model_from_schema
+    from ovat.agent.arg_models import args_model_from_schema
     from ovat.tools.search_docs import SCHEMA
 
-    Args = _args_model_from_schema("search_docs", SCHEMA)
+    Args = args_model_from_schema("search_docs", SCHEMA)
     ok = Args(query="find my notes")
     assert ok.query == "find my notes"
     assert ok.top_k == 5                       # default comes FROM the schema
