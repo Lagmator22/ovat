@@ -129,6 +129,16 @@ class OvatTUI(App):
         yield SystemCommand("Chat",
                             "chat with your indexed documents",
                             lambda: self._open_chat(""))
+        # Textual's own Theme command switches; this one comes back. Several
+        # of the 21 built-in themes fight OVAT's own greens and blues, and
+        # finding "ovat" again in an alphabetical list of 22 is a chore.
+        if self.theme != OVAT_THEME.name:
+            yield SystemCommand("Reset theme",
+                                "back to OVAT's own colours",
+                                self.action_reset_theme)
+
+    def action_reset_theme(self) -> None:
+        self.theme = OVAT_THEME.name
 
     def action_cancel_or_quit(self) -> None:
         """Busy: cancel the child. Idle: quit, but only on a SECOND press.

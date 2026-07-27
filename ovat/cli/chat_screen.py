@@ -61,13 +61,6 @@ CHAT_COMMANDS = [
 PREFS_FILE = "chat_prefs.json"
 SESSIONS_DIR = "sessions"
 
-# Repainting on every token means one blocking main-thread hop per token, which
-# throttles generation to the UI's refresh rate. Sample instead, the same trick
-# shell.iter_display_lines uses for \r progress frames. Dropped frames cost
-# nothing: the full answer is committed to the log when generation ends.
-STREAM_REFRESH_S = 0.05
-
-
 # Reasoning models narrate before they answer. Qwen3 and the DeepSeek-R1
 # family wrap that narration in <think>…</think>; some exports spell it
 # <thinking>. Both spellings, any case, across newlines.
@@ -177,7 +170,13 @@ class ChatMessage(Markdown):
     """
 
     def __init__(self, text: str = "") -> None:
-        super().__init__(text)
+        # open_links=False is a safety decision, not a style one. Textual's
+        # default handler calls app.open_url() on click, and these widgets
+        # render MODEL output: a single click would launch a browser at
+        # whatever href the model wrote, hallucinated or otherwise. On the AI
+        # PC clicking one took the whole TUI down with it. The screen handles
+        # LinkClicked itself instead.
+        super().__init__(text, open_links=False)
         self.text = text
 
     def update(self, markdown: str):
@@ -439,6 +438,17 @@ class ChatScreen(Screen):
         else:
             self.app.pop_screen()
 
+    def on_markdown_link_clicked(self, event: Markdown.LinkClicked) -> None:
+        """Show and copy a link rather than opening it.
+
+        The href comes from the model, so following it on one click is not
+        ours to decide. Copying puts the user one paste from their browser
+        and lets them read where it goes first.
+        """
+        event.stop()
+        self.app.copy_to_clipboard(event.href)
+        self._note(f"link copied: {event.href}", "ok")
+
     # ---- the slash menu ----------------------------------------------------
 
     def on_input_changed(self, event: Input.Changed) -> None:
@@ -516,7 +526,8 @@ class ChatScreen(Screen):
         # long answer keeps itself in sight as it grows. This is what replaced
         # the separate streaming line and its tail-clipping.
         response.anchor()
-        self._ask(line, response)
+        # Built HERE, on the main thread: get_stream starts a background task.
+        self._ask(line, response, Markdown.get_stream(response))
 
     async def _slash(self, line: str) -> None:
         head, _, rest = line.partition(" ")
@@ -655,21 +666,29 @@ class ChatScreen(Screen):
         self._mark_idle()
 
     @work(thread=True)
-    def _ask(self, question: str, response: "Response") -> None:
+    def _ask(self, question: str, response: "Response", stream) -> None:
         cfg, retriever, llm = self._components
         parts: list = []
-        last_render = 0.0
+        written = ""                     # how much of the answer is on screen
 
         def on_token(token: str):
-            nonlocal last_render
+            nonlocal written
             if self._stop_stream:
                 return True              # tell openvino_genai to stop generating
             parts.append(token)
-            now = time.monotonic()
-            if now - last_render < STREAM_REFRESH_S:
-                return False             # too soon to repaint; the token is kept
-            last_render = now
-            self.app.call_from_thread(self._stream_into, response, parts)
+            _, answer = split_thinking(self._for_display("".join(parts)))
+            if answer == written:
+                return False             # still inside <think>: nothing new yet
+            if answer.startswith(written):
+                # The common case: append only what arrived. MarkdownStream
+                # coalesces bursts internally, which is what its docs say the
+                # plain update() path cannot keep up with past ~20 a second.
+                self.app.call_from_thread(stream.write, answer[len(written):])
+            else:
+                # Stripping reshaped the text (an unclosed <think> just
+                # closed), so append-only no longer holds: replace it.
+                self.app.call_from_thread(response.update, answer)
+            written = answer
             return False
 
         try:
@@ -681,6 +700,7 @@ class ChatScreen(Screen):
                 on_token=on_token,
             )
         except Exception as exc:
+            self.app.call_from_thread(stream.stop)
             self.app.call_from_thread(response.update, f"*error: {exc}*")
             self.app.call_from_thread(self._mark_idle)
             return
@@ -693,19 +713,8 @@ class ChatScreen(Screen):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         self._session.save(path)
 
+        # Stop the stream BEFORE the final update, so the background task is
+        # not still appending while the finished text is written in.
+        self.app.call_from_thread(stream.stop)
         self.app.call_from_thread(self._commit_turn, response, answer, sources)
 
-    def _stream_into(self, response: "Response", parts: list) -> None:
-        """Repaint the in-flight answer, sampled rather than per token.
-
-        Markdown.update re-parses the whole document and remounts its child
-        widgets, so calling it per token is quadratic; on a CPU-generated
-        2000-token answer that is the difference between streaming and
-        stuttering. STREAM_REFRESH_S caps it at ~20 repaints a second.
-
-        While the model is still inside <think> the visible answer is empty,
-        which would look like a hang, so say what is happening instead.
-        """
-        text = self._for_display("".join(parts))
-        _, answer = split_thinking(text)
-        response.update(answer or "*thinking…*")

@@ -634,7 +634,6 @@ def test_streaming_updates_the_response_widget_in_place(monkeypatch, tmp_path):
     from ovat.cli.chat_screen import Response
 
     monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
-    monkeypatch.setattr(chat_screen, "STREAM_REFRESH_S", 0.0)   # never skip a frame
 
     async def scenario():
         app = OvatTUI()
@@ -677,4 +676,53 @@ def test_the_transcript_scrolls_rather_than_squeezing_the_input(monkeypatch, tmp
             assert len(list(screen.query(Response))) == 1
             # The input is still on screen; the scroll view absorbed the answer.
             assert inp.region.y + inp.size.height <= app.size.height
+    _run(scenario())
+
+
+# Links in an answer come from the MODEL, so a click must not follow them
+
+LINKY = "See [ONNX](https://onnx.ai) for the format."
+
+
+def test_a_clicked_link_is_copied_not_opened(monkeypatch, tmp_path):
+    """Textual's default opens the href in a browser on click.
+
+    These widgets render model output, so one click would launch a browser at
+    whatever URL the model wrote. On the AI PC it took the whole TUI down.
+    """
+    from textual.widgets import Markdown
+    from ovat.cli.chat_screen import Response
+
+    class LinkLLM:
+        def chat(self, messages, tools=None, on_token=None):
+            return {"finish_reason": "stop", "content": LINKY, "tool_calls": None}
+
+    monkeypatch.setattr(
+        chat_screen, "_build_components",
+        lambda c, m, max_tokens=256: (WorkflowConfig(model={"name": "m"}),
+                                      FakeRetriever(), LinkLLM()))
+    opened, copied = [], []
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            monkeypatch.setattr(app, "open_url",
+                                lambda *a, **k: opened.append(a))
+            monkeypatch.setattr(app, "copy_to_clipboard", copied.append)
+            screen.query_one("#chat-input", Input).value = "hi"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            answer = screen.query_one(Response)
+            assert answer._open_links is False        # the default is disabled
+            answer.post_message(Markdown.LinkClicked(answer, "https://onnx.ai"))
+            await pilot.pause()
+            await pilot.pause()
+
+            assert opened == []                       # no browser was launched
+            assert copied == ["https://onnx.ai"]      # the URL is one paste away
+            assert "link copied" in _log_text(screen)
+            assert app.is_running is True             # and the app survived
     _run(scenario())
