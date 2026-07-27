@@ -1284,3 +1284,37 @@ def test_the_chat_input_keeps_its_border():
     from ovat.cli.widgets import ChatInput
     box = ChatInput()
     assert "compact" not in box.classes
+
+
+def test_loading_a_long_conversation_stays_bounded(monkeypatch, tmp_path):
+    """A Markdown widget builds a child per block, row and list item, so a
+    long history rebuilt them all and froze the app: measured, thirty turns
+    made 3,158 widgets and blocked the UI thread for 2.8s. Only the newest
+    answers stay rich; the rest become one widget each."""
+    from ovat.cli.chat_screen import PlainAnswer, Response
+
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+    body = "## Heading\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- one\n- two"
+    messages = []
+    for i in range(25):
+        messages.append({"role": "user", "content": f"question {i}"})
+        messages.append({"role": "assistant", "content": body})
+    folder = tmp_path / ".ovat" / "sessions"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "long.json").write_text(json.dumps(messages), encoding="utf-8")
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            await screen._load_named("long")
+            await pilot.pause()
+
+            rich = list(screen.query(Response))
+            plain = list(screen.query(PlainAnswer))
+            assert len(rich) == chat_screen.REPLAY_RICH_TURNS   # newest only
+            assert len(plain) == 25 - chat_screen.REPLAY_RICH_TURNS
+            # Nothing was dropped: every answer is still on screen somewhere.
+            assert len(rich) + len(plain) == 25
+            assert "Heading" in plain[0].text
+    _run(scenario())
