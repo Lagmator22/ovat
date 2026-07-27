@@ -30,6 +30,11 @@ class FakeRetriever:
     def retrieve(self, query, top_k=5):
         return [{"text": "Q3 revenue grew", "source": "finance.md", "distance": 0.1}]
 
+    def close(self):
+        # RetrieverProvider gives every real retriever a close(); the fake
+        # needs one too or it is not standing in for the contract.
+        pass
+
 
 class FakeLLM:
     def chat(self, messages, tools=None, on_token=None):
@@ -244,16 +249,16 @@ def test_tokens_command_retunes_the_live_provider(monkeypatch, tmp_path):
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            llm = screen._components[2]
-            assert llm.max_new_tokens == 256
+            engine = screen._engine
+            assert engine.max_new_tokens == 256
 
             await _send(screen, pilot, "/tokens 2048")
             await pilot.pause()
-            assert llm.max_new_tokens == 2048          # same object, no reload
+            assert engine.max_new_tokens == 2048       # same object, no reload
 
             await _send(screen, pilot, "/tokens 0")
             await pilot.pause()
-            assert llm.max_new_tokens is None          # 0 means no cap
+            assert engine.max_new_tokens is None       # 0 means no cap
             assert "no tokens" in _log_text(screen)
     _run(scenario())
 
@@ -265,17 +270,17 @@ def test_tokens_command_refuses_nonsense_without_crashing(monkeypatch, tmp_path)
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _push_ready_screen(app, pilot, tmp_path)
-            llm = screen._components[2]
+            engine = screen._engine
 
             await _send(screen, pilot, "/tokens lots")
             await pilot.pause()
             assert "wants a number" in _log_text(screen)
-            assert llm.max_new_tokens == 256           # unchanged
+            assert engine.max_new_tokens == 256        # unchanged
 
             await _send(screen, pilot, "/tokens -1")
             await pilot.pause()
             assert "cannot be negative" in _log_text(screen)
-            assert llm.max_new_tokens == 256
+            assert engine.max_new_tokens == 256
     _run(scenario())
 
 
@@ -726,3 +731,186 @@ def test_a_clicked_link_is_copied_not_opened(monkeypatch, tmp_path):
             assert "link copied" in _log_text(screen)
             assert app.is_running is True             # and the app survived
     _run(scenario())
+
+
+# /engine: local openvino_genai, or the full OVMS agent with tools
+
+class FakeAgent:
+    """Stands in for what factory.build_agent returns."""
+
+    tools = {"search_docs": {}, "transcribe": {}}
+    last_trace = {"turns": [
+        {"tool_calls": [{"name": "search_docs"}, {"name": "search_docs"}]},
+        {"tool_calls": [{"name": "transcribe"}]},
+    ]}
+
+    def run(self, question):
+        return "TOOLED ANSWER"
+
+
+def _engine_screen(monkeypatch, tmp_path, ovms_ok=True):
+    """A chat screen whose OVMS engine is faked, local engine unchanged."""
+    from ovat.cli.chat_screen import OVMSEngine
+
+    def fake_build_engine(config_path, model_path, engine="local",
+                          max_tokens=256):
+        if engine == "ovms":
+            if not ovms_ok:
+                raise RuntimeError("connection refused")
+            return OVMSEngine(WorkflowConfig(model={"name": "Qwen3-8B"}),
+                              FakeAgent())
+        return chat_screen.LocalEngine(*_fake_components(config_path,
+                                                         model_path))
+    monkeypatch.setattr(chat_screen, "_build_engine", fake_build_engine)
+
+
+def test_engine_defaults_to_local_and_says_it_has_no_tools(monkeypatch, tmp_path):
+    _engine_screen(monkeypatch, tmp_path)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            assert screen._engine_name == "local"
+            assert screen._engine.name == "local"
+            text = _log_text(screen)
+            assert "retrieval only, no tools" in text
+    _run(scenario())
+
+
+def test_engine_ovms_switches_to_the_tool_calling_agent(monkeypatch, tmp_path):
+    """This is the path where the workflow's model: section finally matters."""
+    _engine_screen(monkeypatch, tmp_path)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            await _send(screen, pilot, "/engine ovms")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert screen._engine.name == "ovms"
+            text = _log_text(screen)
+            assert "tools: search_docs, transcribe" in text
+            assert "Qwen3-8B" in text
+    _run(scenario())
+
+
+def test_the_ovms_engine_answers_and_reports_the_tools_it_used(monkeypatch, tmp_path):
+    _engine_screen(monkeypatch, tmp_path)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            await _send(screen, pilot, "/engine ovms")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            await _send(screen, pilot, "what is in my docs?")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            text = _log_text(screen)
+            assert "TOOLED ANSWER" in text
+            # De-duplicated, order preserved: search_docs was called twice.
+            assert "tools used: search_docs, transcribe" in text
+    _run(scenario())
+
+
+def test_engine_reports_a_bad_name_and_a_failed_build(monkeypatch, tmp_path):
+    _engine_screen(monkeypatch, tmp_path, ovms_ok=False)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+
+            await _send(screen, pilot, "/engine sideways")
+            await pilot.pause()
+            assert "takes local or ovms" in _log_text(screen)
+            assert screen._engine_name == "local"      # unchanged
+
+            await _send(screen, pilot, "/engine ovms")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "connection refused" in _log_text(screen)
+            assert app.screen is screen                # survived the failure
+    _run(scenario())
+
+
+def test_bare_engine_reports_which_one_is_answering(monkeypatch, tmp_path):
+    _engine_screen(monkeypatch, tmp_path)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            await _send(screen, pilot, "/engine")
+            await pilot.pause()
+            text = _log_text(screen)
+            assert "engine: local" in text
+            assert "/engine ovms" in text              # and how to change it
+    _run(scenario())
+
+
+# Up/Down history and Ctrl-V paste in the chat input
+
+def test_up_and_down_recall_what_you_asked(monkeypatch, tmp_path):
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", Input)
+            for question in ("first question", "second question"):
+                inp.value = question
+                await pilot.press("enter")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+
+            inp.value = "half typed"
+            await pilot.press("up")
+            await pilot.pause()
+            assert inp.value == "second question"
+            await pilot.press("up")
+            await pilot.pause()
+            assert inp.value == "first question"
+            await pilot.press("down")
+            await pilot.pause()
+            assert inp.value == "second question"
+            await pilot.press("down")
+            await pilot.pause()
+            assert inp.value == "half typed"      # the draft came back
+    _run(scenario())
+
+
+def test_down_still_steps_into_the_slash_menu(monkeypatch, tmp_path):
+    """History must not steal the key the menu already uses."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", Input)
+            palette = screen.query_one("#chat-palette", OptionList)
+            inp.value = "asked something"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            inp.value = "/"
+            await pilot.pause()
+            assert palette.display is True
+            await pilot.press("down")
+            await pilot.pause()
+            assert screen.focused is palette       # the menu, not the history
+            assert inp.value == "/"
+    _run(scenario())
+
+
+
+

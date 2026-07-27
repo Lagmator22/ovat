@@ -42,12 +42,15 @@ from ovat.agent.rag_chat import rag_chat
 from ovat.agent.session import Session
 from ovat.cli import ui
 from ovat.cli.commands import ScreenCommands
+from ovat.cli.editing import InputHistory
+from ovat.cli.widgets import PasteInput
 
 # The slash menu for this screen. Unlike the doctor screen's, choosing one
 # INSERTS it rather than running it: most of these take an argument
 # (/tokens 2048, /save demo, /copy all), so the useful next step is typing,
 # not executing. Enter on the bare command still runs it.
 CHAT_COMMANDS = [
+    ("/engine", "swap between local  and  ovms (tools)"),
     ("/thinking", "show or hide the model's reasoning"),
     ("/copy", "copy the last answer  (or 'me' / 'all')"),
     ("/tokens", "answer length cap  (0 = no cap)"),
@@ -58,6 +61,11 @@ CHAT_COMMANDS = [
 
 # Both live under .ovat/ in the directory the user launched from, so a
 # project's chats and preferences stay with that project.
+# 256 cut real answers off mid-sentence often enough that /tokens existed
+# mainly to undo it. 1024 is a working default for both engines; /tokens is
+# still there for the long ones.
+DEFAULT_MAX_TOKENS = 1024
+
 PREFS_FILE = "chat_prefs.json"
 SESSIONS_DIR = "sessions"
 
@@ -128,7 +136,8 @@ def _session_path(cwd: str, name: str) -> str:
     return os.path.join(_ovat_dir(cwd), SESSIONS_DIR, f"{safe}.json")
 
 
-def _build_components(config_path: str, model_path: str, max_tokens: int = 256):
+def _build_components(config_path: str, model_path: str,
+                      max_tokens: int = DEFAULT_MAX_TOKENS):
     """config + model path -> (cfg, retriever, llm). The heavy step.
 
     Module-level on purpose: it is the seam tests monkeypatch to drive the
@@ -159,6 +168,106 @@ def _build_components(config_path: str, model_path: str, max_tokens: int = 256):
     retriever = build_rag(cfg)
     llm = GenAILLMProvider(model_path, device="CPU", max_new_tokens=max_tokens)
     return cfg, retriever, llm
+
+
+class LocalEngine:
+    """Retrieve, then answer with an openvino_genai model loaded in-process.
+
+    This is what chat has always done, and it reads only the `rag:` half of
+    the workflow. The `model:` half (ovms_url, tool_parser, name) belongs to
+    the OVMS path and is ignored here, which is exactly the thing that makes
+    the config confusing: an OpenVINO model folder is loadable directly by
+    openvino_genai, so no server is involved and no tool calling is possible.
+    """
+
+    name = "local"
+    footnote_label = "sources"
+
+    def __init__(self, cfg, retriever, llm):
+        self.cfg, self.retriever, self.llm = cfg, retriever, llm
+
+    @property
+    def max_new_tokens(self):
+        return self.llm.max_new_tokens
+
+    @max_new_tokens.setter
+    def max_new_tokens(self, value):
+        self.llm.max_new_tokens = value
+
+    def describe(self) -> str:
+        return "local openvino_genai · retrieval only, no tools"
+
+    def ask(self, question: str, history: list, on_token):
+        return rag_chat(self.retriever, self.llm, question, top_k=4,
+                        system_prompt=self.cfg.agent.system_prompt,
+                        history=history, on_token=on_token)
+
+    def close(self) -> None:
+        if self.retriever is not None:
+            self.retriever.close()
+
+
+class OVMSEngine:
+    """The full agent loop against OVMS: real tool calling.
+
+    Uses the `model:` section the local engine ignores, so this is the path
+    where ovms_url and tool_parser finally mean something. Two honest
+    differences from local, both surfaced to the user rather than hidden:
+    there is no token streaming (OVMSLLMProvider answers in one shot), and
+    conversation memory lives in the agent's own Session, so /load restores
+    the transcript on screen but not what the agent remembers.
+    """
+
+    name = "ovms"
+    footnote_label = "tools used"
+
+    def __init__(self, cfg, agent, max_tokens=None):
+        self.cfg, self.agent = cfg, agent
+        if max_tokens is not None:
+            self.max_new_tokens = max_tokens
+
+    @property
+    def max_new_tokens(self):
+        llm = getattr(self.agent, "llm", None)      # react has no .llm
+        return getattr(llm, "max_tokens", None)
+
+    @max_new_tokens.setter
+    def max_new_tokens(self, value):
+        llm = getattr(self.agent, "llm", None)
+        if llm is not None:
+            llm.max_tokens = value
+
+    def describe(self) -> str:
+        tools = ", ".join(self.agent.tools) or "none declared"
+        return (f"OVMS at {self.cfg.model.ovms_url} · "
+                f"{self.cfg.model.name} · tools: {tools}")
+
+    def ask(self, question: str, history: list, on_token):
+        # history is ignored on purpose: AgentLoop keeps its own Session, and
+        # replaying ours on top would duplicate every turn in the prompt.
+        answer = self.agent.run(question)
+        trace = getattr(self.agent, "last_trace", {}) or {}
+        used = [call["name"] for turn in trace.get("turns", [])
+                for call in turn.get("tool_calls", [])]
+        return answer, list(dict.fromkeys(used))     # de-duped, order kept
+
+    def close(self) -> None:
+        pass
+
+
+def _build_engine(config_path: str, model_path: str, engine: str = "local",
+                  max_tokens: int = DEFAULT_MAX_TOKENS):
+    """Build the engine `/engine` selects. The seam tests monkeypatch."""
+    if engine == "ovms":
+        from ovat.agent.factory import build_agent
+        from ovat.config.workflow import load_workflow
+
+        cfg = load_workflow(config_path)
+        # Constructing the OVMS client does NOT connect, so a server that is
+        # down fails on the first question with a readable error rather than
+        # refusing to open the screen.
+        return OVMSEngine(cfg, build_agent(cfg), max_tokens)
+    return LocalEngine(*_build_components(config_path, model_path, max_tokens))
 
 
 class ChatMessage(Markdown):
@@ -312,32 +421,37 @@ class ChatScreen(Screen):
     #chat-input { margin: 0 2 1 2; border: round $secondary; }
     """
 
-    BINDINGS = [Binding("escape", "back", show=False)]
+    BINDINGS = [
+        Binding("escape", "back", show=False),
+    ]
 
     def __init__(self, config_path: str, model_path: str, cwd: str | None = None):
         super().__init__()
         self._config_path = config_path
         self._model_path = model_path
         self._cwd = cwd or os.getcwd()
-        self._components = None          # (cfg, retriever, llm) once loaded
+        self._engine = None              # LocalEngine or OVMSEngine once loaded
         self._session = Session()        # the transcript; system stays in rag_chat
         self._busy = False
         self._stop_stream = False        # Esc mid-generation sets this
         self._show_thinking = False      # /thinking; hidden is the useful default
+        self._engine_name = "local"      # /engine; ovms adds tool calling
+        self._history = InputHistory()   # Up/Down recall, like a shell
 
     def compose(self) -> ComposeResult:
         header = Text()
         header.append("OVAT chat", style=f"bold {ui.CYAN}")
         header.append(f"  ·  {os.path.basename(self._config_path)}"
-                      f"  ·  {os.path.basename(self._model_path)}", style=ui.DIM)
+                      f"  ·  {os.path.basename(self._model_path)}"
+                      f"  ·  engine: {self._engine_name}", style=ui.DIM)
         yield Static(header, id="chat-header")
         yield VerticalScroll(id="chat-view")
         yield OptionList(id="chat-palette")
-        yield Input(placeholder="loading the model…", id="chat-input")
+        yield PasteInput(placeholder="loading the model…", id="chat-input")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#chat-input", Input).focus()
+        self.query_one("#chat-input", PasteInput).focus()
         view = self.query_one("#chat-view", VerticalScroll)
         # Textual's animated overlay on the transcript is fine HERE, unlike on
         # the old append-only log: nothing has been written yet, so there is
@@ -360,8 +474,16 @@ class ChatScreen(Screen):
         self._view.mount(Note(message, classes=role))
         self._view.scroll_end(animate=False)
 
+    def _refresh_header(self) -> None:
+        header = Text()
+        header.append("OVAT chat", style=f"bold {ui.CYAN}")
+        header.append(f"  ·  {os.path.basename(self._config_path)}"
+                      f"  ·  {os.path.basename(self._model_path)}"
+                      f"  ·  engine: {self._engine_name}", style=ui.DIM)
+        self.query_one("#chat-header", Static).update(header)
+
     def _set_placeholder(self, text: str) -> None:
-        self.query_one("#chat-input", Input).placeholder = text
+        self.query_one("#chat-input", PasteInput).placeholder = text
 
     def _stop_loading(self) -> None:
         self._view.loading = False
@@ -403,7 +525,8 @@ class ChatScreen(Screen):
     @work(thread=True)
     def _load_components(self) -> None:
         try:
-            components = _build_components(self._config_path, self._model_path)
+            engine = _build_engine(self._config_path, self._model_path,
+                                   self._engine_name)
         except Exception as exc:
             # The spinner has to stop on the FAILURE path too, or a bad config
             # leaves the transcript spinning forever behind the error message.
@@ -413,12 +536,11 @@ class ChatScreen(Screen):
             self.app.call_from_thread(self._set_placeholder,
                                       "load failed; Esc to go back")
             return
-        self._components = components
+        self._engine = engine
         self.app.call_from_thread(self._stop_loading)
         save_prefs(self._cwd, self._config_path, self._model_path)
         self.app.call_from_thread(
-            self._note, "Ready. Ask a question about your indexed documents.",
-            "ok")
+            self._note, f"Ready · {engine.describe()}", "ok")
         self.app.call_from_thread(self._mark_idle)
 
     # ---- leaving / cancelling ---------------------------------------------
@@ -428,7 +550,7 @@ class ChatScreen(Screen):
         palette = self.query_one("#chat-palette", OptionList)
         if palette.display:
             palette.display = False
-            self.query_one("#chat-input", Input).focus()
+            self.query_one("#chat-input", PasteInput).focus()
             return
         if self._busy:
             # First Esc stops the generation (the streamer sees the flag and
@@ -469,16 +591,28 @@ class ChatScreen(Screen):
         palette.display = False
 
     def on_key(self, event) -> None:
-        """Down steps into the menu, matching the launcher and doctor screen."""
-        if event.key != "down":
+        """Down steps into the menu; otherwise Up/Down walk the history."""
+        if event.key not in ("up", "down"):
             return
         palette = self.query_one("#chat-palette", OptionList)
-        inp = self.query_one("#chat-input", Input)
-        if palette.display and self.focused is inp:
+        inp = self.query_one("#chat-input", PasteInput)
+        if self.focused is not inp:
+            return                       # the menu owns its own arrows
+        if event.key == "down" and palette.display:
             palette.focus()
             if palette.option_count:
                 palette.highlighted = 0
             event.stop()
+            return
+        if palette.display:
+            return                       # browsing the menu, not the history
+        recalled = (self._history.previous(inp.value) if event.key == "up"
+                    else self._history.next())
+        if recalled is None:
+            return
+        inp.value = recalled
+        self.call_after_refresh(setattr, inp, "cursor_position", len(recalled))
+        event.stop()
 
     def on_option_list_option_selected(self,
                                        event: OptionList.OptionSelected) -> None:
@@ -489,7 +623,7 @@ class ChatScreen(Screen):
         useful form of most of these commands.
         """
         palette = self.query_one("#chat-palette", OptionList)
-        inp = self.query_one("#chat-input", Input)
+        inp = self.query_one("#chat-input", PasteInput)
         palette.display = False
         inp.value = f"/{event.option.id} "
         inp.focus()
@@ -499,17 +633,18 @@ class ChatScreen(Screen):
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         line = event.value.strip()
-        inp = self.query_one("#chat-input", Input)
+        inp = self.query_one("#chat-input", PasteInput)
         inp.value = ""
         self.query_one("#chat-palette", OptionList).display = False
         if not line:
             return
+        self._history.add(line)
 
         if line.startswith("/"):
             await self._slash(line)
             return
 
-        if self._components is None:
+        if self._engine is None:
             self._note("Still loading (or load failed). One moment…", "warn")
             return
         if self._busy:
@@ -560,6 +695,9 @@ class ChatScreen(Screen):
         if head in ("/thinking", "/think"):
             await self._toggle_thinking(rest.strip().lower())
             return
+        if head == "/engine":
+            self._switch_engine(rest.strip().lower())
+            return
         known = " ".join(name for name, _ in CHAT_COMMANDS)
         self._note(f"unknown chat command {head}. I know {known}.", "warn")
 
@@ -572,7 +710,7 @@ class ChatScreen(Screen):
         live object takes effect on the next question with NO model reload,
         which would otherwise cost ~30 seconds.
         """
-        if self._components is None:
+        if self._engine is None:
             self._note("still loading; try /tokens once the model is ready.",
                        "warn")
             return
@@ -586,7 +724,7 @@ class ChatScreen(Screen):
             self._note("/tokens cannot be negative. Use 0 for no cap.",
                        "warn")
             return
-        self._components[2].max_new_tokens = cap or None
+        self._engine.max_new_tokens = cap or None
         self._note(f"answer cap: {cap or 'no'} tokens", "ok")
 
     async def _toggle_thinking(self, value: str) -> None:
@@ -608,6 +746,51 @@ class ChatScreen(Screen):
         await self._replay()
         state = "shown" if self._show_thinking else "hidden"
         self._note(f"reasoning is now {state}.", "ok")
+
+    def _switch_engine(self, value: str) -> None:
+        """/engine [local|ovms]: pick which backend answers.
+
+        local  openvino_genai in this process. Retrieval then one answer, and
+               no tool calling, because a bare pipeline has no way to be told
+               about tools.
+        ovms   the same agent `ovat run` builds, against the server named in
+               the workflow's model: section. This is where ovms_url and
+               tool_parser finally do something, and where search_docs,
+               transcribe and any mcp_stdio tools become reachable from chat.
+
+        Switching rebuilds, which for local means paying the model load again,
+        so it is a deliberate command rather than something inferred.
+        """
+        if value in ("", "?"):
+            current = (self._engine.describe() if self._engine
+                       else f"{self._engine_name} (still loading)")
+            self._note(f"engine: {current}")
+            self._note("switch with /engine local  or  /engine ovms")
+            return
+        if value not in ("local", "ovms"):
+            self._note(f"/engine takes local or ovms, not {value!r}.", "warn")
+            return
+        if value == self._engine_name and self._engine is not None:
+            self._note(f"already on {value}.")
+            return
+        if self._busy:
+            self._note("still answering; Esc stops it first.", "warn")
+            return
+
+        if self._engine is not None:
+            try:
+                self._engine.close()
+            except Exception as exc:
+                # A retriever that will not close (a locked sqlite file, say)
+                # must not strand the user on an engine they asked to leave.
+                self._note(f"note: closing the old engine failed ({exc})",
+                           "warn")
+        self._engine = None
+        self._engine_name = value
+        self._note(f"switching to {value}…")
+        self._view.loading = True
+        self._set_placeholder("loading the engine…")
+        self._load_components()
 
     def _last(self, role: str) -> str:
         """The most recent message from `role`, or "" if there is none yet."""
@@ -661,13 +844,14 @@ class ChatScreen(Screen):
             self._view.mount(Reasoning(reasoning), before=response)
         response.update(shown)
         if sources:
-            self._view.mount(Sources("sources: " + ", ".join(sources)),
+            label = self._engine.footnote_label if self._engine else "sources"
+            self._view.mount(Sources(f"{label}: " + ", ".join(sources)),
                              after=response)
         self._mark_idle()
 
     @work(thread=True)
     def _ask(self, question: str, response: "Response", stream) -> None:
-        cfg, retriever, llm = self._components
+        engine = self._engine
         parts: list = []
         written = ""                     # how much of the answer is on screen
 
@@ -692,13 +876,8 @@ class ChatScreen(Screen):
             return False
 
         try:
-            answer, sources = rag_chat(
-                retriever, llm, question,
-                top_k=4,
-                system_prompt=cfg.agent.system_prompt,
-                history=self._session.messages,      # turns BEFORE this question
-                on_token=on_token,
-            )
+            answer, sources = engine.ask(question, self._session.messages,
+                                         on_token)
         except Exception as exc:
             self.app.call_from_thread(stream.stop)
             self.app.call_from_thread(response.update, f"*error: {exc}*")

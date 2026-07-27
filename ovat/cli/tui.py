@@ -24,6 +24,8 @@ from textual.widgets import Footer, Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from ovat.cli import shell, ui
+from ovat.cli.editing import InputHistory
+from ovat.cli.widgets import PasteInput
 from ovat.cli.theme import OVAT_THEME
 
 # A dependency-free fallback, used only if pyfiglet is somehow unavailable.
@@ -205,13 +207,14 @@ class OvatTUI(App):
         # spawn() returns (a race window the old code had).
         self._busy = False
         self._last_quit_press = 0.0    # when Ctrl-C was last pressed while idle
+        self._history = InputHistory() # Up/Down recall, like the shell it wraps
 
     def compose(self) -> ComposeResult:
         yield Static(_banner(), id="banner")
         yield RichLog(id="output", highlight=False, markup=False, wrap=True)
         yield OptionList(id="palette")
-        yield Input(placeholder="Run any command (e.g. ovat doctor)  ·  type / for shortcuts",
-                    id="prompt")
+        yield PasteInput(placeholder="Run any command (e.g. ovat doctor)"
+                                     "  ·  type / for shortcuts", id="prompt")
         # Textual's Footer lists the active bindings, including ^p for the
         # command palette. Without it the palette existed but nothing on
         # screen ever said so.
@@ -273,6 +276,19 @@ class OvatTUI(App):
             event.stop()
             return
 
+        # This is a shell front-end, so Up/Down recall what you ran, exactly
+        # as they would at the prompt underneath it.
+        if event.key in ("up", "down") and not palette.display \
+                and self.focused is inp:
+            recalled = (self._history.previous(inp.value) if event.key == "up"
+                        else self._history.next())
+            if recalled is not None:
+                inp.value = recalled
+                self.call_after_refresh(setattr, inp, "cursor_position",
+                                        len(recalled))
+            event.stop()
+            return
+
         if event.key == "tab" and inp.value.startswith("/") and " " not in inp.value:
             matches = shell.match_templates(inp.value)
             if matches:
@@ -312,6 +328,8 @@ class OvatTUI(App):
         self.query_one("#palette", OptionList).display = False
         if not line:
             return
+
+        self._history.add(line)
 
         if line in ("/clear", "/exit"):
             self._do_action(line)
