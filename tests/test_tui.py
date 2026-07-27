@@ -35,6 +35,7 @@ def test_launcher_has_isolated_three_panel_startup_header():
             assert app.query_one("#brand-panel", Static)
             assert app.query_one("#updates-panel", Static)
             assert app.query_one("#intel-animation", _StartupIntelAnimation)
+            assert "/doctor" not in app.query_one("#updates-panel", Static).render().plain
     _run(scenario())
 
 

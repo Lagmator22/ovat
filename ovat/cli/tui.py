@@ -310,6 +310,21 @@ def _wordmark_lines() -> list:
     return _FALLBACK_WORDMARK
 
 
+def _small_figlet_text(label: str, *, style: str, font: str = "mini") -> Text:
+    """Render a compact FIGlet label, or readable text if FIGlet is absent."""
+    try:
+        import pyfiglet
+        lines = pyfiglet.figlet_format(label, font=font).rstrip("\n").split("\n")
+        if lines:
+            out = Text()
+            for line in lines:
+                out.append(line + "\n", style=style)
+            return out
+    except Exception:
+        pass
+    return Text(label + "\n", style=f"bold {style}")
+
+
 def _wordmark_text() -> Text:
     """The wordmark as Rich Text, shaded top-to-bottom from cyan to Intel blue."""
     lines = _wordmark_lines()
@@ -321,28 +336,16 @@ def _wordmark_text() -> Text:
 
 
 def _banner() -> Text:
-    """Header: the FIGlet OVAT wordmark, the full product name, and a tagline."""
+    """Header: the OVAT wordmark and a compact OpenVINO / OVMS lockup."""
     out = _wordmark_text()
-    out.append("\nOpenVINO Agentic Toolkit\n", style=f"bold {ui.CYAN}")
-    out.append("one YAML  +  one command", style=ui.PURPLE)
+    out.append_text(_small_figlet_text("Powered by", style=ui.PURPLE, font="term"))
+    out.append_text(_small_figlet_text("OpenVINO + OVMS", style=ui.BLUE))
     return out
 
 
 def _startup_updates() -> Text:
-    """The launcher's compact status and starter-command board."""
-    out = Text()
-    out.append("OVAT Toolkit\n", style=f"bold {ui.CYAN}")
-    out.append("OpenVINO local-first agent workflows\n\n", style=ui.DIM)
-    out.append("START HERE\n", style=f"bold {ui.BLUE}")
-    out.append("/doctor", style=f"bold {ui.CYAN}")
-    out.append("   check devices and setup\n", style=ui.DIM)
-    out.append("/chat", style=f"bold {ui.CYAN}")
-    out.append("     ask your indexed documents\n", style=ui.DIM)
-    out.append("/index docs", style=f"bold {ui.CYAN}")
-    out.append("  create local search\n", style=ui.DIM)
-    out.append("Ctrl-P", style=f"bold {ui.PURPLE}")
-    out.append("    command palette", style=ui.DIM)
-    return out
+    """A deliberately empty board, ready for future toolkit updates."""
+    return _small_figlet_text("Updates", style=ui.PURPLE)
 
 
 def _option(template) -> Option:
@@ -450,18 +453,21 @@ class OvatTUI(App):
     }
     #brand-panel {
         width: 32%;
+        height: 1fr;
         padding: 0 1;
         border-right: tall $primary;
         content-align: left middle;
     }
     #updates-panel {
         width: 1fr;
-        padding: 0 1;
+        height: 1fr;
+        padding: 1 1;
         border-right: tall $primary;
-        content-align: left middle;
+        content-align: left top;
     }
     #intel-panel {
         width: 29%;
+        height: 1fr;
         padding: 0;
         content-align: center middle;
     }
