@@ -42,3 +42,6 @@ CLAUDE.local.md
 
 # Per-project TUI state: chat preferences and saved conversations.
 .ovat/
+
+# Agent worktrees and session scratch: never part of the project.
+.claude/worktrees/
