@@ -1091,9 +1091,13 @@ def test_the_pulse_is_removed_when_the_answer_errors(monkeypatch, tmp_path):
     _run(scenario())
 
 
-def test_the_pulse_stops_rescheduling_once_removed(monkeypatch, tmp_path):
-    """The animation reschedules itself, so it must notice it is gone or it
-    fires callbacks at a dead widget forever."""
+def test_the_pulse_stops_when_the_widget_is_removed(monkeypatch, tmp_path):
+    """set_interval is tied to the widget, so removing it stops the timer.
+
+    The previous design rescheduled itself from an animation callback and
+    had to be told to check is_mounted; a Textual timer needs no such guard,
+    which is most of why it replaced it.
+    """
     from ovat.cli.chat_screen import Thinking
 
     async def scenario():
@@ -1105,10 +1109,13 @@ def test_the_pulse_stops_rescheduling_once_removed(monkeypatch, tmp_path):
             pulse = Thinking("● thinking…")
             await screen._view.mount(pulse)
             await pilot.pause()
+            assert pulse._timers                      # a timer is running
             await pulse.remove()
             await pilot.pause()
-            pulse._pulse(Thinking.DEEP)            # must be a no-op, not raise
+            assert pulse not in screen._view.children  # gone from the tree,
+            #                                           so its timer goes too
     _run(scenario())
+
 
 
 def test_reasoning_is_folded_away_rather_than_dumped(monkeypatch, tmp_path):
@@ -1243,3 +1250,66 @@ def test_loading_an_old_conversation_keeps_writing_to_it(monkeypatch, tmp_path):
             assert by_name["yesterday"]["turns"] == 2    # extended, not forked
             assert not [n for n in by_name if n.startswith("auto-")]
     _run(scenario())
+
+
+def test_the_transcript_scrolls_from_the_keyboard(monkeypatch, tmp_path):
+    """The input holds focus so you can type, so without these the
+    conversation could only be scrolled with a mouse."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(size=(90, 20)) as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", ChatInput)
+            for n in range(6):                     # fill past one screen
+                inp.value = f"question {n}"
+                await pilot.press("enter")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+
+            view = screen._view
+            view.scroll_home(animate=False)
+            await pilot.pause()
+            assert view.scroll_offset.y == 0
+
+            await pilot.press("pagedown")          # from the focused input
+            await pilot.pause()
+            assert view.scroll_offset.y > 0        # the conversation moved
+
+            await pilot.press("ctrl+home")
+            await pilot.pause()
+            assert view.scroll_offset.y == 0
+    _run(scenario())
+
+
+def test_the_thinking_indicator_actually_changes_colour():
+    """It sat at one colour: styles.animate with an on_complete chain never
+    fired at mount. Six samples over two seconds were identical."""
+    import asyncio as _asyncio
+    from textual.app import App, ComposeResult
+    from ovat.cli.chat_screen import Thinking
+
+    class Solo(App):
+        def compose(self) -> ComposeResult:
+            yield Thinking("● thinking…")
+
+    async def scenario():
+        app = Solo()
+        async with app.run_test() as pilot:
+            widget = app.query_one(Thinking)
+            seen = []
+            for _ in range(5):
+                await _asyncio.sleep(0.25)
+                await pilot.pause()
+                seen.append(str(widget.styles.color))
+            assert len(set(seen)) >= 3             # genuinely moving
+    _run(scenario())
+
+
+def test_the_chat_input_keeps_its_border():
+    """compact=True removed the border outright, so the prompt box vanished
+    and the placeholder floated loose at the bottom of the screen."""
+    from ovat.cli.widgets import ChatInput
+    box = ChatInput()
+    assert "compact" not in box.classes

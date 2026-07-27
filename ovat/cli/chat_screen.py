@@ -479,19 +479,26 @@ class Thinking(Static):
 
     PALE = "#FFB86C"
     DEEP = "#C2410C"
-    STEP = 0.65        # seconds per half-cycle
+    FPS = 8            # frames a second; every one is a repaint over SSH
+    SPEED = 0.10       # fraction of the cycle per frame: ~2.5s there and back
 
     def on_mount(self) -> None:
+        self._phase = 0.0
         self.styles.color = Color.parse(self.PALE)
-        self._pulse(self.DEEP)
+        # A timer, NOT styles.animate with an on_complete chain. That was the
+        # obvious way and it silently did nothing: the animation never fired
+        # at mount time, so the word sat at one colour forever. Measured
+        # before changing it, six samples over two seconds, all identical.
+        # set_interval also stops itself when the widget is removed, which
+        # the self-rescheduling version had to be told to do.
+        self.set_interval(1 / self.FPS, self._step)
 
-    def _pulse(self, target: str) -> None:
-        if not self.is_mounted:
-            return
-        nxt = self.PALE if target == self.DEEP else self.DEEP
-        self.styles.animate("color", value=Color.parse(target),
-                            duration=self.STEP,
-                            on_complete=lambda: self._pulse(nxt))
+    def _step(self) -> None:
+        self._phase = (self._phase + self.SPEED) % 2.0
+        # Ping-pong 0..1..0 so it breathes rather than snapping back.
+        factor = self._phase if self._phase <= 1.0 else 2.0 - self._phase
+        self.styles.color = Color.parse(self.PALE).blend(
+            Color.parse(self.DEEP), factor)
 
 
 class ChatCommands(ScreenCommands):
@@ -597,7 +604,32 @@ class ChatScreen(Screen):
 
     BINDINGS = [
         Binding("escape", "back", show=False),
+        # The input holds focus so you can type, which means the transcript
+        # never receives a key and could only be scrolled with the mouse.
+        # priority=True so these reach the screen past the focused TextArea;
+        # a draft is capped at eight lines, so paging belongs to the
+        # conversation, not the draft.
+        Binding("pageup", "scroll_transcript(-1)", "Scroll up",
+                priority=True, show=False),
+        Binding("pagedown", "scroll_transcript(1)", "Scroll down",
+                priority=True, show=False),
+        Binding("ctrl+home", "scroll_transcript(-2)", "Top",
+                priority=True, show=False),
+        Binding("ctrl+end", "scroll_transcript(2)", "Bottom",
+                priority=True, show=False),
     ]
+
+    def action_scroll_transcript(self, direction: int) -> None:
+        """Page or jump through the conversation from the input."""
+        view = self._view
+        if direction == -2:
+            view.scroll_home(animate=False)
+        elif direction == 2:
+            view.scroll_end(animate=False)
+        elif direction < 0:
+            view.scroll_page_up()
+        else:
+            view.scroll_page_down()
 
     def __init__(self, config_path: str, model_path: str, cwd: str | None = None):
         super().__init__()
@@ -632,7 +664,7 @@ class ChatScreen(Screen):
         yield transcript
         yield OptionList(id="chat-palette")
         yield ChatInput(placeholder="loading the model…", id="chat-input",
-                       soft_wrap=True, compact=True)
+                       soft_wrap=True)
         yield Footer()
 
     def on_mount(self) -> None:
