@@ -369,6 +369,8 @@ def models(
     action: str = typer.Argument("list", help="list or pull"),
     source_model: str = typer.Option(None, "--source-model",
                                      help="Hugging Face id to pull, e.g. OpenVINO/Qwen3-8B-int4-ov."),
+    repo: str = typer.Option("models", "--repo",
+                             help="Model repository folder OVMS reads and writes."),
 ):
     """List or pull OVMS models (needs the ovms binary, so runs on the AI PC)."""
     from ovat.core.model_manager import ModelManager
@@ -383,18 +385,30 @@ def models(
     try:
         if action == "list":
             # Both of these are `ovms` subprocess output: data, not markup.
-            for name in mgr.list_models():
+            names = mgr.list_models(repo)
+            if not names:
+                rprint(f"[yellow]No models in[/yellow] {esc(repo)}. "
+                       f"Pull one with: ovat models pull --source-model <hf-id>")
+            for name in names:
                 rprint(esc(name))
         elif action == "pull":
             if not source_model:
                 rprint("[red]pull needs --source-model[/red]")
                 raise typer.Exit(code=1)
-            rprint(esc(mgr.pull(source_model)))
+            rprint(esc(mgr.pull(source_model, repo)))
         else:
             rprint(f"[red]Unknown action '{esc(action)}'. Use list or pull.[/red]")
             raise typer.Exit(code=1)
     except FileNotFoundError:
         _ovms_not_found(how)
+        raise typer.Exit(code=1)
+    except RuntimeError as exc:
+        # ovms ran but refused. Only FileNotFoundError was caught before, so
+        # this escaped as a raw traceback: the "errors are for users" rule
+        # applies just as much to the tool we shell out to.
+        rprint(f"[red]ovms could not do that:[/red] {esc(exc)}")
+        rprint(f"[dim]repository:[/dim] {esc(repo)}  "
+               f"[dim]· point elsewhere with[/dim] --repo <folder>")
         raise typer.Exit(code=1)
 
 

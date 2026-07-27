@@ -203,3 +203,40 @@ def test_the_cap_applies_on_the_streaming_path_too(monkeypatch):
     provider.chat([{"role": "user", "content": "hi"}], on_token=lambda t: False)
     assert pipe.calls[-1]["max_new_tokens"] == 64
     assert "streamer" in pipe.calls[-1]        # still streaming
+
+
+def test_model_manager_always_passes_the_repository_path(monkeypatch):
+    """`ovms --list_models` alone has no repository to list and exits
+    non-zero, which is why `ovat models list` never worked."""
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = "Qwen3-8B-int4-ov\n"
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return Result()
+
+    monkeypatch.setattr("ovat.core.model_manager.subprocess.run", fake_run)
+    mgr = ModelManager("ovms")
+
+    assert mgr.list_models("C:/models") == ["Qwen3-8B-int4-ov"]
+    assert "--model_repository_path" in calls[-1]
+    assert "C:/models" in calls[-1]
+
+    mgr.pull("OpenVINO/x", "C:/models")
+    assert "--model_repository_path" in calls[-1]
+
+
+def test_model_manager_reports_a_refusal_as_a_readable_error(monkeypatch):
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = "  no such repository  "
+
+    monkeypatch.setattr("ovat.core.model_manager.subprocess.run",
+                        lambda cmd, **kw: Result())
+    with pytest.raises(RuntimeError, match="no such repository"):
+        ModelManager("ovms").list_models()

@@ -156,9 +156,13 @@ class OvatTUI(App):
             self.exit()
             return
         self._last_quit_press = now
-        self.query_one("#output", RichLog).write(
-            Text("Press Ctrl-C again to quit  ·  /exit works too",
-                 style=ui.YELLOW))
+        # notify(), not a write to #output. App.query_one searches the whole
+        # DOM, so writing to the launcher's log SUCCEEDED from the chat and
+        # doctor screens and put the warning somewhere the user could not see:
+        # first press looked like nothing happened, second press quit. A toast
+        # appears on whatever screen is actually in front.
+        self.notify("Press Ctrl-C again to quit  ·  /exit works too",
+                    severity="warning", timeout=QUIT_CONFIRM_S)
 
     CSS = """
     Screen { background: #0b0e14; }
@@ -379,6 +383,11 @@ class OvatTUI(App):
         """
         from ovat.cli.doctor_screen import DoctorScreen
 
+        if isinstance(self.screen, DoctorScreen):
+            # The palette works from every screen, so "Doctor" while already
+            # on it used to stack a second copy that Esc had to unwind twice.
+            self.screen.action_refresh_checks()
+            return
         config = args.strip()
         if config and not os.path.isabs(config):
             config = os.path.normpath(os.path.join(self._cwd, config))
@@ -393,6 +402,11 @@ class OvatTUI(App):
         """
         from ovat.cli.chat_screen import ChatScreen, load_prefs
 
+        if isinstance(self.screen, ChatScreen):
+            # Same as the doctor screen, but this one also costs a second
+            # model load (~30s and the memory to go with it).
+            self.notify("Already in a chat.")
+            return
         log = self.query_one("#output", RichLog)
         prefs = load_prefs(self._cwd)
         parts = args.split()
