@@ -398,12 +398,12 @@ def _secondary_wordmark(label: str, *, color: str,
 # faces (mini, straight) fit too, but next to a block wordmark they look like
 # a different typeface altogether, which is what made the panel look broken.
 _ATTRIBUTION_FONTS = ("pagga", "smblock", "mini")
-# The credit line. "emboss2" is the only short face that draws with the SAME
-# corner-and-rule glyphs as ANSI Shadow, so it carries the wordmark's shadow
-# and lining at a third of the height. It is an OUTLINE face where pagga is
-# solid, and that weight difference is what ranks it below the two marks it
-# sits between: at this size there is no shorter block face to fall back on.
-_CREDIT_FONTS = ("emboss2", "smblock", "mini")
+# The credit uses the SAME face as the marks it introduces. An outline face
+# was tried here and read as broken rather than as lighter: at three rows
+# there is not enough resolution for an outline to look deliberate, so it
+# just looked like the solid glyphs had failed to render. Colour does the
+# separating instead, which is what colour is for.
+_CREDIT_FONTS = _ATTRIBUTION_FONTS
 
 
 def _gradient_mark(label: str, fonts: tuple, top: tuple, bottom: tuple,
@@ -594,7 +594,14 @@ class OvatTUI(App):
         background: $surface;
     }
     #brand-panel {
-        width: 32%;
+        /* A COLUMN COUNT, not a percentage. This panel holds fixed-width
+           FIGlet art: the widest mark is 38 columns and stays 38 columns
+           whatever the terminal does, so sizing it as a share of the screen
+           was a category error. At 32% it was 25 columns on an 80-column
+           terminal, far too narrow for a 35-column wordmark, and the marks
+           WRAPPED, which shears the glyphs rather than clipping them.
+           42 = 38 for the widest mark, plus the right border and padding. */
+        width: 42;
         height: 1fr;
         padding: 0 1;
         border-right: tall $primary;

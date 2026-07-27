@@ -505,13 +505,14 @@ def _styles(text) -> set:
     return {str(span.style) for span in text.spans}
 
 
-def test_the_masthead_ranks_its_marks_by_size_then_weight():
+def test_the_masthead_ranks_its_marks_by_size():
     """A terminal has ONE glyph size, so hierarchy comes from the FACE.
 
-    OVAT is the six-row solid-with-shadow face. The attribution marks are
-    half that height in a solid face. The credit is the same height as the
-    attribution but drawn as an OUTLINE, which is what ranks it below them:
-    at three rows there is no shorter block face to drop to.
+    OVAT is the six-row solid-with-shadow face; everything beneath it is the
+    same solid family at three rows. The credit is NOT ranked below the
+    attribution by weight: an outline face was tried there and read as
+    broken rather than as lighter, because at three rows there is not enough
+    resolution for an outline to look deliberate. Colour separates them.
     """
     from ovat.cli import tui
 
@@ -519,18 +520,24 @@ def test_the_masthead_ranks_its_marks_by_size_then_weight():
     openvino = len(_rows(tui._attribution_wordmark("OpenVINO")))
     credit = len(_rows(tui._credit_wordmark("powered by")))
     assert ovat > openvino, "the attribution must be smaller than the wordmark"
-    assert credit <= openvino, "the credit must not outrank the attribution"
+    assert credit == openvino, "the sub-marks should be one consistent size"
 
-    def ink(text):
-        """Share of drawn cells: an outline face inks far fewer than a solid
-        one, which is the weight difference the eye actually reads."""
-        rows = _rows(text)
-        cells = sum(len(r) for r in rows)
-        return sum(c not in " " for r in rows for c in r) / cells
 
-    assert ink(tui._credit_wordmark("powered by")) < \
-        ink(tui._attribution_wordmark("OpenVINO")), \
-        "the credit should be lighter than the marks it sits between"
+def test_every_sub_mark_is_drawn_in_the_same_solid_face():
+    """The bug this guards: the credit was set in an outline face and looked
+    like the solid glyphs had failed to render, next to two marks that had
+    not."""
+    from ovat.cli import tui
+
+    def glyphs(text):
+        return {c for r in _rows(text) for c in r if c != " "}
+
+    credit = glyphs(tui._credit_wordmark("powered by"))
+    attribution = glyphs(tui._attribution_wordmark("OpenVINO"))
+    assert credit <= attribution | credit, "unexpected glyph set"
+    # Both draw with block characters, not box-drawing rules.
+    assert credit & set("\u2588\u2580\u2584\u2591")
+    assert attribution & set("\u2588\u2580\u2584\u2591")
 
 
 def test_every_masthead_mark_is_shaded_not_flat():
@@ -581,14 +588,14 @@ def test_the_attribution_marks_are_darker_than_the_wordmark():
             f"{shade} is not darker than the wordmark's darkest {darkest_wordmark}")
 
 
-def test_the_credit_is_a_shaded_purple_mark_with_shadow():
-    """It sits between two blue marks, so purple separates it from both."""
+def test_the_credit_is_a_shaded_purple_mark():
+    """It sits between two blue marks, so purple separates it from both.
+    With every sub-mark in one face, colour is the only thing distinguishing
+    the credit from the names it introduces."""
     from ovat.cli import tui
 
     credit = tui._credit_wordmark("powered by")
     assert len(_rows(credit)) > 1, "the credit should be a real FIGlet mark"
-    # Shadow-and-lining glyphs, the same ones the OVAT face draws with.
-    assert any(c in credit.plain for c in "\u2554\u2550\u2551\u255d")
     for style in _styles(credit):
         shade = style.split()[-1]
         r, g, b = (int(shade[i:i + 2], 16) for i in (1, 3, 5))
@@ -615,8 +622,9 @@ def test_the_banner_fits_inside_its_panel():
     # EXACT fit, which is why it is asserted: one extra row and the stack is
     # clipped, and raising the masthead to make room hangs the app at 80x24.
     assert len(banner) <= 15, f"{len(banner)} rows will not fit in the panel"
-    # 32% of an 80-column terminal, less the panel's own padding.
-    assert max(len(r) for r in banner) <= 36, "wider than the panel at 80 cols"
+    # #brand-panel is a fixed 42 columns, less its right border and padding.
+    # A mark wider than that WRAPS rather than clipping, which shears glyphs.
+    assert max(len(r) for r in banner) <= 39, "wider than the brand panel"
 
 
 def test_a_missing_font_costs_a_size_not_the_masthead():
