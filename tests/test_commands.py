@@ -149,7 +149,8 @@ def test_doctor_commands_are_scoped_to_the_doctor_screen(monkeypatch):
             await pilot.pause()
             assert DoctorCommands in DoctorScreen.COMMANDS
             titles = [t for t, _, _ in DoctorCommands(screen).commands()]
-            assert titles == ["Re-run the checks", "Copy the report"]
+            assert titles == ["Re-run the checks", "Copy the report",
+                              "Sort by severity"]
     _run(scenario())
 
 
@@ -236,7 +237,9 @@ def test_every_screen_follows_the_theme_not_just_the_chat():
             app.push_screen(DoctorScreen())
             await app.workers.wait_for_complete()
             await pilot.pause()
-            doctor = app.screen.query_one("#doc-log")
+            # The results TABLE is the doctor screen's main element and the
+            # one carrying $primary; the message strip below it is $secondary.
+            doctor = app.screen.query_one("#doc-table")
             assert doctor.styles.border[0][1] == dracula   # and agrees
     _run(scenario())
 

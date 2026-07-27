@@ -38,14 +38,39 @@ async def _open_doctor(app, pilot, config_path=None):
 
 
 def _log_text(screen) -> str:
-    log = screen.query_one("#doc-log", RichLog)
+    from ovat.cli.widgets import SelectableRichLog
+    log = screen.query_one("#doc-log", SelectableRichLog)
     return "\n".join(str(line) for line in log.lines)
+
+
+def _table(screen):
+    from textual.widgets import DataTable
+    return screen.query_one("#doc-table", DataTable)
+
+
+def _table_text(screen) -> str:
+    """Every cell in the results table, flattened.
+
+    The checks used to be rendered into the log; they are a DataTable now, so
+    assertions about RESULTS look here and assertions about MESSAGES (copied,
+    unknown command, errors) still look at the log.
+    """
+    table = _table(screen)
+    rows = [table.get_row_at(i) for i in range(table.row_count)]
+    return "\n".join("  ".join(str(cell) for cell in row) for row in rows)
+
+
+def _statuses(screen) -> list:
+    """The status column, top to bottom, as bare words."""
+    table = _table(screen)
+    return [str(table.get_row_at(i)[1]).split()[-1]
+            for i in range(table.row_count)]
 
 
 def test_a_bracket_in_a_check_detail_does_not_break_the_render(monkeypatch):
     """Table cells must be Text, not str.
 
-    A Table renders a str cell as markup, so "model=Q[/b]8B" would raise
+    A DataTable renders a str cell as markup, so "model=Q[/b]8B" would raise
     MarkupError mid-render. This is the one place ui.esc() cannot reach,
     because the value never passes through the CLI console.
     """
@@ -55,10 +80,12 @@ def test_a_bracket_in_a_check_detail_does_not_break_the_render(monkeypatch):
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _open_doctor(app, pilot)
-            text = _log_text(screen)
+            text = _table_text(screen)
             assert "Q[/b]8B" in text            # rendered literally
             assert "Python" in text
-            assert "1 fail" in text             # and the summary counted it
+            # The counts moved to the table's border, where they describe the
+            # thing they are counting.
+            assert "1 fail" in str(_table(screen).border_title)
     _run(scenario())
 
 
@@ -238,7 +265,7 @@ def test_typing_slash_opens_a_filtered_menu(monkeypatch):
             screen.query_one("#doc-input", Input).value = "/"
             await pilot.pause()
             assert palette.display is True
-            assert palette.option_count == 4          # every command
+            assert palette.option_count == 5          # every command
 
             screen.query_one("#doc-input", Input).value = "/c"
             await pilot.pause()
@@ -296,4 +323,180 @@ def test_escape_closes_the_menu_before_leaving_the_screen(monkeypatch):
             await pilot.press("escape")               # second Esc: leave
             await pilot.pause()
             assert app.screen is not screen
+    _run(scenario())
+
+
+# What the table adds over a rendered block of text
+
+def test_the_worst_checks_are_listed_first(monkeypatch):
+    """The point of running doctor is finding what is broken. A fail sitting
+    below nine oks is a fail you scroll past."""
+    monkeypatch.setattr(diagnostics, "run_checks", lambda cfg=None: FAKE_CHECKS)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            statuses = _statuses(screen)
+            severity = {"fail": 0, "warn": 1, "ok": 2}
+            ranks = [severity[s] for s in statuses]
+            assert ranks == sorted(ranks), f"not worst-first: {statuses}"
+    _run(scenario())
+
+
+def test_sorting_alphabetically_would_put_ok_between_fail_and_warn(monkeypatch):
+    """Why the rows are rebuilt rather than run through DataTable.sort().
+
+    The status cell renders as a glyph plus a word, so sorting on the cell
+    would be alphabetical: fail, ok, warn. That puts the state you do not
+    care about between the two you do.
+    """
+    assert sorted(["fail", "warn", "ok"]) == ["fail", "ok", "warn"]
+
+
+def test_f6_toggles_back_to_the_order_the_checks_ran_in(monkeypatch):
+    """Severity order is the useful default, but the original order is how
+    doctor explains itself: environment first, then workflow."""
+    monkeypatch.setattr(diagnostics, "run_checks", lambda cfg=None: FAKE_CHECKS)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            sorted_names = [str(_table(screen).get_row_at(i)[0])
+                            for i in range(_table(screen).row_count)]
+            await pilot.press("f6")
+            await pilot.pause()
+            original = [str(_table(screen).get_row_at(i)[0])
+                        for i in range(_table(screen).row_count)]
+            assert original == [c.name for c in FAKE_CHECKS]
+            assert original != sorted_names, (
+                "the fixture is already in severity order, so this proves "
+                "nothing; give it a check that is out of order")
+    _run(scenario())
+
+
+def test_selecting_a_row_copies_just_that_check(monkeypatch):
+    """When one check fails, that ONE line is what gets pasted into an issue.
+    Copying all fifteen and asking the reader to find it is worse."""
+    monkeypatch.setattr(diagnostics, "run_checks", lambda cfg=None: FAKE_CHECKS)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            table = _table(screen)
+            table.focus()
+            table.move_cursor(row=0)
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+
+            assert app.clipboard, "selecting a row copied nothing"
+            first_row = "  ".join(str(c) for c in table.get_row_at(0))
+            assert app.clipboard == first_row
+            # One check, not the whole report.
+            assert len(app.clipboard.splitlines()) == 1
+            assert "copied:" in _log_text(screen)
+    _run(scenario())
+
+
+def test_slash_copy_still_takes_the_whole_report(monkeypatch):
+    """Per-row copy is an addition, not a replacement."""
+    monkeypatch.setattr(diagnostics, "run_checks", lambda cfg=None: FAKE_CHECKS)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            screen.query_one("#doc-input", Input).value = "/copy"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert len(app.clipboard.splitlines()) > len(FAKE_CHECKS) - 1
+            for check in FAKE_CHECKS:
+                assert check.name in app.clipboard
+    _run(scenario())
+
+
+def test_the_message_strip_stays_hidden_until_there_is_a_message(monkeypatch):
+    """A clean run should be the table and nothing else, not the table plus
+    an empty box taking five rows off a short terminal."""
+    monkeypatch.setattr(diagnostics, "run_checks", lambda cfg=None: FAKE_CHECKS)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            from ovat.cli.widgets import SelectableRichLog
+            log = screen.query_one("#doc-log", SelectableRichLog)
+            assert log.display is False
+
+            screen.query_one("#doc-input", Input).value = "/nonsense"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert log.display is True
+    _run(scenario())
+
+
+# check_action: the footer must not advertise keys that cannot fire
+
+def test_f6_is_greyed_until_there_are_checks_to_sort(monkeypatch):
+    """Greyed, not hidden. A key that vanishes and reappears makes the footer
+    twitch and leaves the user unsure the key exists at all."""
+    monkeypatch.setattr(diagnostics, "run_checks", lambda cfg=None: FAKE_CHECKS)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            screen._checks = []
+            assert screen.check_action("toggle_sort", ()) is None
+            screen._checks = list(FAKE_CHECKS)
+            assert screen.check_action("toggle_sort", ()) is True
+    _run(scenario())
+
+
+def test_f5_is_greyed_while_the_checks_are_already_running(monkeypatch):
+    monkeypatch.setattr(diagnostics, "run_checks", lambda cfg=None: FAKE_CHECKS)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            assert screen.check_action("refresh_checks", ()) is True
+            screen._busy = True
+            assert screen.check_action("refresh_checks", ()) is None
+    _run(scenario())
+
+
+def test_escape_is_never_gated(monkeypatch):
+    """Whatever else is true, the user must be able to leave."""
+    monkeypatch.setattr(diagnostics, "run_checks", lambda cfg=None: FAKE_CHECKS)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            screen._busy = True
+            screen._checks = []
+            assert screen.check_action("back", ()) is True
+    _run(scenario())
+
+
+def test_the_footer_is_actually_refreshed_when_busy_flips(monkeypatch):
+    """check_action is only consulted when the bindings are refreshed. Without
+    the explicit call the footer keeps showing F5 as live for the whole run,
+    which is the bug this feature exists to prevent."""
+    monkeypatch.setattr(diagnostics, "run_checks", lambda cfg=None: FAKE_CHECKS)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _open_doctor(app, pilot)
+            calls = []
+            screen.refresh_bindings = lambda: calls.append(1)
+            screen.action_refresh_checks()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert calls, "refresh_bindings was never called"
     _run(scenario())

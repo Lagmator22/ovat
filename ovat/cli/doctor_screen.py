@@ -26,14 +26,12 @@ import os
 import platform
 import sys
 
-from rich import box
-from rich.table import Table
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import Footer, Input, OptionList, RichLog, Static
+from textual.widgets import DataTable, Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from ovat.cli import ui
@@ -45,6 +43,7 @@ from ovat.cli.widgets import SelectableRichLog
 # launcher's menu none of these insert text to be edited.
 DOCTOR_COMMANDS = [
     ("/refresh", "re-run the checks"),
+    ("/sort", "toggle worst-first / original order"),
     ("/copy", "copy the report to the clipboard"),
     ("/clear", "empty the log"),
     ("/back", "return to the launcher"),
@@ -52,6 +51,10 @@ DOCTOR_COMMANDS = [
 
 # Derived from ui's palette aliases, never redefined here.
 _STATUS_COLOUR = {"ok": ui.GREEN, "warn": ui.YELLOW, "fail": ui.RED}
+# Worst first. This is the order the table sorts into, because the whole
+# point of running doctor is to find what is broken, and a fail sitting below
+# nine oks is a fail you scroll past.
+_SEVERITY = {"fail": 0, "warn": 1, "ok": 2}
 _NAME_COLOUR = {"ok": ui.CYAN, "warn": ui.YELLOW, "fail": ui.RED}
 
 
@@ -98,6 +101,8 @@ class DoctorCommands(ScreenCommands):
              screen.action_refresh_checks),
             ("Copy the report", "put the plain-text report on the clipboard",
              screen.action_copy_report),
+            ("Sort by severity", "worst first, or back to the original order",
+             screen.action_toggle_sort),
         ]
 
 
@@ -109,12 +114,24 @@ class DoctorScreen(Screen):
     DEFAULT_CSS = """
     DoctorScreen { background: $background; }
     #doc-header { padding: 1 2 0 2; height: auto; }
-    #doc-log {
+    #doc-table {
         height: 1fr;
         border: round $primary;
         background: $surface;
-        padding: 0 1;
         margin: 1 2 0 2;
+    }
+    #doc-table > .datatable--cursor { background: $primary; color: $foreground; }
+    #doc-table > .datatable--hover { background: $primary 25%; }
+    /* The log is now a message strip, not the main event: confirmations,
+       refusals and errors only. Fixed height so the table never fights it
+       for room, and hidden until it has something to say. */
+    #doc-log {
+        display: none;
+        height: 5;
+        border: round $secondary;
+        background: $surface;
+        padding: 0 1;
+        margin: 0 2;
     }
     #doc-palette {
         display: none;
@@ -143,7 +160,26 @@ class DoctorScreen(Screen):
     BINDINGS = [
         Binding("escape", "back", "Back", show=True),
         Binding("f5", "refresh_checks", "Re-run", show=True),
+        Binding("f6", "toggle_sort", "Sort", show=True),
     ]
+
+    def check_action(self, action: str, parameters: tuple):
+        """Grey out footer keys that cannot do anything right now.
+
+        Textual calls this for every binding when it builds the footer, and
+        again on refresh_bindings(). Returning None shows the key but greys
+        it; returning False hides it entirely.
+
+        Grey, not hidden, for both of these. A key that VANISHES while the
+        checks run and reappears afterwards makes the footer twitch, and the
+        user is left unsure whether F5 exists at all. Greyed says "that is
+        the key, just not yet", which is the true statement.
+        """
+        if action == "refresh_checks" and self._busy:
+            return None
+        if action == "toggle_sort" and not self._checks:
+            return None
+        return True
 
     def __init__(self, config_path: str | None = None):
         super().__init__()
@@ -151,13 +187,19 @@ class DoctorScreen(Screen):
         self._config_path = config_path or None
         self._report = ""        # the last run, as plain text, for /copy
         self._busy = False       # one run at a time; r is easy to lean on
+        self._checks: list = []  # the last run, for re-sorting without re-running
+        self._worst_first = True  # what doctor is FOR: show the problems first
 
     def compose(self) -> ComposeResult:
         yield Static(_header(self._config_path), id="doc-header")
+        table = DataTable(id="doc-table", cursor_type="row", zebra_stripes=True)
+        table.border_title = "diagnostics"
+        table.border_subtitle = "F5 re-run  ·  F6 sort  ·  Enter copies a row"
+        table.tooltip = ("Select a row and press Enter to copy just that "
+                         "check\n/copy takes the whole report")
+        yield table
         log = SelectableRichLog(id="doc-log", highlight=False,
                                 markup=False, wrap=True)
-        log.border_title = "diagnostics"
-        log.border_subtitle = "F5 re-run"
         yield log
         yield OptionList(id="doc-palette")
         doc_input = Input(
@@ -176,7 +218,14 @@ class DoctorScreen(Screen):
     # ---- helpers ----------------------------------------------------------
 
     def _log(self, renderable) -> None:
-        self.query_one("#doc-log", RichLog).write(renderable)
+        """Say something to the user, and make the message strip visible.
+
+        It stays hidden until there IS a message, so a clean run is the table
+        and nothing else rather than the table plus an empty box.
+        """
+        log = self.query_one("#doc-log", SelectableRichLog)
+        log.display = True
+        log.write(renderable)
 
     # ---- actions ----------------------------------------------------------
 
@@ -194,8 +243,11 @@ class DoctorScreen(Screen):
         if self._busy:
             return
         self._busy = True
-        self.query_one("#doc-log", RichLog).clear()
-        self._log(Text("Running checks…", style=ui.DIM))
+        # Without this the footer keeps showing F5 as live for the whole run:
+        # check_action is only consulted when the bindings are refreshed.
+        self.refresh_bindings()
+        table = self.query_one("#doc-table", DataTable)
+        table.loading = True          # Textual's own spinner, over the table
         self._run_checks()
 
     def action_copy_report(self) -> None:
@@ -223,39 +275,90 @@ class DoctorScreen(Screen):
 
     def _show_error(self, message: str) -> None:
         self._busy = False
+        self.refresh_bindings()
+        self.query_one("#doc-table", DataTable).loading = False
         self._log(Text(f"could not run the checks: {message}", style=ui.RED))
 
     def _show_checks(self, checks: list) -> None:
-        table = Table(header_style=f"bold {ui.BLUE}", border_style=ui.BLUE,
-                      box=box.ROUNDED, expand=False, pad_edge=True)
-        table.add_column("Check", no_wrap=True)
-        table.add_column("Status", no_wrap=True)
-        table.add_column("Detail", max_width=70)
+        self._checks = list(checks)
+        self._fill_table()
 
         counts = {"ok": 0, "warn": 0, "fail": 0}
         for c in checks:
             counts[c.status] = counts.get(c.status, 0) + 1
-            # Text cells, not str: a bracket in a config value or an exception
-            # message would otherwise be parsed as markup and raise.
+        summary = Text()
+        summary.append(f"\u2713 {counts['ok']} ok", style=f"bold {ui.GREEN}")
+        if counts["warn"]:
+            summary.append(f"  \u00b7  ! {counts['warn']} warn",
+                           style=f"bold {ui.YELLOW}")
+        if counts["fail"]:
+            summary.append(f"  \u00b7  \u2717 {counts['fail']} fail",
+                           style=f"bold {ui.RED}")
+        # The counts belong on the border, not in the log: they describe the
+        # table, and putting them there keeps the message strip for messages.
+        self.query_one("#doc-table", DataTable).border_title = Text.assemble(
+            ("diagnostics  ", ui.DIM), summary)
+        self._report = _report_text(checks)
+        self._busy = False
+        self.refresh_bindings()       # F5 and F6 are live again
+
+    def _fill_table(self) -> None:
+        """Rebuild the rows in the current order.
+
+        Rebuilt rather than sorted in place. DataTable.sort() would order by
+        the CELL values, and the status cell renders as a glyph plus a word,
+        so sorting it would be alphabetical: fail, ok, warn. That puts ok
+        between the two states you actually care about. Ranking the source
+        data by severity and re-adding is both correct and obvious.
+        """
+        table = self.query_one("#doc-table", DataTable)
+        table.loading = False
+        table.clear(columns=True)
+        table.add_column("Check", key="name")
+        table.add_column("Status", key="status")
+        table.add_column("Detail", key="detail")
+
+        rows = list(self._checks)
+        if self._worst_first:
+            # Stable, so checks of equal severity keep the order they ran in.
+            rows.sort(key=lambda c: _SEVERITY.get(c.status, 9))
+        for index, c in enumerate(rows):
+            # Text cells, not str: a DataTable renders a str cell as MARKUP,
+            # so a config value or an exception message containing a bracket
+            # would raise part-way through the render. This is the same bug
+            # ui.esc() exists to stop on the CLI side.
             table.add_row(
                 Text(c.name, style=_NAME_COLOUR.get(c.status, ui.CYAN)),
                 _status_cell(c.status),
                 Text(c.detail, style=ui.DIM),
+                key=str(index),
             )
+        table.border_subtitle = (
+            "F5 re-run  \u00b7  F6 "
+            + ("original order" if self._worst_first else "worst first")
+            + "  \u00b7  Enter copies a row")
 
-        self.query_one("#doc-log", RichLog).clear()
-        self._log(table)
-        summary = Text()
-        summary.append(f"✓ {counts['ok']} ok", style=f"bold {ui.GREEN}")
-        if counts["warn"]:
-            summary.append(f"  ·  ! {counts['warn']} warn",
-                           style=f"bold {ui.YELLOW}")
-        if counts["fail"]:
-            summary.append(f"  ·  ✗ {counts['fail']} fail",
-                           style=f"bold {ui.RED}")
-        self._log(summary)
-        self._report = _report_text(checks)
-        self._busy = False
+    def action_toggle_sort(self) -> None:
+        if not self._checks:
+            return
+        self._worst_first = not self._worst_first
+        self._fill_table()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Enter on a row copies THAT check, not the whole report.
+
+        When one check fails, that one line is what gets pasted into a chat
+        or an issue. Copying all fifteen and asking the reader to find the
+        relevant one is worse than useless.
+        """
+        table = self.query_one("#doc-table", DataTable)
+        try:
+            cells = table.get_row(event.row_key)
+        except Exception:
+            return
+        line = "  ".join(str(cell) for cell in cells)
+        self.app.copy_to_clipboard(line)
+        self._log(Text(f"copied: {line}", style=ui.GREEN))
 
     # ---- the slash line ----------------------------------------------------
 
@@ -313,8 +416,12 @@ class DoctorScreen(Screen):
             self.action_refresh_checks()
         elif name == "/copy":
             self.action_copy_report()
+        elif name == "/sort":
+            self.action_toggle_sort()
         elif name == "/clear":
-            self.query_one("#doc-log", RichLog).clear()
+            log = self.query_one("#doc-log", SelectableRichLog)
+            log.clear()
+            log.display = False
         else:
             known = " ".join(cmd for cmd, _ in DOCTOR_COMMANDS)
             self._log(Text(f"unknown doctor command {name}. I know {known}.",
