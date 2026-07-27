@@ -15,14 +15,53 @@ import pytest
 pytest.importorskip("textual")
 
 from textual.widgets import Input, OptionList, RichLog
+from textual.app import App, ComposeResult
 
 from ovat.cli import tui as tui_module
+from ovat.cli.animated_gif import AnimatedGif
 from ovat.cli.tui import OvatTUI
 from tests.conftest import py_command
 
 
 def _run(coro):
     asyncio.run(coro)
+
+
+def test_animated_gif_decodes_once_and_preserves_frame_durations(tmp_path):
+    """The startup animation uses cached Rich frames, not a blocking loop."""
+    from PIL import Image
+
+    source = tmp_path / "animation.gif"
+    Image.new("RGB", (4, 4), "red").save(
+        source,
+        save_all=True,
+        append_images=[Image.new("RGB", (4, 4), "blue")],
+        duration=[20, 80],
+        loop=0,
+    )
+
+    class GifApp(App):
+        def compose(self) -> ComposeResult:
+            yield AnimatedGif(source, columns=4, id="animation")
+
+    async def scenario():
+        app = GifApp()
+        async with app.run_test() as pilot:
+            animation = app.query_one("#animation", AnimatedGif)
+            animation.pause()
+            assert animation.frame_count == 2
+            assert [frame.duration for frame in animation._frames] == [0.02, 0.08]
+            first = animation.render()
+            animation.play()
+            await pilot.pause(0.04)
+            animation.pause()
+            assert animation.frame_index == 1
+            assert animation.render() is not first
+            animation.stop()
+            assert animation.frame_index == 0
+            animation.restart()
+            assert animation.is_playing is True
+    _run(scenario())
 
 
 def test_slash_opens_a_dropdown_of_templates():

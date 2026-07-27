@@ -20,10 +20,12 @@ from typing import Iterable
 
 from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
+from textual.containers import Horizontal
 from textual.widgets import Footer, Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from ovat.cli import shell, ui
+from ovat.cli.animated_gif import AnimatedGif
 from ovat.cli.editing import InputHistory
 from ovat.cli.widgets import PasteInput
 from ovat.cli.theme import OVAT_THEME
@@ -180,7 +182,9 @@ class OvatTUI(App):
 
     CSS = """
     Screen { background: $background; }
-    #banner { padding: 1 2 0 2; height: auto; }
+    #masthead { height: auto; padding: 1 2 0 2; }
+    #banner { width: 1fr; height: auto; }
+    #intel-animation { margin: 0 4 0 2; }
     #output {
         height: 1fr;
         border: round $primary;
@@ -224,7 +228,9 @@ class OvatTUI(App):
         self._history = InputHistory() # Up/Down recall, like the shell it wraps
 
     def compose(self) -> ComposeResult:
-        yield Static(_banner(), id="banner")
+        with Horizontal(id="masthead"):
+            yield Static(_banner(), id="banner")
+            yield AnimatedGif(id="intel-animation")
         output = RichLog(id="output", highlight=False, markup=False, wrap=True)
         output.border_title = "output"
         output.border_subtitle = "Ctrl-P palette · / shortcuts"
