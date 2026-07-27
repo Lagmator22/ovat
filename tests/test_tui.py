@@ -116,9 +116,9 @@ def test_one_ctrl_c_warns_and_the_second_quits():
             await pilot.press("ctrl+c")
             await pilot.pause()
             assert app.is_running is True              # still here
-            log_text = "\n".join(str(ln) for ln
-                                 in app.query_one("#output", RichLog).lines)
-            assert "again to quit" in log_text         # and it said what to do
+            # A toast, not a log line: see the cross-screen test below.
+            assert any("again to quit" in str(n.message)
+                       for n in app._notifications)
 
             await pilot.press("ctrl+c")
             await pilot.pause()
@@ -320,3 +320,87 @@ def test_bare_ovat_inside_the_tui_env_prints_a_hint_not_a_tui(monkeypatch):
     result = CliRunner().invoke(cli_app, [])
     assert result.exit_code == 0
     assert "already inside" in result.output
+
+
+def test_the_quit_warning_is_visible_from_a_pushed_screen(monkeypatch):
+    """It used to be written somewhere the user could not see.
+
+    App.query_one searches the whole DOM, so writing the warning to the
+    launcher's #output SUCCEEDED from the chat screen and put it on a screen
+    that was not in front: the first Ctrl-C looked like nothing happened and
+    the second quit, losing the conversation. A toast follows the user.
+    """
+    from ovat.cli import chat_screen
+    from ovat.cli.chat_screen import ChatScreen
+    from ovat.config.workflow import WorkflowConfig
+
+    class R:
+        def retrieve(self, q, top_k=5):
+            return []
+
+    class L:
+        def chat(self, m, tools=None, on_token=None):
+            return {"finish_reason": "stop", "content": "A", "tool_calls": None}
+
+    monkeypatch.setattr(chat_screen, "_build_components",
+                        lambda c, m, max_tokens=256:
+                        (WorkflowConfig(model={"name": "m"}), R(), L()))
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            app.push_screen(ChatScreen("w.yml", "m", cwd="/tmp"))
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press("ctrl+c")
+            await pilot.pause()
+            assert app.is_running is True
+            assert any("again to quit" in str(n.message)
+                       for n in app._notifications)
+    _run(scenario())
+
+
+def test_opening_a_screen_you_are_already_on_does_not_stack_it(monkeypatch):
+    """The palette works everywhere, so "Chat" from a chat used to push a
+    SECOND ChatScreen: another ~30s model load, and Esc twice to get out."""
+    from ovat.cli import chat_screen, diagnostics
+    from ovat.cli.chat_screen import ChatScreen
+    from ovat.cli.diagnostics import Check
+    from ovat.cli.doctor_screen import DoctorScreen
+    from ovat.config.workflow import WorkflowConfig
+
+    class R:
+        def retrieve(self, q, top_k=5):
+            return []
+
+    class L:
+        def chat(self, m, tools=None, on_token=None):
+            return {"finish_reason": "stop", "content": "A", "tool_calls": None}
+
+    monkeypatch.setattr(chat_screen, "_build_components",
+                        lambda c, m, max_tokens=256:
+                        (WorkflowConfig(model={"name": "m"}), R(), L()))
+    monkeypatch.setattr(diagnostics, "run_checks",
+                        lambda cfg=None: [Check("Python", "ok", "3.11")])
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            app.push_screen(ChatScreen("w.yml", "m", cwd="/tmp"))
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            depth = len(app.screen_stack)
+
+            app._open_chat("")                       # already here
+            await pilot.pause()
+            assert len(app.screen_stack) == depth
+
+            app.push_screen(DoctorScreen())
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            depth = len(app.screen_stack)
+            app._open_doctor("")                     # already here: re-runs
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert len(app.screen_stack) == depth
+    _run(scenario())
