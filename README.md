@@ -254,6 +254,25 @@ tools:
 
 ---
 
+## Document Q&A and four-engine benchmark
+
+[`examples/document-qa.yml`](examples/document-qa.yml) is the local Document
+Q&A sample. On an AI PC with OVMS running, index the files once and then send
+the same question through every engine:
+
+```bash
+ovat index ./docs examples/document-qa.yml
+ovat serve examples/document-qa.yml
+ovat bench examples/document-qa.yml -i "what does the readme say about NPU?" \
+  --out report.json
+```
+
+The terminal table compares build time, answer time, peak memory, and any
+available token/tool counts. `report.json` preserves each engine's answer and
+the full failure text when one engine cannot run.
+
+---
+
 ## Status & limitations
 
 Honest about where the abstraction holds and where it does not yet:
@@ -261,10 +280,10 @@ Honest about where the abstraction holds and where it does not yet:
 | Works today | Not yet |
 | --- | --- |
 | `ovat run/chat/init/index/serve/models/doctor` CLI | macOS *serving* (OVMS is Windows/Linux only) |
-| Full-screen TUI with a native streaming chat screen | LlamaIndex / OpenAI Agents SDK engines |
-| YAML config + strict validation (typos are errors) | Streaming from OVMS (local GenAI streams already) |
-| Native loop **and** LangChain (`react`) engines | Re-ranking / hybrid search |
-| External MCP tools (`type: mcp_stdio`, any server) | Approximate vector backends (usearch/hnsw) |
+| Full-screen TUI with a native streaming chat screen | Streaming from OVMS (local GenAI streams already) |
+| YAML config + strict validation (typos are errors) | Re-ranking / hybrid search |
+| Native, LangChain (`react`), LlamaIndex, and OpenAI Agents SDK engines | Approximate vector backends (usearch/hnsw) |
+| External MCP tools (`type: mcp_stdio`, any server) | |
 | Real RAG in `search_docs` (vectors + citations) | |
 | Local RAG chat + model auto-detection (no OVMS) | |
 | OVMS lifecycle: `ovat serve` + `--stop` (pidfile, no PATH edits) | |
@@ -279,7 +298,7 @@ the unit tests, but not serve a model.
 ## Development
 
 ```bash
-pip install -e ".[dev]"   # dev pulls in LangChain so the react tests run too
+pip install -e ".[dev]"   # dev pulls in every optional agent framework
 pytest -m "not live"      # fast unit tests, no server needed (runs anywhere)
 pytest -m live            # live tests against a running OVMS (AI PC only)
 pytest -m "not rag"       # skip the real-embedding-model test if it is not exported
