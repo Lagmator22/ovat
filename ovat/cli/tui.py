@@ -58,6 +58,22 @@ _INTEL_PHASE_SOURCES: Final = (
 )
 _INTEL_GIF_SOURCE: Final = Path(__file__).resolve().parent.parent / "assets" / "intel.gif"
 _INTEL_GIF_CROP: Final = (200, 170, 600, 430)
+_PIXEL_GLYPHS: Final = {
+    "A": ("010", "101", "111", "101"), "B": ("110", "101", "110", "101"),
+    "C": ("011", "100", "100", "011"), "D": ("110", "101", "101", "110"),
+    "E": ("111", "100", "110", "111"), "F": ("111", "100", "110", "100"),
+    "G": ("011", "100", "101", "011"), "H": ("101", "101", "111", "101"),
+    "I": ("111", "010", "010", "111"), "J": ("001", "001", "101", "010"),
+    "K": ("101", "110", "101", "101"), "L": ("100", "100", "100", "111"),
+    "M": ("111", "111", "101", "101"), "N": ("101", "111", "111", "101"),
+    "O": ("010", "101", "101", "010"), "P": ("110", "101", "110", "100"),
+    "Q": ("010", "101", "011", "001"), "R": ("110", "101", "110", "101"),
+    "S": ("011", "100", "010", "110"), "T": ("111", "010", "010", "010"),
+    "U": ("101", "101", "101", "010"), "V": ("101", "101", "101", "010"),
+    "W": ("101", "111", "111", "101"), "X": ("101", "010", "010", "101"),
+    "Y": ("101", "010", "010", "010"), "Z": ("111", "010", "100", "111"),
+    "+": ("010", "010", "111", "010"), " ": ("000", "000", "000", "000"),
+}
 
 
 @dataclass(frozen=True)
@@ -310,19 +326,19 @@ def _wordmark_lines() -> list:
     return _FALLBACK_WORDMARK
 
 
-def _small_figlet_text(label: str, *, style: str, font: str = "mini") -> Text:
-    """Render a compact FIGlet label, or readable text if FIGlet is absent."""
-    try:
-        import pyfiglet
-        lines = pyfiglet.figlet_format(label, font=font).rstrip("\n").split("\n")
-        if lines:
-            out = Text()
-            for line in lines:
-                out.append(line + "\n", style=style)
-            return out
-    except Exception:
-        pass
-    return Text(label + "\n", style=f"bold {style}")
+def _pixel_logo_text(label: str, *, style: str) -> Text:
+    """Render compact block letters that match the OVAT mark's pixel language."""
+    text = Text()
+    glyphs = [_PIXEL_GLYPHS.get(character, _PIXEL_GLYPHS[" "])
+              for character in label.upper()]
+    for row in range(4):
+        for index, glyph in enumerate(glyphs):
+            text.append(glyph[row].replace("1", "█").replace("0", " "), style=style)
+            if index + 1 < len(glyphs):
+                text.append(" ", style=style)
+        if row < 3:
+            text.append("\n")
+    return text
 
 
 def _wordmark_text() -> Text:
@@ -338,14 +354,15 @@ def _wordmark_text() -> Text:
 def _banner() -> Text:
     """Header: the OVAT wordmark and a compact OpenVINO / OVMS lockup."""
     out = _wordmark_text()
-    out.append_text(_small_figlet_text("Powered by", style=ui.PURPLE, font="term"))
-    out.append_text(_small_figlet_text("OpenVINO + OVMS", style=ui.BLUE))
+    out.append_text(_pixel_logo_text("Powered by", style=ui.PURPLE))
+    out.append("\n")
+    out.append_text(_pixel_logo_text("OpenVINO+OVMS", style=ui.BLUE))
     return out
 
 
 def _startup_updates() -> Text:
     """A deliberately empty board, ready for future toolkit updates."""
-    return _small_figlet_text("Updates", style=ui.PURPLE)
+    return _pixel_logo_text("Updates", style=ui.PURPLE)
 
 
 def _option(template) -> Option:
