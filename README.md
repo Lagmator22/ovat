@@ -72,11 +72,14 @@ The agent never changes; only the YAML does.
 ## Quickstart
 
 ```bash
-# 1. install (editable, from the repo root). Extras: [langchain] = react
-#    engine, [tui] = the full-screen launcher + chat screen.
-pip install -e ".[langchain,tui]"
-# or, for a global `ovat` you can run from anywhere (no venv to activate):
-#   pipx install ".[langchain,tui]"
+# 1a. project virtual environment (recommended; from the repo root).
+python -m venv .venv
+# Activate it: PowerShell: .\.venv\Scripts\Activate.ps1
+#              bash/zsh:    source .venv/bin/activate
+python -m pip install -e ".[langchain,llamaindex,openai-agents,tui]"
+
+# 1b. equivalent isolated global installation (choose this instead of 1a).
+pipx install ".[langchain,llamaindex,openai-agents,tui]"
 
 # 2. check your machine is ready (Python, deps, devices, OVMS, a config)
 ovat doctor workflow.yml
@@ -110,11 +113,12 @@ ovat run workflow.yml --input "hi" --dry-run
 
 ## Interactive launcher (TUI)
 
-The TUI is an **optional** front-end. Install it with the extra, then run
-`ovat` with no arguments:
+The TUI is an **optional** front-end and is already included in the full
+install above. To add it to a base project installation, install the `tui`
+extra, then run `ovat` with no arguments:
 
 ```bash
-pip install -e ".[tui]"      # or ".[tui,langchain]" for everything
+python -m pip install -e ".[tui]"
 ovat
 ```
 
