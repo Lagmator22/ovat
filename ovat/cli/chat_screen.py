@@ -33,9 +33,9 @@ from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.screen import Screen
-from textual.containers import VerticalScroll
-from textual.widgets import Footer, Input, Markdown, OptionList, Static
+from textual.screen import ModalScreen, Screen
+from textual.containers import Vertical, VerticalScroll
+from textual.widgets import Footer, Input, Label, Markdown, OptionList, Static
 from textual.widgets.option_list import Option
 
 from ovat.agent.rag_chat import rag_chat
@@ -55,7 +55,7 @@ CHAT_COMMANDS = [
     ("/copy", "copy the last answer  (or 'me' / 'all')"),
     ("/tokens", "answer length cap  (0 = no cap)"),
     ("/save", "save this conversation"),
-    ("/load", "load a saved conversation"),
+    ("/load", "pick from your saved conversations"),
     ("/back", "return to the launcher"),
 ]
 
@@ -134,6 +134,117 @@ def _session_path(cwd: str, name: str) -> str:
     # A session name is a bare word; the path and extension are ours.
     safe = "".join(c for c in name if c.isalnum() or c in "-_") or "last"
     return os.path.join(_ovat_dir(cwd), SESSIONS_DIR, f"{safe}.json")
+
+
+def list_sessions(cwd: str) -> list:
+    """Every saved conversation, newest first.
+
+    Returns (name, path, modified, turns) so the picker can show more than a
+    filename: which conversation this was, and how much of it there is.
+    """
+    folder = os.path.join(_ovat_dir(cwd), SESSIONS_DIR)
+    sessions = []
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    for filename in names:
+        if not filename.endswith(".json"):
+            continue
+        path = os.path.join(folder, filename)
+        try:
+            with open(path, encoding="utf-8") as handle:
+                messages = json.load(handle)
+            turns = sum(1 for m in messages if m.get("role") == "user")
+            first = next((m["content"] for m in messages
+                          if m.get("role") == "user" and m.get("content")), "")
+        except (OSError, ValueError, TypeError):
+            # A half-written or hand-edited file should not hide every other
+            # session from the list.
+            turns, first = 0, "(unreadable)"
+        sessions.append({
+            "name": filename[:-len(".json")],
+            "path": path,
+            "modified": os.path.getmtime(path),
+            "turns": turns,
+            "first": first,
+        })
+    return sorted(sessions, key=lambda s: s["modified"], reverse=True)
+
+
+class SessionPicker(ModalScreen[str]):
+    """Pick a saved conversation to load.
+
+    A modal rather than another dropdown: this is a decision that pauses the
+    conversation, and ModalScreen dims what is behind it to say so. It
+    dismisses with the chosen name, or nothing at all if you press Esc, which
+    keeps the choosing here and the loading in the chat screen.
+    """
+
+    DEFAULT_CSS = """
+    SessionPicker {
+        align: center middle;
+    }
+    #picker-frame {
+        width: 70%;
+        max-width: 80;
+        height: auto;
+        max-height: 80%;
+        border: round $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+    #picker-title { color: $accent; text-style: bold; padding-bottom: 1; }
+    #picker-hint { color: $text-muted; padding-top: 1; }
+    #picker-list { height: auto; max-height: 14; background: $surface; }
+    #picker-list > .option-list--option-highlighted {
+        background: $primary;
+        color: $foreground;
+        text-style: bold;
+    }
+    """
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel", show=True)]
+
+    def __init__(self, sessions: list):
+        super().__init__()
+        self._sessions = sessions
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="picker-frame"):
+            yield Label(f"Saved conversations ({len(self._sessions)})",
+                        id="picker-title")
+            yield OptionList(*[Option(_session_label(s), id=s["name"])
+                               for s in self._sessions], id="picker-list")
+            yield Label("Enter loads  ·  Esc cancels", id="picker-hint")
+
+    def on_mount(self) -> None:
+        self.query_one("#picker-list", OptionList).focus()
+        # A short fade so the dialog arrives rather than snapping into place.
+        # 120ms: long enough to read as motion, short enough not to be a wait.
+        self.styles.opacity = 0.0
+        self.styles.animate("opacity", value=1.0, duration=0.12)
+
+    def action_cancel(self) -> None:
+        self.dismiss("")
+
+    def on_option_list_option_selected(self,
+                                       event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id or "")
+
+
+def _session_label(session: dict) -> Text:
+    """One row: the name, when it was last touched, and how it opened."""
+    when = time.strftime("%d %b %H:%M", time.localtime(session["modified"]))
+    label = Text()
+    label.append(f"{session['name']:<14} ", style=f"bold {ui.CYAN}")
+    label.append(f"{when}  ", style=ui.DIM)
+    label.append(f"{session['turns']} turn"
+                 f"{'' if session['turns'] == 1 else 's'}  ", style=ui.DIM)
+    opening = session["first"].replace("\n", " ")
+    label.append(opening[:38] + ("…" if len(opening) > 38 else ""),
+                 style=ui.PURPLE)
+    return label
 
 
 def _build_components(config_path: str, model_path: str,
@@ -678,13 +789,12 @@ class ChatScreen(Screen):
             self._note(f"saved conversation to {path}", "ok")
             return
         if head == "/load":
-            path = _session_path(self._cwd, name)
-            if not os.path.exists(path):
-                self._note(f"no saved conversation at {path}", "warn")
+            # A bare /load opens the picker; /load <name> still goes direct,
+            # so the shortcut survives for anyone who knows the name.
+            if not rest.strip():
+                self._pick_session()
                 return
-            self._session = Session.load(path)
-            await self._replay()
-            self._note(f"(loaded {path})")
+            await self._load_named(name)
             return
         if head == "/tokens":
             self._set_token_cap(rest.strip())
@@ -700,6 +810,34 @@ class ChatScreen(Screen):
             return
         known = " ".join(name for name, _ in CHAT_COMMANDS)
         self._note(f"unknown chat command {head}. I know {known}.", "warn")
+
+    def _pick_session(self) -> None:
+        """Open the picker, then load whatever it comes back with."""
+        sessions = list_sessions(self._cwd)
+        if not sessions:
+            self._note("no saved conversations yet; /save one first.", "warn")
+            return
+
+        def chosen(name: str) -> None:
+            if name:                       # "" means Esc, so do nothing
+                self.run_worker(self._load_named(name))
+
+        self.app.push_screen(SessionPicker(sessions), chosen)
+
+    async def _load_named(self, name: str) -> None:
+        path = _session_path(self._cwd, name)
+        if not os.path.exists(path):
+            self._note(f"no saved conversation at {path}", "warn")
+            return
+        try:
+            self._session = Session.load(path)
+        except (OSError, ValueError) as exc:
+            # A hand-edited or truncated file is a bad load, not a crash.
+            self._note(f"could not read {path}: {exc}", "error")
+            return
+        await self._replay()
+        self._note(f"loaded {name} ({len(self._session.messages)} messages)",
+                   "ok")
 
     def _set_token_cap(self, value: str) -> None:
         """/tokens N: retune the answer-length cap, 0 for none.
