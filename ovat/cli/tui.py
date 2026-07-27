@@ -182,9 +182,9 @@ class OvatTUI(App):
 
     CSS = """
     Screen { background: $background; }
-    #masthead { height: auto; padding: 1 2 0 2; }
-    #banner { width: 1fr; height: auto; }
-    #intel-animation { margin: 0 4 0 2; }
+    #masthead { height: auto; padding: 1 2 0 2; align: center middle; }
+    #banner { width: auto; height: auto; }
+    #intel-animation { margin: 0 0 0 4; }
     #output {
         height: 1fr;
         border: round $primary;
@@ -230,7 +230,10 @@ class OvatTUI(App):
     def compose(self) -> ComposeResult:
         with Horizontal(id="masthead"):
             yield Static(_banner(), id="banner")
-            yield AnimatedGif(id="intel-animation")
+            # The source has a large blue canvas; crop it to the Intel mark so
+            # the compact inline animation keeps the command area spacious.
+            yield AnimatedGif(columns=28, crop=(200, 160, 604, 440),
+                              id="intel-animation")
         output = RichLog(id="output", highlight=False, markup=False, wrap=True)
         output.border_title = "output"
         output.border_subtitle = "Ctrl-P palette · / shortcuts"

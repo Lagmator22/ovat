@@ -27,8 +27,8 @@ def _run(coro):
     asyncio.run(coro)
 
 
-def test_animated_gif_decodes_once_and_preserves_frame_durations(tmp_path):
-    """The startup animation uses cached Rich frames, not a blocking loop."""
+def test_animated_gif_plays_once_and_preserves_frame_durations(tmp_path):
+    """The startup GIF caches its frames then leaves its final frame static."""
     from PIL import Image
 
     source = tmp_path / "animation.gif"
@@ -57,8 +57,10 @@ def test_animated_gif_decodes_once_and_preserves_frame_durations(tmp_path):
             animation.pause()
             assert animation.frame_index == 1
             assert animation.render() is not first
-            animation.stop()
-            assert animation.frame_index == 0
+            animation.play()
+            await pilot.pause(0.1)
+            assert animation.frame_index == 1
+            assert animation.is_playing is False
             animation.restart()
             assert animation.is_playing is True
     _run(scenario())
