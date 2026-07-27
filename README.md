@@ -176,15 +176,19 @@ add it and the tool returns real chunks with citations.
 
 ---
 
-## Two engines, one YAML word
+## Four engines, one YAML word
 
 `agent.type` chooses how the loop runs, and nothing else in your config changes:
 
 - `native`: OVAT's own tool-calling loop (`loop.py`). Zero extra dependencies.
 - `react`: the same job through **LangChain** (`create_agent` + `ChatOpenAI`
   pointed at OVMS). Install it with `pip install 'ovat[langchain]'`.
+- `llamaindex`: the same job through **LlamaIndex** (`FunctionAgent` +
+  `OpenAILike` pointed at OVMS). Install it with `pip install 'ovat[llamaindex]'`.
+- `openai-agents`: the same job through the **OpenAI Agents SDK** compatibility
+  model. Install it with `pip install 'ovat[openai-agents]'`.
 
-Both expose the same behaviour to you; swapping is a one-word edit.
+All four expose the same configuration and tools; swapping is a one-word edit.
 
 ---
 
