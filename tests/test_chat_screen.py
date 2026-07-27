@@ -7,6 +7,7 @@ whole screen (load → ask → stream → transcript → autosave → /save → 
 Esc) runs in milliseconds on any machine.
 """
 import asyncio
+import json
 import os
 
 import pytest
@@ -914,3 +915,113 @@ def test_down_still_steps_into_the_slash_menu(monkeypatch, tmp_path):
 
 
 
+
+
+# /load opens a picker of every saved conversation
+
+def _saved(tmp_path, name, questions):
+    """Write a session file directly, as /save would."""
+    folder = tmp_path / ".ovat" / "sessions"
+    folder.mkdir(parents=True, exist_ok=True)
+    messages = []
+    for question in questions:
+        messages.append({"role": "user", "content": question})
+        messages.append({"role": "assistant", "content": "an answer"})
+    (folder / f"{name}.json").write_text(json.dumps(messages), encoding="utf-8")
+
+
+def test_list_sessions_reports_what_each_one_is(tmp_path):
+    """A filename alone does not tell you which conversation this was."""
+    _saved(tmp_path, "alpha", ["what is openvino?"])
+    _saved(tmp_path, "beta", ["first question", "second question"])
+
+    sessions = chat_screen.list_sessions(str(tmp_path))
+    by_name = {s["name"]: s for s in sessions}
+    assert by_name["alpha"]["turns"] == 1
+    assert by_name["beta"]["turns"] == 2
+    assert by_name["alpha"]["first"] == "what is openvino?"
+    # Newest first, so the one you just saved is at the top.
+    assert [s["name"] for s in sessions] == sorted(
+        [s["name"] for s in sessions],
+        key=lambda n: by_name[n]["modified"], reverse=True)
+
+
+def test_a_corrupt_session_does_not_hide_the_others(tmp_path):
+    _saved(tmp_path, "good", ["fine"])
+    (tmp_path / ".ovat" / "sessions" / "broken.json").write_text(
+        "{not json", encoding="utf-8")
+    names = [s["name"] for s in chat_screen.list_sessions(str(tmp_path))]
+    assert "good" in names and "broken" in names
+
+
+def test_list_sessions_is_empty_before_anything_is_saved(tmp_path):
+    assert chat_screen.list_sessions(str(tmp_path)) == []
+
+
+def test_bare_load_opens_the_picker_and_loads_the_choice(monkeypatch, tmp_path):
+    from ovat.cli.chat_screen import SessionPicker
+
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+    _saved(tmp_path, "demo", ["remember this question"])
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            await _send(screen, pilot, "/load")
+            await pilot.pause()
+            assert isinstance(app.screen, SessionPicker)
+
+            await pilot.press("enter")          # take the highlighted one
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert app.screen is screen         # the modal closed
+            assert "remember this question" in _log_text(screen)
+    _run(scenario())
+
+
+def test_escaping_the_picker_changes_nothing(monkeypatch, tmp_path):
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+    _saved(tmp_path, "demo", ["not loaded"])
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            await _send(screen, pilot, "/load")
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.screen is screen
+            assert "not loaded" not in _log_text(screen)
+    _run(scenario())
+
+
+def test_load_with_a_name_still_skips_the_picker(monkeypatch, tmp_path):
+    from ovat.cli.chat_screen import SessionPicker
+
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+    _saved(tmp_path, "demo", ["direct load"])
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            await _send(screen, pilot, "/load demo")
+            await pilot.pause()
+            assert not isinstance(app.screen, SessionPicker)
+            assert "direct load" in _log_text(screen)
+    _run(scenario())
+
+
+def test_load_with_nothing_saved_says_so(monkeypatch, tmp_path):
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            await _send(screen, pilot, "/load")
+            await pilot.pause()
+            assert "no saved conversations yet" in _log_text(screen)
+    _run(scenario())
