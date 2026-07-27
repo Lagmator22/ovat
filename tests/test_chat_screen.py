@@ -853,3 +853,64 @@ def test_bare_engine_reports_which_one_is_answering(monkeypatch, tmp_path):
             assert "engine: local" in text
             assert "/engine ovms" in text              # and how to change it
     _run(scenario())
+
+
+# Up/Down history and Ctrl-V paste in the chat input
+
+def test_up_and_down_recall_what_you_asked(monkeypatch, tmp_path):
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", Input)
+            for question in ("first question", "second question"):
+                inp.value = question
+                await pilot.press("enter")
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+
+            inp.value = "half typed"
+            await pilot.press("up")
+            await pilot.pause()
+            assert inp.value == "second question"
+            await pilot.press("up")
+            await pilot.pause()
+            assert inp.value == "first question"
+            await pilot.press("down")
+            await pilot.pause()
+            assert inp.value == "second question"
+            await pilot.press("down")
+            await pilot.pause()
+            assert inp.value == "half typed"      # the draft came back
+    _run(scenario())
+
+
+def test_down_still_steps_into_the_slash_menu(monkeypatch, tmp_path):
+    """History must not steal the key the menu already uses."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", Input)
+            palette = screen.query_one("#chat-palette", OptionList)
+            inp.value = "asked something"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            inp.value = "/"
+            await pilot.pause()
+            assert palette.display is True
+            await pilot.press("down")
+            await pilot.pause()
+            assert screen.focused is palette       # the menu, not the history
+            assert inp.value == "/"
+    _run(scenario())
+
+
+
+

@@ -42,6 +42,8 @@ from ovat.agent.rag_chat import rag_chat
 from ovat.agent.session import Session
 from ovat.cli import ui
 from ovat.cli.commands import ScreenCommands
+from ovat.cli.editing import InputHistory
+from ovat.cli.widgets import PasteInput
 
 # The slash menu for this screen. Unlike the doctor screen's, choosing one
 # INSERTS it rather than running it: most of these take an argument
@@ -59,6 +61,11 @@ CHAT_COMMANDS = [
 
 # Both live under .ovat/ in the directory the user launched from, so a
 # project's chats and preferences stay with that project.
+# 256 cut real answers off mid-sentence often enough that /tokens existed
+# mainly to undo it. 1024 is a working default for both engines; /tokens is
+# still there for the long ones.
+DEFAULT_MAX_TOKENS = 1024
+
 PREFS_FILE = "chat_prefs.json"
 SESSIONS_DIR = "sessions"
 
@@ -129,7 +136,8 @@ def _session_path(cwd: str, name: str) -> str:
     return os.path.join(_ovat_dir(cwd), SESSIONS_DIR, f"{safe}.json")
 
 
-def _build_components(config_path: str, model_path: str, max_tokens: int = 256):
+def _build_components(config_path: str, model_path: str,
+                      max_tokens: int = DEFAULT_MAX_TOKENS):
     """config + model path -> (cfg, retriever, llm). The heavy step.
 
     Module-level on purpose: it is the seam tests monkeypatch to drive the
@@ -213,10 +221,21 @@ class OVMSEngine:
     name = "ovms"
     footnote_label = "tools used"
 
-    def __init__(self, cfg, agent):
+    def __init__(self, cfg, agent, max_tokens=None):
         self.cfg, self.agent = cfg, agent
+        if max_tokens is not None:
+            self.max_new_tokens = max_tokens
 
-    max_new_tokens = None        # OVMS caps generation server-side, not here
+    @property
+    def max_new_tokens(self):
+        llm = getattr(self.agent, "llm", None)      # react has no .llm
+        return getattr(llm, "max_tokens", None)
+
+    @max_new_tokens.setter
+    def max_new_tokens(self, value):
+        llm = getattr(self.agent, "llm", None)
+        if llm is not None:
+            llm.max_tokens = value
 
     def describe(self) -> str:
         tools = ", ".join(self.agent.tools) or "none declared"
@@ -237,7 +256,7 @@ class OVMSEngine:
 
 
 def _build_engine(config_path: str, model_path: str, engine: str = "local",
-                  max_tokens: int = 256):
+                  max_tokens: int = DEFAULT_MAX_TOKENS):
     """Build the engine `/engine` selects. The seam tests monkeypatch."""
     if engine == "ovms":
         from ovat.agent.factory import build_agent
@@ -247,7 +266,7 @@ def _build_engine(config_path: str, model_path: str, engine: str = "local",
         # Constructing the OVMS client does NOT connect, so a server that is
         # down fails on the first question with a readable error rather than
         # refusing to open the screen.
-        return OVMSEngine(cfg, build_agent(cfg))
+        return OVMSEngine(cfg, build_agent(cfg), max_tokens)
     return LocalEngine(*_build_components(config_path, model_path, max_tokens))
 
 
@@ -402,7 +421,9 @@ class ChatScreen(Screen):
     #chat-input { margin: 0 2 1 2; border: round $secondary; }
     """
 
-    BINDINGS = [Binding("escape", "back", show=False)]
+    BINDINGS = [
+        Binding("escape", "back", show=False),
+    ]
 
     def __init__(self, config_path: str, model_path: str, cwd: str | None = None):
         super().__init__()
@@ -415,6 +436,7 @@ class ChatScreen(Screen):
         self._stop_stream = False        # Esc mid-generation sets this
         self._show_thinking = False      # /thinking; hidden is the useful default
         self._engine_name = "local"      # /engine; ovms adds tool calling
+        self._history = InputHistory()   # Up/Down recall, like a shell
 
     def compose(self) -> ComposeResult:
         header = Text()
@@ -425,11 +447,11 @@ class ChatScreen(Screen):
         yield Static(header, id="chat-header")
         yield VerticalScroll(id="chat-view")
         yield OptionList(id="chat-palette")
-        yield Input(placeholder="loading the model…", id="chat-input")
+        yield PasteInput(placeholder="loading the model…", id="chat-input")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#chat-input", Input).focus()
+        self.query_one("#chat-input", PasteInput).focus()
         view = self.query_one("#chat-view", VerticalScroll)
         # Textual's animated overlay on the transcript is fine HERE, unlike on
         # the old append-only log: nothing has been written yet, so there is
@@ -461,7 +483,7 @@ class ChatScreen(Screen):
         self.query_one("#chat-header", Static).update(header)
 
     def _set_placeholder(self, text: str) -> None:
-        self.query_one("#chat-input", Input).placeholder = text
+        self.query_one("#chat-input", PasteInput).placeholder = text
 
     def _stop_loading(self) -> None:
         self._view.loading = False
@@ -528,7 +550,7 @@ class ChatScreen(Screen):
         palette = self.query_one("#chat-palette", OptionList)
         if palette.display:
             palette.display = False
-            self.query_one("#chat-input", Input).focus()
+            self.query_one("#chat-input", PasteInput).focus()
             return
         if self._busy:
             # First Esc stops the generation (the streamer sees the flag and
@@ -569,16 +591,28 @@ class ChatScreen(Screen):
         palette.display = False
 
     def on_key(self, event) -> None:
-        """Down steps into the menu, matching the launcher and doctor screen."""
-        if event.key != "down":
+        """Down steps into the menu; otherwise Up/Down walk the history."""
+        if event.key not in ("up", "down"):
             return
         palette = self.query_one("#chat-palette", OptionList)
-        inp = self.query_one("#chat-input", Input)
-        if palette.display and self.focused is inp:
+        inp = self.query_one("#chat-input", PasteInput)
+        if self.focused is not inp:
+            return                       # the menu owns its own arrows
+        if event.key == "down" and palette.display:
             palette.focus()
             if palette.option_count:
                 palette.highlighted = 0
             event.stop()
+            return
+        if palette.display:
+            return                       # browsing the menu, not the history
+        recalled = (self._history.previous(inp.value) if event.key == "up"
+                    else self._history.next())
+        if recalled is None:
+            return
+        inp.value = recalled
+        self.call_after_refresh(setattr, inp, "cursor_position", len(recalled))
+        event.stop()
 
     def on_option_list_option_selected(self,
                                        event: OptionList.OptionSelected) -> None:
@@ -589,7 +623,7 @@ class ChatScreen(Screen):
         useful form of most of these commands.
         """
         palette = self.query_one("#chat-palette", OptionList)
-        inp = self.query_one("#chat-input", Input)
+        inp = self.query_one("#chat-input", PasteInput)
         palette.display = False
         inp.value = f"/{event.option.id} "
         inp.focus()
@@ -599,11 +633,12 @@ class ChatScreen(Screen):
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         line = event.value.strip()
-        inp = self.query_one("#chat-input", Input)
+        inp = self.query_one("#chat-input", PasteInput)
         inp.value = ""
         self.query_one("#chat-palette", OptionList).display = False
         if not line:
             return
+        self._history.add(line)
 
         if line.startswith("/"):
             await self._slash(line)
@@ -688,10 +723,6 @@ class ChatScreen(Screen):
         if cap < 0:
             self._note("/tokens cannot be negative. Use 0 for no cap.",
                        "warn")
-            return
-        if self._engine.max_new_tokens is None and self._engine.name == "ovms":
-            self._note("the OVMS engine caps generation server-side; "
-                       "/tokens applies to the local engine only.", "warn")
             return
         self._engine.max_new_tokens = cap or None
         self._note(f"answer cap: {cap or 'no'} tokens", "ok")

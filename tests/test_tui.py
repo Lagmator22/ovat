@@ -404,3 +404,32 @@ def test_opening_a_screen_you_are_already_on_does_not_stack_it(monkeypatch):
             await pilot.pause()
             assert len(app.screen_stack) == depth
     _run(scenario())
+
+
+def test_the_launcher_recalls_commands_with_up_and_down():
+    """It is a shell front-end, so Up/Down must do what the shell does."""
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = "echo one"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            inp.value = "echo two"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            inp.value = "unfinished"
+            await pilot.press("up")
+            await pilot.pause()
+            assert inp.value == "echo two"
+            await pilot.press("up")
+            await pilot.pause()
+            assert inp.value == "echo one"
+            await pilot.press("down")
+            await pilot.press("down")
+            await pilot.pause()
+            assert inp.value == "unfinished"
+    _run(scenario())

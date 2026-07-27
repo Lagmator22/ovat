@@ -17,20 +17,28 @@ class OVMSLLMProvider(LLMProvider):
     """Talks to OVMS /v3 using the OpenAI SDK (as OVMS is OpenAI-compatible)."""
 
     def __init__(self, base_url: str = "http://localhost:8000/v3",
-                 model: str = "Qwen3-8B-int4-ov", timeout: float = 120.0):
+                 model: str = "Qwen3-8B-int4-ov", timeout: float = 120.0,
+                 max_tokens: int | None = None):
         # api_key is required by the SDK but ignored by OVMS, any string works.
         # timeout caps each request; the SDK default (~600s) would freeze the
         # CLI for ten minutes on a hung server before erroring.
         self.client = OpenAI(base_url=base_url, api_key="not-needed",
                              timeout=timeout)
         self.model = model
+        # None means "do not send the field", which is the historical
+        # behaviour and what `ovat run` still gets: the server decides. The
+        # TUI sets a real number so /tokens means the same thing on both
+        # engines. Read fresh on every call, so it can be retuned live.
+        self.max_tokens = max_tokens
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+        extra = {} if self.max_tokens is None else {"max_tokens": self.max_tokens}
         response = self.client.chat.completions.create(
             model=self.model, #model name is pulled from the YAML config file
             messages=messages,
             tools=tools,
             tool_choice="auto" if tools else None,
+            **extra,
         )
         choice = response.choices[0]
         # OVMS reports token usage on every response; keep it instead of
