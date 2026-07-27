@@ -50,3 +50,6 @@ build-backend = "setuptools.build_meta"
 # (e.g. a `models/` download from `ovat serve`, or an extracted `ovms_linux/`).
 [tool.setuptools.packages.find]
 include = ["ovat*"]
+
+[tool.setuptools.package-data]
+ovat = ["assets/*.png"]

@@ -14,10 +14,11 @@ import pytest
 # tests skip cleanly; the isolation contract lives in test_tui_isolation.py.
 pytest.importorskip("textual")
 
+from textual.containers import Horizontal
 from textual.widgets import Input, OptionList, RichLog, Static
 
 from ovat.cli import tui as tui_module
-from ovat.cli.tui import OvatTUI
+from ovat.cli.tui import OvatTUI, _StartupIntelAnimation
 from tests.conftest import py_command
 
 
@@ -25,13 +26,48 @@ def _run(coro):
     asyncio.run(coro)
 
 
-def test_default_tui_has_no_terminal_image_component():
-    """The baseline TUI must stay text-only and safe in every terminal."""
+def test_launcher_has_isolated_three_panel_startup_header():
+    """The launcher owns the startup mark; no other screen or command does."""
     async def scenario():
         app = OvatTUI()
         async with app.run_test():
-            assert app.query_one("#banner", Static)
-            assert not app.query("#intel-animation")
+            assert app.query_one("#masthead", Horizontal)
+            assert app.query_one("#brand-panel", Static)
+            assert app.query_one("#updates-panel", Static)
+            assert app.query_one("#intel-animation", _StartupIntelAnimation)
+    _run(scenario())
+
+
+def test_startup_mark_plays_three_cached_phases_then_stays_on_the_last(tmp_path):
+    """Only two timers run: Gemini -> clipboard -> static ChatGPT frame."""
+    from PIL import Image
+
+    sources = []
+    for index, colour in enumerate(("#001e5a", "#0071c5", "#ffffff"), start=1):
+        source = tmp_path / f"phase-{index}.png"
+        Image.new("RGB", (12, 8), colour).save(source)
+        sources.append(source)
+
+    class StartupApp(tui_module.App):
+        def compose(self):
+            yield _StartupIntelAnimation(sources, columns=4, phase_seconds=0.03,
+                                         id="startup")
+
+    async def scenario():
+        app = StartupApp()
+        async with app.run_test() as pilot:
+            startup = app.query_one("#startup", _StartupIntelAnimation)
+            assert startup.phase_count == 3
+            assert startup.phase_index == 0
+            assert startup.is_animating is True
+            await pilot.pause(0.05)
+            assert startup.phase_index == 1
+            await pilot.pause(0.05)
+            assert startup.phase_index == 2
+            assert startup.is_animating is False
+            final = startup.render()
+            await pilot.pause(0.05)
+            assert startup.render() is final
     _run(scenario())
 
 

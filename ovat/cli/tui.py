@@ -13,13 +13,20 @@ import os
 import subprocess
 import threading
 import time
+from pathlib import Path
+from typing import Final, Iterable, Sequence
 
+from PIL import Image, UnidentifiedImageError
+from rich.color import Color
+from rich.style import Style
 from rich.text import Text
 from textual import work
-from typing import Iterable
 
-from textual.app import App, ComposeResult, SystemCommand
+from textual.app import App, ComposeResult, RenderResult, SystemCommand
 from textual.binding import Binding
+from textual.containers import Horizontal, Vertical
+from textual.timer import Timer
+from textual.widget import Widget
 from textual.widgets import Footer, Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
@@ -43,6 +50,157 @@ QUIT_CONFIRM_S = 3.0
 
 _CYAN_RGB = (0, 199, 253)
 _BLUE_RGB = (0, 104, 181)
+_INTEL_PHASE_SOURCES: Final = (
+    Path(__file__).resolve().parent.parent / "assets" / "intel-phase-1.png",
+    Path(__file__).resolve().parent.parent / "assets" / "intel-phase-2.png",
+    Path(__file__).resolve().parent.parent / "assets" / "intel-phase-3-static.png",
+)
+
+
+class _StartupIntelAnimation(Widget):
+    """A compact, one-shot three-phase Intel startup mark for the launcher.
+
+    This class intentionally stays in ``tui.py``: it is part of the optional
+    Textual launcher, has no process or CLI side effects, and cannot be imported
+    by a normal ``ovat`` command. Images are decoded once at mount time. Two
+    widget-owned timers swap cached Rich renderables, then the final phase is
+    left untouched for the rest of the TUI session.
+    """
+
+    DEFAULT_CSS = """
+    _StartupIntelAnimation {
+        width: 46;
+        height: 15;
+        content-align: center middle;
+    }
+    """
+
+    def __init__(self, sources: Sequence[str | Path] = _INTEL_PHASE_SOURCES,
+                 *, columns: int = 46, phase_seconds: float = 0.7,
+                 name: str | None = None, id: str | None = None,
+                 classes: str | None = None, disabled: bool = False) -> None:
+        if len(sources) != 3:
+            raise ValueError("the Intel startup mark needs exactly three phases")
+        if columns < 2:
+            raise ValueError("columns must be at least 2")
+        if phase_seconds <= 0:
+            raise ValueError("phase_seconds must be positive")
+        super().__init__(name=name, id=id, classes=classes, disabled=disabled)
+        self._sources = tuple(Path(source) for source in sources)
+        self._columns = columns
+        self._phase_seconds = phase_seconds
+        self._frames: tuple[Text, ...] = ()
+        self._phase_index = 0
+        self._timer: Timer | None = None
+        self._error: Text | None = None
+
+    @property
+    def phase_index(self) -> int:
+        """The visible phase: 0 (Gemini), 1 (clipboard), or 2 (static)."""
+        return self._phase_index
+
+    @property
+    def phase_count(self) -> int:
+        """Number of cached source images, zero if loading failed."""
+        return len(self._frames)
+
+    @property
+    def is_animating(self) -> bool:
+        """Whether either of the two startup transitions remains scheduled."""
+        return self._timer is not None
+
+    def on_mount(self) -> None:
+        """Decode and rasterize each source exactly once before scheduling."""
+        try:
+            self._frames = tuple(self._load_renderable(source)
+                                 for source in self._sources)
+        except (OSError, UnidentifiedImageError) as error:
+            self._error = Text(f"Intel startup mark unavailable: {error}", style="red")
+            self.refresh()
+            return
+        self._phase_index = 0
+        self.refresh()
+        self._schedule_advance()
+
+    def on_unmount(self) -> None:
+        """A removed launcher must not retain a timer or Pillow image state."""
+        self._cancel_timer()
+
+    def restart(self) -> None:
+        """Replay the three phases without re-decoding their cached frames."""
+        if not self._frames:
+            return
+        self._cancel_timer()
+        self._phase_index = 0
+        self.refresh()
+        self._schedule_advance()
+
+    def render(self) -> RenderResult:
+        """Return a cached frame only; this method never opens an image file."""
+        if self._frames:
+            return self._frames[self._phase_index]
+        return self._error or Text("")
+
+    def _schedule_advance(self) -> None:
+        if self._phase_index < len(self._frames) - 1:
+            self._timer = self.set_timer(self._phase_seconds, self._advance)
+
+    def _advance(self) -> None:
+        self._timer = None
+        if self._phase_index >= len(self._frames) - 1:
+            return
+        self._phase_index += 1
+        self.refresh()
+        self._schedule_advance()
+
+    def _cancel_timer(self) -> None:
+        if self._timer is not None:
+            self._timer.stop()
+            self._timer = None
+
+    def _load_renderable(self, source: Path) -> Text:
+        """Resample one source into a high-density two-colour Braille image.
+
+        A terminal cell has a foreground and background colour. Choosing the
+        nearest of two per-cell palette colours preserves the Intel artwork's
+        blue and white details much better than a global-background threshold.
+        """
+        with Image.open(source) as image:
+            rows = max(1, round(self._columns * image.height / image.width / 2))
+            scaled = image.convert("RGB").resize(
+                (self._columns * 2, rows * 4), Image.Resampling.LANCZOS
+            )
+            pixels = list(scaled.get_flattened_data())
+
+        text = Text(no_wrap=True)
+        for row in range(rows):
+            for column in range(self._columns):
+                cell = [pixels[(row * 4 + y) * self._columns * 2 + column * 2 + x]
+                        for x, y in ((0, 0), (0, 1), (0, 2), (0, 3),
+                                     (1, 0), (1, 1), (1, 2), (1, 3))]
+                dark, light = self._cell_palette(cell)
+                mask = 0
+                for pixel, bit in zip(cell, (0x01, 0x02, 0x04, 0x40,
+                                             0x08, 0x10, 0x20, 0x80)):
+                    if self._distance(pixel, light) < self._distance(pixel, dark):
+                        mask |= bit
+                text.append(chr(0x2800 + mask), Style(
+                    color=Color.from_rgb(*light), bgcolor=Color.from_rgb(*dark)
+                ))
+            if row + 1 < rows:
+                text.append("\n")
+        return text
+
+    @staticmethod
+    def _cell_palette(pixels: list[tuple[int, int, int]]) -> tuple[
+            tuple[int, int, int], tuple[int, int, int]]:
+        """Return the darkest and lightest source colours for one cell."""
+        luminance = lambda pixel: 299 * pixel[0] + 587 * pixel[1] + 114 * pixel[2]
+        return min(pixels, key=luminance), max(pixels, key=luminance)
+
+    @staticmethod
+    def _distance(first: tuple[int, int, int], second: tuple[int, int, int]) -> int:
+        return sum((first[channel] - second[channel]) ** 2 for channel in range(3))
 
 
 def _lerp_hex(a: tuple, b: tuple, t: float) -> str:
@@ -80,6 +238,23 @@ def _banner() -> Text:
     out = _wordmark_text()
     out.append("\nOpenVINO Agentic Toolkit\n", style=f"bold {ui.CYAN}")
     out.append("one YAML  +  one command", style=ui.PURPLE)
+    return out
+
+
+def _startup_updates() -> Text:
+    """The launcher's compact status and starter-command board."""
+    out = Text()
+    out.append("OVAT Toolkit\n", style=f"bold {ui.CYAN}")
+    out.append("OpenVINO local-first agent workflows\n\n", style=ui.DIM)
+    out.append("START HERE\n", style=f"bold {ui.BLUE}")
+    out.append("/doctor", style=f"bold {ui.CYAN}")
+    out.append("   check devices and setup\n", style=ui.DIM)
+    out.append("/chat", style=f"bold {ui.CYAN}")
+    out.append("     ask your indexed documents\n", style=ui.DIM)
+    out.append("/index docs", style=f"bold {ui.CYAN}")
+    out.append("  create local search\n", style=ui.DIM)
+    out.append("Ctrl-P", style=f"bold {ui.PURPLE}")
+    out.append("    command palette", style=ui.DIM)
     return out
 
 
@@ -180,7 +355,29 @@ class OvatTUI(App):
 
     CSS = """
     Screen { background: $background; }
-    #banner { padding: 1 2 0 2; height: auto; }
+    #masthead {
+        height: 17;
+        margin: 1 2 0 2;
+        border: round $primary;
+        background: $surface;
+    }
+    #brand-panel {
+        width: 32%;
+        padding: 0 1;
+        border-right: tall $primary;
+        content-align: left middle;
+    }
+    #updates-panel {
+        width: 1fr;
+        padding: 0 1;
+        border-right: tall $primary;
+        content-align: left middle;
+    }
+    #intel-panel {
+        width: 29%;
+        padding: 0;
+        content-align: center middle;
+    }
     #output {
         height: 1fr;
         border: round $primary;
@@ -224,12 +421,11 @@ class OvatTUI(App):
         self._history = InputHistory() # Up/Down recall, like the shell it wraps
 
     def compose(self) -> ComposeResult:
-        # Textual deliberately has no built-in raster-image widget.  Do not
-        # approximate the Intel asset with Unicode cells here: in ConHost that
-        # produces a visibly broken logo and, worse, takes space from commands.
-        # A future native graphics integration must live behind its own optional
-        # extra, never in this baseline TUI.
-        yield Static(_banner(), id="banner")
+        with Horizontal(id="masthead"):
+            yield Static(_banner(), id="brand-panel")
+            yield Static(_startup_updates(), id="updates-panel")
+            with Vertical(id="intel-panel"):
+                yield _StartupIntelAnimation(id="intel-animation")
         output = RichLog(id="output", highlight=False, markup=False, wrap=True)
         output.border_title = "output"
         output.border_subtitle = "Ctrl-P palette · / shortcuts"
@@ -259,7 +455,7 @@ class OvatTUI(App):
         # The wordmark fades up rather than snapping in. 250ms: slow enough
         # to register as an entrance, fast enough not to delay the prompt,
         # which is focused and usable throughout.
-        banner = self.query_one("#banner", Static)
+        banner = self.query_one("#brand-panel", Static)
         banner.styles.opacity = 0.0
         banner.styles.animate("opacity", value=1.0, duration=0.25)
 
