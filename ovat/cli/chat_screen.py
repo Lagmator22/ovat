@@ -1142,6 +1142,10 @@ class ChatScreen(Screen):
                 self._view.mount(footnote, after=response)
             else:
                 self._view.mount(footnote)
+        # Stopping mid-stream leaves the answer widget resized under a
+        # half-finished paint, and the border came out broken. One explicit
+        # layout pass after everything is in place redraws it whole.
+        self._view.refresh(layout=True)
         self._mark_idle()
 
     @work(thread=True)
@@ -1149,23 +1153,35 @@ class ChatScreen(Screen):
         engine = self._engine
         parts: list = []
         written = ""                     # how much of the answer is on screen
+        streaming = True                 # False once the text had to reshape
 
         def on_token(token: str):
-            nonlocal written
+            nonlocal written, streaming
             if self._stop_stream:
                 return True              # tell openvino_genai to stop generating
             parts.append(token)
             _, answer = split_thinking(self._for_display("".join(parts)))
             if answer == written:
                 return False             # still inside <think>: nothing new yet
-            if answer.startswith(written):
+            if streaming and answer.startswith(written):
                 # The common case: append only what arrived. MarkdownStream
                 # coalesces bursts internally, which is what its docs say the
                 # plain update() path cannot keep up with past ~20 a second.
                 self.app.call_from_thread(stream.write, answer[len(written):])
             else:
                 # Stripping reshaped the text (an unclosed <think> just
-                # closed), so append-only no longer holds: replace it.
+                # closed), so append-only no longer holds and the text must
+                # be replaced wholesale.
+                #
+                # The stream cannot survive that. MarkdownStream keeps its
+                # OWN record of what it has written and update() does not
+                # tell it, so every later write() would append the next
+                # delta onto a STALE buffer: the answer renders twice over
+                # itself and the border comes out broken. Retire the stream
+                # for the rest of this turn and update directly from here.
+                if streaming:
+                    streaming = False
+                    self.app.call_from_thread(stream.stop)
                 self.app.call_from_thread(response.update, answer)
             written = answer
             return False
@@ -1174,7 +1190,8 @@ class ChatScreen(Screen):
             answer, sources = engine.ask(question, self._session.messages,
                                          on_token)
         except Exception as exc:
-            self.app.call_from_thread(stream.stop)
+            if streaming:
+                self.app.call_from_thread(stream.stop)
             self.app.call_from_thread(self._clear_thinking)
             self.app.call_from_thread(response.update, f"*error: {exc}*")
             self.app.call_from_thread(self._mark_idle)
@@ -1189,7 +1206,9 @@ class ChatScreen(Screen):
         self._session.save(path)
 
         # Stop the stream BEFORE the final update, so the background task is
-        # not still appending while the finished text is written in.
-        self.app.call_from_thread(stream.stop)
+        # not still appending while the finished text is written in. It is
+        # already stopped if the text reshaped mid-answer.
+        if streaming:
+            self.app.call_from_thread(stream.stop)
         self.app.call_from_thread(self._commit_turn, response, answer, sources)
 

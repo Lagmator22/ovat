@@ -1376,3 +1376,143 @@ def test_thinking_and_load_stand_down_while_an_answer_is_running(
             await pilot.pause()
             assert "Esc stops it before loading" in _log_text(screen)
     _run(scenario())
+
+
+# A reshaping answer must not be written through two paths at once
+
+class SplitTagLLM:
+    """Emits a <think> block with the TAGS SPLIT ACROSS TOKENS.
+
+    That split is the whole point and is what a real tokenizer does: "<th"
+    arrives first and cannot be recognised as a tag yet, so it is displayed.
+    When "ink>" completes the tag the block is stripped and the visible
+    answer SHRINKS, which is the one case append-only streaming cannot
+    express. Emitting "<think>" whole never reproduces it.
+    """
+
+    TOKENS = ("<th", "ink>", "weighing it up", "</th", "ink>",
+              "the answer", " continues")
+
+    def chat(self, messages, tools=None, on_token=None):
+        for token in self.TOKENS:
+            if on_token and on_token(token):
+                break
+        return {"finish_reason": "stop", "tool_calls": None,
+                "content": "<think>weighing it up</think>the answer continues"}
+
+
+def _record_stream_traffic(monkeypatch):
+    """Record write/stop on the stream and update on the answer widget, in
+    one ordered list, so their INTERLEAVING can be asserted on."""
+    from textual.widgets import Markdown
+    from ovat.cli.chat_screen import Response
+
+    calls: list = []
+    real_get_stream = Markdown.get_stream
+    real_update = Response.update
+
+    class Recorder:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def write(self, text):
+            calls.append(("write", text))
+            return self._inner.write(text)
+
+        def stop(self):
+            calls.append(("stop", None))
+            return self._inner.stop()
+
+    def recording_update(self, markdown=""):
+        calls.append(("update", markdown))
+        return real_update(self, markdown)
+
+    monkeypatch.setattr(Markdown, "get_stream",
+                        lambda widget: Recorder(real_get_stream(widget)))
+    monkeypatch.setattr(Response, "update", recording_update)
+    return calls
+
+
+def test_no_write_reaches_the_stream_after_a_direct_update(monkeypatch,
+                                                           tmp_path):
+    """The desync that broke the answer border.
+
+    MarkdownStream keeps its OWN record of what it has written. update()
+    replaces the widget's content without telling it, so any later write()
+    appends the next delta onto a STALE buffer: the answer renders over
+    itself and the box is drawn to the wrong size. Once the text has had to
+    reshape, the stream must be retired for the rest of the turn.
+    """
+    from ovat.cli.chat_screen import Response
+
+    calls = _record_stream_traffic(monkeypatch)
+    monkeypatch.setattr(
+        chat_screen, "_build_components",
+        lambda c, m, max_tokens=256: (WorkflowConfig(model={"name": "m"}),
+                                      FakeRetriever(), SplitTagLLM()))
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            screen.query_one("#chat-input", ChatInput).value = "hi"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            kinds = [kind for kind, _ in calls]
+            assert "write" in kinds, "nothing streamed; the fake never ran"
+            # Anchor AFTER the first write: the Response is mounted with an
+            # empty update before anything streams, and that one is not the
+            # reshape being tested.
+            first_write = kinds.index("write")
+            tail = kinds[first_write:]
+            assert "update" in tail, (
+                "the answer never reshaped, so this test proves nothing: "
+                f"{calls}")
+            first_update = first_write + tail.index("update")
+            assert "write" not in kinds[first_update:], (
+                "wrote to the stream after replacing the widget's content, "
+                f"which is the desync that broke the border: {calls}")
+            # The answer still lands, in one widget, undamaged.
+            answers = list(screen.query(Response))
+            assert len(answers) == 1
+    _run(scenario())
+
+
+def test_the_stream_is_only_stopped_once(monkeypatch, tmp_path):
+    """The reshape path stops it early; the finish path must not stop it
+    again, or a second stop lands on a task that is already unwound."""
+    from textual.widgets import Markdown
+
+    stops: list = []
+    real_get_stream = Markdown.get_stream
+
+    class Recorder:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def write(self, text):
+            return self._inner.write(text)
+
+        def stop(self):
+            stops.append(1)
+            return self._inner.stop()
+
+    monkeypatch.setattr(Markdown, "get_stream",
+                        lambda widget: Recorder(real_get_stream(widget)))
+    monkeypatch.setattr(
+        chat_screen, "_build_components",
+        lambda c, m, max_tokens=256: (WorkflowConfig(model={"name": "m"}),
+                                      FakeRetriever(), SplitTagLLM()))
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            screen.query_one("#chat-input", ChatInput).value = "hi"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert len(stops) == 1, f"stopped {len(stops)} times"
+    _run(scenario())
