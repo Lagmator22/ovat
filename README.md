@@ -11,7 +11,7 @@ then run it:
 ovat run workflow.yml --input "What do my notes say about Q3?"
 ```
 
-> GSoC 2026 · Intel / OpenVINO · Project #18. This is a work in progress; see
+> OpenVINO | Project #18 | This is a work in progress; see
 > [Status](#status--limitations) for what works today.
 
 ---
