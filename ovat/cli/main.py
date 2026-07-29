@@ -123,7 +123,7 @@ def run(
 ):
     """Run the agent described by CONFIG against your input."""
     # Step 1: YAML -> validated config. A bad file fails loudly right here.
-    cfg = load_workflow(config)
+    cfg = _load_config(config)
     # Step 2: config -> a fully wired agent (LLM + tools + loop). dry-run skips
     # loading the RAG model so the preview works on any machine.
     agent = build_agent(cfg, skip_rag=dry_run)
@@ -163,6 +163,64 @@ def run(
 
     if trace:
         _write_trace(trace, cfg, agent, peak_rss_mb=memory.peak_mb)
+
+
+def _load_config(path: str):
+    """load_workflow, but a bad file is a SENTENCE rather than a traceback.
+
+    Every command starts by reading a workflow, so every command inherited
+    the raw exception: a mistyped name (workflow.yaml for workflow.yml) put a
+    twenty-line rich traceback on screen with the useful part buried in it.
+    The project rule is that failures reach the user as something they can
+    act on, and this is the single busiest place that rule applies.
+
+    Three distinct failures, three distinct sentences, because the fix is
+    different for each: the file is not there, the YAML does not parse, or it
+    parses but does not match the schema.
+    """
+    import yaml
+    from pydantic import ValidationError
+
+    try:
+        return load_workflow(path)
+    except FileNotFoundError:
+        rprint(f"[red]No such workflow file:[/red] {esc(path)}")
+        # The commonest typo by a mile, and invisible when you are staring
+        # at it, so say it outright rather than leaving them to spot it.
+        if path.endswith(".yaml"):
+            rprint("[yellow]Tip:[/yellow] OVAT's examples use the "
+                   "[bold].yml[/bold] spelling. Try "
+                   f"[bold]{esc(path[:-len('.yaml')] + '.yml')}[/bold]")
+        else:
+            rprint("[yellow]Tip:[/yellow] run [bold]ovat init[/bold] to "
+                   "write a starter workflow.yml here.")
+        raise typer.Exit(code=1)
+    except IsADirectoryError:
+        rprint(f"[red]That is a folder, not a workflow file:[/red] "
+               f"{esc(path)}")
+        raise typer.Exit(code=1)
+    except yaml.YAMLError as exc:
+        rprint(f"[red]{esc(path)} is not valid YAML.[/red]")
+        # mark tells you the line and column; without it the user is hunting
+        # a stray bracket by eye.
+        mark = getattr(exc, "problem_mark", None)
+        if mark is not None:
+            rprint(f"[dim]line {mark.line + 1}, column {mark.column + 1}"
+                   f"[/dim]  {esc(getattr(exc, 'problem', '') or '')}")
+        raise typer.Exit(code=1)
+    except ValidationError as exc:
+        rprint(f"[red]{esc(path)} does not match the workflow schema.[/red]")
+        for error in exc.errors():
+            where = ".".join(str(part) for part in error["loc"]) or "(root)"
+            rprint(f"  [bold]{esc(where)}[/bold]: {esc(error['msg'])}")
+        # Unknown keys are the common case and the message for them is
+        # otherwise just "Extra inputs are not permitted", which does not say
+        # that the strictness is deliberate.
+        if any(e["type"] == "extra_forbidden" for e in exc.errors()):
+            rprint("[dim]Unknown keys are rejected on purpose, so a typo is "
+                   "an error rather than a setting that silently does "
+                   "nothing.[/dim]")
+        raise typer.Exit(code=1)
 
 
 def _brief_error(message: str | None, limit: int = 34) -> str:
@@ -291,7 +349,7 @@ def chat(
     from ovat.agent.rag_chat import rag_chat
     from ovat.providers.llm_genai import GenAILLMProvider
 
-    cfg = load_workflow(config)
+    cfg = _load_config(config)
     if cfg.rag is None:
         rprint("[red]This workflow has no [bold]rag:[/bold] section to chat against.[/red]")
         raise typer.Exit(code=1)
@@ -344,7 +402,7 @@ def index(
     from ovat.agent.factory import build_rag
     from ovat.rag.indexer import index_folder, iter_text_files
 
-    cfg = load_workflow(config)
+    cfg = _load_config(config)
     if cfg.rag is None:
         rprint("[red]This workflow has no [bold]rag:[/bold] section.[/red] "
                "Add one (embeddings + retriever) before indexing.")
@@ -507,7 +565,7 @@ def serve(
         rprint(esc(stop_from_pidfile()))
         return
 
-    cfg = load_workflow(config)
+    cfg = _load_config(config)
     # Resolve the binary FIRST (config field → OVAT_OVMS env → PATH → known
     # folders), so a setupvars.bat-style install just works with no PATH edit.
     binary, how = find_ovms(cfg.model.ovms_binary)
@@ -644,7 +702,7 @@ def bench(
 
     from ovat.bench import benchmark
 
-    cfg = load_workflow(config)
+    cfg = _load_config(config)
     names = [e.strip() for e in engines.split(",") if e.strip()]
     if not names:
         rprint("[red]No engines to run.[/red] Pass --engines native,react")

@@ -412,3 +412,101 @@ def test_a_long_error_is_truncated_with_an_ellipsis():
     brief = _brief_error("ValueError: " + "x" * 200)
     assert len(brief) <= 34
     assert brief.endswith("…")
+
+
+# A bad workflow file must be a sentence, not a traceback
+
+def test_a_missing_workflow_names_the_file_and_the_likely_typo(tmp_path):
+    """Every command starts by reading a workflow, so every command
+    inherited the raw exception. Typing workflow.yaml for workflow.yml put a
+    twenty-line rich traceback on screen with the useful part buried."""
+    result = runner.invoke(app, ["run", str(tmp_path / "workflow.yaml"),
+                                 "-i", "hi"])
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+    assert "No such workflow file" in result.output
+    # The commonest typo by a mile, and invisible when you are staring at it.
+    assert "workflow.yml" in result.output
+
+
+def test_a_missing_workflow_without_that_typo_points_at_init(tmp_path):
+    result = runner.invoke(app, ["run", str(tmp_path / "nope.yml"), "-i", "hi"])
+    assert result.exit_code == 1
+    assert "ovat init" in result.output
+
+
+def test_malformed_yaml_gives_the_line_and_column(tmp_path):
+    """Without the position the user is hunting a stray bracket by eye."""
+    config = tmp_path / "bad.yml"
+    config.write_text("model: [unclosed\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+    assert "not valid YAML" in result.output
+    assert "line" in result.output
+
+
+def test_an_unknown_key_is_named_and_explained(tmp_path):
+    """Strictness is deliberate, and "Extra inputs are not permitted" alone
+    does not say so."""
+    config = tmp_path / "strict.yml"
+    config.write_text("model:\n  name: m\nnonsense_key: 1\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+    assert "nonsense_key" in result.output
+    assert "on purpose" in result.output
+
+
+def test_a_folder_instead_of_a_file_says_so(tmp_path):
+    result = runner.invoke(app, ["run", str(tmp_path), "-i", "hi"])
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+    assert "folder, not a workflow file" in result.output
+
+
+def test_every_command_that_reads_a_workflow_uses_the_friendly_loader():
+    """Five commands call it. One that slipped back to load_workflow would
+    quietly reintroduce the traceback for its own users only, which is the
+    kind of regression nobody notices until a demo."""
+    import inspect
+    from ovat.cli import main as cli_main
+
+    source = inspect.getsource(cli_main)
+    # The helper itself is the single place allowed to call load_workflow.
+    body = source.split("def _load_config")[1].split("\ndef ")[0]
+    assert body.count("load_workflow(path)") == 1
+    outside = source.replace(body, "")
+    assert "load_workflow(config)" not in outside
+
+
+def test_the_bad_config_message_is_the_same_for_every_command(tmp_path):
+    """A user who mistypes the path should get the same help whichever
+    command they were running.
+
+    doctor is deliberately absent from this list: it is a DIAGNOSTIC, so a
+    missing config is a failed check reported alongside the others rather
+    than a reason to stop. See the test below.
+    """
+    missing = str(tmp_path / "workflow.yaml")
+    for argv in (["run", missing, "-i", "x"],
+                 ["index", str(tmp_path), missing],
+                 ["bench", missing, "-i", "x"]):
+        result = runner.invoke(app, argv)
+        assert "Traceback" not in result.output, argv
+        assert "No such workflow file" in result.output, argv
+
+
+def test_doctor_reports_a_missing_config_as_a_failed_check(tmp_path):
+    """Not an early exit: the point of doctor is to run EVERY check and show
+    the whole picture, so a bad config is one red row among the green ones,
+    not a reason to stop before testing anything else."""
+    missing = str(tmp_path / "workflow.yaml")
+    result = runner.invoke(app, ["doctor", missing])
+    assert "Traceback" not in result.output
+    assert "no such file" in result.output.lower()
+    assert "fail" in result.output
+    # The environment checks still ran.
+    assert "Python" in result.output
