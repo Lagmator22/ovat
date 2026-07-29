@@ -137,10 +137,10 @@ def run(
         rprint("[yellow]dry-run:[/yellow] not calling the model.")
         raise typer.Exit()
 
-    # Show which engine is actually running, so it is visible in a demo: the
-    # agent.type in the YAML is what picks it (native loop vs LangChain).
-    engine = "LangChain (react)" if cfg.agent.type == "react" else "native loop (loop.py)"
-    rprint(f"[dim]engine:[/dim] [bold]{engine}[/bold]")
+    # Show which engine is actually running, so it is visible in a demo. The
+    # name comes from the CONFIG; see ENGINE_LABELS for why this is not a
+    # conditional expression any more.
+    rprint(f"[dim]engine:[/dim] [bold]{esc(_engine_label(cfg.agent.type))}[/bold]")
 
     # Step 3: actually run. This needs a live OVMS server to answer.
     # The memory sampler runs for the whole call: see _write_trace for why a
@@ -163,6 +163,33 @@ def run(
 
     if trace:
         _write_trace(trace, cfg, agent, peak_rss_mb=memory.peak_mb)
+
+
+# How each engine is announced on screen. Presentation only: the list of
+# engines that actually EXIST is factory.AGENT_TYPES, and this must not become
+# a second copy of it.
+#
+# This line used to be
+#     "LangChain (react)" if cfg.agent.type == "react" else "native loop"
+# which was true while there were two engines and became a lie the moment
+# there were four: a llamaindex run announced itself as the native loop. The
+# trace had the identical defect and was fixed; this, the line a demo actually
+# points at, was not, so the screen and the JSON disagreed about one run.
+#
+# The .get() fallback is the part that matters. An engine added to the factory
+# and forgotten here prints its own bare name, which is terse but TRUE. There
+# is no branch left that can attribute a run to the wrong engine.
+ENGINE_LABELS = {
+    "native": "native loop (loop.py)",
+    "react": "LangChain (react)",
+    "llamaindex": "LlamaIndex (llamaindex)",
+    "openai-agents": "OpenAI Agents SDK (openai-agents)",
+}
+
+
+def _engine_label(agent_type: str) -> str:
+    """Human name for an engine, falling back to the configured name."""
+    return ENGINE_LABELS.get(agent_type, agent_type)
 
 
 def _load_config(path: str):
