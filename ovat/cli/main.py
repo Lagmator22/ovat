@@ -143,8 +143,14 @@ def run(
     rprint(f"[dim]engine:[/dim] [bold]{engine}[/bold]")
 
     # Step 3: actually run. This needs a live OVMS server to answer.
+    # The memory sampler runs for the whole call: see _write_trace for why a
+    # single reading afterwards is not a peak.
+    from ovat.bench import _PeakMemory
+
+    memory = _PeakMemory()
     try:
-        answer = agent.run(input)
+        with memory:
+            answer = agent.run(input)
     except Exception as exc:
         rprint(f"[red]Error talking to OVMS at {esc(cfg.model.ovms_url)}[/red]: "
                f"{esc(exc)}")
@@ -156,31 +162,56 @@ def run(
     rprint(esc(answer), highlight=False)
 
     if trace:
-        _write_trace(trace, cfg, agent)
+        _write_trace(trace, cfg, agent, peak_rss_mb=memory.peak_mb)
 
 
-def _write_trace(path: str, cfg, agent) -> None:
+def _brief_error(message: str | None, limit: int = 34) -> str:
+    """The most ACTIONABLE fragment of an error, short enough for a cell.
+
+    "pip install 'ovat[llamaindex]'" tells the reader what to do; the words
+    "RuntimeError" tell them nothing they cannot already see from the colour.
+    """
+    if not message:
+        return "failed"
+    # An install hint is the whole point of the message when there is one.
+    if "pip install" in message:
+        hint = message[message.index("pip install"):]
+        return hint if len(hint) <= limit else hint[:limit - 1] + "\u2026"
+    # Otherwise drop the exception class and keep what it said.
+    _, _, detail = message.partition(": ")
+    text = (detail or message).strip()
+    return text if len(text) <= limit else text[:limit - 1] + "\u2026"
+
+
+def _write_trace(path: str, cfg, agent, peak_rss_mb=None) -> None:
     """Dump the run trace (Layer 7) as JSON: what the run cost, measured.
 
-    The native loop fills agent.last_trace as it works; peak RSS comes from
-    psutil so the proposal's memory-budget criterion (<8 GB) is a number in a
-    file, not a claim. The react engine does not expose per-turn data yet, so
-    its trace says so honestly instead of writing empty numbers.
+    The native loop fills agent.last_trace as it works. The framework engines
+    own their own request loops and do not hand per-turn data back, so their
+    trace says so rather than writing empty numbers.
+
+    The engine name comes from the CONFIG, not from a literal. It used to be
+    hardcoded "react", which was true when react was the only framework
+    engine and became a lie the moment there were three: a llamaindex run
+    wrote a trace file claiming it was react. A measurement that misreports
+    what produced it is worse than no measurement.
+
+    peak_rss_mb is passed IN because it has to be sampled while the run is
+    happening. Reading it here, after the run, misses the peak entirely:
+    Python has usually freed the big allocations by then, and this number
+    exists for the proposal's <8 GB memory criterion.
     """
     import json
 
     trace_data = getattr(agent, "last_trace", None) or {
-        "engine": "react",
-        "note": "per-turn tracing is only wired for the native loop so far",
+        "engine": cfg.agent.type,
+        "note": ("per-turn tracing is only wired for the native loop; this "
+                 "engine owns its own request loop and does not report "
+                 "token usage back"),
     }
     trace_data = dict(trace_data)                  # never mutate the agent's copy
     trace_data["model"] = cfg.model.name
-    try:
-        import psutil
-        rss = psutil.Process().memory_info().rss
-        trace_data["peak_rss_mb"] = round(rss / (1024 * 1024), 1)
-    except ImportError:
-        trace_data["peak_rss_mb"] = None
+    trace_data["peak_rss_mb"] = peak_rss_mb
     with open(path, "w", encoding="utf-8") as f:
         json.dump(trace_data, f, indent=2)
     rprint(f"[dim]trace written to[/dim] {esc(path)}")
@@ -635,15 +666,19 @@ def bench(
         def cell(key):
             value = row[key]
             return "-" if value is None else str(value)
-        # The table is a SUMMARY: a whole exception message here squeezes the
-        # numeric columns to one character each on an 80-column terminal and
-        # loses the measurements the table exists for. The full text is in
-        # the JSON report, which is the record.
+        # The table is a SUMMARY, so the message is shortened. Keep the part
+        # that says WHAT TO DO, not the exception class.
+        #
+        # This was the other way round and it actively misled: a missing
+        # extra reads "RuntimeError: agent.type 'llamaindex' needs LlamaIndex.
+        # Install it with: pip install 'ovat[llamaindex]'", and showing only
+        # the class rendered a bare "RuntimeError" next to two engines that
+        # worked. It looked like the engine was broken rather than simply not
+        # installed, which is the opposite of what the row was trying to say.
         if row["ok"]:
             status = Text("ok", style=f"bold {ui.GREEN}")
         else:
-            brief = (row["error"] or "failed").split(":")[0][:24]
-            status = Text(brief, style=ui.RED)
+            status = Text(_brief_error(row["error"]), style=ui.RED)
         table.add_row(Text(row["engine"], style=ui.CYAN), cell("build_s"),
                       cell("latency_s"), cell("peak_rss_mb"),
                       cell("prompt_tokens"), cell("completion_tokens"),

@@ -141,10 +141,18 @@ def test_run_trace_records_turns_tokens_and_tool_calls():
 def test_run_trace_survives_replies_without_usage():
     # conftest.reply() carries no usage key; exactly what a provider that
     # doesn't report tokens looks like. The trace must not crash on it.
+    #
+    # The total is None, NOT zero. This assertion used to read == 0, which
+    # encoded a real bug: a server that sends no usage block would produce
+    # "prompt_tokens": 0 in the trace, and that reads as "this run used no
+    # tokens" rather than "nobody told us". A benchmark built on that number
+    # is quietly wrong, which is the worst kind.
     agent = AgentLoop(FakeLLMProvider([reply("stop", content="hi")]), tools={})
     agent.run("hello")
-    assert agent.last_trace["totals"]["prompt_tokens"] == 0
+    assert agent.last_trace["totals"]["prompt_tokens"] is None
     assert agent.last_trace["turns"][0]["prompt_tokens"] is None
+    # Turn count is genuinely known, so it stays a number.
+    assert agent.last_trace["totals"]["turns"] == 1
 
 
 # The three "model misbehaves" edge cases

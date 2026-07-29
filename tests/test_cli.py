@@ -274,3 +274,141 @@ def test_index_still_reports_a_missing_folder_rather_than_a_bar(monkeypatch,
         app, ["index", str(tmp_path / "nope"), _rag_config(tmp_path)])
     assert result.exit_code == 1
     assert "No such folder to index" in result.output
+
+
+# Telemetry: a measurement that misreports itself is worse than none
+
+def test_the_trace_names_the_engine_that_actually_ran(tmp_path):
+    """The engine name used to be the literal "react", which was true while
+    react was the only framework engine and became a lie the moment there
+    were three: a llamaindex run wrote a trace claiming it was react."""
+    import json
+    from ovat.cli.main import _write_trace
+    from ovat.config.workflow import WorkflowConfig
+
+    class FrameworkAgent:          # no last_trace, like every adapter
+        pass
+
+    for engine in ("react", "llamaindex", "openai-agents"):
+        cfg = WorkflowConfig(model={"name": "m"}, agent={"type": engine})
+        path = tmp_path / f"{engine}.json"
+        _write_trace(str(path), cfg, FrameworkAgent(), peak_rss_mb=1.0)
+        assert json.loads(path.read_text(encoding="utf-8"))["engine"] == engine
+
+
+def test_the_native_trace_keeps_its_own_engine_name(tmp_path):
+    """The loop fills last_trace itself; the config must not overwrite it."""
+    import json
+    from ovat.cli.main import _write_trace
+    from ovat.config.workflow import WorkflowConfig
+
+    class NativeAgent:
+        last_trace = {"engine": "native", "turns": [], "totals": {}}
+
+    cfg = WorkflowConfig(model={"name": "m"}, agent={"type": "native"})
+    path = tmp_path / "t.json"
+    _write_trace(str(path), cfg, NativeAgent(), peak_rss_mb=2.0)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["engine"] == "native"
+    assert data["peak_rss_mb"] == 2.0
+
+
+def test_the_trace_peak_is_measured_during_the_run_not_after_it(monkeypatch,
+                                                                 tmp_path):
+    """Reading RSS after the run misses the peak: Python has usually freed
+    the big allocations by then, and this number exists for the proposal's
+    memory criterion, so a wrong one is worse than none."""
+    from ovat.cli import main as cli_main
+
+    sampled = []
+
+    class Agent:
+        last_trace = {"engine": "native", "turns": [], "totals": {}}
+
+        def run(self, text):
+            # If the sampler is live, it is running WHILE this executes.
+            sampled.append("running")
+            return "answer"
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Agent())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    trace = tmp_path / "trace.json"
+
+    result = runner.invoke(app, ["run", str(config), "-i", "hi",
+                                 "--trace", str(trace)])
+    assert result.exit_code == 0, result.output
+
+    import json
+    data = json.loads(trace.read_text(encoding="utf-8"))
+    assert data["peak_rss_mb"] is not None and data["peak_rss_mb"] > 0
+    assert sampled == ["running"]
+
+
+def test_unknown_token_counts_stay_unknown_in_the_totals():
+    """A server that sends no usage block would otherwise produce
+    "prompt_tokens": 0, which reads as "this run used no tokens" rather than
+    "nobody told us", and a benchmark built on that is quietly wrong."""
+    from ovat.agent.loop import AgentLoop
+    from tests.conftest import FakeLLMProvider, reply
+
+    llm = FakeLLMProvider([reply("hi")])
+    original = llm.chat
+    llm.chat = lambda messages, tools=None: {
+        **original(messages, tools=tools), "usage": None}
+
+    loop = AgentLoop(llm=llm, tools={}, system_prompt=None, max_iterations=3)
+    loop.run("q")
+    totals = loop.last_trace["totals"]
+    assert totals["prompt_tokens"] is None
+    assert totals["completion_tokens"] is None
+    assert totals["turns"] == 1          # turns ARE known, and stay a number
+
+
+def test_known_token_counts_are_still_summed():
+    from ovat.agent.loop import AgentLoop
+    from tests.conftest import FakeLLMProvider, reply
+
+    llm = FakeLLMProvider([reply("hi")])
+    original = llm.chat
+    llm.chat = lambda messages, tools=None: {
+        **original(messages, tools=tools),
+        "usage": {"prompt_tokens": 10, "completion_tokens": 4}}
+
+    loop = AgentLoop(llm=llm, tools={}, system_prompt=None, max_iterations=3)
+    loop.run("q")
+    assert loop.last_trace["totals"]["prompt_tokens"] == 10
+    assert loop.last_trace["totals"]["completion_tokens"] == 4
+
+
+# The benchmark table must say what to DO, not name the exception class
+
+def test_a_missing_extra_shows_the_install_command_not_the_class():
+    """This actively misled once. A missing extra reads "RuntimeError:
+    agent.type 'llamaindex' needs LlamaIndex. Install it with: pip install
+    'ovat[llamaindex]'", and showing only the class rendered a bare
+    "RuntimeError" next to two engines that worked: it looked like the engine
+    was broken rather than simply not installed."""
+    from ovat.cli.main import _brief_error
+
+    message = ("RuntimeError: agent.type 'llamaindex' needs LlamaIndex. "
+               "Install it with: pip install 'ovat[llamaindex]'")
+    brief = _brief_error(message)
+    assert brief.startswith("pip install")
+    assert "RuntimeError" not in brief
+
+
+def test_other_errors_keep_their_detail_and_drop_the_class():
+    from ovat.cli.main import _brief_error
+
+    assert _brief_error("APIConnectionError: Connection error.") == \
+        "Connection error."
+    assert _brief_error(None) == "failed"
+
+
+def test_a_long_error_is_truncated_with_an_ellipsis():
+    from ovat.cli.main import _brief_error
+
+    brief = _brief_error("ValueError: " + "x" * 200)
+    assert len(brief) <= 34
+    assert brief.endswith("…")

@@ -114,13 +114,23 @@ class AgentLoop:
         turns: list[dict] = []
         self.last_trace = {"engine": "native", "turns": turns, "totals": {}}
 
+        def _total(key: str):
+            """Sum a per-turn count, or None if NO turn reported one.
+
+            Absent is not zero. A server that never sends a usage block
+            would otherwise produce "prompt_tokens": 0, which reads as "this
+            run used no tokens" rather than "nobody told us", and a
+            benchmark built on that number would be quietly wrong.
+            """
+            known = [t[key] for t in turns if t[key] is not None]
+            return sum(known) if known else None
+
         def _finish(answer: str) -> str:
             self.last_trace["totals"] = {
                 "turns": len(turns),
                 "latency_s": round(time.monotonic() - run_started, 3),
-                "prompt_tokens": sum(t["prompt_tokens"] or 0 for t in turns),
-                "completion_tokens": sum(t["completion_tokens"] or 0
-                                         for t in turns),
+                "prompt_tokens": _total("prompt_tokens"),
+                "completion_tokens": _total("completion_tokens"),
                 "tool_calls": sum(len(t["tool_calls"]) for t in turns),
             }
             return answer
