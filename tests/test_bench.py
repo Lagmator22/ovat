@@ -45,6 +45,49 @@ def test_a_successful_run_reports_timings_and_the_answer():
     assert row["build_s"] is not None
 
 
+def test_a_multi_engine_table_admits_the_peak_is_cumulative(monkeypatch,
+                                                            tmp_path):
+    """Peak MB is whole-process RSS and every engine runs in ONE process, so
+    each engine after the first is inflated by the ones before it.
+
+    Measured on the AI PC against live OVMS: native reads 465.8 MB when it
+    runs first and 1155.6 MB when the same run order is reversed and it runs
+    last, while its own isolated figure (`--engines native`, and `ovat run
+    --trace`) is 466-469 MB. The lightest engine is reported as the heaviest
+    purely because of its position in the list.
+
+    The real fix is a process per engine. Until then the table must SAY the
+    column is cumulative, because a wrong number under a confident heading is
+    exactly the kind of measurement this module exists to avoid.
+    """
+    from ovat.cli import main as cli_main
+
+    monkeypatch.setattr(
+        cli_main, "benchmark_engine_used_by_tests", None, raising=False)
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+
+    import ovat.bench as bench_mod
+    monkeypatch.setattr(
+        bench_mod, "benchmark_engine",
+        lambda cfg, engine, q, build_agent=None: {
+            "engine": engine, "ok": True, "error": None, "answer": "a",
+            "latency_s": 1.0, "build_s": 0.1, "peak_rss_mb": 500.0,
+            "prompt_tokens": 1, "completion_tokens": 1, "tool_calls": 0})
+
+    many = runner.invoke(app, ["bench", str(config), "-i", "q",
+                               "--engines", "native,react"])
+    assert many.exit_code == 0
+    assert "cumulative" in many.output, \
+        "a multi-engine table must disclose that Peak MB is whole-process"
+
+    one = runner.invoke(app, ["bench", str(config), "-i", "q",
+                              "--engines", "native"])
+    assert one.exit_code == 0
+    assert "cumulative" not in one.output, \
+        "a single-engine run IS isolated; do not warn about nothing"
+
+
 def test_the_engine_under_test_is_the_one_that_gets_built():
     """Each row must run the engine it is labelled with, or the whole table
     is measuring the same engine four times."""

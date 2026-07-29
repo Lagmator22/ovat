@@ -137,10 +137,10 @@ def run(
         rprint("[yellow]dry-run:[/yellow] not calling the model.")
         raise typer.Exit()
 
-    # Show which engine is actually running, so it is visible in a demo: the
-    # agent.type in the YAML is what picks it (native loop vs LangChain).
-    engine = "LangChain (react)" if cfg.agent.type == "react" else "native loop (loop.py)"
-    rprint(f"[dim]engine:[/dim] [bold]{engine}[/bold]")
+    # Show which engine is actually running, so it is visible in a demo. The
+    # name comes from the CONFIG; see ENGINE_LABELS for why this is not a
+    # conditional expression any more.
+    rprint(f"[dim]engine:[/dim] [bold]{esc(_engine_label(cfg.agent.type))}[/bold]")
 
     # Step 3: actually run. This needs a live OVMS server to answer.
     # The memory sampler runs for the whole call: see _write_trace for why a
@@ -163,6 +163,43 @@ def run(
 
     if trace:
         _write_trace(trace, cfg, agent, peak_rss_mb=memory.peak_mb)
+
+
+def _exit_is_a_folder(path: str):
+    """One wording for "you gave me a directory", reached from two excepts.
+
+    POSIX gets here via IsADirectoryError, Windows via PermissionError. The
+    user made one mistake, so they get one sentence.
+    """
+    rprint(f"[red]That is a folder, not a workflow file:[/red] {esc(path)}")
+    raise typer.Exit(code=1)
+
+
+# How each engine is announced on screen. Presentation only: the list of
+# engines that actually EXIST is factory.AGENT_TYPES, and this must not become
+# a second copy of it.
+#
+# This line used to be
+#     "LangChain (react)" if cfg.agent.type == "react" else "native loop"
+# which was true while there were two engines and became a lie the moment
+# there were four: a llamaindex run announced itself as the native loop. The
+# trace had the identical defect and was fixed; this, the line a demo actually
+# points at, was not, so the screen and the JSON disagreed about one run.
+#
+# The .get() fallback is the part that matters. An engine added to the factory
+# and forgotten here prints its own bare name, which is terse but TRUE. There
+# is no branch left that can attribute a run to the wrong engine.
+ENGINE_LABELS = {
+    "native": "native loop (loop.py)",
+    "react": "LangChain (react)",
+    "llamaindex": "LlamaIndex (llamaindex)",
+    "openai-agents": "OpenAI Agents SDK (openai-agents)",
+}
+
+
+def _engine_label(agent_type: str) -> str:
+    """Human name for an engine, falling back to the configured name."""
+    return ENGINE_LABELS.get(agent_type, agent_type)
 
 
 def _load_config(path: str):
@@ -196,8 +233,18 @@ def _load_config(path: str):
                    "write a starter workflow.yml here.")
         raise typer.Exit(code=1)
     except IsADirectoryError:
-        rprint(f"[red]That is a folder, not a workflow file:[/red] "
-               f"{esc(path)}")
+        _exit_is_a_folder(path)
+    except PermissionError:
+        # Windows does NOT raise IsADirectoryError when open() is handed a
+        # directory: it raises PermissionError (EACCES). The branch above is
+        # right on POSIX and never fires on the AI PC, which is the primary
+        # target, so `ovat run some_folder` printed the raw traceback there
+        # that rule 6 exists to prevent. Ask the filesystem which case it is
+        # rather than trusting the exception class to mean the same thing on
+        # both platforms.
+        if os.path.isdir(path):
+            _exit_is_a_folder(path)
+        rprint(f"[red]Cannot read {esc(path)}:[/red] permission denied.")
         raise typer.Exit(code=1)
     except yaml.YAMLError as exc:
         rprint(f"[red]{esc(path)} is not valid YAML.[/red]")
@@ -749,6 +796,16 @@ def bench(
         rprint("[dim]Token counts come from OVMS's usage field, which only "
                "the native loop records; the frameworks own their own request "
                "loops and do not hand it back.[/dim]")
+    # Every engine runs in ONE process, so Peak MB carries whatever the
+    # engines before it left behind: measured on the AI PC, native reads
+    # 465.8 MB first and 1155.6 MB last, against 466-469 MB measured alone.
+    # Position in the list moves the number more than the engine does. The
+    # real fix is a process per engine; until then, say what the column is
+    # rather than letting it be read as each engine's own cost.
+    if len(names) > 1:
+        rprint("[dim]Peak MB is cumulative: all engines share one process, so "
+               "each row includes the ones above it. For an engine's own "
+               "figure run it alone with --engines <name>.[/dim]")
 
     if out:
         with open(out, "w", encoding="utf-8") as f:

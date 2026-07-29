@@ -39,6 +39,27 @@ def test_run_checks_includes_the_base_checks():
             "Device routing", "OVMS serving"} <= names
 
 
+def test_doctor_reports_on_every_engine_the_factory_offers():
+    """doctor checked LangChain and nothing else, which was complete while
+    react was the only framework engine. Since W7-W8 there are four, so on a
+    box with LlamaIndex and the OpenAI Agents SDK missing, doctor still said
+    "All clear" and `ovat bench` then failed on two of its four rows. The
+    point of doctor is to answer "what is ready here" before something else
+    has to fail to tell you.
+
+    Driven off factory.AGENT_TYPES so a fifth engine cannot be added without
+    this failing: doctor going quietly stale is the bug being fixed.
+    """
+    from ovat.agent.factory import AGENT_TYPES
+
+    details = " ".join(f"{c.name} {c.detail}" for c in run_checks())
+    for engine in AGENT_TYPES:
+        if engine == "native":
+            continue          # no extra to install; it is always available
+        assert f"agent.type: {engine}" in details, \
+            f"doctor never mentions the {engine} engine"
+
+
 def test_local_genai_check_confirms_the_no_server_path():
     # This row is the "how do I use OVAT on a Mac" answer, in the tool itself.
     from ovat.cli.diagnostics import check_local_genai

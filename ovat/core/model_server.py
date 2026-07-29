@@ -168,6 +168,38 @@ class ModelServer:
                 os.remove(pid_path)
 
 
+def _pid_is_running(pid: int) -> bool:
+    """Is this pid alive? Asked WITHOUT signalling anything.
+
+    The obvious implementation is `os.kill(pid, 0)`, and on POSIX that is
+    exactly right: signal 0 is the classic existence check and delivers
+    nothing. On Windows it is a console grenade.
+
+    Windows has no signals. CPython implements os.kill by mapping sig 0 and 1
+    onto GenerateConsoleCtrlEvent, because signal.CTRL_C_EVENT == 0 and
+    CTRL_BREAK_EVENT == 1. That call is not addressed to `pid` at all: it
+    delivers Ctrl-C to EVERY process sharing the console. The caller, the
+    shell it was typed into, and anything running above them.
+
+    Measured on the AI PC: a single os.kill(pid, 0) killed both the probing
+    process and its child with KeyboardInterrupt. Since the caller below
+    polls this every 0.2s for wait_seconds, `ovat serve --stop` was firing
+    roughly fifty console Ctrl-Cs, and a full `pytest -q` died with exit 137
+    the moment it reached tests/test_model_server.py.
+
+    psutil is a core dependency (pyproject) and answers the question by
+    looking, not by poking.
+    """
+    try:
+        import psutil
+    except ImportError:
+        # Without psutil we cannot check safely, and guessing "dead" would
+        # delete a live server's pidfile. Say alive; the terminate path is
+        # addressed to one pid and is safe on both platforms.
+        return True
+    return psutil.pid_exists(pid)
+
+
 def stop_from_pidfile(pid_path: str = DEFAULT_PID_PATH, wait_seconds: float = 10.0) -> str:
     """Stop an OVMS recorded in a pidfile; return a short human message.
 
@@ -186,11 +218,7 @@ def stop_from_pidfile(pid_path: str = DEFAULT_PID_PATH, wait_seconds: float = 10
         return f"Pidfile {pid_path} was corrupt; removed it."
 
     def _alive() -> bool:
-        try:
-            os.kill(pid, 0)         # signal 0 = existence check, sends nothing
-            return True
-        except OSError:
-            return False
+        return _pid_is_running(pid)
 
     if not _alive():
         os.remove(pid_path)
