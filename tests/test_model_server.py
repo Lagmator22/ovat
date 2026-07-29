@@ -13,6 +13,7 @@ import sys
 
 import pytest
 
+from ovat.core import model_server
 from ovat.core.model_server import ModelServer, stop_from_pidfile
 
 
@@ -149,6 +150,51 @@ def test_stop_from_pidfile_stops_a_real_process(tmp_path):
     assert "Stopped" in message
     assert proc.wait(timeout=5) is not None        # it is really gone
     assert not os.path.exists(pid_path)
+
+
+def test_liveness_never_sends_signal_zero(tmp_path, monkeypatch):
+    """`os.kill(pid, 0)` is the classic POSIX existence check that sends
+    nothing. On Windows it is a console grenade.
+
+    Windows has no signals, so CPython maps os.kill(pid, sig) onto
+    GenerateConsoleCtrlEvent whenever sig is 0 or 1, because
+    signal.CTRL_C_EVENT == 0 and CTRL_BREAK_EVENT == 1. The call therefore
+    delivers Ctrl-C to EVERY process attached to the console, not to `pid`:
+    the caller, the shell it was typed into, and any test runner above it.
+
+    Measured on the AI PC: one os.kill(pid, 0) killed both the probe process
+    and its child with KeyboardInterrupt, and because the stale-check below
+    polls every 0.2s for wait_seconds, `ovat serve --stop` fired about fifty
+    of them. It is why a full `pytest -q` died with exit 137 the moment it
+    reached this file, and it took the developer's shell with it.
+
+    os.kill is stubbed here so the test is safe to RUN while red: it records
+    the signals the code would have sent instead of sending them.
+    """
+    calls = []
+    monkeypatch.setattr(model_server.os, "kill",
+                        lambda pid, sig: calls.append((pid, sig)))
+
+    pid_path = tmp_path / "ovms.pid"
+    # Our own pid: certainly alive, so the liveness branch is really taken.
+    pid_path.write_text(str(os.getpid()), encoding="utf-8")
+
+    stop_from_pidfile(str(pid_path), wait_seconds=0)
+
+    signals_sent = [sig for _pid, sig in calls]
+    assert 0 not in signals_sent, (
+        "liveness was probed with signal 0, which is CTRL_C_EVENT on Windows "
+        "and Ctrl-Cs the whole console")
+    assert 1 not in signals_sent, "signal 1 is CTRL_BREAK_EVENT on Windows"
+
+
+def test_a_live_pid_reads_as_running_and_a_dead_one_does_not():
+    """The replacement probe must still answer the question correctly."""
+    assert model_server._pid_is_running(os.getpid()) is True
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    assert model_server._pid_is_running(dead.pid) is False
 
 
 def test_stop_from_pidfile_missing_file_is_a_calm_message(tmp_path):
