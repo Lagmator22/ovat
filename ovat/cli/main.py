@@ -796,6 +796,16 @@ def bench(
         rprint("[dim]Token counts come from OVMS's usage field, which only "
                "the native loop records; the frameworks own their own request "
                "loops and do not hand it back.[/dim]")
+    # Every engine runs in ONE process, so Peak MB carries whatever the
+    # engines before it left behind: measured on the AI PC, native reads
+    # 465.8 MB first and 1155.6 MB last, against 466-469 MB measured alone.
+    # Position in the list moves the number more than the engine does. The
+    # real fix is a process per engine; until then, say what the column is
+    # rather than letting it be read as each engine's own cost.
+    if len(names) > 1:
+        rprint("[dim]Peak MB is cumulative: all engines share one process, so "
+               "each row includes the ones above it. For an engine's own "
+               "figure run it alone with --engines <name>.[/dim]")
 
     if out:
         with open(out, "w", encoding="utf-8") as f:
