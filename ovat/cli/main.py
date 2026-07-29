@@ -165,6 +165,16 @@ def run(
         _write_trace(trace, cfg, agent, peak_rss_mb=memory.peak_mb)
 
 
+def _exit_is_a_folder(path: str):
+    """One wording for "you gave me a directory", reached from two excepts.
+
+    POSIX gets here via IsADirectoryError, Windows via PermissionError. The
+    user made one mistake, so they get one sentence.
+    """
+    rprint(f"[red]That is a folder, not a workflow file:[/red] {esc(path)}")
+    raise typer.Exit(code=1)
+
+
 # How each engine is announced on screen. Presentation only: the list of
 # engines that actually EXIST is factory.AGENT_TYPES, and this must not become
 # a second copy of it.
@@ -223,8 +233,18 @@ def _load_config(path: str):
                    "write a starter workflow.yml here.")
         raise typer.Exit(code=1)
     except IsADirectoryError:
-        rprint(f"[red]That is a folder, not a workflow file:[/red] "
-               f"{esc(path)}")
+        _exit_is_a_folder(path)
+    except PermissionError:
+        # Windows does NOT raise IsADirectoryError when open() is handed a
+        # directory: it raises PermissionError (EACCES). The branch above is
+        # right on POSIX and never fires on the AI PC, which is the primary
+        # target, so `ovat run some_folder` printed the raw traceback there
+        # that rule 6 exists to prevent. Ask the filesystem which case it is
+        # rather than trusting the exception class to mean the same thing on
+        # both platforms.
+        if os.path.isdir(path):
+            _exit_is_a_folder(path)
+        rprint(f"[red]Cannot read {esc(path)}:[/red] permission denied.")
         raise typer.Exit(code=1)
     except yaml.YAMLError as exc:
         rprint(f"[red]{esc(path)} is not valid YAML.[/red]")
