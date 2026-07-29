@@ -53,12 +53,37 @@ def check_core_deps() -> Check:
     return Check("Core dependencies", FAIL, f"missing: {', '.join(missing)}")
 
 
-def check_langchain() -> Check:
-    if _can_import("langchain") and _can_import("langgraph"):
-        return Check("LangChain (react)", OK, "installed; agent.type: react ready")
-    return Check("LangChain (react)", WARN,
-                 "not installed; only needed for agent.type: react "
-                 "(pip install 'ovat[langchain]')")
+# One row per framework engine: (label, agent.type, extra, modules needed).
+#
+# This was a single hand-written LangChain check, which was the whole story
+# while react was the only framework engine. Since W7-W8 there are four, and a
+# box missing LlamaIndex or the OpenAI Agents SDK still got "All clear" from
+# doctor and then two failed rows from `ovat bench`. doctor exists so the user
+# learns what is ready HERE before something else fails to tell them.
+#
+# The engines themselves live in factory.AGENT_TYPES; this table adds only the
+# per-engine install advice, which is presentation, and check_engines() below
+# asserts the two stay in step.
+FRAMEWORK_ENGINES = (
+    ("LangChain (react)", "react", "langchain", ("langchain", "langgraph")),
+    ("LlamaIndex", "llamaindex", "llamaindex",
+     ("llama_index.core", "llama_index.llms.openai_like")),
+    ("OpenAI Agents SDK", "openai-agents", "openai-agents", ("agents",)),
+)
+
+
+def check_engines() -> list[Check]:
+    """One row per framework engine, saying whether it can run here."""
+    checks = []
+    for label, agent_type, extra, modules in FRAMEWORK_ENGINES:
+        if all(_can_import(m) for m in modules):
+            checks.append(Check(label, OK,
+                                f"installed; agent.type: {agent_type} ready"))
+        else:
+            checks.append(Check(label, WARN,
+                                f"not installed; only needed for agent.type: "
+                                f"{agent_type} (pip install 'ovat[{extra}]')"))
+    return checks
 
 
 def check_devices() -> Check:
@@ -211,7 +236,7 @@ def run_checks(config_path: str | None = None) -> list[Check]:
         check_python(),
         check_core_deps(),
         check_local_genai(),
-        check_langchain(),
+        *check_engines(),
         check_devices(),
         check_device_routing(),
         check_ovms_serving(config_binary),
