@@ -613,7 +613,7 @@ def test_updates_is_green_throughout():
 
 
 def test_the_banner_fits_inside_its_panel():
-    """#brand-panel is 32% of the screen and the masthead is 17 rows. A mark
+    """#brand-panel is a fixed 42 columns and the masthead is 17 rows. A mark
     wider than the panel does not clip, it WRAPS, which shears the glyphs."""
     from ovat.cli import tui
 

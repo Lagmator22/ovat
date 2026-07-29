@@ -103,9 +103,12 @@ def test_device_routing_check_shows_the_layer9_table():
     from ovat.cli.diagnostics import check_device_routing
     check = check_device_routing()
     assert check.status == OK
-    # On any machine the table names all three model types; on this Mac all
+    # On any machine the row names all three model types; on this Mac all
     # three route to CPU, on an AI PC LLM→GPU and embeddings→NPU.
-    for label in ("LLM→", "embeddings→", "whisper→"):
+    # "emb" not "embeddings": the doctor's Detail column is 76 wide and the
+    # row now carries the config's own devices too, so the labels were
+    # shortened to keep both halves visible rather than truncated.
+    for label in ("LLM→", "emb→", "whisper→"):
         assert label in check.detail
 
 
@@ -167,3 +170,43 @@ def test_doctor_command_fails_on_bad_config(tmp_path):
     path = _write(tmp_path, "this: is not a valid workflow\n")
     result = runner.invoke(app, ["doctor", path])
     assert result.exit_code == 1
+
+
+# Device routing is ADVICE, and used to read as a report of what is running
+
+def test_routing_is_labelled_as_advice_not_as_fact():
+    """Unlabelled, a user whose config said `device: CPU` saw
+    "embeddings→NPU" and reasonably concluded either the config was being
+    ignored or the doctor was wrong. It is neither: DeviceManager describes
+    what this hardware would suit, not what the workflow asked for."""
+    from ovat.cli.diagnostics import check_device_routing
+
+    detail = check_device_routing().detail
+    assert "best here" in detail
+    assert "yours" not in detail       # nothing to compare against
+
+
+def test_routing_shows_the_config_alongside_the_recommendation(tmp_path):
+    """With a config loaded the two are shown together, so they read as two
+    different things rather than one contradicting the other."""
+    from ovat.cli.diagnostics import check_device_routing
+    from ovat.config.workflow import WorkflowConfig
+
+    config = WorkflowConfig(
+        model={"name": "m", "device": "GPU"},
+        rag={"embeddings": {"provider": "genai", "model": "x",
+                            "device": "NPU", "dim": 384},
+             "retriever": {"provider": "sqlite-vec", "db_path": ":memory:"}})
+    detail = check_device_routing(config).detail
+    assert "yours: LLM→GPU" in detail
+    assert "emb→NPU" in detail
+
+
+def test_the_routing_line_fits_the_doctor_table():
+    """The Detail column is 76 columns. A suffix that gets cut off is worse
+    than none, because the reader cannot tell there was more."""
+    from ovat.cli.diagnostics import check_device_routing
+    from ovat.config.workflow import WorkflowConfig
+
+    config = WorkflowConfig(model={"name": "m", "device": "GPU"})
+    assert len(check_device_routing(config).detail) <= 76

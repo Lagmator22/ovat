@@ -96,21 +96,36 @@ def check_devices() -> Check:
     return Check("OpenVINO devices", OK, ", ".join(devices) or "none reported")
 
 
-def check_device_routing() -> Check:
-    """Where each model type WOULD run here (the Layer 9 routing table).
+def check_device_routing(config=None) -> Check:
+    """Where each model type WOULD run here, and where the config sends it.
 
     This is DeviceManager doing its job in front of the user: LLM prefers
     GPU (tool calling, KV cache), embeddings prefer NPU (static shapes, low
     power), whisper stays on CPU, and everything falls back to CPU.
+
+    The row is labelled RECOMMENDED because it is advice, not a report of
+    what is running. Unlabelled it read as fact, so a user whose config said
+    `device: CPU` saw "embeddings→NPU" and reasonably concluded either the
+    config was being ignored or the doctor was wrong. When a config is loaded
+    its actual choices are shown alongside, so the two are visibly different
+    things rather than one contradicting the other.
     """
     try:
         from ovat.core.device_manager import DeviceManager
         summary = DeviceManager().summary()
     except Exception as exc:
         return Check("Device routing", WARN, f"could not compute routing: {exc}")
-    return Check("Device routing", OK,
-                 f"LLM→{summary['llm']}  embeddings→{summary['embeddings']}  "
-                 f"whisper→{summary['whisper']}")
+    # Kept short on purpose: the doctor's Detail column truncates at 76
+    # columns, and a suffix that gets cut off is worse than none, because the
+    # reader cannot tell there was more.
+    detail = (f"best here: LLM→{summary['llm']} emb→{summary['embeddings']} "
+              f"whisper→{summary['whisper']}")
+    if config is not None:
+        configured = f"yours: LLM→{config.model.device}"
+        if config.rag is not None:
+            configured += f" emb→{config.rag.embeddings.device}"
+        detail += f"  ·  {configured}"
+    return Check("Device routing", OK, detail)
 
 
 def check_local_genai() -> Check:
@@ -227,9 +242,11 @@ def run_checks(config_path: str | None = None) -> list[Check]:
     # If a config is given, its ovms_binary should inform the serving check.
     # Load it leniently here; a broken config is reported by check_config.
     config_binary = None
+    config = None
     if config_path:
         try:
-            config_binary = load_workflow(config_path).model.ovms_binary
+            config = load_workflow(config_path)
+            config_binary = config.model.ovms_binary
         except Exception:
             pass
     checks = [
@@ -238,7 +255,7 @@ def run_checks(config_path: str | None = None) -> list[Check]:
         check_local_genai(),
         *check_engines(),
         check_devices(),
-        check_device_routing(),
+        check_device_routing(config),
         check_ovms_serving(config_binary),
     ]
     if config_path:
