@@ -16,6 +16,30 @@ import typer
 from ovat.core.model_scout import find_models, identify_model, pick_chat_llm
 
 
+@pytest.fixture(autouse=True)
+def _fake_home(tmp_path, monkeypatch):
+    """Point HOME at an empty folder for every test in this file.
+
+    find_models() scans `~/models` as one of its roots, so without this these
+    tests describe whichever models happen to sit in the developer's home
+    directory rather than the code. On the AI PC, which really does have
+    ~/models/OpenVINO/Qwen3-8B-int4-ov, three of them failed: a real 8B model
+    joined the counts (`assert 3 == 2`) and the "nothing found" case found
+    something and never raised.
+
+    expanduser reads USERPROFILE (then HOMEDRIVE+HOMEPATH) on Windows and
+    HOME on POSIX, so every variable it consults is redirected.
+    """
+    home = tmp_path / "fake-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("HOMEDRIVE", os.path.splitdrive(str(home))[0])
+    monkeypatch.setenv("HOMEPATH", os.path.splitdrive(str(home))[1])
+    assert os.path.expanduser("~") == str(home)      # the redirect really took
+    return home
+
+
 def _make_model(root, name, files, config=None):
     folder = root / name
     folder.mkdir(parents=True)
