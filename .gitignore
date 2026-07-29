@@ -32,6 +32,16 @@ CLAUDE.local.md
 # OVMS process logs
 *.log
 
+# OVMS pidfile written by `ovat serve` (read back by `ovat serve --stop`).
+# Machine-local runtime state: never the same on two boxes.
+*.pid
+
+# Measurement artifacts: `ovat bench --out` reports and `ovat run --trace`
+# traces. Real numbers, but they belong to ONE run on ONE machine, so they are
+# evidence to paste into a write-up, not source to track.
+report*.json
+trace*.json
+
 # A workflow.yml written by `ovat init` in the repo root is local scratch; the
 # canonical sample lives in examples/. The leading slash ignores ONLY the root
 # one, so examples/workflow.yml stays tracked.
@@ -39,9 +49,6 @@ CLAUDE.local.md
 
 # Review artifacts written by external tools, not part of the toolkit.
 /analysis_report.md
-
-# Per-project TUI state: chat preferences and saved conversations.
-.ovat/
 
 # Agent worktrees and session scratch: never part of the project.
 .claude/worktrees/
