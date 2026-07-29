@@ -86,6 +86,18 @@ def _build_model(config: WorkflowConfig):
     return OpenAIChatCompletionsModel(model=m.name, openai_client=client)
 
 
+def _model_settings(config: WorkflowConfig):
+    """Sampling settings, from the config like every other engine.
+
+    This engine sent none at all, so it took the server's default while two
+    others hardcoded 0. That is what made the benchmark's latency column
+    compare determinism against sampling.
+    """
+    from agents import ModelSettings
+
+    return ModelSettings(temperature=config.model.temperature)
+
+
 class OpenAIAgentsAgent:
     """Adapter so an Agents SDK agent looks like my native AgentLoop."""
 
@@ -151,6 +163,7 @@ def build_openai_agents_agent(config: WorkflowConfig, tools: dict,
         name="ovat",
         instructions=config.agent.system_prompt,
         model=model if model is not None else _build_model(config),
+        model_settings=_model_settings(config),
         tools=_wrap_tools(tools),
     )
     return OpenAIAgentsAgent(agent, tools, config.agent.max_iterations,

@@ -18,7 +18,7 @@ class OVMSLLMProvider(LLMProvider):
 
     def __init__(self, base_url: str = "http://localhost:8000/v3",
                  model: str = "Qwen3-8B-int4-ov", timeout: float = 120.0,
-                 max_tokens: int | None = None):
+                 max_tokens: int | None = None, temperature: float = 0.0):
         # api_key is required by the SDK but ignored by OVMS, any string works.
         # timeout caps each request; the SDK default (~600s) would freeze the
         # CLI for ten minutes on a hung server before erroring.
@@ -30,9 +30,16 @@ class OVMSLLMProvider(LLMProvider):
         # TUI sets a real number so /tokens means the same thing on both
         # engines. Read fresh on every call, so it can be retuned live.
         self.max_tokens = max_tokens
+        # Sent on every request. It comes from model.temperature so all four
+        # engines sample identically; two of them used to hardcode 0 while
+        # this one took the server default, which made cross-engine timings
+        # compare determinism against sampling rather than framework against
+        # framework.
+        self.temperature = temperature
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
         extra = {} if self.max_tokens is None else {"max_tokens": self.max_tokens}
+        extra["temperature"] = self.temperature
         response = self.client.chat.completions.create(
             model=self.model, #model name is pulled from the YAML config file
             messages=messages,

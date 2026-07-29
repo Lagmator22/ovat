@@ -40,7 +40,8 @@ def build_llm(config: WorkflowConfig) -> OVMSLLMProvider:
     """
     m = config.model
     return OVMSLLMProvider(base_url=m.ovms_url, model=m.name,
-                           timeout=m.request_timeout)
+                           timeout=m.request_timeout,
+                           temperature=m.temperature)
 
 
 def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:

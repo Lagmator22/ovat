@@ -170,10 +170,23 @@ def test_liveness_never_sends_signal_zero(tmp_path, monkeypatch):
 
     os.kill is stubbed here so the test is safe to RUN while red: it records
     the signals the code would have sent instead of sending them.
+
+    The stub records the CALLER, and only OVAT's own frames are asserted on.
+    psutil.pid_exists() legitimately uses os.kill(pid, 0) on POSIX, where it
+    really is the harmless existence check; the danger is Windows-only, and
+    psutil uses a different mechanism there. Patching os.kill catches psutil
+    too, so without the caller filter this test failed on macOS and Linux
+    while passing on the one platform the bug actually affects, which is the
+    worst possible way round.
     """
+    import sys
+
     calls = []
-    monkeypatch.setattr(model_server.os, "kill",
-                        lambda pid, sig: calls.append((pid, sig)))
+
+    def recording_kill(pid, sig):
+        calls.append((pid, sig, sys._getframe(1).f_code.co_filename))
+
+    monkeypatch.setattr(model_server.os, "kill", recording_kill)
 
     pid_path = tmp_path / "ovms.pid"
     # Our own pid: certainly alive, so the liveness branch is really taken.
@@ -181,10 +194,13 @@ def test_liveness_never_sends_signal_zero(tmp_path, monkeypatch):
 
     stop_from_pidfile(str(pid_path), wait_seconds=0)
 
-    signals_sent = [sig for _pid, sig in calls]
+    signals_sent = [sig for _pid, sig, caller in calls
+                    if caller.endswith("model_server.py")]
     assert 0 not in signals_sent, (
         "liveness was probed with signal 0, which is CTRL_C_EVENT on Windows "
         "and Ctrl-Cs the whole console")
+    # It must still have done its job, or the assertion above is vacuous.
+    assert signals_sent, "no signal reached the process at all"
     assert 1 not in signals_sent, "signal 1 is CTRL_BREAK_EVENT on Windows"
 
 
@@ -222,3 +238,24 @@ def test_stop_from_pidfile_corrupt_file_is_removed(tmp_path):
         f.write("not-a-number")
     assert "corrupt" in stop_from_pidfile(pid_path)
     assert not os.path.exists(pid_path)
+
+
+def test_ovat_never_passes_signal_zero_or_one_anywhere():
+    """A source-level backstop for the whole module.
+
+    The behavioural test above only covers stop_from_pidfile. Signals 0 and 1
+    are CTRL_C_EVENT and CTRL_BREAK_EVENT on Windows, so ANY os.kill with
+    either value is a console grenade wherever it appears, and the next one
+    would be just as invisible from a POSIX machine as the last one was.
+    """
+    import re
+    from pathlib import Path
+
+    source = Path(model_server.__file__).read_text(encoding="utf-8")
+    # Strip comments and docstrings: this file EXPLAINS the bug at length.
+    code = re.sub(r"#.*", "", source)
+    code = re.sub(r'"""[\s\S]*?"""', "", code)
+    for match in re.finditer(r"os\.kill\([^,]+,\s*([^)]+)\)", code):
+        argument = match.group(1).strip()
+        assert argument not in {"0", "1"}, (
+            f"os.kill(..., {argument}) sends a console Ctrl-C on Windows")

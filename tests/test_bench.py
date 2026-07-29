@@ -45,47 +45,96 @@ def test_a_successful_run_reports_timings_and_the_answer():
     assert row["build_s"] is not None
 
 
-def test_a_multi_engine_table_admits_the_peak_is_cumulative(monkeypatch,
-                                                            tmp_path):
-    """Peak MB is whole-process RSS and every engine runs in ONE process, so
-    each engine after the first is inflated by the ones before it.
+def test_each_engine_is_measured_in_its_own_process(monkeypatch, tmp_path):
+    """Peak MB is whole-process RSS, so engines sharing a process contaminate
+    each other: every row inherited what the rows above it had allocated.
 
-    Measured on the AI PC against live OVMS: native reads 465.8 MB when it
-    runs first and 1155.6 MB when the same run order is reversed and it runs
-    last, while its own isolated figure (`--engines native`, and `ovat run
-    --trace`) is 466-469 MB. The lightest engine is reported as the heaviest
-    purely because of its position in the list.
-
-    The real fix is a process per engine. Until then the table must SAY the
-    column is cumulative, because a wrong number under a confident heading is
-    exactly the kind of measurement this module exists to avoid.
+    Measured on the AI PC against live OVMS BEFORE this fix: native read
+    465.8 MB running first and 1155.6 MB running last, against 466 MB
+    measured alone. Reversing the list reversed the conclusion, which means
+    the table was measuring list position rather than the engines.
     """
-    from ovat.cli import main as cli_main
+    import ovat.bench as bench_mod
 
-    monkeypatch.setattr(
-        cli_main, "benchmark_engine_used_by_tests", None, raising=False)
+    spawned = []
+
+    def fake_isolated(config_path, engine, question, timeout=None):
+        spawned.append(engine)
+        return {"engine": engine, "ok": True, "error": None, "answer": "a",
+                "latency_s": 1.0, "build_s": 0.1, "peak_rss_mb": 100.0,
+                "prompt_tokens": None, "completion_tokens": None,
+                "tool_calls": None}
+
+    monkeypatch.setattr(bench_mod, "_run_isolated", fake_isolated)
     config = tmp_path / "w.yml"
     config.write_text("model:\n  name: m\n", encoding="utf-8")
 
-    import ovat.bench as bench_mod
-    monkeypatch.setattr(
-        bench_mod, "benchmark_engine",
-        lambda cfg, engine, q, build_agent=None: {
-            "engine": engine, "ok": True, "error": None, "answer": "a",
-            "latency_s": 1.0, "build_s": 0.1, "peak_rss_mb": 500.0,
-            "prompt_tokens": 1, "completion_tokens": 1, "tool_calls": 0})
-
-    many = runner.invoke(app, ["bench", str(config), "-i", "q",
-                               "--engines", "native,react"])
-    assert many.exit_code == 0
-    assert "cumulative" in many.output, \
-        "a multi-engine table must disclose that Peak MB is whole-process"
+    result = runner.invoke(app, ["bench", str(config), "-i", "q",
+                                 "--engines", "native,react"])
+    assert result.exit_code == 0, result.output
+    assert spawned == ["native", "react"], "engines were not isolated"
+    assert "its own process" in result.output
 
     one = runner.invoke(app, ["bench", str(config), "-i", "q",
                               "--engines", "native"])
-    assert one.exit_code == 0
-    assert "cumulative" not in one.output, \
-        "a single-engine run IS isolated; do not warn about nothing"
+    assert "its own process" not in one.output, \
+        "a single-engine run needs no note about cross-row contamination"
+
+
+def test_the_report_records_whether_the_rows_are_isolated(tmp_path):
+    """A reader of the JSON months later cannot tell from the numbers alone,
+    and comparing an isolated run against a shared one is meaningless."""
+    shared = benchmark(_config(), "q", ["native"],
+                       build_agent=lambda cfg: _Agent())
+    assert shared["isolated"] is False
+
+
+def test_the_worker_prints_one_json_row_and_never_a_traceback(tmp_path):
+    """The parent parses stdout, so a traceback there is unparseable AND
+    hides the reason. A bad config must come back as a row."""
+    import json
+    from ovat.bench import _worker_main
+
+    import io
+    import contextlib
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = _worker_main(["--worker", "--config", str(tmp_path / "nope.yml"),
+                             "--engine", "native", "--question", "q"])
+    assert code == 0
+    row = json.loads(out.getvalue().strip())
+    assert row["ok"] is False
+    assert row["engine"] == "native"
+    assert "FileNotFoundError" in row["error"]
+
+
+def test_a_worker_that_dies_becomes_a_row_not_a_crash(monkeypatch):
+    """A segfaulting or OOM-killed child prints nothing at all."""
+    import subprocess
+    from ovat import bench as bench_mod
+
+    class Dead:
+        stdout = ""
+        stderr = "Fatal Python error: something awful\n"
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: Dead())
+    row = bench_mod._run_isolated("w.yml", "native", "q")
+    assert row["ok"] is False
+    assert "something awful" in row["error"]
+
+
+def test_a_hung_engine_times_out_instead_of_blocking_forever(monkeypatch):
+    import subprocess
+    from ovat import bench as bench_mod
+
+    def explode(*a, **k):
+        raise subprocess.TimeoutExpired(cmd="ovat", timeout=1)
+
+    monkeypatch.setattr(subprocess, "run", explode)
+    row = bench_mod._run_isolated("w.yml", "native", "q", timeout=1)
+    assert row["ok"] is False
+    assert "TimeoutError" in row["error"]
 
 
 def test_the_engine_under_test_is_the_one_that_gets_built():
@@ -197,8 +246,8 @@ def test_the_report_carries_what_was_being_compared():
 def test_bench_writes_a_json_report(monkeypatch, tmp_path):
     from ovat import bench as bench_module
 
-    monkeypatch.setattr(bench_module, "benchmark_engine",
-                        lambda cfg, engine, q, build_agent=None: {
+    monkeypatch.setattr(bench_module, "_run_isolated",
+                        lambda config_path, engine, q, timeout=None: {
                             "engine": engine, "ok": True, "error": None,
                             "answer": "a", "latency_s": 1.0, "build_s": 0.5,
                             "peak_rss_mb": 100.0, "prompt_tokens": 10,

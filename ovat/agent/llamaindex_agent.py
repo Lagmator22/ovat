@@ -59,13 +59,12 @@ def _build_llm(config: WorkflowConfig):
 
     m = config.model
     # api_key is required by the SDK but ignored by OVMS; any string works.
-    # temperature 0 keeps demo answers stable across runs, matching the
-    # LangChain engine so the two can be compared fairly in a benchmark.
+    # Temperature comes from the config so every engine samples alike.
     return OpenAILike(
         model=m.name,
         api_base=m.ovms_url,
         api_key="not-needed",
-        temperature=0,
+        temperature=m.temperature,
         is_chat_model=True,
         is_function_calling_model=True,
         timeout=m.request_timeout,
@@ -110,7 +109,17 @@ class LlamaIndexAgent:
         # FunctionAgent returns a response object whose str() is the answer.
         # Reading .response first keeps the text clean when the object grows
         # extra repr detail, which it has done between releases.
-        return str(getattr(response, "response", response) or "").strip()
+        text = str(getattr(response, "response", response) or "").strip()
+        # ChatMessage stringifies as "<role>: <content>", so every answer from
+        # this engine arrived prefixed with "assistant: ". Harmless to a
+        # reader, but it is not part of the model's answer, and it made
+        # llamaindex rows in the benchmark differ from the other three
+        # engines' by a constant that has nothing to do with the model.
+        for role in ("assistant:", "Assistant:"):
+            if text.startswith(role):
+                text = text[len(role):].lstrip()
+                break
+        return text
 
 
 def build_llamaindex_agent(config: WorkflowConfig, tools: dict,

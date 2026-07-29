@@ -757,7 +757,7 @@ def bench(
 
     rprint(f"[green]Benchmarking[/green] {esc(cfg.model.name)} at "
            f"{esc(cfg.model.ovms_url)}  [dim]({len(names)} engines)[/dim]")
-    report = benchmark(cfg, input, names)
+    report = benchmark(cfg, input, names, config_path=config)
 
     table = Table(header_style=f"bold {ui.BLUE}", border_style=ui.BLUE,
                   box=box.ROUNDED)
@@ -796,16 +796,15 @@ def bench(
         rprint("[dim]Token counts come from OVMS's usage field, which only "
                "the native loop records; the frameworks own their own request "
                "loops and do not hand it back.[/dim]")
-    # Every engine runs in ONE process, so Peak MB carries whatever the
-    # engines before it left behind: measured on the AI PC, native reads
-    # 465.8 MB first and 1155.6 MB last, against 466-469 MB measured alone.
-    # Position in the list moves the number more than the engine does. The
-    # real fix is a process per engine; until then, say what the column is
-    # rather than letting it be read as each engine's own cost.
-    if len(names) > 1:
-        rprint("[dim]Peak MB is cumulative: all engines share one process, so "
-               "each row includes the ones above it. For an engine's own "
-               "figure run it alone with --engines <name>.[/dim]")
+    # Peak MB is only comparable between rows because each engine now runs in
+    # its OWN process. RSS is a whole-process number, so when they shared one,
+    # every row inherited what the rows above it had allocated: measured on
+    # the AI PC, native read 465.8 MB running first and 1155.6 MB running
+    # last, against 466 MB measured alone. Reordering the list reversed the
+    # conclusion, which means the old table was measuring list position.
+    if report.get("isolated") and len(names) > 1:
+        rprint("[dim]Each engine was measured in its own process, so Peak MB "
+               "is that engine's own cost.[/dim]")
 
     if out:
         with open(out, "w", encoding="utf-8") as f:

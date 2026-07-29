@@ -123,13 +123,117 @@ def benchmark_engine(config, engine: str, question: str,
     return row
 
 
-def benchmark(config, question: str, engines, build_agent=None) -> dict:
-    """Run the question through each engine in turn. Returns a report dict."""
-    rows = [benchmark_engine(config, engine, question, build_agent=build_agent)
-            for engine in engines]
+# How long one engine gets before it is called hung. Generous: an 8B model on
+# a cold GPU can spend a minute on first token, and a false timeout would look
+# exactly like a broken engine.
+WORKER_TIMEOUT_S = 600
+
+
+def _run_isolated(config_path: str, engine: str, question: str,
+                  timeout: float = WORKER_TIMEOUT_S) -> dict:
+    """Measure one engine in a FRESH PROCESS, and return its row.
+
+    This is what makes Peak MB mean anything. Every engine used to run in one
+    process, and RSS is a whole-process number, so each engine inherited
+    everything its predecessors had allocated. Measured on the AI PC against
+    live OVMS: native read 465.8 MB running first and 1155.6 MB running last,
+    against an isolated figure of 466 MB. The lightest engine was reported as
+    the heaviest, purely by list position, and reversing the order reversed
+    the conclusion. A benchmark that changes its answer when you reorder the
+    inputs is not measuring the inputs.
+
+    The child times its OWN build and answer, so interpreter startup and
+    import cost land in neither: they are the harness, not the engine.
+    """
+    import json
+    import subprocess
+    import sys
+
+    command = [sys.executable, "-m", "ovat.bench", "--worker",
+               "--config", config_path, "--engine", engine,
+               "--question", question]
+    try:
+        finished = subprocess.run(command, capture_output=True, text=True,
+                                  timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"engine": engine, "ok": False,
+                "error": f"TimeoutError: no answer within {timeout:.0f}s",
+                "answer": "", "latency_s": None, "build_s": None,
+                "peak_rss_mb": None, "prompt_tokens": None,
+                "completion_tokens": None, "tool_calls": None}
+
+    # The child prints exactly one JSON object on stdout. Anything else means
+    # it died before it could, and its stderr is the only clue we have.
+    for line in reversed(finished.stdout.splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                return json.loads(line)
+            except ValueError:
+                break
+    detail = (finished.stderr or "").strip().splitlines()
+    return {"engine": engine, "ok": False,
+            "error": f"WorkerError: {detail[-1] if detail else 'no output'}",
+            "answer": "", "latency_s": None, "build_s": None,
+            "peak_rss_mb": None, "prompt_tokens": None,
+            "completion_tokens": None, "tool_calls": None}
+
+
+def benchmark(config, question: str, engines, build_agent=None,
+              config_path: str | None = None) -> dict:
+    """Run the question through each engine and return a report dict.
+
+    With `config_path`, each engine is measured in its own process, which is
+    the only way Peak MB is comparable between rows. Without it the engines
+    share this process, which tests want (they inject a fake build_agent) and
+    which is why the CLI always passes the path.
+    """
+    if config_path is not None and build_agent is None:
+        rows = [_run_isolated(config_path, engine, question)
+                for engine in engines]
+    else:
+        rows = [benchmark_engine(config, engine, question,
+                                 build_agent=build_agent)
+                for engine in engines]
     return {
         "model": config.model.name,
         "ovms_url": config.model.ovms_url,
         "question": question,
+        "isolated": config_path is not None and build_agent is None,
         "results": rows,
     }
+
+
+def _worker_main(argv=None) -> int:
+    """`python -m ovat.bench --worker`: measure ONE engine, print one JSON row.
+
+    Deliberately tiny and deliberately quiet: stdout carries the row and
+    nothing else, so the parent can parse it without guessing.
+    """
+    import argparse
+    import json
+
+    from ovat.config.workflow import load_workflow
+
+    parser = argparse.ArgumentParser(prog="ovat.bench")
+    parser.add_argument("--worker", action="store_true")
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--engine", required=True)
+    parser.add_argument("--question", required=True)
+    args = parser.parse_args(argv)
+
+    try:
+        config = load_workflow(args.config)
+        row = benchmark_engine(config, args.engine, args.question)
+    except Exception as exc:                      # never a traceback on stdout
+        row = {"engine": args.engine, "ok": False,
+               "error": f"{type(exc).__name__}: {exc}", "answer": "",
+               "latency_s": None, "build_s": None, "peak_rss_mb": None,
+               "prompt_tokens": None, "completion_tokens": None,
+               "tool_calls": None}
+    print(json.dumps(row))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_worker_main())

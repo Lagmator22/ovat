@@ -148,3 +148,57 @@ def test_the_document_qa_sample_builds_on_every_engine():
         except RuntimeError as exc:
             pytest.skip(f"{engine} not installed: {exc}")
         assert list(agent.tools) == ["search_docs", "transcribe"]
+
+
+# Sampling must be identical across engines, or the benchmark is meaningless
+
+def test_temperature_is_a_config_field_with_a_deterministic_default():
+    """It used to be hardcoded 0 in two engines and absent in the other two,
+    so react and llamaindex returned byte-identical answers across repeated
+    runs while native and openai-agents varied. Their tight run-to-run spread
+    measured determinism, not stability, and the latency column was comparing
+    the wrong thing."""
+    from ovat.config.workflow import WorkflowConfig
+
+    assert WorkflowConfig(model={"name": "m"}).model.temperature == 0.0
+    assert WorkflowConfig(
+        model={"name": "m", "temperature": 0.7}).model.temperature == 0.7
+
+
+def test_every_engine_reads_the_configured_temperature():
+    """One config value, four engines. If any of them ignores it, a
+    cross-engine comparison is not like-for-like."""
+    import pytest
+    from ovat.agent.factory import build_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    cfg = WorkflowConfig(model={"name": "m", "temperature": 0.42})
+
+    native = build_agent(cfg, skip_rag=True)
+    assert native.llm.temperature == 0.42
+
+    from ovat.agent.langchain_agent import _build_chat_model
+    assert _build_chat_model(cfg).temperature == 0.42
+
+    pytest.importorskip("llama_index.core")
+    from ovat.agent.llamaindex_agent import _build_llm
+    assert _build_llm(cfg).temperature == 0.42
+
+    pytest.importorskip("agents")
+    from ovat.agent.openai_agents_agent import _model_settings
+    assert _model_settings(cfg).temperature == 0.42
+
+
+def test_no_engine_hardcodes_a_temperature():
+    """A literal here is how the four drifted apart in the first place."""
+    import re
+    from pathlib import Path
+
+    for name in ("langchain_agent", "llamaindex_agent",
+                 "openai_agents_agent"):
+        source = Path(f"ovat/agent/{name}.py").read_text(encoding="utf-8")
+        code = re.sub(r"#.*", "", source)
+        code = re.sub(r'"""[\s\S]*?"""', "", code)
+        for match in re.finditer(r"temperature\s*=\s*([^,)\s]+)", code):
+            assert not match.group(1).replace(".", "").isdigit(), (
+                f"{name} hardcodes temperature={match.group(1)}")

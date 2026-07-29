@@ -157,3 +157,36 @@ def test_the_llm_is_told_that_ovms_can_chat_and_call_functions():
     assert llm.is_chat_model is True
     assert llm.is_function_calling_model is True
     assert llm.api_base.endswith("/v3")
+
+
+def test_the_role_prefix_is_stripped_from_the_answer():
+    """LlamaIndex ChatMessage stringifies as "<role>: <content>", so every
+    answer from this engine arrived starting with "assistant: ". It is not
+    part of what the model said, and it made this engine's benchmark rows
+    differ from the other three by a constant unrelated to the model."""
+    tools, _ = _tools()
+
+    class Response:
+        response = "assistant: the real answer"
+
+    class FakeAgent:
+        async def run(self, message):
+            return Response()
+
+    agent = LlamaIndexAgent(FakeAgent(), tools, 5, None)
+    assert agent.run("q") == "the real answer"
+
+
+def test_an_answer_that_merely_mentions_assistant_is_untouched():
+    """Only a leading role label goes; the word itself is ordinary text."""
+    tools, _ = _tools()
+
+    class Response:
+        response = "The assistant: pattern is common in chat formats."
+
+    class FakeAgent:
+        async def run(self, message):
+            return Response()
+
+    agent = LlamaIndexAgent(FakeAgent(), tools, 5, None)
+    assert agent.run("q").startswith("The assistant:")

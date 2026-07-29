@@ -45,9 +45,11 @@ def _build_chat_model(config: WorkflowConfig):
 
     m = config.model
     # api_key is required by the SDK but ignored by OVMS; any string works.
-    # temperature 0 keeps the demo answers stable across runs.
+    # From the config, not a literal: every engine must sample the same way
+    # or a cross-engine benchmark compares determinism against sampling.
     return ChatOpenAI(base_url=m.ovms_url, api_key="not-needed",
-                      model=m.name, temperature=0)
+                      model=m.name, temperature=m.temperature,
+                      timeout=m.request_timeout)
 
 
 class LangChainAgent:

@@ -60,6 +60,16 @@ class ModelConfig(StrictModel):
     # minutes on a hung server. 120s is generous for slow CPU generation but
     # still turns a dead server into a clear error instead of a frozen CLI.
     request_timeout: float = 120.0
+    # Sampling temperature, applied by EVERY engine. It lives here rather
+    # than in each engine because two of them used to hardcode 0 while the
+    # other two took the server's default, which made a cross-engine
+    # benchmark meaningless: react and llamaindex returned byte-identical
+    # answers across repeated runs while native and openai-agents varied, so
+    # their tight run-to-run spread measured determinism, not stability.
+    # 0.0 by default: an agent that has to emit well-formed tool calls wants
+    # the most likely token, and a reproducible run is worth more here than a
+    # varied one.
+    temperature: float = 0.0
     # Prefix caching reuses KV-cache across turns that share a prefix (the
     # whole conversation history does): a big multi-turn speedup. A knob
     # because not every OVMS build/device supports it; was hardcoded before.
