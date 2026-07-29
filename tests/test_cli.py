@@ -313,6 +313,60 @@ def test_the_native_trace_keeps_its_own_engine_name(tmp_path):
     assert data["peak_rss_mb"] == 2.0
 
 
+def test_the_run_banner_names_the_engine_that_actually_ran(tmp_path, monkeypatch):
+    """The banner carried the same two-engine assumption the trace grew out
+    of: `"LangChain (react)" if type == "react" else "native loop (loop.py)"`.
+    So a llamaindex or openai-agents run announced itself as the native loop,
+    to the user's face, in the one line a demo actually points at. The trace
+    was fixed and this was not, which is worse: the screen and the JSON
+    disagreed about the same run."""
+    from ovat.cli import main as cli_main
+
+    class StubAgent:
+        tools = {}
+        max_iterations = 5
+
+        def run(self, text):
+            return "answer"
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: StubAgent())
+
+    for engine in ("native", "react", "llamaindex", "openai-agents"):
+        config = tmp_path / f"{engine}.yml"
+        config.write_text(f"model:\n  name: m\nagent:\n  type: {engine}\n",
+                          encoding="utf-8")
+        result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+        assert result.exit_code == 0
+        assert engine in result.output, f"{engine} run never named itself"
+        if engine != "native":
+            assert "native loop" not in result.output, \
+                f"{engine} run claimed to be the native loop"
+
+
+def test_every_supported_engine_has_a_banner_label(tmp_path, monkeypatch):
+    """A new engine added to the factory but not to the label map must fall
+    back to its own name. A wrong label is a lie; a plain one is merely terse,
+    and this is the fallback that keeps the first from ever happening again."""
+    from ovat.agent.factory import AGENT_TYPES
+    from ovat.cli import main as cli_main
+
+    class StubAgent:
+        tools = {}
+        max_iterations = 5
+
+        def run(self, text):
+            return "answer"
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: StubAgent())
+
+    for engine in AGENT_TYPES:
+        config = tmp_path / f"{engine}.yml"
+        config.write_text(f"model:\n  name: m\nagent:\n  type: {engine}\n",
+                          encoding="utf-8")
+        result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+        assert engine in result.output
+
+
 def test_the_trace_peak_is_measured_during_the_run_not_after_it(monkeypatch,
                                                                  tmp_path):
     """Reading RSS after the run misses the peak: Python has usually freed
