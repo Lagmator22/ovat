@@ -136,3 +136,61 @@ def test_factory_builds_langchain_agent_for_react_type():
 def test_factory_rejects_unknown_agent_type():
     with pytest.raises(ValueError, match="Unknown agent type"):
         build_agent(_cfg(agent_type="banana"))
+
+
+# Multi-turn memory: the native loop has it via Session, these must too
+
+def test_the_react_engine_remembers_earlier_turns():
+    """A spy graph counts what each run is given. Without memory the second
+    run sees ONE message and the model cannot answer a follow-up, which
+    silently broke the multi-turn promise on three of the four engines."""
+    from ovat.agent.langchain_agent import LangChainAgent
+
+    seen = []
+
+    class SpyGraph:
+        def invoke(self, state, config=None):
+            seen.append(len(state["messages"]))
+            # A real graph returns the FULL list, input plus what it added.
+            return {"messages": [*state["messages"], _Reply("ok")]}
+
+    class _Reply:
+        def __init__(self, content):
+            self.content = content
+
+    agent = LangChainAgent(SpyGraph(), tools={}, max_iterations=5,
+                           system_prompt=None)
+    agent.run("first")
+    agent.run("second")
+    assert seen == [1, 3], (
+        f"second run saw {seen[-1]} messages; it must carry the first "
+        f"exchange forward")
+
+
+def test_a_failed_run_does_not_poison_the_next_question():
+    """A half-finished exchange must not become permanent history."""
+    from langgraph.errors import GraphRecursionError
+    from ovat.agent.langchain_agent import LangChainAgent
+
+    seen = []
+
+    class FlakyGraph:
+        def __init__(self):
+            self.calls = 0
+
+        def invoke(self, state, config=None):
+            seen.append(len(state["messages"]))
+            self.calls += 1
+            if self.calls == 1:
+                raise GraphRecursionError("too deep")
+            return {"messages": [*state["messages"], _R("ok")]}
+
+    class _R:
+        def __init__(self, content):
+            self.content = content
+
+    agent = LangChainAgent(FlakyGraph(), tools={}, max_iterations=3,
+                           system_prompt=None)
+    assert "max of 3 steps" in agent.run("first")
+    agent.run("second")
+    assert seen == [1, 1], "the failed turn leaked into the next question"

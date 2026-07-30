@@ -81,7 +81,7 @@ def test_the_adapter_presents_the_same_face_as_the_native_loop():
     tools, _ = _tools()
 
     class FakeAgent:
-        async def run(self, message):
+        async def run(self, message, chat_history=None):
             return f"answered: {message}"
 
     agent = LlamaIndexAgent(FakeAgent(), tools, max_iterations=7,
@@ -104,7 +104,7 @@ def test_a_response_object_is_reduced_to_its_text():
             return "Response(blocks=[...], tool_calls=[...])"
 
     class FakeAgent:
-        async def run(self, message):
+        async def run(self, message, chat_history=None):
             return Response()
 
     agent = LlamaIndexAgent(FakeAgent(), tools, 5, None)
@@ -120,7 +120,7 @@ def test_running_inside_an_event_loop_is_refused_not_worked_around():
     tools, _ = _tools()
 
     class FakeAgent:
-        async def run(self, message):
+        async def run(self, message, chat_history=None):
             return "never reached"
 
     agent = LlamaIndexAgent(FakeAgent(), tools, 5, None)
@@ -170,7 +170,7 @@ def test_the_role_prefix_is_stripped_from_the_answer():
         response = "assistant: the real answer"
 
     class FakeAgent:
-        async def run(self, message):
+        async def run(self, message, chat_history=None):
             return Response()
 
     agent = LlamaIndexAgent(FakeAgent(), tools, 5, None)
@@ -185,8 +185,64 @@ def test_an_answer_that_merely_mentions_assistant_is_untouched():
         response = "The assistant: pattern is common in chat formats."
 
     class FakeAgent:
-        async def run(self, message):
+        async def run(self, message, chat_history=None):
             return Response()
 
     agent = LlamaIndexAgent(FakeAgent(), tools, 5, None)
     assert agent.run("q").startswith("The assistant:")
+
+
+# Multi-turn memory: the native loop has it via Session, this must too
+
+def test_the_llamaindex_engine_remembers_earlier_turns():
+    """Without this the second run gets an empty chat_history and the model
+    cannot answer a follow-up."""
+    tools, _ = _tools()
+    seen = []
+
+    class Response:
+        response = "an answer"
+
+    class SpyAgent:
+        async def run(self, message, chat_history=None):
+            seen.append(len(chat_history or []))
+            return Response()
+
+    agent = LlamaIndexAgent(SpyAgent(), tools, 5, None)
+    agent.run("first")
+    agent.run("second")
+    # Turn 2 carries turn 1's question AND its answer.
+    assert seen == [0, 2], f"second run saw {seen[-1]} history messages"
+
+
+def test_the_history_handed_over_is_a_copy():
+    """The workflow may append to whatever list it is given; the adapter owns
+    the canonical history and must not have it mutated underneath."""
+    tools, _ = _tools()
+
+    class Response:
+        response = "answer"
+
+    class GreedyAgent:
+        async def run(self, message, chat_history=None):
+            chat_history.append("junk the workflow added")
+            return Response()
+
+    agent = LlamaIndexAgent(GreedyAgent(), tools, 5, None)
+    agent.run("first")
+    assert "junk the workflow added" not in agent._history
+
+
+def test_a_failed_llamaindex_run_does_not_poison_the_next():
+    tools, _ = _tools()
+
+    class Boom:
+        async def run(self, message, chat_history=None):
+            raise RuntimeError("model died")
+
+    agent = LlamaIndexAgent(Boom(), tools, 5, None)
+    try:
+        agent.run("first")
+    except RuntimeError:
+        pass
+    assert agent._history == []

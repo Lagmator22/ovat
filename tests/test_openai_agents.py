@@ -180,3 +180,50 @@ def test_running_inside_an_event_loop_is_refused():
             agent.run("hi")
 
     asyncio.run(scenario())
+
+
+# Multi-turn memory: the native loop has it via Session, this must too
+
+def test_the_agents_engine_remembers_earlier_turns(monkeypatch):
+    """The SDK is stateless per run. to_input_list() returns the full
+    transcript, which is exactly what the next run should start from."""
+    import agents
+    from ovat.agent.openai_agents_agent import OpenAIAgentsAgent
+
+    tools, _ = _tools()
+    seen = []
+
+    class Result:
+        final_output = "an answer"
+
+        def __init__(self, given):
+            self._given = given
+
+        def to_input_list(self):
+            return [*self._given, {"role": "assistant", "content": "an answer"}]
+
+    async def fake_run(agent, input_items, max_turns=None):
+        seen.append(len(input_items))
+        return Result(input_items)
+
+    monkeypatch.setattr(agents.Runner, "run", fake_run)
+    agent = OpenAIAgentsAgent(object(), tools, 5, None)
+    agent.run("first")
+    agent.run("second")
+    assert seen == [1, 3], f"second run saw {seen[-1]} input items"
+
+
+def test_a_failed_agents_run_does_not_poison_the_next(monkeypatch):
+    import agents
+    from agents.exceptions import MaxTurnsExceeded
+    from ovat.agent.openai_agents_agent import OpenAIAgentsAgent
+
+    tools, _ = _tools()
+
+    async def always_too_many(agent, input_items, max_turns=None):
+        raise MaxTurnsExceeded("too many")
+
+    monkeypatch.setattr(agents.Runner, "run", always_too_many)
+    agent = OpenAIAgentsAgent(object(), tools, 3, None)
+    assert "max of 3 steps" in agent.run("first")
+    assert agent._input_items == []

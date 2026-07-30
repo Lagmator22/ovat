@@ -107,6 +107,11 @@ class OpenAIAgentsAgent:
         self.tools = tools
         self.max_iterations = max_iterations
         self.system_prompt = system_prompt
+        # Conversation memory, same contract as the native loop's Session.
+        # The SDK is stateless per run; result.to_input_list() returns the
+        # full transcript (input plus everything the run added), which is
+        # exactly the input the next run should start from.
+        self._input_items: list = []
 
     def run(self, user_message: str) -> str:
         """Run for one message and return the final text.
@@ -131,16 +136,20 @@ class OpenAIAgentsAgent:
 
         try:
             result = asyncio.run(Runner.run(
-                self._agent, user_message,
+                self._agent,
+                [*self._input_items, {"role": "user", "content": user_message}],
                 # One "turn" is a model call plus its tool round, which is the
                 # same unit the native loop caps, so the number means the
                 # same thing in both engines.
                 max_turns=self.max_iterations,
             ))
         except MaxTurnsExceeded:
+            # History is left untouched: a failed run must not poison the next
+            # question with a half-finished exchange.
             # Same wording as the native loop so every engine fails alike.
             return (f"Error: I reached my max of {self.max_iterations} steps "
                     f"without a final answer.")
+        self._input_items = result.to_input_list()
         return str(getattr(result, "final_output", result) or "").strip()
 
 

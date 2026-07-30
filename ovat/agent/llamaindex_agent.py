@@ -82,6 +82,10 @@ class LlamaIndexAgent:
         self.tools = tools
         self.max_iterations = max_iterations
         self.system_prompt = system_prompt
+        # Conversation memory, same contract as the native loop's Session.
+        # Each workflow run is stateless on its own, so the adapter keeps the
+        # history and hands it back as chat_history on every call.
+        self._history: list = []
 
     def run(self, user_message: str) -> str:
         """Run the agent for one message and return the final text.
@@ -104,8 +108,19 @@ class LlamaIndexAgent:
                 "agent.type: native.")
         return asyncio.run(self._arun(user_message))
 
+    def _remember(self, user_message: str, answer: str) -> None:
+        from llama_index.core.base.llms.types import ChatMessage, MessageRole
+
+        self._history.append(ChatMessage(role=MessageRole.USER,
+                                         content=user_message))
+        self._history.append(ChatMessage(role=MessageRole.ASSISTANT,
+                                         content=answer))
+
     async def _arun(self, user_message: str) -> str:
-        response = await self._agent.run(user_message)
+        # list() hands the workflow a COPY: it may append to whatever list it
+        # is given, and this adapter owns the canonical history.
+        response = await self._agent.run(user_message,
+                                         chat_history=list(self._history))
         # FunctionAgent returns a response object whose str() is the answer.
         # Reading .response first keeps the text clean when the object grows
         # extra repr detail, which it has done between releases.
@@ -119,6 +134,9 @@ class LlamaIndexAgent:
             if text.startswith(role):
                 text = text[len(role):].lstrip()
                 break
+        # Recorded only on success: a failed run must not poison the next
+        # question with a half-finished exchange.
+        self._remember(user_message, text)
         return text
 
 

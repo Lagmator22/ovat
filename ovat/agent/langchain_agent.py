@@ -63,6 +63,13 @@ class LangChainAgent:
         self.tools = tools
         self.max_iterations = max_iterations
         self.system_prompt = system_prompt
+        # Conversation memory, the same contract the native loop's Session
+        # gives: run() number 5 must remember run() number 1. The graph is
+        # stateless per invoke (no checkpointer), so the adapter carries the
+        # history and resends it, exactly as the native loop resends its
+        # Session. The list holds LangChain message objects as the graph
+        # returns them, tool calls included, so nothing is lost in replay.
+        self._messages: list = []
         # langgraph counts each node visit, and one tool round is roughly two
         # visits plus the final answer. This keeps my cap close in meaning to
         # the native loop's max_iterations.
@@ -74,13 +81,18 @@ class LangChainAgent:
 
         try:
             result = self._graph.invoke(
-                {"messages": [("user", user_message)]},
+                {"messages": [*self._messages, ("user", user_message)]},
                 config={"recursion_limit": self._recursion_limit},
             )
         except GraphRecursionError:
+            # History is left untouched: a failed run must not poison the next
+            # question with a half-finished exchange.
             # Same wording as the native loop so the two engines fail alike.
             return (f"Error: I reached my max of {self.max_iterations} steps "
                     f"without a final answer.")
+        # The graph returns the FULL message list (input plus everything new),
+        # so storing it back is the whole memory update.
+        self._messages = result["messages"]
         final = result["messages"][-1]
         return getattr(final, "content", str(final))
 
