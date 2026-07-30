@@ -66,13 +66,15 @@ class LiveBufferSink(TelemetrySink):
         # 120 at the default 1s tick is two minutes of history, which is
         # about as much as fits a terminal-width sparkline meaningfully.
         self.samples: deque = deque(maxlen=capacity)
+        self._lock = threading.Lock()
 
     def record(self, sample: dict) -> None:
         if not sample:
             return
         stamped = dict(sample)
         stamped.setdefault("t", time.time())
-        self.samples.append(stamped)
+        with self._lock:
+            self.samples.append(stamped)
 
     def series(self, metric: str) -> list:
         """One metric's history, oldest first, skipping frames that lack it.
@@ -81,12 +83,16 @@ class LiveBufferSink(TelemetrySink):
         of zero, and a sparkline that dips to the floor whenever a collector
         stalls is a graph that lies.
         """
-        return [s[metric] for s in self.samples
+        with self._lock:
+            snap = list(self.samples)
+        return [s[metric] for s in snap
                 if isinstance(s.get(metric), (int, float))]
 
     def latest(self, metric: str, default=None):
         """The most recent value of one metric, or `default` if never seen."""
-        for sample in reversed(self.samples):
+        with self._lock:
+            snap = list(self.samples)
+        for sample in reversed(snap):
             value = sample.get(metric)
             if isinstance(value, (int, float)):
                 return value
@@ -99,15 +105,18 @@ class LiveBufferSink(TelemetrySink):
         rather than hardcoding a list that would go stale the moment a source
         is added.
         """
+        with self._lock:
+            snap = list(self.samples)
         seen = {}
-        for sample in self.samples:
+        for sample in snap:
             for key in sample:
                 if key != "t" and isinstance(sample[key], (int, float)):
                     seen[key] = True
         return list(seen)
 
     def close(self) -> None:
-        self.samples.clear()
+        with self._lock:
+            self.samples.clear()
 
 
 class FanOutSink(TelemetrySink):
