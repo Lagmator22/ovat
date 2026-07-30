@@ -808,3 +808,31 @@ def test_leaving_the_page_stops_the_collector():
             await pilot.pause()
             assert screen.collector._thread is None
     _run(scenario())
+
+
+def test_the_telemetry_page_sees_an_agent_the_chat_screen_built():
+    """The page said "no agent has run yet" even while a chat was answering,
+    because it was constructed with agent=None and nothing ever told it. The
+    page cannot build an agent itself (no config, and loading a model to draw
+    a graph would be absurd), so the app is where the two screens meet."""
+    from ovat.cli.telemetry_screen import TelemetryScreen
+    from ovat.telemetry.sources import AgentTraceSource
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            assert app.last_agent is None
+
+            class Agent:
+                last_trace = {"totals": {"turns": 2, "prompt_tokens": 40}}
+
+            app.last_agent = Agent()
+            screen = TelemetryScreen(agent=app.last_agent)
+            app.push_screen(screen)
+            await pilot.pause()
+            agent_source = [s for s in screen.collector.sources
+                            if isinstance(s, AgentTraceSource)][0]
+            assert agent_source.unavailable is None
+            assert agent_source.sample() == {"turns": 2, "prompt_tokens": 40}
+            screen.collector.stop()
+    _run(scenario())

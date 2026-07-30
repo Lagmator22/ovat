@@ -661,6 +661,11 @@ class OvatTUI(App):
         self._busy = False
         self._last_quit_press = 0.0    # when Ctrl-C was last pressed while idle
         self._history = InputHistory() # Up/Down recall, like the shell it wraps
+        # The last agent any screen built, so the telemetry page can report on
+        # it. The page cannot build one itself (it has no config, and loading
+        # a model to draw a graph would be absurd), and the chat screen is the
+        # only place an agent exists, so the app is the meeting point.
+        self.last_agent = None
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="masthead"):
@@ -875,7 +880,7 @@ class OvatTUI(App):
         if isinstance(self.screen, TelemetryScreen):
             self.notify("Already on the telemetry page.")
             return
-        self.push_screen(TelemetryScreen())
+        self.push_screen(TelemetryScreen(agent=self.last_agent))
 
     def _open_doctor(self, args: str) -> None:
         """Push the in-app doctor screen: `/doctor [config]`.

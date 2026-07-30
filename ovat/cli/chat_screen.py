@@ -793,6 +793,14 @@ class ChatScreen(Screen):
         try:
             engine = _build_engine(self._config_path, self._model_path,
                                    self._engine_name)
+            # Publish the agent so the telemetry page can report on it. That
+            # page has no config and cannot build one itself, and loading a
+            # model just to draw a graph would be absurd, so the app is where
+            # the two screens meet. Without this the telemetry page said "no
+            # agent has run yet" even while a chat was answering.
+            agent = getattr(engine, "agent", None)
+            if agent is not None:
+                self.app.last_agent = agent
         except Exception as exc:
             # The spinner has to stop on the FAILURE path too, or a bad config
             # leaves the transcript spinning forever behind the error message.
