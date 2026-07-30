@@ -6,6 +6,7 @@ captures their output and exit code, so I can test the CLI without a real shell
 or a running OVMS server. I test the wiring (init writes a usable config,
 dry-run builds the agent) and the error paths (bad config exits non-zero).
 """
+import pytest
 from typer.testing import CliRunner
 
 from ovat.cli.main import app
@@ -564,3 +565,49 @@ def test_doctor_reports_a_missing_config_as_a_failed_check(tmp_path):
     assert "fail" in result.output
     # The environment checks still ran.
     assert "Python" in result.output
+
+
+# `ovat models list` must not be able to hang forever
+
+def test_list_models_gives_up_on_a_wedged_binary(monkeypatch):
+    """It only reads a directory, so a binary that has not answered in 30s is
+    wedged. Unbounded, `ovat models list` froze with no output and no
+    explanation, which is indistinguishable from the command being broken."""
+    import subprocess
+
+    from ovat.core.model_manager import ModelManager
+
+    def hang(*args, **kwargs):
+        assert kwargs.get("timeout"), "list_models ran with no timeout at all"
+        raise subprocess.TimeoutExpired(cmd="ovms", timeout=kwargs["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", hang)
+    manager = ModelManager(ovms_binary="/fake/ovms")
+    with pytest.raises(RuntimeError) as excinfo:
+        manager.list_models()
+    assert "did not answer" in str(excinfo.value)
+    assert "/fake/ovms" in str(excinfo.value)      # names the binary to try
+
+
+def test_pull_is_deliberately_unbounded(monkeypatch):
+    """A real 8B download takes half an hour. A timeout here would abort it
+    and leave a half-written repository, which is worse than waiting. The
+    asymmetry with list_models is a decision, not an oversight."""
+    import subprocess
+
+    from ovat.core.model_manager import ModelManager
+
+    seen = {}
+
+    class Ok:
+        returncode = 0
+        stdout = "done"
+        stderr = ""
+
+    def record(*args, **kwargs):
+        seen.update(kwargs)
+        return Ok()
+
+    monkeypatch.setattr(subprocess, "run", record)
+    ModelManager(ovms_binary="ovms").pull("OpenVINO/Qwen3-8B-int4-ov")
+    assert "timeout" not in seen, "pull must NOT be bounded"
