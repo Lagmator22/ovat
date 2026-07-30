@@ -202,3 +202,72 @@ def test_no_engine_hardcodes_a_temperature():
         for match in re.finditer(r"temperature\s*=\s*([^,)\s]+)", code):
             assert not match.group(1).replace(".", "").isdigit(), (
                 f"{name} hardcodes temperature={match.group(1)}")
+
+
+# One description of the backend, read by all four engines
+
+def test_every_engine_reads_the_same_backend_description():
+    """THE test that would have caught the temperature bug.
+
+    Four engines each built their own connection to OVMS. Two set temperature
+    and two did not, for a whole release, so the benchmark compared
+    determinism against sampling and reported it as a framework difference.
+    Four places that must agree, with nothing making them agree.
+    """
+    import pytest
+    from ovat.config.workflow import WorkflowConfig
+    from ovat.providers.backend import LLMBackend
+
+    cfg = WorkflowConfig(model={
+        "name": "some-model", "ovms_url": "http://host:9999/v3",
+        "temperature": 0.33, "request_timeout": 77.0})
+    expected = LLMBackend.from_config(cfg)
+
+    from ovat.agent.factory import build_llm
+    native = build_llm(cfg)
+    assert (native.model, native.temperature) == (expected.model,
+                                                  expected.temperature)
+
+    from ovat.agent.langchain_agent import _build_chat_model
+    lc = _build_chat_model(cfg)
+    assert (lc.model_name, lc.temperature) == (expected.model,
+                                               expected.temperature)
+
+    pytest.importorskip("llama_index.core")
+    from ovat.agent.llamaindex_agent import _build_llm
+    li = _build_llm(cfg)
+    assert (li.model, li.temperature, li.api_base) == (
+        expected.model, expected.temperature, expected.url)
+
+    pytest.importorskip("agents")
+    from ovat.agent.openai_agents_agent import _build_model, _model_settings
+    assert _model_settings(cfg).temperature == expected.temperature
+    assert str(_build_model(cfg)._client.base_url).rstrip("/") == \
+        expected.url.rstrip("/")
+
+
+def test_no_engine_reads_config_model_directly_any_more():
+    """A site that goes back to config.model is a site that can drift again.
+    Every engine must go through LLMBackend."""
+    import re
+    from pathlib import Path
+
+    for name in ("langchain_agent", "llamaindex_agent", "openai_agents_agent"):
+        source = Path(f"ovat/agent/{name}.py").read_text(encoding="utf-8")
+        code = re.sub(r"#.*", "", source)
+        code = re.sub(r'"""[\s\S]*?"""', "", code)
+        assert "config.model." not in code, (
+            f"{name} still reads config.model directly instead of LLMBackend")
+
+
+def test_the_backend_description_cannot_be_mutated():
+    """frozen=True: one engine must not be able to change the shared
+    description out from under the other three."""
+    import dataclasses
+    import pytest
+    from ovat.config.workflow import WorkflowConfig
+    from ovat.providers.backend import LLMBackend
+
+    backend = LLMBackend.from_config(WorkflowConfig(model={"name": "m"}))
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        backend.temperature = 0.9

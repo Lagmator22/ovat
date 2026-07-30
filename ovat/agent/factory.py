@@ -14,6 +14,7 @@ a one-line YAML edit, not a code change.
 """
 from ovat.agent.loop import AgentLoop
 from ovat.config.workflow import WorkflowConfig
+from ovat.providers.backend import LLMBackend
 from ovat.providers.base import (EmbeddingsProvider, LLMProvider,
                                  RetrieverProvider)
 from ovat.providers.llm_ovms import OVMSLLMProvider
@@ -55,9 +56,10 @@ def build_llm(config: WorkflowConfig) -> LLMProvider:
         raise ValueError(
             f"Unknown model provider '{m.provider}'. Supported: ovms, genai."
         )
-    return OVMSLLMProvider(base_url=m.ovms_url, model=m.name,
-                           timeout=m.request_timeout,
-                           temperature=m.temperature)
+    backend = LLMBackend.from_config(config)
+    return OVMSLLMProvider(base_url=backend.url, model=backend.model,
+                           timeout=backend.timeout,
+                           temperature=backend.temperature)
 
 
 def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:

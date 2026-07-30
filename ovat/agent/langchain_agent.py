@@ -16,6 +16,7 @@ I import langchain lazily inside the build function. That keeps `import ovat`
 cheap and lets someone who only uses the native loop skip the heavy install.
 """
 from ovat.agent.arg_models import args_model_from_schema
+from ovat.providers.backend import LLMBackend
 from ovat.config.workflow import WorkflowConfig
 
 
@@ -43,13 +44,13 @@ def _build_chat_model(config: WorkflowConfig):
     """Build a ChatOpenAI pointed at OVMS. Construction makes no network call."""
     from langchain_openai import ChatOpenAI
 
-    m = config.model
-    # api_key is required by the SDK but ignored by OVMS; any string works.
-    # From the config, not a literal: every engine must sample the same way
-    # or a cross-engine benchmark compares determinism against sampling.
-    return ChatOpenAI(base_url=m.ovms_url, api_key="not-needed",
-                      model=m.name, temperature=m.temperature,
-                      timeout=m.request_timeout)
+    # One shared description of the connection, so this engine cannot drift
+    # from the other three. See ovat/providers/backend.py for why that
+    # matters: temperature was set here and in llamaindex, and omitted in the
+    # other two, for a whole release.
+    b = LLMBackend.from_config(config)
+    return ChatOpenAI(base_url=b.url, api_key=b.api_key, model=b.model,
+                      temperature=b.temperature, timeout=b.timeout)
 
 
 class LangChainAgent:

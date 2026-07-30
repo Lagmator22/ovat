@@ -34,6 +34,7 @@ import inspect
 import json
 
 from ovat.agent.arg_models import json_schema_for_tool
+from ovat.providers.backend import LLMBackend
 from ovat.config.workflow import WorkflowConfig
 
 
@@ -80,10 +81,11 @@ def _build_model(config: WorkflowConfig):
     from agents import OpenAIChatCompletionsModel
     from openai import AsyncOpenAI
 
-    m = config.model
-    client = AsyncOpenAI(base_url=m.ovms_url, api_key="not-needed",
-                         timeout=m.request_timeout)
-    return OpenAIChatCompletionsModel(model=m.name, openai_client=client)
+    # One shared description of the connection, so this engine cannot drift
+    # from the other three. See ovat/providers/backend.py.
+    b = LLMBackend.from_config(config)
+    client = AsyncOpenAI(base_url=b.url, api_key=b.api_key, timeout=b.timeout)
+    return OpenAIChatCompletionsModel(model=b.model, openai_client=client)
 
 
 def _model_settings(config: WorkflowConfig):
@@ -95,7 +97,7 @@ def _model_settings(config: WorkflowConfig):
     """
     from agents import ModelSettings
 
-    return ModelSettings(temperature=config.model.temperature)
+    return ModelSettings(temperature=LLMBackend.from_config(config).temperature)
 
 
 class OpenAIAgentsAgent:

@@ -28,6 +28,7 @@ cheap and someone using only the native loop never pays for the install.
 import asyncio
 
 from ovat.agent.arg_models import args_model_from_schema
+from ovat.providers.backend import LLMBackend
 from ovat.config.workflow import WorkflowConfig
 
 
@@ -57,17 +58,17 @@ def _build_llm(config: WorkflowConfig):
     """Build an OpenAILike LLM pointed at OVMS. No network call happens here."""
     from llama_index.llms.openai_like import OpenAILike
 
-    m = config.model
-    # api_key is required by the SDK but ignored by OVMS; any string works.
-    # Temperature comes from the config so every engine samples alike.
+    # One shared description of the connection, so this engine cannot drift
+    # from the other three. See ovat/providers/backend.py.
+    b = LLMBackend.from_config(config)
     return OpenAILike(
-        model=m.name,
-        api_base=m.ovms_url,
-        api_key="not-needed",
-        temperature=m.temperature,
+        model=b.model,
+        api_base=b.url,
+        api_key=b.api_key,
+        temperature=b.temperature,
         is_chat_model=True,
         is_function_calling_model=True,
-        timeout=m.request_timeout,
+        timeout=b.timeout,
     )
 
 
