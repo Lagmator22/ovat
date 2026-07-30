@@ -704,3 +704,43 @@ def test_telemetry_says_which_sources_are_unavailable(monkeypatch, tmp_path):
     result = runner.invoke(app, ["run", str(config), "-i", "hi",
                                  "--telemetry", str(tmp_path / "t.jsonl")])
     assert "unavailable" in result.output
+
+
+# `ovat telemetry`: the same sources, for people who live in the terminal
+
+def test_telemetry_once_prints_a_snapshot():
+    result = runner.invoke(app, ["telemetry", "--once"])
+    assert result.exit_code == 0, result.output
+    assert "Source" in result.output and "Metric" in result.output
+    assert "cpu" in result.output.lower()
+
+
+def test_telemetry_names_the_sources_that_cannot_run_here():
+    """A table of CPU alone, with no note that the hardware source was
+    skipped, reads as a machine with an idle NPU rather than one that cannot
+    see it."""
+    result = runner.invoke(app, ["telemetry", "--once"])
+    assert "unavailable" in result.output
+
+
+def test_telemetry_exits_nonzero_when_nothing_can_be_measured(monkeypatch):
+    """Printing an empty table and exiting 0 would look like a machine doing
+    nothing."""
+    from ovat.telemetry.collector import Collector
+
+    monkeypatch.setattr(Collector, "available", property(lambda self: []))
+    result = runner.invoke(app, ["telemetry", "--once"])
+    assert result.exit_code == 1
+    assert "No telemetry sources" in result.output
+
+
+def test_telemetry_can_stream_to_a_file(tmp_path):
+    import json
+
+    out = tmp_path / "t.jsonl"
+    result = runner.invoke(app, ["telemetry", "--seconds", "0.3",
+                                 "--interval", "0.1", "--out", str(out)])
+    assert result.exit_code == 0, result.output
+    assert out.exists()
+    for line in out.read_text(encoding="utf-8").strip().splitlines():
+        json.loads(line)

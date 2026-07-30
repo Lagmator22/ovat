@@ -245,3 +245,58 @@ def test_booleans_are_not_mistaken_for_measurements():
 
     assert IntelHardwareSource._normalise({"enabled": True, "watts": 2.5}) == \
         {"watts": 2.5}
+
+
+# Finding a UT release that was unzipped into a versioned folder
+
+def test_find_ut_looks_one_level_into_known_folders(tmp_path, monkeypatch):
+    """The zip extracts to ut-tool-ext-v0.2.0-beta1.1, so unzipping into ~/ut
+    leaves the binary at ~/ut/ut-tool-ext-v0.2.0-beta1.1/bin/ut.exe. A flat
+    check of the known folders misses that entirely, which is exactly what
+    happened on the AI PC."""
+    import sys
+
+    from ovat.telemetry import sources
+
+    release = tmp_path / "ut-tool-ext-v0.2.0-beta1.1" / "bin"
+    release.mkdir(parents=True)
+    (release / sources._UT_EXE).write_text("#!/bin/sh\n", encoding="utf-8")
+
+    monkeypatch.setattr(sources, "_UT_KNOWN_DIRS", [str(tmp_path)])
+    monkeypatch.delenv("OVAT_UT", raising=False)
+    monkeypatch.setattr(sources.shutil, "which", lambda name: None)
+
+    path, how = sources.find_ut()
+    assert path is not None, how
+    assert "ut-tool-ext" in how
+
+
+def test_the_newest_release_wins_when_several_are_unzipped(tmp_path,
+                                                           monkeypatch):
+    """Two versions side by side must not pick at random."""
+    from ovat.telemetry import sources
+
+    for version in ("ut-tool-ext-v0.1.0", "ut-tool-ext-v0.2.0"):
+        binary = tmp_path / version / "bin"
+        binary.mkdir(parents=True)
+        (binary / sources._UT_EXE).write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(sources, "_UT_KNOWN_DIRS", [str(tmp_path)])
+    monkeypatch.delenv("OVAT_UT", raising=False)
+    monkeypatch.setattr(sources.shutil, "which", lambda name: None)
+
+    path, how = sources.find_ut()
+    assert "v0.2.0" in how, how
+
+
+def test_an_explicit_path_still_wins_over_everything(tmp_path, monkeypatch):
+    """The user must always be able to override autodetection."""
+    from ovat.telemetry import sources
+
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    (binary / sources._UT_EXE).write_text("x", encoding="utf-8")
+
+    path, how = sources.find_ut(str(tmp_path))
+    assert path is not None
+    assert how == "config"

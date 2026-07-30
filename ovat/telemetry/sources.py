@@ -149,11 +149,17 @@ class ProcessMemorySource(TelemetrySource):
 # Where Intel's Unified Telemetry tool is unzipped. Same problem as OVMS: it
 # ships as a zip, is set up with ut-vars.cmd, and is essentially never on PATH.
 _UT_EXE = "ut.exe" if sys.platform == "win32" else "ut"
+# Folders people actually unzip it into. The release extracts to a VERSIONED
+# directory (ut-tool-ext-v0.2.0-beta1.1), so every entry here is also searched
+# one level deep for anything starting "ut-" or "ut_". Without that, unzipping
+# into ~/ut leaves the binary at ~/ut/ut-tool-ext-v0.2.0-beta1.1/bin/ut.exe,
+# which a flat check misses entirely.
 _UT_KNOWN_DIRS = [
     os.path.expanduser(p) for p in (
-        [r"~\ut-tool", r"~\Downloads\ut-tool-ext", r"C:\ut-tool"]
+        [r"~\ut", r"~\ut-tool", r"~\Downloads", r"C:\ut", r"C:\ut-tool",
+         r"C:\Program Files\Intel\ut"]
         if sys.platform == "win32" else
-        ["~/ut-tool", "~/Downloads/ut-tool-ext", "/opt/intel/ut"]
+        ["~/ut", "~/ut-tool", "~/Downloads", "/opt/intel/ut", "/opt/ut"]
     )
 ]
 
@@ -194,7 +200,21 @@ def find_ut(explicit: str | None = None) -> tuple:
         found = as_binary(folder)
         if found:
             return found, f"known location ({folder})"
-    return None, "not found (config, OVAT_UT, PATH, known folders all empty)"
+        # One level deeper, for the versioned folder the zip extracts to.
+        try:
+            entries = sorted(os.listdir(folder), reverse=True)
+        except OSError:
+            continue
+        for entry in entries:
+            if not entry.lower().startswith(("ut-", "ut_")):
+                continue
+            found = as_binary(os.path.join(folder, entry))
+            if found:
+                # reverse-sorted above, so the newest version wins when
+                # several releases are unzipped side by side.
+                return found, f"known location ({folder}/{entry})"
+    return None, ("not found. Unzip the ut-tool release and either set "
+                  "OVAT_UT to that folder or put it in ~/ut")
 
 
 class IntelHardwareSource(TelemetrySource):

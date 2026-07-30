@@ -789,6 +789,91 @@ def tui():
 
 
 @app.command()
+def telemetry(
+    seconds: float = typer.Option(10.0, "--seconds", "-s",
+                                  help="How long to sample for. 0 runs until "
+                                       "Ctrl-C."),
+    interval: float = typer.Option(1.0, "--interval",
+                                   help="Seconds between samples."),
+    out: str = typer.Option(None, "--out",
+                            help="Also stream every sample to this file as "
+                                 "JSON Lines."),
+    ut: str = typer.Option(None, "--ut",
+                           help="Path to the Intel Unified Telemetry folder "
+                                "or binary, if it was not auto-detected. "
+                                "OVAT_UT does the same thing."),
+    once: bool = typer.Option(False, "--once",
+                              help="Print one snapshot and exit."),
+):
+    """Show live system, process and Intel hardware telemetry.
+
+    The same sources the TUI's /telemetry page draws, for people who live in
+    the terminal or want to pipe the numbers somewhere. `ovat run --telemetry`
+    measures ONE run; this measures the machine.
+    """
+    import time
+
+    from ovat.telemetry.collector import Collector
+    from ovat.telemetry.sinks import FanOutSink, JSONFileSink, LiveBufferSink
+    from ovat.telemetry.sources import (IntelHardwareSource,
+                                        ProcessMemorySource, SystemSource)
+
+    live = LiveBufferSink()
+    sink = FanOutSink(live, JSONFileSink(out)) if out else live
+    collector = Collector([SystemSource(), ProcessMemorySource(),
+                           IntelHardwareSource(ut)], sink,
+                          interval_s=interval)
+
+    # Say up front what will NOT be measured here. A table of CPU alone, with
+    # no note that the hardware source was skipped, reads as a machine with an
+    # idle NPU rather than one that cannot see it.
+    for name, reason in collector.unavailable.items():
+        rprint(f"[yellow]{esc(name)}[/yellow] unavailable: [dim]{esc(reason)}"
+               f"[/dim]")
+    if not collector.available:
+        rprint("[red]No telemetry sources work here.[/red]")
+        raise typer.Exit(code=1)
+
+    if once:
+        _print_telemetry(collector.sample_once())
+        return
+
+    collector.start()
+    deadline = None if seconds <= 0 else time.time() + seconds
+    try:
+        while deadline is None or time.time() < deadline:
+            time.sleep(interval)
+            if live.samples:
+                _print_telemetry(live.samples[-1])
+    except KeyboardInterrupt:
+        pass
+    finally:
+        collector.stop()
+        if out:
+            sink.close()
+            rprint(f"[dim]telemetry written to[/dim] {esc(out)}")
+
+
+def _print_telemetry(sample: dict) -> None:
+    """One snapshot as a table, grouped by source."""
+    if not sample:
+        return
+    table = Table(header_style=f"bold {ui.BLUE}", border_style=ui.BLUE,
+                  box=box.ROUNDED)
+    table.add_column("Source", no_wrap=True)
+    table.add_column("Metric", no_wrap=True)
+    table.add_column("Value", justify="right", no_wrap=True)
+    for key in sorted(sample):
+        if key == "t":
+            continue
+        source, _, metric = key.partition(".")
+        value = sample[key]
+        table.add_row(Text(source, style=ui.CYAN), Text(metric, style=ui.DIM),
+                      Text(f"{value:,.1f}", style=f"bold {ui.GREEN}"))
+    console.print(table)
+
+
+@app.command()
 def bench(
     config: str = typer.Argument(..., help="Path to a workflow YAML."),
     input: str = typer.Option(..., "--input", "-i",
