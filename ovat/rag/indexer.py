@@ -93,7 +93,12 @@ def index_folder(folder: str, retriever: RetrieverProvider,
     total_files = 0
     total_chunks = 0
     for done, path in enumerate(paths, start=1):
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except (OSError, UnicodeDecodeError):
+            if on_progress is not None:
+                on_progress(done, total, str(path))
+            continue
         chunks = chunk_text(text, size=size, overlap=overlap)
         if chunks:
             # One source string per chunk, all pointing back at this file.
