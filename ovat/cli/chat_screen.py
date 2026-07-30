@@ -374,7 +374,12 @@ class OVMSEngine:
         return answer, list(dict.fromkeys(used))     # de-duped, order kept
 
     def close(self) -> None:
-        pass
+        # Every /engine switch rebuilds the agent, and mcp_stdio tools each
+        # own a subprocess. Without this they survived until the whole TUI
+        # exited, so switching engines a few times left a pile of them.
+        from ovat.agent.factory import close_agent
+
+        close_agent(self.agent)
 
 
 def _build_engine(config_path: str, model_path: str, engine: str = "local",

@@ -68,4 +68,7 @@ def rag_chat(retriever: RetrieverProvider, llm: LLMProvider, question: str,
         source = h.get("source")
         if source and source not in sources:    # keep order, drop duplicates
             sources.append(source)
-    return reply["content"], sources
+    # `or ""` for the same reason loop.py does it: a server can finish with
+    # content=None, and returning that straight through puts the literal
+    # string "None" on screen or into a saved session.
+    return reply["content"] or "", sources

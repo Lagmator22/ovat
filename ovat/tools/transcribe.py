@@ -20,6 +20,12 @@ _pipeline = None
 
 # Where my converted Whisper model lives. I can override it with an env var.
 WHISPER_MODEL_DIR = os.environ.get("OVAT_WHISPER_MODEL", "models/whisper-base")
+# Which device it runs on. Read from the env, defaulting to DeviceManager's
+# recommendation rather than a literal "CPU". Today that recommendation IS
+# CPU, so nothing changes yet; the point is that the NPU/GPU stretch goal
+# becomes a setting instead of an edit, and the routing table stops being
+# advice that nothing follows.
+WHISPER_DEVICE = os.environ.get("OVAT_WHISPER_DEVICE", "")
 
 mcp = FastMCP("transcribe")
 
@@ -46,6 +52,21 @@ def _read_wav(file_path: str):
     return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
 
+def _resolve_device() -> str:
+    """The device to load on: the env var if set, else DeviceManager's advice.
+
+    Falls back to CPU if openvino cannot be queried at all, because a tool
+    that will not load is worse than a tool on a slower device.
+    """
+    if WHISPER_DEVICE:
+        return WHISPER_DEVICE
+    try:
+        from ovat.core.device_manager import DeviceManager
+        return DeviceManager().get_whisper_device()
+    except Exception:
+        return "CPU"
+
+
 def _load_pipeline():
     """I build the Whisper pipeline once and reuse it after that."""
     global _pipeline
@@ -53,7 +74,8 @@ def _load_pipeline():
         # I import here, not at the top, so the module loads even on a machine
         # without the model. This is the real OpenVINO GenAI Whisper pipeline.
         import openvino_genai as ov_genai
-        _pipeline = ov_genai.WhisperPipeline(WHISPER_MODEL_DIR, "CPU")
+        _pipeline = ov_genai.WhisperPipeline(WHISPER_MODEL_DIR,
+                                             _resolve_device())
     return _pipeline
 
 

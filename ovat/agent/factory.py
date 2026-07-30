@@ -144,8 +144,31 @@ def _make_mcp_caller(server, tool_name: str):
     )
 
 
+def close_agent(agent) -> None:
+    """Shut down anything the agent spawned. Safe to call twice, or never.
+
+    Only mcp_stdio tools own a real OS resource: each launches a subprocess
+    with its own event-loop thread. Nothing used to own them for shutdown, so
+    they lived until the interpreter exited via MCPStdioServer's atexit hook.
+    For `ovat run` that is fine. For the TUI, where every `/engine` switch
+    rebuilds the agent, and for `ovat connect` serving many requests, the
+    subprocesses accumulate.
+
+    A free function rather than a method because the four engine adapters are
+    different classes and none of them should have to learn about MCP.
+    """
+    for server in getattr(agent, "mcp_servers", ()) or ():
+        try:
+            server.close()
+        except Exception:
+            # Shutting down must not raise: one wedged server should not stop
+            # the others being closed, nor take down the caller.
+            pass
+
+
 def build_tools(config: WorkflowConfig,
-                retriever: RetrieverProvider | None = None) -> dict:
+                retriever: RetrieverProvider | None = None,
+                servers: list | None = None) -> dict:
     """I turn the list of tool configs into the dict my loop expects.
 
     Two tool types:
@@ -182,6 +205,9 @@ def build_tools(config: WorkflowConfig,
             from ovat.tools.mcp_client import (MCPStdioServer,
                                                openai_schema_from_mcp_tool)
             server = MCPStdioServer(tool_cfg.command)
+            if servers is not None:
+                # Handed back so somebody owns the subprocess's lifetime.
+                servers.append(server)
             for remote in server.tools:
                 tools[remote.name] = {
                     "schema": openai_schema_from_mcp_tool(remote),
@@ -232,31 +258,39 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False):
         search_docs_tool.configure(retriever)
 
     llm = build_llm(config)
-    tools = build_tools(config, retriever=retriever)
+    # Collected so close_agent() can shut the subprocesses down. Without an
+    # owner they survive until the interpreter exits.
+    mcp_servers: list = []
+    tools = build_tools(config, retriever=retriever, servers=mcp_servers)
 
     agent_type = config.agent.type
+    def _own(agent):
+        """Hand the agent its subprocesses so close_agent() can find them."""
+        agent.mcp_servers = mcp_servers
+        return agent
+
     if agent_type == "native":
-        return AgentLoop(
+        return _own(AgentLoop(
             llm=llm,
             tools=tools,
             system_prompt=config.agent.system_prompt,
             max_iterations=config.agent.max_iterations,
-        )
+        ))
     # Each framework is imported INSIDE its branch so the native path never
     # pays the import cost of a framework it does not use, and so a machine
     # with only one of them installed still runs the others' configs' errors
     # as readable text rather than an ImportError at module load.
     if agent_type == "react":
         from ovat.agent.langchain_agent import build_react_agent
-        return build_react_agent(config, tools)
+        return _own(build_react_agent(config, tools))
 
     if agent_type == "llamaindex":
         from ovat.agent.llamaindex_agent import build_llamaindex_agent
-        return build_llamaindex_agent(config, tools)
+        return _own(build_llamaindex_agent(config, tools))
 
     if agent_type == "openai-agents":
         from ovat.agent.openai_agents_agent import build_openai_agents_agent
-        return build_openai_agents_agent(config, tools)
+        return _own(build_openai_agents_agent(config, tools))
 
     raise ValueError(
         f"Unknown agent type '{agent_type}'. Supported: "

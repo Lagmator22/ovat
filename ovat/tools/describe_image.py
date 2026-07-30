@@ -16,8 +16,23 @@ from fastmcp import FastMCP
 # if this machine actually has the model. The env var mirrors transcribe's.
 _provider = None
 VLM_MODEL_DIR = os.environ.get("OVAT_VLM_MODEL", "models/Qwen2-VL-2B-Instruct-INT4")
+# Same reasoning as transcribe: a setting, not a literal, so the GPU/NPU
+# stretch goal does not need a code edit. A VLM is heavy, so it follows the
+# LLM recommendation (GPU when present) rather than whisper's CPU one.
+VLM_DEVICE = os.environ.get("OVAT_VLM_DEVICE", "")
 
 mcp = FastMCP("describe_image")
+
+
+def _resolve_device() -> str:
+    """Env var if set, else DeviceManager's LLM recommendation, else CPU."""
+    if VLM_DEVICE:
+        return VLM_DEVICE
+    try:
+        from ovat.core.device_manager import DeviceManager
+        return DeviceManager().get_llm_device()
+    except Exception:
+        return "CPU"
 
 
 def _load_provider():
@@ -25,7 +40,7 @@ def _load_provider():
     if _provider is None:
         # Imported here so the module loads on machines without the model.
         from ovat.providers.vlm_genai import GenAIVLMProvider
-        _provider = GenAIVLMProvider(VLM_MODEL_DIR, "CPU")
+        _provider = GenAIVLMProvider(VLM_MODEL_DIR, _resolve_device())
     return _provider
 
 

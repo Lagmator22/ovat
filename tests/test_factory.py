@@ -175,3 +175,67 @@ def test_genai_is_refused_on_the_framework_engines():
         message = str(excinfo.value)
         assert "genai" in message and engine in message
         assert "native" in message, "the error must name the way out"
+
+
+# MCP subprocesses need an owner, or they outlive the agent
+
+def test_the_agent_owns_the_mcp_servers_it_spawned():
+    """mcp_stdio tools each launch a subprocess with its own event-loop
+    thread. Nothing used to own them, so they lived until the interpreter
+    exited via an atexit hook. In the TUI, where every /engine switch rebuilds
+    the agent, they accumulated."""
+    from ovat.agent.factory import build_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    agent = build_agent(WorkflowConfig(model={"name": "m"}), skip_rag=True)
+    assert hasattr(agent, "mcp_servers")
+
+
+def test_close_agent_closes_every_server():
+    from ovat.agent.factory import close_agent
+
+    closed = []
+
+    class FakeServer:
+        def __init__(self, name):
+            self.name = name
+
+        def close(self):
+            closed.append(self.name)
+
+    class FakeAgent:
+        mcp_servers = [FakeServer("a"), FakeServer("b")]
+
+    close_agent(FakeAgent())
+    assert closed == ["a", "b"]
+
+
+def test_one_wedged_server_does_not_stop_the_others_closing():
+    """Shutting down must not raise: a single stuck subprocess should not
+    leak the rest, nor take down the caller."""
+    from ovat.agent.factory import close_agent
+
+    closed = []
+
+    class Wedged:
+        def close(self):
+            raise OSError("stuck")
+
+    class Fine:
+        def close(self):
+            closed.append("fine")
+
+    class FakeAgent:
+        mcp_servers = [Wedged(), Fine()]
+
+    close_agent(FakeAgent())          # must not raise
+    assert closed == ["fine"]
+
+
+def test_close_agent_on_an_agent_with_no_servers_is_a_no_op():
+    from ovat.agent.factory import close_agent
+
+    class Bare:
+        pass
+
+    close_agent(Bare())               # must not raise

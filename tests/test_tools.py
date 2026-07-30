@@ -123,3 +123,46 @@ def test_describe_image_is_a_wired_builtin():
     # without ever touching a real model.
     out = tools["describe_image"]["function"](image_path="/nope.png")
     assert out.startswith("Error:")
+
+
+# Tool devices are a setting, not a literal
+
+def test_transcribe_device_follows_the_router_by_default(monkeypatch):
+    """It hardcoded "CPU". DeviceManager.get_whisper_device() existed and was
+    ignored, so the routing table was advice nothing followed. Today the
+    answer is still CPU, so nothing changes yet; the point is that the NPU/GPU
+    stretch goal becomes a setting instead of a code edit."""
+    from ovat.tools import transcribe
+
+    monkeypatch.setattr(transcribe, "WHISPER_DEVICE", "")
+    assert transcribe._resolve_device() == "CPU"     # what the router says here
+
+
+def test_an_env_var_overrides_the_router(monkeypatch):
+    from ovat.tools import transcribe
+
+    monkeypatch.setattr(transcribe, "WHISPER_DEVICE", "NPU")
+    assert transcribe._resolve_device() == "NPU"
+
+
+def test_a_broken_openvino_falls_back_to_cpu(monkeypatch):
+    """A tool that will not load at all is worse than one on a slower device."""
+    from ovat.tools import transcribe
+
+    monkeypatch.setattr(transcribe, "WHISPER_DEVICE", "")
+    import ovat.core.device_manager as dm
+
+    def explode():
+        raise RuntimeError("no openvino here")
+
+    monkeypatch.setattr(dm, "DeviceManager", explode)
+    assert transcribe._resolve_device() == "CPU"
+
+
+def test_describe_image_follows_the_llm_recommendation(monkeypatch):
+    """A VLM is heavy, so it follows the LLM route (GPU when present) rather
+    than whisper's CPU one."""
+    from ovat.tools import describe_image
+
+    monkeypatch.setattr(describe_image, "VLM_DEVICE", "GPU")
+    assert describe_image._resolve_device() == "GPU"

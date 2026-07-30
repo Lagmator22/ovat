@@ -80,3 +80,23 @@ def test_rag_chat_caps_history_to_the_last_8_turns():
     # system + capped history (8) + the new question
     assert len(llm.seen) == 1 + 8 + 1
     assert llm.seen[1]["content"] == "turn 12"   # only the most recent survive
+
+
+def test_a_none_answer_becomes_an_empty_string():
+    """A server can finish with content=None. loop.py guards this with `or ""`;
+    rag_chat returned it straight through, so the literal string "None" landed
+    on screen and in saved sessions."""
+    from ovat.agent.rag_chat import rag_chat
+
+    class NoneLLM:
+        def chat(self, messages, tools=None, on_token=None):
+            return {"finish_reason": "stop", "content": None,
+                    "tool_calls": None}
+
+    class EmptyRetriever:
+        def retrieve(self, query, top_k=5):
+            return []
+
+    answer, sources = rag_chat(EmptyRetriever(), NoneLLM(), "hi")
+    assert answer == ""
+    assert sources == []
