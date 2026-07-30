@@ -611,3 +611,22 @@ def test_pull_is_deliberately_unbounded(monkeypatch):
     monkeypatch.setattr(subprocess, "run", record)
     ModelManager(ovms_binary="ovms").pull("OpenVINO/Qwen3-8B-int4-ov")
     assert "timeout" not in seen, "pull must NOT be bounded"
+
+
+def test_a_question_in_the_config_slot_names_the_real_mistake(tmp_path):
+    """`ovat run --input workflow.yml` makes --input eat the CONFIG, so the
+    question lands in the config slot. Saying "run ovat init" there is
+    actively misleading; the mistake is argument order, not a missing file."""
+    result = runner.invoke(app, ["run", "hi how are you", "-i", "x"])
+    assert result.exit_code == 1
+    assert "looks like a question" in result.output
+    assert "--input" in result.output
+    assert "ovat init" not in result.output      # the misleading tip is gone
+
+
+def test_a_genuinely_missing_yml_still_points_at_init(tmp_path):
+    """The question heuristic must not swallow the ordinary case."""
+    result = runner.invoke(app, ["run", str(tmp_path / "nope.yml"), "-i", "x"])
+    assert result.exit_code == 1
+    assert "ovat init" in result.output
+    assert "looks like a question" not in result.output

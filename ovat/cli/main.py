@@ -222,9 +222,18 @@ def _load_config(path: str):
         return load_workflow(path)
     except FileNotFoundError:
         rprint(f"[red]No such workflow file:[/red] {esc(path)}")
-        # The commonest typo by a mile, and invisible when you are staring
-        # at it, so say it outright rather than leaving them to spot it.
-        if path.endswith(".yaml"):
+        # A path with spaces and no YAML extension is almost never a mistyped
+        # filename; it is a QUESTION that landed in the config slot because
+        # --input ate the config. Saying "run ovat init" there is actively
+        # misleading, so name the real mistake and show the right order.
+        looks_like_a_question = " " in path.strip() and not path.endswith(
+            (".yml", ".yaml"))
+        if looks_like_a_question:
+            rprint("[yellow]That looks like a question, not a file.[/yellow] "
+                   "The config comes FIRST and --input takes the question:")
+            rprint(f"  [bold]ovat run <workflow.yml> --input "
+                   f"\"{esc(path)}\"[/bold]")
+        elif path.endswith(".yaml"):
             rprint("[yellow]Tip:[/yellow] OVAT's examples use the "
                    "[bold].yml[/bold] spelling. Try "
                    f"[bold]{esc(path[:-len('.yaml')] + '.yml')}[/bold]")
