@@ -734,3 +734,77 @@ def test_no_widget_carries_a_hover_tooltip():
                 assert widget.tooltip is None, (
                     f"{widget!r} grew a tooltip again")
     _run(scenario())
+
+
+# The telemetry screen: live numbers inside the TUI
+
+def test_slash_telemetry_opens_the_page():
+    from ovat.cli.telemetry_screen import TelemetryScreen
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = "/telemetry"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, TelemetryScreen)
+            app.screen.collector.stop()
+    _run(scenario())
+
+
+def test_the_page_shows_sources_that_cannot_run_here_with_the_reason():
+    """On a Mac the Intel row must say so rather than draw a flat line at
+    zero, which is indistinguishable from an idle NPU."""
+    from textual.widgets import DataTable
+    from ovat.cli.telemetry_screen import TelemetryScreen
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = TelemetryScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            table = screen.query_one("#tel-table", DataTable)
+            rows = "\n".join(
+                " ".join(str(cell) for cell in table.get_row_at(i))
+                for i in range(table.row_count))
+            assert "process" in rows and "intel" in rows
+            # Every source is accounted for, live or not.
+            assert table.row_count == len(screen.collector.sources)
+            screen.collector.stop()
+    _run(scenario())
+
+
+def test_sampling_does_not_run_on_the_ui_thread():
+    """The collector owns its own daemon thread, so a stalled hardware
+    collector cannot freeze the interface."""
+    from ovat.cli.telemetry_screen import TelemetryScreen
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = TelemetryScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            assert screen.collector._thread is not None
+            assert screen.collector._thread.daemon
+            screen.collector.stop()
+    _run(scenario())
+
+
+def test_leaving_the_page_stops_the_collector():
+    """A hardware source launches a subprocess; it must not outlive the page
+    that started it."""
+    from ovat.cli.telemetry_screen import TelemetryScreen
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = TelemetryScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            assert screen.collector._thread is None
+    _run(scenario())

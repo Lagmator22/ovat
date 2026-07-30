@@ -857,8 +857,25 @@ class OvatTUI(App):
             self.exit()
         elif name == "/chat":
             self._open_chat(args)
+        elif name == "/telemetry":
+            self._open_telemetry(args)
         elif name == "/doctor":
             self._open_doctor(args)
+
+    def _open_telemetry(self, args: str) -> None:
+        """Push the live telemetry screen.
+
+        Takes no agent: this page watches the PROCESS and the hardware, both
+        of which are interesting before anything has run. An agent-backed
+        source is added by the chat screen, which is the only place an agent
+        exists.
+        """
+        from ovat.cli.telemetry_screen import TelemetryScreen
+
+        if isinstance(self.screen, TelemetryScreen):
+            self.notify("Already on the telemetry page.")
+            return
+        self.push_screen(TelemetryScreen())
 
     def _open_doctor(self, args: str) -> None:
         """Push the in-app doctor screen: `/doctor [config]`.

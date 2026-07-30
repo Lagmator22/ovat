@@ -40,6 +40,7 @@ TEMPLATES = [
     # which can re-run the checks in place. `/validate` below still inserts the
     # subprocess form for anyone who wants `ovat doctor <config>` in the log.
     SlashTemplate("/doctor", None, "environment + config checks, in-app"),
+    SlashTemplate("/telemetry", None, "live numbers and graphs, in-app"),
     SlashTemplate("/run", "ovat run  --input \"\"", "run the agent on a config",
                   cursor=len("ovat run ")),
     SlashTemplate("/index", "ovat index  ", "index a docs folder for search_docs",
