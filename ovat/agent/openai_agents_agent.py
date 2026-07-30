@@ -49,7 +49,7 @@ def _wrap_tools(tools: dict) -> list:
             """The SDK hands arguments over as a JSON STRING, not a dict."""
             try:
                 kwargs = json.loads(arguments) if arguments else {}
-            except ValueError as exc:
+            except (ValueError, TypeError) as exc:
                 # Readable string, not an exception: the model is the one that
                 # produced this and it is the one that has to recover from it.
                 return f"Error: could not parse tool arguments: {exc}"
