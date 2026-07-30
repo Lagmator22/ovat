@@ -30,6 +30,13 @@ def test_build_llm_uses_config_url_and_model():
     assert llm.model == "Qwen3-8B-int4-ov"
 
 
+def test_args_model_from_schema_handles_null_parameters():
+    from ovat.agent.arg_models import args_model_from_schema
+    schema = {"function": {"name": "no_arg_tool", "parameters": None}}
+    model = args_model_from_schema("no_arg_tool", schema)
+    assert model is not None
+
+
 def test_build_llm_wires_the_request_timeout_into_the_client():
     # The whole point of the config field: it must reach the actual HTTP
     # client, otherwise a hung OVMS still blocks for the SDK default (~600s).

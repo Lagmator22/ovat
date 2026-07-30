@@ -30,7 +30,7 @@ def args_model_from_schema(name: str, schema: dict):
     of class a `class ...Args(BaseModel)` block would, from data instead of
     source code.
     """
-    params = schema["function"].get("parameters", {})
+    params = dict(schema["function"].get("parameters") or {})
     required = set(params.get("required", []))
     fields = {}
     for pname, spec in params.get("properties", {}).items():
