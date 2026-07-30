@@ -114,14 +114,35 @@ rag:
 @app.command()
 def run(
     config: str = typer.Argument(..., help="Path to a workflow YAML."),
-    input: str = typer.Option(..., "--input", "-i", help="Your question for the agent."),
+    input: str = typer.Option(None, "--input", "-i",
+                              help="Your question for the agent. Not needed "
+                                   "with --dry-run."),
     dry_run: bool = typer.Option(False, "--dry-run",
                                  help="Build the agent and show it, but do not call the model."),
     trace: str = typer.Option(None, "--trace",
                               help="Write a JSON run trace (tokens, latency, "
                                    "tool calls, peak memory) to this file."),
+    telemetry: str = typer.Option(None, "--telemetry",
+                                  help="Stream live telemetry to this file as "
+                                       "JSON Lines (process memory, and Intel "
+                                       "GPU/NPU when available)."),
 ):
-    """Run the agent described by CONFIG against your input."""
+    """Run the agent described by CONFIG against your input.
+
+    --input is REQUIRED for a real run and IGNORED by --dry-run, which only
+    builds the agent. Demanding a question in order to not ask one made the
+    commonest smoke test (`ovat run workflow.yml --dry-run`) fail with
+    "Missing option --input", which reads as the command being broken.
+    """
+    if input is None and not dry_run:
+        rprint("[red]Missing --input.[/red] A real run needs a question:")
+        # soft_wrap so a long config path is NOT broken across lines. A
+        # suggested command that has to be un-wrapped by hand before it can
+        # be pasted is not a suggestion, it is a puzzle.
+        rprint(f"  [bold]ovat run {esc(config)} --input \"your question\""
+               f"[/bold]", soft_wrap=True)
+        rprint("[dim]Or use --dry-run to just build the agent and show it.[/dim]")
+        raise typer.Exit(code=1)
     # Step 1: YAML -> validated config. A bad file fails loudly right here.
     cfg = _load_config(config)
     # Step 2: config -> a fully wired agent (LLM + tools + loop). dry-run skips
@@ -147,6 +168,9 @@ def run(
     # single reading afterwards is not a peak.
     from ovat.bench import _PeakMemory
 
+    # Live telemetry alongside the run, if asked for. The collector owns its
+    # own thread, so a stalled hardware collector cannot slow the agent down.
+    collector = _start_telemetry(telemetry, agent) if telemetry else None
     memory = _PeakMemory()
     try:
         with memory:
@@ -161,6 +185,9 @@ def run(
     # escape codes INSIDE the model's words: bad to read, and worse to pipe.
     rprint(esc(answer), highlight=False)
 
+    if collector is not None:
+        collector.stop()
+        rprint(f"[dim]telemetry written to[/dim] {esc(telemetry)}")
     if trace:
         _write_trace(trace, cfg, agent, peak_rss_mb=memory.peak_mb)
 
@@ -277,6 +304,31 @@ def _load_config(path: str):
                    "an error rather than a setting that silently does "
                    "nothing.[/dim]")
         raise typer.Exit(code=1)
+
+
+def _start_telemetry(path: str, agent):
+    """Begin streaming telemetry to `path` as JSON Lines, and return the
+    collector so the caller can stop it.
+
+    JSON Lines rather than one array: a run that is killed half-way still
+    leaves a readable file, and `tail -f` works while it is going.
+    """
+    from ovat.telemetry.collector import Collector
+    from ovat.telemetry.sinks import JSONFileSink
+    from ovat.telemetry.sources import (AgentTraceSource, IntelHardwareSource,
+                                        ProcessMemorySource)
+
+    collector = Collector(
+        [ProcessMemorySource(), AgentTraceSource(agent),
+         IntelHardwareSource(getattr(agent, "ut_binary", None))],
+        JSONFileSink(path), interval_s=0.5)
+    # Say which sources are NOT running here. A file of process memory alone,
+    # with no note that the hardware source was skipped, reads as a machine
+    # with an idle NPU rather than one that cannot measure it.
+    for name, reason in collector.unavailable.items():
+        rprint(f"[dim]telemetry: {esc(name)} unavailable ({esc(reason)})[/dim]")
+    collector.start()
+    return collector
 
 
 def _brief_error(message: str | None, limit: int = 34) -> str:

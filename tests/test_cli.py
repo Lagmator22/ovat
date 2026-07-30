@@ -630,3 +630,77 @@ def test_a_genuinely_missing_yml_still_points_at_init(tmp_path):
     assert result.exit_code == 1
     assert "ovat init" in result.output
     assert "looks like a question" not in result.output
+
+
+# --dry-run must not demand a question it never asks
+
+def test_dry_run_needs_no_input():
+    """Demanding --input in order to NOT ask a question made the commonest
+    smoke test fail with "Missing option --input", which reads as the command
+    being broken rather than as a misuse."""
+    result = runner.invoke(app, ["run", "examples/document-qa.yml",
+                                 "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "Built agent" in result.output
+    assert "dry-run" in result.output
+
+
+def test_a_real_run_without_input_says_what_to_type(tmp_path):
+    """Optional in the signature, still required in fact. The error shows the
+    exact command with the user's own config path in it."""
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    result = runner.invoke(app, ["run", str(config)])
+    assert result.exit_code == 1
+    assert "Missing --input" in result.output
+    assert str(config) in result.output          # copyable, not generic
+    assert "--dry-run" in result.output          # names the other way out
+
+
+def test_telemetry_writes_json_lines(monkeypatch, tmp_path):
+    """--telemetry streams alongside the run. JSON Lines so a killed run
+    still leaves a readable file."""
+    import json
+
+    from ovat.cli import main as cli_main
+
+    class Agent:
+        last_trace = {"engine": "native", "turns": [], "totals": {"turns": 1}}
+        tools: dict = {}
+
+        def run(self, text):
+            return "an answer"
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Agent())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    out = tmp_path / "tel.jsonl"
+
+    result = runner.invoke(app, ["run", str(config), "-i", "hi",
+                                 "--telemetry", str(out)])
+    assert result.exit_code == 0, result.output
+    assert out.exists()
+    for line in out.read_text(encoding="utf-8").strip().splitlines():
+        json.loads(line)                          # every line stands alone
+
+
+def test_telemetry_says_which_sources_are_unavailable(monkeypatch, tmp_path):
+    """A file of process memory alone, with no note that the hardware source
+    was skipped, reads as a machine with an idle NPU rather than one that
+    cannot measure it."""
+    from ovat.cli import main as cli_main
+
+    class Agent:
+        last_trace = {"totals": {}}
+        tools: dict = {}
+
+        def run(self, text):
+            return "ok"
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Agent())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["run", str(config), "-i", "hi",
+                                 "--telemetry", str(tmp_path / "t.jsonl")])
+    assert "unavailable" in result.output

@@ -6,6 +6,7 @@ takes down the run it is measuring has inverted its own purpose.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -43,6 +44,75 @@ class AgentTraceSource(TelemetrySource):
         if getattr(self.agent, "last_trace", None) is None:
             return ("this engine does not record per-turn data; only the "
                     "native loop does")
+        return None
+
+
+class SystemSource(TelemetrySource):
+    """CPU, memory and thread counts for this machine and this process.
+
+    This exists because the telemetry page was nearly empty on any machine
+    without Intel UT: one metric, one graph. These come from psutil, which
+    works on macOS, Windows and Linux alike, so the page is useful everywhere
+    and the Intel rows become the EXTRA rather than the only content.
+
+    Per-core percentages are reported individually. An agent that pins one
+    core looks identical to an idle machine in an averaged figure, and which
+    of those is happening is the whole question when a run feels slow.
+    """
+
+    name = "system"
+
+    def __init__(self):
+        self._proc = None
+        try:
+            import psutil
+            self._proc = psutil.Process()
+            # First call always returns 0.0 and primes the delta; get it out
+            # of the way here so the first drawn frame is a real reading.
+            psutil.cpu_percent(percpu=True)
+            self._proc.cpu_percent()
+        except Exception:
+            self._proc = None
+
+    def sample(self) -> dict:
+        try:
+            import psutil
+        except ImportError:
+            return {}
+        out = {}
+        try:
+            cores = psutil.cpu_percent(percpu=True)
+            out["cpu_pct"] = round(sum(cores) / len(cores), 1) if cores else 0.0
+            for index, pct in enumerate(cores):
+                out[f"cpu{index}_pct"] = pct
+        except Exception:
+            pass
+        try:
+            memory = psutil.virtual_memory()
+            out["ram_used_pct"] = memory.percent
+            out["ram_available_mb"] = round(memory.available / (1024 ** 2), 1)
+        except Exception:
+            pass
+        try:
+            freq = psutil.cpu_freq()
+            if freq is not None:
+                out["cpu_mhz"] = round(freq.current, 0)
+        except Exception:
+            pass
+        if self._proc is not None:
+            try:
+                out["proc_cpu_pct"] = self._proc.cpu_percent()
+                out["threads"] = self._proc.num_threads()
+            except Exception:
+                pass
+        return out
+
+    @property
+    def unavailable(self) -> str | None:
+        try:
+            import psutil     # noqa: F401
+        except ImportError:
+            return "psutil is not installed"
         return None
 
 
@@ -146,6 +216,19 @@ class IntelHardwareSource(TelemetrySource):
 
     name = "intel"
 
+    #: What UT's collectors report, and therefore what the page can draw.
+    #: level-zero gives per-engine device activity on GPU and NPU; socwatch
+    #: gives package power and frequency. Names are normalised to snake_case
+    #: here so the page does not have to know UT's exact spelling, which has
+    #: differed between beta builds.
+    KNOWN_METRICS = (
+        "npu_utilization", "gpu_utilization", "gpu_render_pct",
+        "gpu_media_pct", "gpu_compute_pct", "gpu_copy_pct",
+        "power_w", "package_power_w", "gpu_power_w", "npu_power_w",
+        "gpu_freq_mhz", "cpu_freq_mhz", "gpu_mem_used_mb",
+        "gpu_mem_bandwidth_gbs", "temperature_c",
+    )
+
     def __init__(self, ut_binary: str | None = None,
                  sampling_interval_ms: int = 500,
                  collectors: str = "socwatch,level-zero"):
@@ -201,7 +284,35 @@ class IntelHardwareSource(TelemetrySource):
             frame = json.loads(line)
         except ValueError:
             return {}
-        return {k: v for k, v in frame.items() if isinstance(v, (int, float))}
+        return self._normalise(frame)
+
+    @staticmethod
+    def _normalise(frame: dict) -> dict:
+        """Flatten and snake_case whatever UT emitted.
+
+        UT's JSON has varied between beta builds (nested per-collector
+        objects in some, flat in others) and uses mixed casing. Normalising
+        here means the page and the tests do not have to track that, and a
+        build that renames a field degrades to a missing metric rather than a
+        crash.
+        """
+        flat = {}
+
+        def walk(obj, prefix=""):
+            for key, value in (obj or {}).items():
+                # Anything that is not a word character becomes an
+                # underscore: UT writes "Render %" and "GPU-Freq(MHz)", and a
+                # metric name is used as a CSS id on the page, where those
+                # would be invalid.
+                name = re.sub(r"[^0-9A-Za-z]+", "_", f"{prefix}{key}").strip("_")
+                if isinstance(value, dict):
+                    walk(value, f"{name}_")
+                elif isinstance(value, (int, float)) and not isinstance(
+                        value, bool):
+                    flat[name.lower()] = value
+
+        walk(frame)
+        return flat
 
     def stop(self) -> None:
         if self._proc is not None:

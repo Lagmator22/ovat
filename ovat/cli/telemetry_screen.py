@@ -19,16 +19,17 @@ Three things are load-bearing here, each a bug avoided:
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import DataTable, Digits, Footer, Label, Sparkline, Static
+from textual.widgets import (DataTable, Digits, Footer, Label, ProgressBar,
+                             Rule, Sparkline, Static)
 
 from ovat.cli import ui
 from ovat.cli.commands import ScreenCommands
 from ovat.telemetry.collector import Collector
 from ovat.telemetry.sinks import LiveBufferSink
 from ovat.telemetry.sources import (AgentTraceSource, IntelHardwareSource,
-                                    ProcessMemorySource)
+                                    ProcessMemorySource, SystemSource)
 
 # How often the page redraws. 2/second is enough to look live without making
 # a terminal over SSH repaint faster than the link can carry, which is how
@@ -38,12 +39,26 @@ REFRESH_HZ = 2.0
 # The metrics given their own big-number readout, in order. Anything else a
 # source reports still appears in the table below; this is just what gets the
 # headline treatment.
-_HEADLINE = [
-    ("process.rss_mb", "MEMORY MB", "the toolkit's own footprint, not the "
-                                    "model's: that lives in OVMS"),
-    ("intel.npu_utilization", "NPU %", "Intel UT, AI PC only"),
-    ("intel.power_w", "POWER W", "Intel UT, AI PC only"),
+# metric key, label, unit, and whether it is a 0-100 percentage (those get a
+# bar as well as a number, because a percentage has a meaningful maximum and a
+# bare figure does not show how close to it you are).
+# Preferred headline metrics, best first. The page shows the first MAX_CARDS
+# of these that ACTUALLY HAVE DATA, so a machine without Intel UT gets CPU and
+# RAM in those slots instead of three boxes reading "---" forever. A fixed
+# list was the reason the page looked broken rather than merely limited.
+_PREFERRED = [
+    ("intel.npu_utilization", "NPU", "%"),
+    ("intel.gpu_utilization", "GPU", "%"),
+    ("intel.power_w", "POWER", "W"),
+    ("system.cpu_pct", "CPU", "%"),
+    ("system.ram_used_pct", "RAM", "%"),
+    ("process.rss_mb", "MEMORY", "MB"),
+    ("system.proc_cpu_pct", "OVAT CPU", "%"),
+    ("agent.prompt_tokens", "PROMPT", "tok"),
+    ("agent.completion_tokens", "REPLY", "tok"),
+    ("system.threads", "THREADS", ""),
 ]
+MAX_CARDS = 5
 
 
 class TelemetryCommands(ScreenCommands):
@@ -67,7 +82,9 @@ class TelemetryScreen(Screen):
     DEFAULT_CSS = """
     TelemetryScreen { background: $background; }
     #tel-header { padding: 1 2 0 2; height: auto; }
-    #tel-numbers { height: 7; margin: 1 2 0 2; }
+    #tel-numbers { height: 8; margin: 1 2 0 2; }
+    .tel-metric { color: $accent; margin: 1 0 0 0; }
+    #tel-rule { margin: 0 2; color: $primary 40%; }
     .tel-card {
         width: 1fr;
         border: round $primary;
@@ -78,6 +95,8 @@ class TelemetryScreen(Screen):
     .tel-card Digits { color: $success; }
     .tel-card.-dead { border: round $secondary; }
     .tel-card.-dead Digits { color: $text-muted; }
+    .tel-card ProgressBar { width: 100%; }
+    .tel-card Bar > .bar--bar { color: $success; }
     #tel-graphs { height: 1fr; margin: 1 2 0 2; }
     #tel-graphs Sparkline { height: 3; margin: 0 0 1 0; }
     #tel-graphs > .sparkline--max-color { color: $success; }
@@ -95,7 +114,8 @@ class TelemetryScreen(Screen):
         super().__init__()
         self.live = LiveBufferSink()
         self.collector = Collector(
-            [ProcessMemorySource(),
+            [SystemSource(),
+             ProcessMemorySource(),
              AgentTraceSource(agent),
              IntelHardwareSource(ut_binary)],
             self.live, interval_s=1.0 / REFRESH_HZ)
@@ -103,11 +123,11 @@ class TelemetryScreen(Screen):
     def compose(self) -> ComposeResult:
         header = ui.wordmark("TELEMETRY") if hasattr(ui, "wordmark") else None
         yield Static(header or "OVAT telemetry", id="tel-header")
-        with Horizontal(id="tel-numbers"):
-            for metric, label, _hint in _HEADLINE:
-                card = Vertical(classes="tel-card", id=_card_id(metric))
-                yield card
-        with Vertical(id="tel-graphs"):
+        # Cards are mounted once we know which metrics have data; an empty
+        # row now beats five boxes reading "---" forever.
+        yield Horizontal(id="tel-numbers")
+        yield Rule(id="tel-rule")
+        with VerticalScroll(id="tel-graphs"):
             pass
         table = DataTable(id="tel-table", cursor_type="row", zebra_stripes=True)
         table.border_title = "sources"
@@ -115,10 +135,7 @@ class TelemetryScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        for metric, label, _hint in _HEADLINE:
-            card = self.query_one(f"#{_card_id(metric)}", Vertical)
-            card.mount(Label(label))
-            card.mount(Digits("---"))
+        self._cards: dict = {}
         self._fill_sources_table()
         self.collector.start()
         # set_interval, not a worker loop: the sampling already happens on
@@ -156,37 +173,69 @@ class TelemetryScreen(Screen):
                           Text(reason or "sampling", style=ui.DIM))
 
     def _redraw(self) -> None:
-        for metric, _label, _hint in _HEADLINE:
-            card = self.query_one(f"#{_card_id(metric)}", Vertical)
-            digits = card.query_one(Digits)
+        self._sync_cards()
+        for metric, digits, bar in self._cards.values():
             value = self.live.latest(metric)
             if value is None:
                 digits.update("---")
-                card.add_class("-dead")
-            else:
-                digits.update(f"{value:.0f}" if abs(value) >= 10
-                              else f"{value:.1f}")
-                card.remove_class("-dead")
+                continue
+            digits.update(f"{value:.0f}" if abs(value) >= 10
+                          else f"{value:.1f}")
+            if bar is not None:
+                bar.update(progress=max(0.0, min(100.0, float(value))))
         self._redraw_graphs()
 
-    def _redraw_graphs(self) -> None:
-        """One sparkline per metric actually being reported.
+    def _sync_cards(self) -> None:
+        """Mount headline cards for the preferred metrics that have data.
 
-        Built from what the buffer HAS rather than a hardcoded list, so a
-        source added later draws itself with no change here.
+        Done here rather than in compose because which metrics exist depends
+        on which SOURCES work on this machine, and that is not known until
+        the collector has ticked at least once.
         """
-        graphs = self.query_one("#tel-graphs", Vertical)
+        if len(self._cards) >= MAX_CARDS:
+            return
+        row = self.query_one("#tel-numbers", Horizontal)
+        for metric, label, unit in _PREFERRED:
+            if len(self._cards) >= MAX_CARDS:
+                break
+            if metric in self._cards or self.live.latest(metric) is None:
+                continue
+            card = Vertical(classes="tel-card", id=_card_id(metric))
+            row.mount(card)
+            card.mount(Label(f"{label}  [dim]{unit}[/dim]", markup=True))
+            digits = Digits("---")
+            card.mount(digits)
+            bar = None
+            if unit == "%":
+                # A percentage has a meaningful maximum; a bare number does
+                # not show how close to it you are.
+                bar = ProgressBar(total=100, show_eta=False,
+                                  show_percentage=False)
+                card.mount(bar)
+            self._cards[metric] = (metric, digits, bar)
+
+    def _redraw_graphs(self) -> None:
+        """A sparkline per metric, grouped under its source.
+
+        Built from what the buffer HAS rather than a fixed list, so a source
+        added later draws itself with no change here, and a machine missing a
+        source simply has fewer rows instead of empty ones.
+        """
+        graphs = self.query_one("#tel-graphs", VerticalScroll)
         for metric in self.live.metrics():
-            spark_id = _spark_id(metric)
             data = self.live.series(metric)
             if len(data) < 2:
                 continue                      # a line needs two points
+            spark_id = _spark_id(metric)
             existing = graphs.query(f"#{spark_id}")
             if existing:
                 existing.first(Sparkline).data = data
-            else:
-                graphs.mount(Label(metric))
-                graphs.mount(Sparkline(data, id=spark_id))
+                continue
+            source, _, short = metric.partition(".")
+            latest = data[-1]
+            graphs.mount(Label(f"[dim]{source}[/dim]  {short}",
+                               classes="tel-metric", markup=True))
+            graphs.mount(Sparkline(data, id=spark_id))
 
     # ---- actions -----------------------------------------------------------
 
@@ -195,7 +244,7 @@ class TelemetryScreen(Screen):
 
     def action_clear(self) -> None:
         self.live.samples.clear()
-        for spark in list(self.query_one("#tel-graphs", Vertical).children):
+        for spark in list(self.query_one("#tel-graphs", VerticalScroll).children):
             spark.remove()
 
     def action_copy(self) -> None:

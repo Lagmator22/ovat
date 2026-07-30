@@ -188,3 +188,60 @@ def test_find_ut_reports_how_it_looked():
     path, how = find_ut("/definitely/not/here")
     assert path is None
     assert "/definitely/not/here" in how
+
+
+# The page was nearly empty on a machine without Intel UT
+
+def test_the_system_source_reports_many_metrics_not_one():
+    """The page had ONE graph on any machine without Intel hardware, which
+    reads as broken rather than as limited. psutil works on macOS, Windows
+    and Linux alike, so these are available everywhere and the Intel rows
+    become the extra rather than the only content."""
+    from ovat.telemetry.sources import SystemSource
+
+    sample = SystemSource().sample()
+    assert len(sample) > 5, f"only got {sorted(sample)}"
+    assert "cpu_pct" in sample
+    assert "ram_used_pct" in sample
+
+
+def test_per_core_cpu_is_reported_individually():
+    """An agent pinning one core looks identical to an idle machine in an
+    averaged figure, and which of those is happening is the whole question
+    when a run feels slow."""
+    from ovat.telemetry.sources import SystemSource
+
+    sample = SystemSource().sample()
+    assert any(k.startswith("cpu0") for k in sample)
+
+
+def test_intel_metric_names_are_normalised_for_use_as_ids():
+    """UT writes "Render %" and "GPU-Freq(MHz)", and metric names become CSS
+    ids on the page, where those characters are invalid. A build that renames
+    a field must degrade to a missing metric, not a crash."""
+    from ovat.telemetry.sources import IntelHardwareSource
+
+    out = IntelHardwareSource._normalise(
+        {"GPU": {"Render %": 42.0, "Freq(MHz)": 1300}, "Power W": 3.1})
+    assert out == {"gpu_render": 42.0, "gpu_freq_mhz": 1300, "power_w": 3.1}
+    for key in out:
+        assert key.replace("_", "").isalnum(), f"{key} is not id-safe"
+
+
+def test_nested_and_flat_ut_output_both_parse():
+    """UT's JSON has varied between beta builds: nested per-collector objects
+    in some, flat in others."""
+    from ovat.telemetry.sources import IntelHardwareSource
+
+    flat = IntelHardwareSource._normalise({"npu_utilization": 55})
+    nested = IntelHardwareSource._normalise({"NPU": {"Utilization": 55}})
+    assert flat == {"npu_utilization": 55}
+    assert nested == {"npu_utilization": 55}
+
+
+def test_booleans_are_not_mistaken_for_measurements():
+    """bool is an int in Python, so a flag would otherwise be graphed."""
+    from ovat.telemetry.sources import IntelHardwareSource
+
+    assert IntelHardwareSource._normalise({"enabled": True, "watts": 2.5}) == \
+        {"watts": 2.5}
