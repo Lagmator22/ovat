@@ -120,3 +120,58 @@ def test_the_new_engines_build_without_touching_the_network():
         agent = build_agent(cfg, skip_rag=True)
         assert hasattr(agent, "run"), f"{name} has no .run()"
         assert hasattr(agent, "tools"), f"{name} cannot report its tools"
+
+
+# The factory must hand out the SOCKET, not one particular plug
+
+def test_build_llm_is_annotated_with_the_abc_not_a_concrete_class():
+    """The annotation is the tell. This read `-> OVMSLLMProvider` and
+    hardcoded that one plug, so GenAILLMProvider honoured the contract and was
+    unreachable. A factory whose signature names a concrete class has stopped
+    using its own abstraction."""
+    import inspect
+
+    from ovat.agent.factory import build_llm
+    from ovat.providers.base import LLMProvider
+
+    assert inspect.signature(build_llm).return_annotation is LLMProvider
+
+
+def test_the_model_provider_selects_the_backend():
+    """The same knob EmbeddingsConfig and RetrieverConfig already had, which
+    ModelConfig was missing."""
+    from ovat.agent.factory import build_llm
+    from ovat.config.workflow import WorkflowConfig
+    from ovat.providers.llm_ovms import OVMSLLMProvider
+
+    default = build_llm(WorkflowConfig(model={"name": "m"}))
+    assert isinstance(default, OVMSLLMProvider), "ovms must remain the default"
+
+
+def test_an_unknown_provider_names_the_ones_that_exist():
+    import pytest
+    from ovat.agent.factory import build_llm
+    from ovat.config.workflow import WorkflowConfig
+
+    cfg = WorkflowConfig(model={"name": "m", "provider": "ovmss"})
+    with pytest.raises(ValueError) as excinfo:
+        build_llm(cfg)
+    assert "ovms" in str(excinfo.value) and "genai" in str(excinfo.value)
+
+
+def test_genai_is_refused_on_the_framework_engines():
+    """LangChain builds a ChatOpenAI, LlamaIndex an OpenAILike, the Agents SDK
+    an AsyncOpenAI. None can consume an in-process object, so the combination
+    cannot work and must say so rather than fail somewhere deeper."""
+    import pytest
+    from ovat.agent.factory import build_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    for engine in ("react", "llamaindex", "openai-agents"):
+        cfg = WorkflowConfig(model={"name": "m", "provider": "genai"},
+                             agent={"type": engine})
+        with pytest.raises(ValueError) as excinfo:
+            build_agent(cfg, skip_rag=True)
+        message = str(excinfo.value)
+        assert "genai" in message and engine in message
+        assert "native" in message, "the error must name the way out"

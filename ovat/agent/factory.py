@@ -14,7 +14,8 @@ a one-line YAML edit, not a code change.
 """
 from ovat.agent.loop import AgentLoop
 from ovat.config.workflow import WorkflowConfig
-from ovat.providers.base import EmbeddingsProvider, RetrieverProvider
+from ovat.providers.base import (EmbeddingsProvider, LLMProvider,
+                                 RetrieverProvider)
 from ovat.providers.llm_ovms import OVMSLLMProvider
 from ovat.tools import describe_image as describe_image_tool
 from ovat.tools import search_docs as search_docs_tool
@@ -31,14 +32,29 @@ BUILTIN_TOOL_SCHEMAS = {
 }
 
 
-def build_llm(config: WorkflowConfig) -> OVMSLLMProvider:
+def build_llm(config: WorkflowConfig) -> LLMProvider:
     """I build the LLM provider from the model section of the config.
 
-    Design note: constructing OVMSLLMProvider does NOT connect to the server,
-    it only sets up the client. So this is safe to call without OVMS running,
+    The return type is the ABC, not a concrete class, and that matters more
+    than it looks. This used to be annotated `-> OVMSLLMProvider` and hardcode
+    that one plug, which meant GenAILLMProvider honoured the contract and was
+    unreachable from build_agent. A factory whose signature names a concrete
+    class has stopped using its own abstraction; the annotation is the tell.
+
+    Design note: constructing either provider does NOT connect or load, it
+    only sets up the client. So this is safe to call without OVMS running,
     which is why the factory tests pass on the Mac.
     """
     m = config.model
+    if m.provider == "genai":
+        # Imported lazily, exactly like build_embedder does: the OVMS path
+        # must not pay openvino_genai's import cost.
+        from ovat.providers.llm_genai import GenAILLMProvider
+        return GenAILLMProvider(m.name, m.device)
+    if m.provider != "ovms":
+        raise ValueError(
+            f"Unknown model provider '{m.provider}'. Supported: ovms, genai."
+        )
     return OVMSLLMProvider(base_url=m.ovms_url, model=m.name,
                            timeout=m.request_timeout,
                            temperature=m.temperature)
@@ -196,6 +212,19 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False):
     """
     # Build RAG first so the same retriever is shared by the in-process tool and
     # the standalone MCP server (configure() sets the module-level slot too).
+    # Checked BEFORE anything is built. The framework engines each construct
+    # their own client from a URL: LangChain a ChatOpenAI, LlamaIndex an
+    # OpenAILike, the Agents SDK an AsyncOpenAI. None can consume an
+    # in-process GenAILLMProvider, so the combination cannot work. Rejecting
+    # it here means the user gets a sentence naming the fix, instead of
+    # openvino_genai failing to find a model directory several steps later.
+    if config.model.provider == "genai" and config.agent.type != "native":
+        raise ValueError(
+            f"model.provider 'genai' runs in-process and cannot be used with "
+            f"agent.type '{config.agent.type}', which needs an "
+            f"OpenAI-compatible URL. Use agent.type: native, or "
+            f"model.provider: ovms."
+        )
     retriever = None if skip_rag else build_rag(config)
     if retriever is not None:
         search_docs_tool.configure(retriever)

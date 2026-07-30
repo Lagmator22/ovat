@@ -45,6 +45,15 @@ class ModelConfig(StrictModel):
     """Which model to talk to and how. Mirrors the OVMS serving settings."""
 
     name: str                                   # the model name OVMS serves
+    # Which LLM backend runs this model. The same knob EmbeddingsConfig and
+    # RetrieverConfig already have; ModelConfig was the one place it was
+    # missing, which is why build_llm could only ever return OVMS.
+    #   ovms  = the OVMS server at ovms_url (tool calling works)
+    #   genai = local openvino_genai on this machine, NO server needed, but
+    #           it cannot request tools at all (see llm_genai.chat), so it is
+    #           plain chat rather than an agent. `ovat chat` is the better
+    #           local path; this exists so the contract is honest.
+    provider: str = "ovms"
     device: str = "CPU"                         # CPU, GPU, or NPU
     ovms_url: str = "http://localhost:8000/v3"  # where my OVMS server listens
     tool_parser: str = "hermes3"                # how to decode tool calls
