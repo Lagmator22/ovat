@@ -213,3 +213,67 @@ def test_index_folder_still_works_with_no_callback(tmp_path):
     retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384,
                                            db_path=":memory:")
     assert index_folder(str(tmp_path), retriever) == {"files": 1, "chunks": 1}
+
+
+# Indexing the same folder twice must not duplicate it
+
+def _rowcounts(retriever) -> tuple:
+    """(chunks, vectors). They must ALWAYS match: a vector whose chunk was
+    deleted is an orphan, and retrieve() silently skips orphans, so you ask
+    for top_k=5 and quietly get 2 results back with no error."""
+    chunks = retriever.db.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+    docs = retriever.db.execute("SELECT COUNT(*) FROM docs").fetchone()[0]
+    return chunks, docs
+
+
+def test_adding_the_same_source_twice_replaces_it():
+    """Indexing is meant to be idempotent: running it twice equals running it
+    once. It behaved like list.append, so three `ovat index` runs on an
+    unchanged folder put the same chunk in the index three times and
+    retrieve(top_k=3) returned it three times, crowding out real documents."""
+    retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384,
+                                           db_path=":memory:")
+    for _ in range(3):
+        retriever.add(["port 8000 serves models"], sources=["docs/a.md"])
+
+    assert _rowcounts(retriever) == (1, 1)
+    hits = retriever.retrieve("what port?", top_k=3)
+    assert len(hits) == 1, f"the same chunk came back {len(hits)} times"
+
+
+def test_re_adding_one_source_leaves_the_others_alone():
+    """The test that catches an over-eager DELETE. Re-indexing one file must
+    not empty the index of every other file."""
+    retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384,
+                                           db_path=":memory:")
+    retriever.add(["alpha text"], sources=["docs/a.md"])
+    retriever.add(["beta text"], sources=["docs/b.md"])
+    retriever.add(["alpha rewritten"], sources=["docs/a.md"])
+
+    assert _rowcounts(retriever) == (2, 2)
+    texts = {h["text"] for h in retriever.retrieve("anything", top_k=10)}
+    assert texts == {"alpha rewritten", "beta text"}
+
+
+def test_editing_a_file_replaces_its_old_content():
+    """The whole point: re-indexing after an edit should REPLACE, so a
+    deleted sentence stops being retrievable."""
+    retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384,
+                                           db_path=":memory:")
+    retriever.add(["the old sentence"], sources=["docs/a.md"])
+    retriever.add(["the new sentence"], sources=["docs/a.md"])
+
+    texts = [h["text"] for h in retriever.retrieve("sentence", top_k=10)]
+    assert texts == ["the new sentence"]
+    assert "the old sentence" not in texts
+
+
+def test_chunks_without_a_source_are_still_stored():
+    """sources is optional in the contract. With no source there is no key to
+    dedupe on, so those chunks are appended and NOT replaced. That is a
+    deliberate limit, not an oversight."""
+    retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384,
+                                           db_path=":memory:")
+    retriever.add(["no source here"])
+    retriever.add(["no source here"])
+    assert _rowcounts(retriever) == (2, 2)

@@ -75,13 +75,52 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         row = self.db.execute("SELECT COALESCE(MAX(rowid), -1) + 1 FROM chunks").fetchone()
         return int(row[0])
 
+    def _forget_source(self, source: str) -> None:
+        """Remove everything previously stored for one source.
+
+        Two deletes, not one, because the two tables are keyed the same way but
+        shaped differently: `chunks` HAS a source column, the vec0 virtual
+        table `docs` does not. So the rowids have to be looked up in chunks
+        first and then deleted from docs by rowid.
+
+        Getting this half-right is worse than not doing it: a vector whose
+        chunk is gone is an orphan, retrieve() matches it, finds no chunk, and
+        silently skips it. You would ask for top_k=5 and quietly get 2 results
+        with no error anywhere.
+        """
+        rowids = [row[0] for row in self.db.execute(
+            "SELECT rowid FROM chunks WHERE source = ?", (source,))]
+        for rowid in rowids:
+            # One at a time: vec0 is a virtual table and does not accept the
+            # subquery form of DELETE.
+            self.db.execute("DELETE FROM docs WHERE rowid = ?", (rowid,))
+        self.db.execute("DELETE FROM chunks WHERE source = ?", (source,))
+
     def add(self, texts: list[str], sources: list[str] | None = None) -> None:
         """Embed each text and store the vector + text + optional source.
 
         Note: sources is optional and lines up with texts by index. It lets the
         agent answer "with source citations" later.
+
+        Adding a source REPLACES whatever that source had before, so indexing
+        is idempotent: running `ovat index` twice on an unchanged folder leaves
+        the same index, and re-indexing an edited file drops the sentences it
+        no longer contains. It used to append, so three runs put the same chunk
+        in three times and retrieve(top_k=3) returned it three times, crowding
+        out every other document.
+
+        With no sources there is no key to replace ON, so those chunks are
+        appended. That is a deliberate limit of the contract, not an oversight.
         """
         vectors = self.embedder.embed(texts)
+        if sources:
+            # dict.fromkeys keeps first-seen order and drops repeats; the
+            # indexer passes one file's source repeated per chunk, but the
+            # signature allows a mixed batch and this handles both.
+            for source in dict.fromkeys(sources):
+                self._forget_source(source)
+        # Delete and insert share one transaction (the commit below), so a
+        # crash midway cannot leave the index emptier than it started.
         for i, (text, vec) in enumerate(zip(texts, vectors)):
             rowid = self._next_rowid()
             source = sources[i] if sources else None
