@@ -75,6 +75,10 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         row = self.db.execute("SELECT COALESCE(MAX(rowid), -1) + 1 FROM chunks").fetchone()
         return int(row[0])
 
+    def _check_open(self) -> None:
+        if self.db is None:
+            raise RuntimeError("Retriever closed")
+
     def _forget_source(self, source: str) -> None:
         """Remove everything previously stored for one source.
 
@@ -88,12 +92,11 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         silently skips it. You would ask for top_k=5 and quietly get 2 results
         with no error anywhere.
         """
+        self._check_open()
         rowids = [row[0] for row in self.db.execute(
             "SELECT rowid FROM chunks WHERE source = ?", (source,))]
-        for rowid in rowids:
-            # One at a time: vec0 is a virtual table and does not accept the
-            # subquery form of DELETE.
-            self.db.execute("DELETE FROM docs WHERE rowid = ?", (rowid,))
+        if rowids:
+            self.db.executemany("DELETE FROM docs WHERE rowid = ?", [(r,) for r in rowids])
         self.db.execute("DELETE FROM chunks WHERE source = ?", (source,))
 
     def add(self, texts: list[str], sources: list[str] | None = None) -> None:
@@ -112,6 +115,7 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         With no sources there is no key to replace ON, so those chunks are
         appended. That is a deliberate limit of the contract, not an oversight.
         """
+        self._check_open()
         vectors = self.embedder.embed(texts)
         if sources:
             # dict.fromkeys keeps first-seen order and drops repeats; the
@@ -135,6 +139,7 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         self.db.commit()
 
     def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
+        self._check_open()
         qvec = self.embedder.embed([query])[0]         # embed the question
         # Step 1: nearest-neighbour search on the vector table.
         rows = self.db.execute(
