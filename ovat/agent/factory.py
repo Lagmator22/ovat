@@ -275,6 +275,7 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False):
             tools=tools,
             system_prompt=config.agent.system_prompt,
             max_iterations=config.agent.max_iterations,
+            engine_name=agent_type,
         ))
     # Each framework is imported INSIDE its branch so the native path never
     # pays the import cost of a framework it does not use, and so a machine

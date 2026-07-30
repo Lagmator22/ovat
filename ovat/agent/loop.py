@@ -64,15 +64,13 @@ class AgentLoop:
     """One agent: an LLM, a set of tools, and the loop that connects them."""
 
     def __init__(self, llm: LLMProvider, tools: dict,
-                 system_prompt: str | None = None, max_iterations: int = 10):
+                 system_prompt: str | None = None, max_iterations: int = 10,
+                 engine_name: str = "native"):
         # llm is any provider that honors the chat() contract (OVMS or a fake).
         self.llm = llm
-        # tools maps a tool name to a dict with two keys:
-        #   "schema"   the OpenAI tool description I send to the model (the menu)
-        #   "function" the real Python callable I run when the model picks it
-        # I keep both together so the menu and the hands can never drift apart.
         self.tools = tools
         self.max_iterations = max_iterations
+        self.engine_name = engine_name
         # Each agent owns one conversation memory.
         self.session = Session(system_prompt=system_prompt)
         # Layer 7 (observability): after every run() this holds what happened:
@@ -112,7 +110,7 @@ class AgentLoop:
         # goes through _finish so the totals are always filled in.
         run_started = time.monotonic()
         turns: list[dict] = []
-        self.last_trace = {"engine": "native", "turns": turns, "totals": {}}
+        self.last_trace = {"engine": self.engine_name, "turns": turns, "totals": {}}
 
         def _total(key: str):
             """Sum a per-turn count, or None if NO turn reported one.
@@ -160,8 +158,8 @@ class AgentLoop:
             # The model wants one or more tools. Guard the malformed case
             # first: finish_reason says tool_calls but the list is empty.
             # Re-asking with unchanged history would just spin the same reply
-            # until max_iterations, so surface it immediately instead.
-            tool_calls = reply["tool_calls"] or []
+            # until max_iterations, surface it immediately instead.
+            tool_calls = reply.get("tool_calls") or []
             if not tool_calls:
                 self.session.add_assistant(content=reply["content"])
                 return _finish(reply["content"] or (
