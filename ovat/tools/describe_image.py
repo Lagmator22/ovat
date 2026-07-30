@@ -61,7 +61,10 @@ def describe_image_impl(image_path: str,
             return (f"Error: could not load the vision model at "
                     f"{VLM_MODEL_DIR}: {exc}. Set OVAT_VLM_MODEL to a local "
                     f"OpenVINO VLM folder.")
-    return str(provider.generate(prompt, [image_path]))
+    try:
+        return str(provider.generate(prompt, [image_path]))
+    except Exception as exc:
+        return f"Error analyzing image: {exc}"
 
 
 # The OpenAI-style schema the agent's menu shows. Co-located and complete

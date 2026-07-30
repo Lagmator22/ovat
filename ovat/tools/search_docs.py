@@ -43,7 +43,10 @@ def search_docs_impl(query: str, top_k: int = 5,
             "text": f"[stub] search_docs has no retriever wired yet. Query was: {query}",
             "distance": 0.0,
         }]
-    return retriever.retrieve(query, top_k=top_k)
+    try:
+        return retriever.retrieve(query, top_k=top_k)
+    except Exception as exc:
+        return f"Error retrieving documents: {exc}"
 
 
 # The OpenAI-style tool schema my agent loop shows the model. I keep it next to

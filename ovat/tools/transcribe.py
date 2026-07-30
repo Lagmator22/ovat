@@ -89,13 +89,17 @@ def transcribe_impl(file_path: str, language: str = "en", pipeline=None) -> str:
         return f"Error: I could not find an audio file at: {file_path}"
     try:
         samples = _read_wav(file_path)
-    except ValueError as exc:
-        return f"Error: {exc}. Convert it to 16 kHz, 16 bit, mono first."
+    except Exception as exc:
+        return f"Error reading audio file: {exc}. Ensure it is a valid 16 kHz 16-bit mono WAV."
     if pipeline is None:
-        pipeline = _load_pipeline()
-    # Pass the requested language in Whisper's token form (en -> <|en|>) so the
-    # model transcribes that language instead of guessing it.
-    return str(pipeline.generate(samples, language=f"<|{language}|>"))
+        try:
+            pipeline = _load_pipeline()
+        except Exception as exc:
+            return f"Error loading whisper model: {exc}"
+    try:
+        return str(pipeline.generate(samples, language=f"<|{language}|>"))
+    except Exception as exc:
+        return f"Error transcribing audio: {exc}"
 
 
 # The OpenAI-style tool schema my agent loop shows the model. Co-located with
