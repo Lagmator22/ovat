@@ -58,7 +58,8 @@ class ModelManager:
             result = subprocess.run(
                 [self.ovms, "--list_models",
                  "--model_repository_path", model_repository_path],
-                capture_output=True, text=True, timeout=self.LIST_TIMEOUT_S,
+                capture_output=True, text=True, errors="replace",
+                timeout=self.LIST_TIMEOUT_S,
             )
         except subprocess.TimeoutExpired:
             raise RuntimeError(
