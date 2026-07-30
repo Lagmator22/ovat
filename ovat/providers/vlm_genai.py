@@ -39,6 +39,6 @@ class GenAIVLMProvider(VLMProvider):
 
     @staticmethod
     def _load_image(path: str) -> ov.Tensor:
-        img = Image.open(path).convert("RGB")     # force 3 colour channels
-        arr = np.array(img, dtype=np.uint8)       # shape (height, width, 3)
-        return ov.Tensor(arr)                     # wrap as an OpenVINO tensor
+        with Image.open(path) as img:
+            arr = np.array(img.convert("RGB"), dtype=np.uint8)
+        return ov.Tensor(arr)
