@@ -91,6 +91,7 @@ def benchmark_engine(config, engine: str, question: str,
     run_config = config.model_copy(deep=True)
     run_config.agent.type = engine
 
+    agent = None
     with _PeakMemory() as memory:
         build_started = time.monotonic()
         try:
@@ -109,6 +110,10 @@ def benchmark_engine(config, engine: str, question: str,
             row["latency_s"] = round(time.monotonic() - run_started, 3)
             row["peak_rss_mb"] = memory.peak_mb
             return row
+        finally:
+            if agent is not None:
+                from ovat.agent.factory import close_agent
+                close_agent(agent)
         row["latency_s"] = round(time.monotonic() - run_started, 3)
 
     row["peak_rss_mb"] = memory.peak_mb
