@@ -693,7 +693,7 @@ class OvatTUI(App):
         # recolours them.
         self.register_theme(OVAT_THEME)
         self.theme = OVAT_THEME.name
-        log = self.query_one("#output", RichLog)
+        log = self.query_one("#output", SelectableRichLog)
         log.write(Text("Type any command and press Enter; it runs in the venv.",
                        style=ui.CYAN))
         log.write(Text("Type /  for OVAT shortcuts  ·  Ctrl-P  for the command "
@@ -824,7 +824,7 @@ class OvatTUI(App):
                 # /usr/bin/env or /opt/homebrew/bin/foo, and this promised to
                 # run any command you type; it used to swallow every one of
                 # them as an unknown shortcut instead. Fall through and run it.
-                self.query_one("#output", RichLog).write(
+                self.query_one("#output", SelectableRichLog).write(
                     Text(f"Unknown shortcut {head}. Type / to see them, or just "
                          f"type a normal command.", style=ui.YELLOW))
                 return
@@ -857,7 +857,7 @@ class OvatTUI(App):
 
     def _do_action(self, name: str, args: str = "") -> None:
         if name == "/clear":
-            self.query_one("#output", RichLog).clear()
+            self.query_one("#output", SelectableRichLog).clear()
         elif name == "/exit":
             self.exit()
         elif name == "/chat":
@@ -880,7 +880,7 @@ class OvatTUI(App):
         if isinstance(self.screen, TelemetryScreen):
             self.notify("Already on the telemetry page.")
             return
-        self.push_screen(TelemetryScreen(agent=self.last_agent))
+        self.push_screen(TelemetryScreen(agent=lambda: self.last_agent))
 
     def _open_doctor(self, args: str) -> None:
         """Push the in-app doctor screen: `/doctor [config]`.
@@ -914,7 +914,7 @@ class OvatTUI(App):
             # model load (~30s and the memory to go with it).
             self.notify("Already in a chat.")
             return
-        log = self.query_one("#output", RichLog)
+        log = self.query_one("#output", SelectableRichLog)
         prefs = load_prefs(self._cwd)
         parts = args.split()
         config = parts[0] if parts else prefs.get("config", "workflow.yml")
@@ -1040,7 +1040,7 @@ class OvatTUI(App):
         a worker thread does not kill its subprocess, so exclusivity is
         enforced by the _busy gate instead.
         """
-        log = self.query_one("#output", RichLog)
+        log = self.query_one("#output", SelectableRichLog)
         self.call_from_thread(log.write, Text(f"$ {cmd}", style=f"bold {ui.CYAN}"))
         try:
             try:
