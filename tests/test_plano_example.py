@@ -131,3 +131,31 @@ def test_tracing_is_on_so_the_gateway_earns_its_hop():
     # `planoai obs` listens on 4317 and says so at startup; a mismatch here
     # means the dashboard sits at "waiting for spans" forever.
     assert "4317" in tracing["opentracing_grpc_endpoint"]
+
+
+def test_the_workflow_uses_planos_front_door_path_not_ovms_own():
+    """This looks wrong and is correct. There are two different paths:
+
+        ovat  -> POST /v1/chat/completions -> plano :12000
+        plano -> POST /v3/chat/completions -> OVMS  :8000
+
+    Clients always call plano at /v1; that is its own front door and is not
+    configurable. The UPSTREAM path is what base_url sets. If the workflow
+    pointed at :8000/v3 the gateway would be bypassed and the example would
+    prove nothing at all.
+    """
+    url = load_workflow(WORKFLOW).model.ovms_url
+    assert url.rstrip("/").endswith("/v1"), url
+    upstream = _plano()["model_providers"][0]["base_url"]
+    assert upstream.rstrip("/").endswith("/v3"), upstream
+    assert url != upstream, "the two hops must not be the same address"
+
+
+def test_the_readme_states_the_windows_limitation():
+    """plano has no Windows build, so `planoai up` fails before reading the
+    config. Someone on the AI PC must find that in the README rather than by
+    debugging a config that was never the problem."""
+    with open("examples/plano/README.md", encoding="utf-8") as handle:
+        readme = handle.read()
+    assert "Unsupported platform windows" in readme
+    assert "--docker" in readme

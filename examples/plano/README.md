@@ -95,6 +95,42 @@ flowchart LR
     B -->|response| A
 ```
 
+## Platform: no Windows build
+
+plano publishes binaries for **linux-amd64, linux-arm64 and darwin-arm64**.
+There is no Windows one, so on a Windows AI PC `planoai up` exits with
+
+    Error: Unsupported platform windows/amd64
+
+before it ever reads the config. That is not a configuration problem and no
+edit to `plano-config.yaml` will change it. Three ways to run the example:
+
+| where | how |
+|---|---|
+| Windows AI PC | `planoai up --docker examples/plano/plano-config.yaml` (plano in a Linux container; OVMS stays native on the host) |
+| WSL2 on the AI PC | native `planoai up`, reaching OVMS on the Windows host |
+| a Linux/macOS box | native, with `base_url` pointing at the AI PC's address instead of 127.0.0.1 |
+
+OVMS itself is the mirror image: Windows and Linux, no macOS. So the only
+place both run natively is Linux.
+
+## Why the workflow points at :12000/v1 and not :8000/v3
+
+That looks wrong and is correct. There are TWO different paths in this setup:
+
+    ovat  --POST /v1/chat/completions-->  plano :12000
+    plano --POST /v3/chat/completions-->  OVMS  :8000
+
+Clients always call plano at `/v1`; that is plano's own front door and it is
+not configurable. The UPSTREAM path is what `base_url` sets, and putting
+`/v3` in it is the whole fix. So `examples/plano/workflow.yml` pointing at
+`http://localhost:12000/v1` is the example working as designed. If it pointed
+at `:8000/v3` the gateway would be bypassed entirely and the example would
+prove nothing.
+
+A `Connection error` at `:12000` therefore means plano is not running, not
+that the port is wrong.
+
 ## Run it
 
 This runs on the **AI PC** (or any Linux/Windows box), the same place OVMS

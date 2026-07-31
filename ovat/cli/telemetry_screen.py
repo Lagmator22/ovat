@@ -111,6 +111,16 @@ written by hand. NVIDIA's NeMo toolkit spends about 3,900 lines on the
 equivalent. Every request becomes an OTEL span with per-call latency and
 token counts, and OVAT gains no OTEL dependency of its own.
 
+[b]Platform, and read this first[/b]
+plano ships binaries for linux-amd64, linux-arm64 and darwin-arm64 ONLY.
+There is no Windows build, so on the AI PC `planoai up` exits with
+"Unsupported platform windows/amd64" before it reads any config. Two ways
+round it, and neither is a workaround for a bug, just how plano ships:
+
+  [cyan]planoai up --docker <config>[/cyan]   plano in a Linux container
+  or run plano under WSL2, or on another machine pointing at the AI PC's
+  OVMS over the network (base_url takes any host, not just 127.0.0.1)
+
 [b]Run it[/b]
   [cyan]uv tool install planoai==0.4.27[/cyan]
   [cyan]ovat serve examples/document-qa.yml[/cyan]      OVMS on :8000
