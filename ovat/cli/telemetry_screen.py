@@ -87,6 +87,10 @@ ecosystem puts on one screen.
      and OVAT finds it
   3. Windows or Linux only; the tool has no macOS build
 
+[b]Is this tab live?[/b]
+Not yet, for the reason below. The Live tab is where numbers appear once a
+source can produce them.
+
 [b]Known limit, measured on the AI PC[/b]
 Continuous mode does not stream numbers. It writes binary traces
 (ut_default_output.l0_gpu.bin, .l0_npu.bin) which need [cyan]bin2perfetto[/cyan]
@@ -116,10 +120,20 @@ token counts, and OVAT gains no OTEL dependency of its own.
   [cyan]planoai trace[/cyan]    one request in depth
 
 [b]The spike question, answered[/b]
-plano assumes upstreams serve /v1; OVMS serves /v3. One config line fixes it,
-with no fork: [cyan]base_url_path_prefix: /v3[/cyan]. Upstream's own test
-(test_target_endpoint_with_base_url_prefix, crates/hermesllm/src/clients/
-endpoints.rs) proves that field REPLACES the default prefix.
+plano defaults to calling upstreams at /v1; OVMS serves its OpenAI API under
+/v3. There is no separate prefix field: plano parses base_url and lifts the
+path out of it itself, and its schema REJECTS base_url_path_prefix outright.
+So the whole fix is one URL:
+
+  [cyan]base_url: http://127.0.0.1:8000/v3[/cyan]
+
+which is character for character OVAT's own model.ovms_url. No fork, no patch.
+
+[b]Is this tab live?[/b]
+No, and deliberately so. plano runs as its own process with its own dashboard
+([cyan]planoai obs[/cyan]), so duplicating it here would be a worse copy of a
+tool that already exists. What this page owns is the Live tab: system,
+process and Intel. plano owns the request traces.
 """
 
 
