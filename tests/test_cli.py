@@ -744,3 +744,45 @@ def test_telemetry_can_stream_to_a_file(tmp_path):
     assert out.exists()
     for line in out.read_text(encoding="utf-8").strip().splitlines():
         json.loads(line)
+
+
+def test_init_does_not_write_an_active_rag_block(tmp_path):
+    """A fresh clone must survive the whole quickstart with no downloads.
+
+    An active rag: block named an embedding model that is on nobody else's
+    disk, so `ovat index` -- the next quickstart command -- died with a C++
+    assertion out of OpenVINO's frontend. Everything before it succeeded, so
+    the config looked right until it did not. This is the bug a mentor hit
+    trying to run OVAT for the first time.
+    """
+    out = tmp_path / "workflow.yml"
+    result = runner.invoke(app, ["init", str(out)])
+    assert result.exit_code == 0, result.output
+
+    text = out.read_text(encoding="utf-8")
+    cfg = load_workflow(str(out))
+    assert cfg.rag is None, "init must not enable RAG a new machine cannot run"
+    # ...but the instructions must still be there, or we have only moved the
+    # dead end from a traceback to a silence.
+    assert "optimum-cli export openvino" in text
+    assert "bge-small-en-v1.5" in text
+
+
+def test_indexing_without_rag_says_how_to_turn_it_on(tmp_path):
+    """The message a new user now lands on, so it must not be a dead end.
+
+    Naming what is absent ("no rag: section") is not the same as telling
+    someone who has never exported an OpenVINO model what to do next.
+    """
+    out = tmp_path / "workflow.yml"
+    runner.invoke(app, ["init", str(out)])
+    folder = tmp_path / "notes"
+    folder.mkdir()
+    (folder / "a.md").write_text("hello", encoding="utf-8")
+
+    result = runner.invoke(app, ["index", str(folder), str(out)])
+    assert result.exit_code == 1
+    # Off, not broken; still usable; and where to look.
+    assert "nothing is broken" in result.output
+    assert "stub mode" in result.output
+    assert "optimum-cli" in result.output

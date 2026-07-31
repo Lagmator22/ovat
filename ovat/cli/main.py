@@ -94,20 +94,39 @@ agent:
   max_iterations: 10
   system_prompt: "You are a helpful assistant that uses tools when needed."
 
-# RAG for the search_docs tool. Run `ovat index <folder> workflow.yml` first,
-# then ask questions. Swap a provider string to change a backend.
-rag:
-  embeddings:
-    provider: genai
-    model: models/bge-small-en-v1.5
-    device: CPU
-    dim: 384
-  retriever:
-    provider: sqlite-vec
-    db_path: ovat_index.db
-  chunk:
-    size: 512
-    overlap: 64
+# RAG for the search_docs tool: OFF until you switch it on, and deliberately.
+#
+# An active rag: block here would name an embedding model that is not on a new
+# machine, so `ovat index` -- the very next command in the quickstart -- died
+# with a C++ assertion out of OpenVINO's frontend. Nothing before it failed,
+# so the config looked fine right up until it did not. Without this block
+# search_docs answers in its documented stub mode instead, and every command
+# in the quickstart works on a fresh clone with no downloads.
+#
+# To switch on real vector search, export the embedder ONCE (about 130 MB):
+#
+#   optimum-cli export openvino --model BAAI/bge-small-en-v1.5 \\
+#       --task feature-extraction models/bge-small-en-v1.5
+#
+# then uncomment the block below and run:
+#
+#   ovat index <your-folder> workflow.yml
+#
+# Every value is a swappable string: provider: ovms embeds on the server
+# instead of locally, and db_path can live anywhere.
+#
+# rag:
+#   embeddings:
+#     provider: genai              # genai (local) | ovms (server /v3)
+#     model: models/bge-small-en-v1.5
+#     device: CPU                  # CPU or NPU
+#     dim: 384                     # bge-small emits 384 numbers per chunk
+#   retriever:
+#     provider: sqlite-vec
+#     db_path: ovat_index.db
+#   chunk:
+#     size: 512                    # characters per chunk
+#     overlap: 64                  # characters shared with the next chunk
 """
 
 
@@ -512,8 +531,24 @@ def index(
 
     cfg = _load_config(config)
     if cfg.rag is None:
-        rprint("[red]This workflow has no [bold]rag:[/bold] section.[/red] "
-               "Add one (embeddings + retriever) before indexing.")
+        # `ovat init` now ships the rag: block COMMENTED OUT, so this is the
+        # normal path for a new user rather than a rare mistake: they followed
+        # the quickstart, got here, and this message is the only thing standing
+        # between them and working retrieval. Naming what is absent is not
+        # enough; the old wording ("Add one (embeddings + retriever)") told
+        # someone who has never exported an OpenVINO model precisely nothing.
+        #
+        # So: say it is OFF, not BROKEN; say the tool still works meanwhile, so
+        # they are not blocked; and point at the one place the instructions
+        # already live rather than printing a second copy that can drift.
+        rprint(f"[yellow]Vector search is off in[/yellow] {esc(config)}[yellow];"
+               " nothing is broken.[/yellow]")
+        rprint("[bold]search_docs still answers[/bold] in stub mode, so "
+               "[cyan]ovat run[/cyan] works right now without this.")
+        rprint(f"To switch on real retrieval, open {esc(config)} and follow "
+               "the commented [bold]rag:[/bold] block: export the embedder "
+               "once with the [cyan]optimum-cli[/cyan] line above it, "
+               "uncomment, then run this command again.")
         raise typer.Exit(code=1)
 
     # Building the retriever loads the embedding model. If that model is not on
