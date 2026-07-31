@@ -838,13 +838,21 @@ def telemetry(
         _print_telemetry(collector.sample_once())
         return
 
+    # rich.Live redraws ONE table in place instead of printing a new one every
+    # tick. Printing scrolled a fresh table every interval, which made a
+    # terminal unreadable within seconds and buried the numbers it was meant
+    # to show.
+    from rich.live import Live
+
     collector.start()
     deadline = None if seconds <= 0 else time.time() + seconds
     try:
-        while deadline is None or time.time() < deadline:
-            time.sleep(interval)
-            if live.samples:
-                _print_telemetry(live.samples[-1])
+        with Live(_telemetry_table({}), console=console,
+                  refresh_per_second=4, transient=False) as display:
+            while deadline is None or time.time() < deadline:
+                time.sleep(interval)
+                if live.samples:
+                    display.update(_telemetry_table(live.samples[-1]))
     except KeyboardInterrupt:
         pass
     finally:
@@ -855,9 +863,17 @@ def telemetry(
 
 
 def _print_telemetry(sample: dict) -> None:
-    """One snapshot as a table, grouped by source."""
-    if not sample:
-        return
+    """One snapshot, printed once. Used by --once."""
+    if sample:
+        console.print(_telemetry_table(sample))
+
+
+def _telemetry_table(sample: dict) -> Table:
+    """One snapshot as a table, grouped by source.
+
+    Returns the table rather than printing it, so live mode can hand the same
+    renderable to rich.Live and have it redrawn in place.
+    """
     table = Table(header_style=f"bold {ui.BLUE}", border_style=ui.BLUE,
                   box=box.ROUNDED)
     table.add_column("Source", no_wrap=True)
@@ -870,7 +886,10 @@ def _print_telemetry(sample: dict) -> None:
         value = sample[key]
         table.add_row(Text(source, style=ui.CYAN), Text(metric, style=ui.DIM),
                       Text(f"{value:,.1f}", style=f"bold {ui.GREEN}"))
-    console.print(table)
+    if not sample:
+        table.add_row(Text("...", style=ui.DIM), Text("sampling", style=ui.DIM),
+                      Text("", style=ui.DIM))
+    return table
 
 
 @app.command()

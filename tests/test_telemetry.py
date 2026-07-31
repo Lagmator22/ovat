@@ -300,3 +300,35 @@ def test_an_explicit_path_still_wins_over_everything(tmp_path, monkeypatch):
     path, how = sources.find_ut(str(tmp_path))
     assert path is not None
     assert how == "config"
+
+
+def test_the_sources_table_is_redrawn_every_tick_not_once():
+    """Source availability CHANGES while the page is open: an agent appears
+    the moment /engine ovms finishes building one. Drawn once at mount, the
+    table said "n/a" forever even while that agent was answering."""
+    import inspect
+
+    from ovat.cli import telemetry_screen
+
+    redraw = inspect.getsource(telemetry_screen.TelemetryScreen._redraw)
+    assert "_fill_sources_table" in redraw, (
+        "the table is not refreshed on the redraw tick")
+
+
+def test_live_mode_returns_a_table_rather_than_printing_it():
+    """rich.Live needs a renderable it can redraw IN PLACE. Printing a fresh
+    table every tick scrolled the terminal unreadable within seconds and
+    buried the numbers it was meant to show."""
+    from ovat.cli.main import _telemetry_table
+
+    table = _telemetry_table({"system.cpu_pct": 12.5})
+    assert table is not None
+    assert hasattr(table, "columns")          # a rich Table, not None
+
+
+def test_an_empty_sample_still_renders_a_table():
+    """Live mode draws before the first sample arrives; returning None there
+    would crash the display on startup."""
+    from ovat.cli.main import _telemetry_table
+
+    assert _telemetry_table({}) is not None

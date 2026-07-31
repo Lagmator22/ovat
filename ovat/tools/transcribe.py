@@ -90,7 +90,7 @@ def transcribe_impl(file_path: str, language: str = "en", pipeline=None) -> str:
     try:
         samples = _read_wav(file_path)
     except Exception as exc:
-        return f"Error reading audio file: {exc}. Ensure it is a valid 16 kHz 16-bit mono WAV."
+        return (f"Error: {exc}. Convert it to 16 kHz, 16 bit, mono first.")
     if pipeline is None:
         try:
             pipeline = _load_pipeline()

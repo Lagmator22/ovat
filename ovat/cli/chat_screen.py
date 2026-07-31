@@ -379,7 +379,11 @@ class OVMSEngine:
         except urllib.error.HTTPError:
             return True, f"Ready · {self.describe()}"
         except Exception:
-            return False, f"OVMS server not reachable at {url} (start it with 'ovat serve')"
+            # BOTH halves. Replacing the description with the warning threw
+            # away the only line saying which model and tools are configured,
+            # which is exactly what you need to see when the server is down.
+            return False, (f"{self.describe()}  ·  server NOT reachable at "
+                           f"{url} (start it with 'ovat serve')")
 
     def ask(self, question: str, history: list, on_token):
         # history is ignored on purpose: AgentLoop keeps its own Session, and

@@ -117,8 +117,10 @@ def test_close_releases_the_connection_and_is_idempotent():
     retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384, db_path=":memory:")
     retriever.add(["hello"], sources=["x.md"])
     retriever.close()
-    # After close the handle is gone, so any use must fail loudly...
-    with pytest.raises(AttributeError):
+    # After close, any use must fail LOUDLY and by name. This asserted
+    # AttributeError, which is what you got from None.execute: technically a
+    # failure, but the message named neither the object nor the mistake.
+    with pytest.raises(RuntimeError, match="closed"):
         retriever.retrieve("hello")
     # ...but closing again is safe (idempotent), like a guarded delete.
     retriever.close()
