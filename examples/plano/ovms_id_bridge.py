@@ -11,6 +11,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 
 class OVMSBridgeHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def do_POST(self):
         # Handle both Content-Length and Transfer-Encoding: chunked from Plano
         transfer_encoding = self.headers.get("Transfer-Encoding", "").lower()
