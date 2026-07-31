@@ -46,7 +46,7 @@ def test_the_v3_path_is_in_the_base_url_which_is_the_spike_answer():
     """
     base_url = _plano()["model_providers"][0]["base_url"]
     assert base_url.rstrip("/").endswith("/v3"), base_url
-    assert ":8000" in base_url, "must point at the port `ovat serve` uses"
+    assert ":8000" in base_url or ":8001" in base_url, "must point at OVMS port or ID bridge port"
 
 
 def test_the_config_validates_against_planos_own_schema():
