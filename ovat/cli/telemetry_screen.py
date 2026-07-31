@@ -113,10 +113,11 @@ class TelemetryScreen(Screen):
     def __init__(self, agent=None, ut_binary: str | None = None):
         super().__init__()
         self.live = LiveBufferSink()
+        agent_arg = agent if agent is not None else (lambda: getattr(self.app, "last_agent", None))
         self.collector = Collector(
             [SystemSource(),
              ProcessMemorySource(),
-             AgentTraceSource(agent),
+             AgentTraceSource(agent_arg),
              IntelHardwareSource(ut_binary)],
             self.live, interval_s=1.0 / REFRESH_HZ)
 
@@ -158,11 +159,15 @@ class TelemetryScreen(Screen):
         from rich.text import Text
 
         table = self.query_one("#tel-table", DataTable)
+        unavailable = self.collector.unavailable
+        state_signature = tuple((s.name, unavailable.get(s.name)) for s in self.collector.sources)
+        if getattr(self, "_last_table_state", None) == state_signature:
+            return
+        self._last_table_state = state_signature
         table.clear(columns=True)
         table.add_column("Source")
         table.add_column("State")
         table.add_column("Detail")
-        unavailable = self.collector.unavailable
         for source in self.collector.sources:
             reason = unavailable.get(source.name)
             state = (Text("live", style=f"bold {ui.GREEN}") if reason is None
@@ -173,6 +178,7 @@ class TelemetryScreen(Screen):
                           Text(reason or "sampling", style=ui.DIM))
 
     def _redraw(self) -> None:
+        self._fill_sources_table()
         self._sync_cards()
         for metric, digits, bar in self._cards.values():
             value = self.live.latest(metric)

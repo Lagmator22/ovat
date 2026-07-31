@@ -136,9 +136,12 @@ def load_prefs(cwd: str) -> dict:
 
 
 def save_prefs(cwd: str, config_path: str, model_path: str) -> None:
-    os.makedirs(_ovat_dir(cwd), exist_ok=True)
-    with open(os.path.join(_ovat_dir(cwd), PREFS_FILE), "w", encoding="utf-8") as f:
-        json.dump({"config": config_path, "model_path": model_path}, f, indent=2)
+    try:
+        os.makedirs(_ovat_dir(cwd), exist_ok=True)
+        with open(os.path.join(_ovat_dir(cwd), PREFS_FILE), "w", encoding="utf-8") as f:
+            json.dump({"config": config_path, "model_path": model_path}, f, indent=2)
+    except OSError:
+        pass
 
 
 def _session_path(cwd: str, name: str) -> str:
@@ -363,6 +366,20 @@ class OVMSEngine:
         tools = ", ".join(self.agent.tools) or "none declared"
         return (f"OVMS at {self.cfg.model.ovms_url} · "
                 f"{self.cfg.model.name} · tools: {tools}")
+
+    def check_reachable(self) -> tuple[bool, str]:
+        """Probe if the OVMS server is listening."""
+        url = self.cfg.model.ovms_url
+        try:
+            import urllib.request
+            req = urllib.request.Request(url, headers={"User-Agent": "OVAT"})
+            with urllib.request.urlopen(req, timeout=1.5):
+                pass
+            return True, f"Ready · {self.describe()}"
+        except urllib.error.HTTPError:
+            return True, f"Ready · {self.describe()}"
+        except Exception:
+            return False, f"OVMS server not reachable at {url} (start it with 'ovat serve')"
 
     def ask(self, question: str, history: list, on_token):
         # history is ignored on purpose: AgentLoop keeps its own Session, and
@@ -813,8 +830,14 @@ class ChatScreen(Screen):
         self._engine = engine
         self.app.call_from_thread(self._stop_loading)
         save_prefs(self._cwd, self._config_path, self._model_path)
+        if hasattr(engine, "check_reachable"):
+            ok, status_msg = engine.check_reachable()
+            role = "ok" if ok else "warn"
+        else:
+            status_msg = f"Ready · {engine.describe()}"
+            role = "ok"
         self.app.call_from_thread(
-            self._note, f"Ready · {engine.describe()}", "ok")
+            self._note, status_msg, role)
         self.app.call_from_thread(self._mark_idle)
 
     # ---- leaving / cancelling ---------------------------------------------

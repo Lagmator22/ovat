@@ -27,7 +27,13 @@ class AgentTraceSource(TelemetrySource):
     name = "agent"
 
     def __init__(self, agent=None):
-        self.agent = agent
+        self._agent = agent
+
+    @property
+    def agent(self):
+        if callable(self._agent):
+            return self._agent()
+        return self._agent
 
     def sample(self) -> dict:
         totals = (getattr(self.agent, "last_trace", None) or {}).get("totals")
@@ -39,9 +45,10 @@ class AgentTraceSource(TelemetrySource):
 
     @property
     def unavailable(self) -> str | None:
-        if self.agent is None:
+        agent = self.agent
+        if agent is None:
             return "no agent has run yet"
-        if getattr(self.agent, "last_trace", None) is None:
+        if getattr(agent, "last_trace", None) is None:
             return ("this engine does not record per-turn data; only the "
                     "native loop does")
         return None
