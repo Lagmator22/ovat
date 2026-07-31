@@ -123,8 +123,9 @@ round it, and neither is a workaround for a bug, just how plano ships:
 
 [b]Run it[/b]
   [cyan]uv tool install planoai==0.4.27[/cyan]
-  [cyan]ovat serve examples/document-qa.yml[/cyan]      OVMS on :8000
-  [cyan]planoai up examples/plano/plano-config.yaml[/cyan]   plano on :12000
+  [cyan]ovat serve examples/plano/workflow.yml[/cyan]       OVMS on :8000
+  [cyan]python examples/plano/ovms_id_bridge.py[/cyan]      bridge on :8001
+  [cyan]planoai up examples/plano/plano-config.yaml[/cyan]  plano on :12000
   [cyan]ovat run examples/plano/workflow.yml --input "hello"[/cyan]
   [cyan]planoai obs[/cyan]      live aggregate view
   [cyan]planoai trace[/cyan]    one request in depth
@@ -133,11 +134,25 @@ round it, and neither is a workaround for a bug, just how plano ships:
 plano defaults to calling upstreams at /v1; OVMS serves its OpenAI API under
 /v3. There is no separate prefix field: plano parses base_url and lifts the
 path out of it itself, and its schema REJECTS base_url_path_prefix outright.
-So the whole fix is one URL:
+So the path half of the fix is just the URL:
 
-  [cyan]base_url: http://127.0.0.1:8000/v3[/cyan]
+  [cyan]base_url: http://<host>:8001/v3[/cyan]
 
-which is character for character OVAT's own model.ovms_url. No fork, no patch.
+Two more walls turned up behind it, both found in plano's own source rather
+than guessed at:
+
+  [b]1.[/b] The model name needs a [cyan]provider/[/cyan] prefix. plano does
+     model_name.split("/") in config_generator.py and raises "Invalid model
+     name" without one, so the config says [cyan]ovms/Qwen3-8B-int4-ov[/cyan]
+     and plano strips the prefix before forwarding.
+  [b]2.[/b] plano's Envoy WASM filter requires a top-level [cyan]"id"[/cyan]
+     string in the response. OVMS returns valid OpenAI JSON but omits it, so
+     plano rejects every reply. [cyan]examples/plano/ovms_id_bridge.py[/cyan]
+     sits on :8001, forwards to OVMS on :8000, injects the field, and also
+     handles the Transfer-Encoding: chunked bodies plano sends.
+
+So base_url points at the BRIDGE, not at OVMS directly. Still no fork and no
+patch of either project: one small proxy and one URL.
 
 [b]Is this tab live?[/b]
 No, and deliberately so. plano runs as its own process with its own dashboard
