@@ -12,8 +12,27 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 class OVMSBridgeHandler(BaseHTTPRequestHandler):
     def do_POST(self):
-        content_len = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_len)
+        # Handle both Content-Length and Transfer-Encoding: chunked from Plano
+        transfer_encoding = self.headers.get("Transfer-Encoding", "").lower()
+        if "chunked" in transfer_encoding:
+            chunks = []
+            while True:
+                line = self.rfile.readline().strip()
+                if not line:
+                    break
+                try:
+                    chunk_len = int(line.split(b";")[0], 16)
+                except ValueError:
+                    break
+                if chunk_len == 0:
+                    self.rfile.readline()
+                    break
+                chunks.append(self.rfile.read(chunk_len))
+                self.rfile.readline()
+            body = b"".join(chunks)
+        else:
+            content_len = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_len)
         
         # Forward request to OVMS on port 8000
         target_url = f"http://127.0.0.1:8000{self.path}"
