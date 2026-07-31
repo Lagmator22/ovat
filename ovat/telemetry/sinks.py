@@ -6,6 +6,7 @@ must not break the run it is measuring, which is the whole reason record() is
 specified that way.
 """
 import json
+import threading
 import time
 from collections import deque
 
