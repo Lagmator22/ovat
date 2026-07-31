@@ -22,14 +22,14 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import (DataTable, Digits, Footer, Label, ProgressBar,
-                             Rule, Sparkline, Static)
+                             Rule, Sparkline, Static, TabbedContent, TabPane)
 
 from ovat.cli import ui
 from ovat.cli.commands import ScreenCommands
 from ovat.telemetry.collector import Collector
 from ovat.telemetry.sinks import LiveBufferSink
-from ovat.telemetry.sources import (AgentTraceSource, IntelHardwareSource,
-                                    ProcessMemorySource, SystemSource)
+from ovat.telemetry.sources import (IntelHardwareSource, ProcessMemorySource,
+                                    SystemSource)
 
 # How often the page redraws. 2/second is enough to look live without making
 # a terminal over SSH repaint faster than the link can carry, which is how
@@ -54,11 +54,73 @@ _PREFERRED = [
     ("system.ram_used_pct", "SYS RAM", "%"),
     ("process.rss_mb", "OVAT MEM", "MB"),
     ("system.proc_cpu_pct", "OVAT CPU", "%"),
-    ("agent.prompt_tokens", "PROMPT", "tok"),
-    ("agent.completion_tokens", "REPLY", "tok"),
     ("system.threads", "THREADS", ""),
 ]
 MAX_CARDS = 5
+
+_SOURCES_HELP = """
+[b]What each source is[/b]
+
+  [cyan]system[/cyan]   this machine: CPU per core, RAM, clock speed. psutil,
+           so it works on macOS, Windows and Linux alike.
+  [cyan]process[/cyan]  OVAT's OWN memory. Not the model's: an 8B model lives
+           inside OVMS, in a different process entirely.
+  [cyan]intel[/cyan]    GPU/NPU activity and package power, via Intel's
+           Unified Telemetry tool. AI PC only.
+
+A source that cannot run HERE says so with a reason. That matters more than
+it looks: an absent source and an idle one draw the same flat line, and only
+one of them is worth doing anything about.
+"""
+
+_INTEL_HELP = """
+[b]Intel Unified Telemetry[/b]
+
+The Intel-native layer: host API calls, GPU and NPU kernel timelines, package
+power, thermals. This is where the proposal's stretch-goal number comes from,
+NPU power draw beside agent token counts, which nothing else in the OpenVINO
+ecosystem puts on one screen.
+
+[b]Setup[/b]
+  1. Unzip the ut-tool release (it extracts to a versioned folder)
+  2. Set [cyan]OVAT_UT[/cyan] to that folder, or drop it in [cyan]~/ut[/cyan]
+     and OVAT finds it
+  3. Windows or Linux only; the tool has no macOS build
+
+[b]Known limit, measured on the AI PC[/b]
+Continuous mode does not stream numbers. It writes binary traces
+(ut_default_output.l0_gpu.bin, .l0_npu.bin) which need [cyan]bin2perfetto[/cyan]
+to decode, so the Sources tab reports it running and this page shows nothing
+from it yet. Decoding those traces is the next step, and saying so beats a
+graph that pretends to be live.
+"""
+
+_PLANO_HELP = """
+[b]plano gateway[/b]  (katanemo/plano, formerly archgw)
+
+An optional proxy between OVAT and OVMS. OVAT keeps talking to a plain URL;
+plano forwards it on and adds a trace to every request.
+
+[b]Why it is here[/b]
+[cyan]OpenTelemetry for three lines of config[/cyan], rather than an exporter
+written by hand. NVIDIA's NeMo toolkit spends about 3,900 lines on the
+equivalent. Every request becomes an OTEL span with per-call latency and
+token counts, and OVAT gains no OTEL dependency of its own.
+
+[b]Run it[/b]
+  [cyan]uv tool install planoai==0.4.27[/cyan]
+  [cyan]ovat serve examples/document-qa.yml[/cyan]      OVMS on :8000
+  [cyan]planoai up examples/plano/plano-config.yaml[/cyan]   plano on :12000
+  [cyan]ovat run examples/plano/workflow.yml --input "hello"[/cyan]
+  [cyan]planoai obs[/cyan]      live aggregate view
+  [cyan]planoai trace[/cyan]    one request in depth
+
+[b]The spike question, answered[/b]
+plano assumes upstreams serve /v1; OVMS serves /v3. One config line fixes it,
+with no fork: [cyan]base_url_path_prefix: /v3[/cyan]. Upstream's own test
+(test_target_endpoint_with_base_url_prefix, crates/hermesllm/src/clients/
+endpoints.rs) proves that field REPLACES the default prefix.
+"""
 
 
 class TelemetryCommands(ScreenCommands):
@@ -102,6 +164,11 @@ class TelemetryScreen(Screen):
     #tel-graphs > .sparkline--max-color { color: $success; }
     #tel-graphs > .sparkline--min-color { color: $primary; }
     #tel-table { height: 12; border: round $primary; margin: 0 2 1 2; }
+    #tel-sources-help, #tel-intel-help, #tel-plano-help {
+        padding: 1 2;
+        color: $text-muted;
+    }
+    #tel-tabs { height: 1fr; }
     Footer { background: $surface; color: $accent; }
     """
 
@@ -110,29 +177,45 @@ class TelemetryScreen(Screen):
         Binding("f5", "clear", "Clear", show=True),
     ]
 
-    def __init__(self, agent=None, ut_binary: str | None = None):
+    def __init__(self, ut_binary: str | None = None):
         super().__init__()
         self.live = LiveBufferSink()
-        agent_arg = agent if agent is not None else (lambda: getattr(self.app, "last_agent", None))
+        # No agent source. It could only ever say "n/a" here: an agent exists
+        # solely inside the chat screen's OVMS engine, only the native loop
+        # fills last_trace at all, and a row that is permanently unavailable
+        # teaches the reader to ignore the whole table. Per-run agent numbers
+        # live in `ovat run --trace`, which is where they belong.
         self.collector = Collector(
             [SystemSource(),
              ProcessMemorySource(),
-             AgentTraceSource(agent_arg),
              IntelHardwareSource(ut_binary)],
             self.live, interval_s=1.0 / REFRESH_HZ)
 
     def compose(self) -> ComposeResult:
         header = ui.wordmark("TELEMETRY") if hasattr(ui, "wordmark") else None
         yield Static(header or "OVAT telemetry", id="tel-header")
-        # Cards are mounted once we know which metrics have data; an empty
-        # row now beats five boxes reading "---" forever.
-        yield Horizontal(id="tel-numbers")
-        yield Rule(id="tel-rule")
-        with VerticalScroll(id="tel-graphs"):
-            pass
-        table = DataTable(id="tel-table", cursor_type="row", zebra_stripes=True)
-        table.border_title = "sources"
-        yield table
+        # Three tabs, switchable by mouse or arrow keys. One page rather
+        # than three screens: these are three VIEWS of the same machine, and
+        # making them separate screens would mean losing the live buffer
+        # every time you looked at a different one.
+        with TabbedContent(id="tel-tabs"):
+            with TabPane("Live", id="tab-live"):
+                # Cards are mounted once we know which metrics have data; an
+                # empty row now beats five boxes reading "---" forever.
+                yield Horizontal(id="tel-numbers")
+                yield Rule(id="tel-rule")
+                with VerticalScroll(id="tel-graphs"):
+                    pass
+            with TabPane("Sources", id="tab-sources"):
+                table = DataTable(id="tel-table", cursor_type="row",
+                                  zebra_stripes=True)
+                table.border_title = "where the numbers come from"
+                yield table
+                yield Static(_SOURCES_HELP, id="tel-sources-help")
+            with TabPane("Intel", id="tab-intel"):
+                yield Static(_INTEL_HELP, id="tel-intel-help")
+            with TabPane("Plano", id="tab-plano"):
+                yield Static(_PLANO_HELP, id="tel-plano-help")
         yield Footer()
 
     def on_mount(self) -> None:

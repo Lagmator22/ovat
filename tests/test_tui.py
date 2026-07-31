@@ -810,29 +810,64 @@ def test_leaving_the_page_stops_the_collector():
     _run(scenario())
 
 
-def test_the_telemetry_page_sees_an_agent_the_chat_screen_built():
-    """The page said "no agent has run yet" even while a chat was answering,
-    because it was constructed with agent=None and nothing ever told it. The
-    page cannot build an agent itself (no config, and loading a model to draw
-    a graph would be absurd), so the app is where the two screens meet."""
+
+
+# The telemetry page's tabs
+
+def test_the_telemetry_page_has_four_switchable_tabs():
+    """One page rather than four screens: these are four VIEWS of the same
+    machine, and separate screens would drop the live buffer every time you
+    looked at a different one."""
+    from textual.widgets import TabbedContent
     from ovat.cli.telemetry_screen import TelemetryScreen
-    from ovat.telemetry.sources import AgentTraceSource
 
     async def scenario():
         app = OvatTUI()
         async with app.run_test() as pilot:
-            assert app.last_agent is None
-
-            class Agent:
-                last_trace = {"totals": {"turns": 2, "prompt_tokens": 40}}
-
-            app.last_agent = Agent()
-            screen = TelemetryScreen(agent=app.last_agent)
+            screen = TelemetryScreen()
             app.push_screen(screen)
             await pilot.pause()
-            agent_source = [s for s in screen.collector.sources
-                            if isinstance(s, AgentTraceSource)][0]
-            assert agent_source.unavailable is None
-            assert agent_source.sample() == {"turns": 2, "prompt_tokens": 40}
+            tabs = screen.query_one("#tel-tabs", TabbedContent)
+            assert tabs.tab_count == 4
+            screen.collector.stop()
+    _run(scenario())
+
+
+def test_no_agent_row_remains_on_the_telemetry_page():
+    """It could only ever read n/a: an agent lives in the chat screen's OVMS
+    engine, only the native loop fills last_trace, and a permanently
+    unavailable row teaches the reader to ignore the whole table."""
+    from ovat.cli.telemetry_screen import TelemetryScreen
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = TelemetryScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            names = [s.name for s in screen.collector.sources]
+            assert "agent" not in names
+            screen.collector.stop()
+    _run(scenario())
+
+
+def test_the_plano_tab_carries_the_commands_to_run_it():
+    """A tab that only says a thing exists is worse than no tab. This one has
+    to be runnable straight off the screen."""
+    from textual.widgets import Static
+    from ovat.cli.telemetry_screen import TelemetryScreen
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = TelemetryScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            widget = screen.query_one("#tel-plano-help", Static)
+            text = str(getattr(widget, "renderable", None)
+                       or getattr(widget, "_content", "")
+                       or widget.render())
+            assert "planoai up" in text
+            assert "base_url_path_prefix" in text     # the spike answer
             screen.collector.stop()
     _run(scenario())

@@ -897,7 +897,7 @@ class OvatTUI(App):
         if isinstance(self.screen, TelemetryScreen):
             self.notify("Already on the telemetry page.")
             return
-        self.push_screen(TelemetryScreen(agent=lambda: self.last_agent))
+        self.push_screen(TelemetryScreen())
 
     def _open_doctor(self, args: str) -> None:
         """Push the in-app doctor screen: `/doctor [config]`.
