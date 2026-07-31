@@ -132,6 +132,7 @@ OpenVINO Agentic Toolkit
   /init [path]              write a starter workflow.yml you can edit
   /validate <config>        load and validate a workflow file (via doctor)
   /index <folder> <config>  index a folder of docs for search_docs
+  /telemetry                live CPU, memory and Intel hardware numbers
   /run  /serve  /help  /models  /clear  /exit
 ```
 
@@ -162,9 +163,9 @@ TUI can be adopted, or removed, without touching the toolkit.
 | | `tool_parser` | how tool calls are decoded (`hermes3` for Qwen3) |
 | | `source_model` | (for `ovat serve`) HF id to download/serve |
 | | `model_repository_path` | (for `ovat serve`) folder where models live |
-| `tools` | `name` / `type` | `builtin` (`search_docs`, `transcribe`) or `mcp_stdio` |
+| `tools` | `name` / `type` | `builtin` (`search_docs`, `transcribe`, `describe_image`) or `mcp_stdio` |
 | | `command` | (for `mcp_stdio`) how to launch the MCP server |
-| `agent` | `type` | `native` (built-in loop) or `react` (LangChain) |
+| `agent` | `type` | `native`, `react`, `llamaindex`, or `openai-agents` ([all four](#four-engines-one-yaml-word)) |
 | | `max_iterations` | safety cap on tool-calling turns |
 | | `system_prompt` | the agent's persona |
 | `rag` | `embeddings` | the embedder: `provider` (`genai`/`ovms`), `model`, `device`, `dim` |
@@ -234,6 +235,8 @@ AI PC; `ovat chat` is the local retrieval-augmented fallback.
 - **search_docs**: semantic search over your local documents with source
   citations (vector retrieval via the `rag` config).
 - **transcribe**: speech-to-text on an audio file (OpenVINO Whisper).
+- **describe_image**: caption or answer questions about an image
+  (OpenVINO Qwen2-VL). Point `OVAT_VLM_MODEL` at the exported model folder.
 
 Both are also standalone [MCP](https://modelcontextprotocol.io) servers, so any
 MCP-aware agent can call them, not just OVAT.
@@ -273,6 +276,137 @@ the full failure text when one engine cannot run.
 
 ---
 
+## Telemetry: what the run actually cost
+
+Every run can report what it spent. Sources (where numbers come from) and
+sinks (where they go) are separate contracts, so any source feeds any sink:
+
+| Source | Reports | Works on |
+| --- | --- | --- |
+| `agent` | tokens per turn, latency, tool-call traces | any engine with a native loop |
+| `system` | CPU per core, RAM, thread count | macOS, Windows, Linux |
+| `process` | this process's resident memory | macOS, Windows, Linux |
+| `intel` | GPU/NPU utilisation and power | Windows / Linux (Intel UT) |
+
+```bash
+ovat run workflow.yml --input "..." --trace trace.json      # one run's trace
+ovat run workflow.yml --input "..." --telemetry live.jsonl  # sampled alongside
+ovat telemetry                                              # live table, no run
+ovat telemetry --out metrics.jsonl                          # ...and to disk
+ovat                                                        # then /telemetry
+```
+
+Output is JSON Lines (one object per line): a run killed half-way still leaves
+a readable file, and `tail -f` works while it runs.
+
+Two rules the numbers follow, because a measurement that lies is worse than no
+measurement:
+
+- **Unknown stays unknown.** If the server never reports token counts, the
+  field is `null` and renders as a dash. A `0` would read as "used no tokens".
+- **An unavailable source says why.** On macOS the Intel row reads *"Intel
+  Unified Telemetry does not run on macOS"* rather than showing zeros, because
+  a missing sensor and an idle one look identical in a graph.
+
+The Intel source needs [Intel Unified Telemetry](https://github.com/intel/ut).
+Unzip the release and set `OVAT_UT` to that folder (or drop it in `~/ut`, which
+OVAT finds on its own). Known limit, measured on the AI PC: UT's continuous
+mode writes binary traces that need `bin2perfetto` to decode, so it reports as
+running but does not yet stream numbers.
+
+---
+
+## OpenTelemetry via the plano gateway (optional)
+
+[plano](https://github.com/katanemo/plano) (formerly archgw) is an AI proxy
+that sits between OVAT and OVMS and turns every request into an OpenTelemetry
+span — latency, TTFT, token counts — with **no OTEL dependency added to OVAT**.
+
+[`examples/plano/`](examples/plano/) has the full working setup. Three things
+had to be solved, and each answer is in the config's comments:
+
+| Problem | Answer |
+| --- | --- |
+| plano calls `/v1`, OVMS serves `/v3` | No prefix setting exists: plano parses `base_url` and lifts the path out itself. Put `/v3` in the URL. |
+| plano refuses to start | The model name needs a `provider/` prefix (plano splits on `/`). Hence `ovms/Qwen3-8B-int4-ov`. |
+| plano rejects OVMS's reply | Its WASM filter requires a top-level `"id"`, which OVMS omits. [`ovms_id_bridge.py`](examples/plano/ovms_id_bridge.py) injects one. |
+
+plano ships Linux and macOS binaries only — there is **no Windows build**, so
+on the AI PC it runs under WSL2 or `planoai up --docker` while OVMS runs
+natively on the Windows host for the Arc GPU.
+
+### Which host address to use
+
+`base_url` in [`plano-config.yaml`](examples/plano/plano-config.yaml) must name
+the machine the **bridge** runs on, and that address depends on where plano
+itself is running. Find yours in the table, run the command, paste the result.
+
+| plano runs… | OVMS + bridge run… | `base_url` host |
+| --- | --- | --- |
+| same Linux box | same Linux box | `127.0.0.1` — no lookup needed |
+| WSL2 | Windows host | the WSL gateway IP (below) |
+| WSL2 (mirrored networking) | Windows host | `127.0.0.1` |
+| Docker (`--docker`) | the host | `host.docker.internal` |
+| another machine | the AI PC | the AI PC's LAN IP |
+
+```bash
+# Plain Linux, everything on one box — nothing to look up:
+echo 127.0.0.1
+
+# WSL2 reaching the Windows host: the default gateway is the host.
+ip route | grep default | awk '{print $3}'          # e.g. 172.22.64.1
+
+# Same thing, straight into the config (edit-in-place, keeps a .bak):
+sed -i.bak "s|base_url: http://[^:]*:|base_url: http://$(ip route | grep default | awk '{print $3}'):|" \
+    examples/plano/plano-config.yaml
+
+# Docker on Linux: if host.docker.internal does not resolve, start plano with
+#   --add-host=host.docker.internal:host-gateway
+# or use the docker0 bridge address:
+ip -4 addr show docker0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'    # e.g. 172.17.0.1
+```
+
+```cmd
+:: The AI PC's own LAN address, for reaching it from another machine
+ipconfig | findstr /C:"IPv4 Address"
+```
+
+Two things that bite:
+
+- **The WSL gateway IP changes when WSL restarts.** If plano suddenly returns
+  connection errors after a reboot, re-run the `ip route` command and update
+  `base_url`. On Windows 11 22H2+ you can avoid this entirely by enabling
+  mirrored networking (`networkingMode=mirrored` in `.wslconfig`), after which
+  `127.0.0.1` reaches the host directly.
+- **Windows Firewall blocks the bridge port by default.** Open it once, from
+  an *elevated* Command Prompt on the Windows host:
+
+  ```cmd
+  netsh advfirewall firewall add rule name="OVAT bridge 8001" ^
+      dir=in action=allow protocol=TCP localport=8001
+  ```
+
+Check the whole path before starting plano — this should print JSON, not hang:
+
+```bash
+curl -s http://<host>:8001/v3/models
+```
+
+### Run it
+
+```bash
+ovat serve examples/plano/workflow.yml            # OVMS on :8000
+python examples/plano/ovms_id_bridge.py           # bridge on :8001
+planoai up examples/plano/plano-config.yaml       # plano on :12000
+ovat run examples/plano/workflow.yml --input "hello"
+planoai obs                                       # live OTEL dashboard
+```
+
+See [`examples/plano/README.md`](examples/plano/README.md) for the cross-OS
+networking details.
+
+---
+
 ## Status & limitations
 
 Honest about where the abstraction holds and where it does not yet:
@@ -287,7 +421,9 @@ Honest about where the abstraction holds and where it does not yet:
 | Real RAG in `search_docs` (vectors + citations) | |
 | Local RAG chat + model auto-detection (no OVMS) | |
 | OVMS lifecycle: `ovat serve` + `--stop` (pidfile, no PATH edits) | |
-| Run traces: `ovat run --trace` (tokens, latency, RSS) | |
+| Run traces: `ovat run --trace` (tokens, latency, RSS) | Intel UT streaming (writes binary traces; needs `bin2perfetto`) |
+| Telemetry sources + JSONL export, CLI and TUI page | OVMS Docker integration tests, stress tests |
+| OpenTelemetry through the plano gateway (config, not code) | |
 | `ovat doctor` platform-aware diagnostics | |
 
 OVMS runs on the Intel AI PC (Windows/Linux). On macOS you can develop and run
