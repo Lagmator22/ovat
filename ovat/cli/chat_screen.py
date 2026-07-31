@@ -817,7 +817,9 @@ class ChatScreen(Screen):
             # agent has run yet" even while a chat was answering.
             agent = getattr(engine, "agent", None)
             if agent is not None:
-                self.app.last_agent = agent
+                def _publish_agent(a=agent):
+                    self.app.last_agent = a
+                self.app.call_from_thread(_publish_agent)
         except Exception as exc:
             # The spinner has to stop on the FAILURE path too, or a bad config
             # leaves the transcript spinning forever behind the error message.

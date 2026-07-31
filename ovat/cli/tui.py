@@ -661,11 +661,28 @@ class OvatTUI(App):
         self._busy = False
         self._last_quit_press = 0.0    # when Ctrl-C was last pressed while idle
         self._history = InputHistory() # Up/Down recall, like the shell it wraps
-        # The last agent any screen built, so the telemetry page can report on
-        # it. The page cannot build one itself (it has no config, and loading
-        # a model to draw a graph would be absurd), and the chat screen is the
-        # only place an agent exists, so the app is the meeting point.
-        self.last_agent = None
+        self._last_agent = None
+
+    @property
+    def last_agent(self):
+        if self._last_agent is not None:
+            return self._last_agent
+        try:
+            screens = list(getattr(self, "screen_stack", []))
+            if hasattr(self, "screen") and self.screen not in screens:
+                screens.append(self.screen)
+            for scr in reversed(screens):
+                engine = getattr(scr, "_engine", None)
+                agent = getattr(engine, "agent", None)
+                if agent is not None:
+                    return agent
+        except Exception:
+            pass
+        return None
+
+    @last_agent.setter
+    def last_agent(self, value):
+        self._last_agent = value
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="masthead"):
