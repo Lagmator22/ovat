@@ -17,7 +17,11 @@ class OVMSBridgeHandler(BaseHTTPRequestHandler):
         
         # Forward request to OVMS on port 8000
         target_url = f"http://127.0.0.1:8000{self.path}"
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "OpenAI/Python 2.51.0",
+            "Accept": "application/json",
+        }
         req = urllib.request.Request(target_url, data=body, headers=headers, method="POST")
         
         try:
@@ -36,7 +40,16 @@ class OVMSBridgeHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(out_bytes)))
                 self.end_headers()
                 self.wfile.write(out_bytes)
+        except urllib.error.HTTPError as exc:
+            err_body = exc.read()
+            print(f"[Bridge Error] OVMS HTTP {exc.code}: {err_body.decode('utf-8', errors='ignore')}")
+            self.send_response(exc.code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(err_body)))
+            self.end_headers()
+            self.wfile.write(err_body)
         except Exception as exc:
+            print(f"[Bridge Error] {exc}")
             err_body = json.dumps({"error": str(exc)}).encode("utf-8")
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
