@@ -41,8 +41,43 @@ model_providers:
     # under /v3. There is no separate prefix field to set: plano's CLI parses
     # base_url and lifts the path out of it into base_url_path_prefix
     # internally (config_generator.py, get_endpoint_and_port). So the whole
-    # fix is putting /v3 in this URL, and it is character-for-character the
-    # same value as OVAT's own model.ovms_url.
+    # fix is putting /v3 in this URL.
+    #
+    # THE PORT IS 8001, NOT 8000, AND THAT IS DELIBERATE. plano's Envoy WASM
+    # filter rejects any response without a top-level "id" field, which OVMS
+    # does not send. ovms_id_bridge.py listens on 8001, forwards to OVMS on
+    # 8000, and injects it. So this points at the BRIDGE, not at OVMS.
+    #
+    # THE HOST DEPENDS ON WHERE PLANO RUNS. Pick your row, run the command,
+    # paste the result in below. The value committed here is one developer's
+    # WSL gateway and is almost certainly wrong on your machine.
+    #
+    #   plano and OVMS on the SAME Linux box
+    #       -> 127.0.0.1        (nothing to look up)
+    #
+    #   plano in WSL2, OVMS on the Windows host
+    #       -> the WSL default gateway IS the Windows host:
+    #          ip route | grep default | awk '{print $3}'
+    #       NOTE: this address CHANGES when WSL restarts. On Windows 11
+    #       22H2+, set networkingMode=mirrored in .wslconfig and use
+    #       127.0.0.1 instead, which does not drift.
+    #
+    #   plano in Docker (planoai up --docker)
+    #       -> host.docker.internal
+    #       On Linux Docker that name needs
+    #          --add-host=host.docker.internal:host-gateway
+    #       or use the bridge address:
+    #          ip -4 addr show docker0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'
+    #
+    #   plano on ANOTHER machine, OVMS on the AI PC
+    #       -> the AI PC's LAN address, from Windows:
+    #          ipconfig | findstr /C:"IPv4 Address"
+    #       and open the port once, from an ELEVATED cmd on the host:
+    #          netsh advfirewall firewall add rule name="OVAT bridge 8001"
+    #              dir=in action=allow protocol=TCP localport=8001
+    #
+    # Verify before starting plano; this must print JSON, not hang:
+    #   curl -s http://<host>:8001/v3/models
     base_url: http://172.22.64.1:8001/v3
     default: true
 
