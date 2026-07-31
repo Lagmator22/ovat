@@ -7,10 +7,20 @@ requests to OVMS on port 8000, and injects `"id": "chatcmpl-ovms"` if missing.
 """
 import json
 import urllib.request
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 
 class OVMSBridgeHandler(BaseHTTPRequestHandler):
+    # HTTP/1.1 because Envoy (what plano runs on) treats an HTTP/1.0 upstream
+    # differently and stopped reading long bodies part-way: a 5 KB answer
+    # arrived as 2.8 KB, cut mid-string, and the JSON would not parse. Short
+    # answers fitted and looked fine, which is what made it look like a plano
+    # bug rather than a protocol mismatch.
+    #
+    # This line only works paired with ThreadingHTTPServer below. HTTP/1.1
+    # keeps connections ALIVE, and a single-threaded server serves one
+    # connection to exhaustion, so Envoy's pooled connection would hold the
+    # bridge and every later request would queue behind it forever.
     protocol_version = "HTTP/1.1"
 
     def do_POST(self):
@@ -83,7 +93,12 @@ class OVMSBridgeHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    server = HTTPServer(("0.0.0.0", 8001), OVMSBridgeHandler)
+    # Threading, not plain HTTPServer: see protocol_version above. Envoy holds
+    # a pooled keep-alive connection open, and a single-threaded server would
+    # sit inside that one connection's handler loop and never accept another.
+    # Symptom is not an error but a HANG, with each request slower than the
+    # last as they queue: 5s, 33s, 64s, 100s, then never.
+    server = ThreadingHTTPServer(("0.0.0.0", 8001), OVMSBridgeHandler)
     print("OVMS ID Bridge listening on http://0.0.0.0:8001 -> forwarding to :8000...")
     try:
         server.serve_forever()
