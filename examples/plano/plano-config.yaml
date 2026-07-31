@@ -43,7 +43,7 @@ model_providers:
     # internally (config_generator.py, get_endpoint_and_port). So the whole
     # fix is putting /v3 in this URL, and it is character-for-character the
     # same value as OVAT's own model.ovms_url.
-    base_url: http://127.0.0.1:8000/v3
+    base_url: http://172.22.64.1:8001/v3
     default: true
 
 # OpenTelemetry for three lines. This is the W9-W10 telemetry item obtained by
