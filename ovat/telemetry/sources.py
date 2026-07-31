@@ -47,7 +47,12 @@ class AgentTraceSource(TelemetrySource):
     def unavailable(self) -> str | None:
         agent = self.agent
         if agent is None:
-            return "no agent has run yet"
+            # Say the CONDITION, not the symptom. "no agent has run yet" reads
+            # as a bug when a chat is plainly answering two screens away; the
+            # truth is that only /engine ovms builds an agent at all, and only
+            # once a question has been answered does it have totals to report.
+            return ("open /chat, switch to /engine ovms and ask something; "
+                    "the local engine is retrieval, not an agent loop")
         if getattr(agent, "last_trace", None) is None:
             return ("this engine does not record per-turn data; only the "
                     "native loop does")
@@ -298,20 +303,49 @@ class IntelHardwareSource(TelemetrySource):
     def sample(self) -> dict:
         """One snapshot of whatever UT has emitted since the last read.
 
-        Continuous mode streams JSON lines on stdout. Anything unparseable is
-        skipped rather than raised: a malformed frame is a missing reading,
-        not a reason to lose the run.
+        MEASURED ON THE AI PC, and not what the README implied: continuous
+        mode does not stream JSON on stdout. It writes binary traces
+        (ut_default_output.l0_gpu.bin, .l0_npu.bin, .ut.main.bin) which need
+        bin2perfetto to decode. So the process starts, reports "live", and
+        emits nothing this can read.
+
+        Both shapes are handled: a JSON line if a build ever streams one, and
+        "name: value" or "name = value" text otherwise. Anything unparseable
+        is skipped rather than raised, because a malformed frame is a missing
+        reading and not a reason to lose the run.
         """
         if self._proc is None or self._proc.stdout is None:
             return {}
         line = self._proc.stdout.readline()
         if not line:
             return {}
+        line = line.strip()
+        if line and not line.startswith("{"):
+            return self._parse_text_line(line)
         try:
             frame = json.loads(line)
         except ValueError:
             return {}
         return self._normalise(frame)
+
+    @staticmethod
+    def _parse_text_line(line: str) -> dict:
+        """A "name: value" or "name = value" line into one metric.
+
+        UT's human-readable output is the fallback when a build does not
+        stream JSON. Lines that carry no number are not measurements and are
+        dropped rather than guessed at.
+        """
+        for separator in (":", "="):
+            name, found, value = line.partition(separator)
+            if not found:
+                continue
+            try:
+                number = float(value.strip().split()[0])
+            except (ValueError, IndexError):
+                return {}
+            return IntelHardwareSource._normalise({name.strip(): number})
+        return {}
 
     @staticmethod
     def _normalise(frame: dict) -> dict:
@@ -340,6 +374,18 @@ class IntelHardwareSource(TelemetrySource):
 
         walk(frame)
         return flat
+
+    @property
+    def note(self) -> str | None:
+        """Extra context the page shows beside a live source.
+
+        "live" with no metrics behind it is the most confusing state a source
+        can be in: it looks like an idle NPU rather than an unreadable one.
+        """
+        if self.unavailable is None and self._proc is not None:
+            return ("running, but this UT build writes binary traces rather "
+                    "than streaming numbers; decode with bin2perfetto")
+        return None
 
     def stop(self) -> None:
         if self._proc is not None:

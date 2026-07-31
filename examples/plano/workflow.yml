@@ -1,0 +1,69 @@
+# examples/plano/workflow.yml
+#
+# The exact same agent as examples/workflow.yml. The ONLY change in this whole
+# file is model.ovms_url: instead of pointing straight at OVMS (port 8000), it
+# points at plano's model listener (port 12000, see plano-config.yaml). Plano
+# then forwards every request on to OVMS for us.
+#
+# EVERYTHING else stays the same: same model name, same device, same tools,
+# same agent loop, same RAG block. `ovat run`/`ovat index`/`ovat chat` do not
+# know or care that plano is in the middle; model.ovms_url is just a plain
+# OpenAI-compatible base URL, and plano's job is to look exactly like one.
+#
+# What plano adds in that middle hop (none of this needs OVAT code changes):
+#   - telemetry: every request/response becomes an OTEL trace plano exports,
+#     so you get per-call latency and token counts without touching OVAT.
+#   - routing: if you later add more model_providers to plano-config.yaml,
+#     plano can pick between them (cheapest, fastest, or by name) while OVAT
+#     keeps sending requests to the same one URL.
+#   - guardrails: plano can screen prompts/responses (e.g. jailbreak checks)
+#     before they ever reach OVMS or the user.
+#
+# This runs on the AI PC (or Linux/Windows), the same place OVMS runs, because
+# plano is a proxy IN FRONT of OVMS, not a replacement for it. Plano itself
+# runs as its own process (started with `planoai up`, natively or with
+# --docker; see README.md), separate from `ovat serve`.
+#
+# Run steps (see examples/plano/README.md for the full walkthrough):
+#   ovat serve examples/plano/workflow.yml            # starts OVMS on :8000
+#   planoai up examples/plano/plano-config.yaml       # starts plano on :12000
+#   ovat run   examples/plano/workflow.yml --input "..."   # talks to plano
+
+model:
+  name: Qwen3-8B-int4-ov          # the model name my OVMS server serves
+  device: GPU                     # CPU, GPU, or NPU on the AI PC
+  ovms_url: http://localhost:12000/v1   # <-- plano's model listener, not OVMS directly.
+                                          #     plano rewrites /v1 to OVMS's /v3 for us
+                                          #     (base_url_path_prefix in plano-config.yaml).
+  tool_parser: hermes3            # correct parser for Qwen3 tool calls
+  # Only used by `ovat serve` to start OVMS and locate the model:
+  source_model: OpenVINO/Qwen3-8B-int4-ov   # HF id (downloaded if not on disk)
+  model_repository_path: models             # folder where models live (absolute path is fine)
+
+tools:
+  - name: search_docs             # my built-in document search tool
+    type: builtin
+  - name: transcribe               # my built-in audio transcription tool
+    type: builtin
+
+agent:
+  type: native                    # or: react (LangChain), llamaindex, openai_agents
+  max_iterations: 10
+  system_prompt: "You are a helpful assistant that uses tools when needed."
+
+# RAG powers the search_docs tool. Swap any line below to change a backend; the
+# code does not change, only this YAML does. First run `ovat index <folder>
+# examples/plano/workflow.yml` to fill the index, then ask a question with
+# `ovat run`.
+rag:
+  embeddings:
+    provider: genai               # genai (local NPU/CPU) | ovms (server /v3)
+    model: models/bge-small-en-v1.5   # OpenVINO embedding model folder on disk
+    device: CPU                   # CPU or NPU on the AI PC
+    dim: 384                      # bge-small emits 384 numbers per chunk
+  retriever:
+    provider: sqlite-vec          # the vector store (usearch/hnsw can slot in later)
+    db_path: ovat_index.db        # the index file `ovat index` writes
+  chunk:
+    size: 512                     # characters per chunk
+    overlap: 64                   # characters shared with the next chunk

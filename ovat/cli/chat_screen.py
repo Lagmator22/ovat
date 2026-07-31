@@ -346,8 +346,9 @@ class OVMSEngine:
     name = "ovms"
     footnote_label = "tools used"
 
-    def __init__(self, cfg, agent, max_tokens=None):
+    def __init__(self, cfg, agent, max_tokens=None, app=None):
         self.cfg, self.agent = cfg, agent
+        self._app = app
         if max_tokens is not None:
             self.max_new_tokens = max_tokens
 
@@ -389,6 +390,15 @@ class OVMSEngine:
         # history is ignored on purpose: AgentLoop keeps its own Session, and
         # replaying ours on top would duplicate every turn in the prompt.
         answer = self.agent.run(question)
+        # Publish here as well as at build time. At build time last_trace is
+        # still {} so the telemetry page has nothing to show; after a real
+        # answer it has turns and token counts. Belt and braces, because the
+        # build-time publish runs on a worker thread and a failed engine swap
+        # can skip it entirely.
+        try:
+            self._app.last_agent = self.agent
+        except Exception:
+            pass
         trace = getattr(self.agent, "last_trace", {}) or {}
         used = [call["name"] for turn in trace.get("turns", [])
                 for call in turn.get("tool_calls", [])]
@@ -819,6 +829,12 @@ class ChatScreen(Screen):
             # model just to draw a graph would be absurd, so the app is where
             # the two screens meet. Without this the telemetry page said "no
             # agent has run yet" even while a chat was answering.
+            # Hand the engine a way back to the app, so it can republish
+            # after each answer when last_trace actually has numbers in it.
+            try:
+                engine._app = self.app
+            except Exception:
+                pass
             agent = getattr(engine, "agent", None)
             if agent is not None:
                 def _publish_agent(a=agent):

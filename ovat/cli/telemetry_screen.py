@@ -174,8 +174,9 @@ class TelemetryScreen(Screen):
                      else Text("n/a", style=ui.YELLOW))
             # Text cells, never str: a DataTable renders str as markup, and a
             # path or an exception with a bracket in it would raise mid-draw.
+            detail = reason or getattr(source, "note", None) or "sampling"
             table.add_row(Text(source.name, style=ui.CYAN), state,
-                          Text(reason or "sampling", style=ui.DIM))
+                          Text(detail, style=ui.DIM))
 
     def _redraw(self) -> None:
         self._fill_sources_table()

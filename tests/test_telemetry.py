@@ -151,7 +151,8 @@ def test_the_process_source_reports_this_process():
 
 
 def test_the_agent_source_says_why_it_has_nothing():
-    assert "no agent" in AgentTraceSource().unavailable
+    # Names the CONDITION, not the symptom: see the test further down.
+    assert "/engine ovms" in AgentTraceSource().unavailable
 
     class NoTrace:
         last_trace = None
@@ -332,3 +333,26 @@ def test_an_empty_sample_still_renders_a_table():
     from ovat.cli.main import _telemetry_table
 
     assert _telemetry_table({}) is not None
+
+
+def test_the_agent_source_says_what_to_DO_not_just_that_it_is_empty():
+    """"no agent has run yet" reads as a bug when a chat is plainly answering
+    two screens away. Only /engine ovms builds an agent at all, and the local
+    engine is retrieval rather than an agent loop, so the message names the
+    condition instead of the symptom."""
+    from ovat.telemetry.sources import AgentTraceSource
+
+    message = AgentTraceSource().unavailable
+    assert "/engine ovms" in message
+    assert "retrieval" in message
+
+
+def test_a_ut_text_line_becomes_a_metric():
+    """Measured on the AI PC: continuous mode writes binary traces rather
+    than streaming JSON, so a text fallback is what actually gets read."""
+    from ovat.telemetry.sources import IntelHardwareSource as I
+
+    assert I._parse_text_line("NPU Utilization: 42.5") == {
+        "npu_utilization": 42.5}
+    assert I._parse_text_line("Power W = 3.1 watts") == {"power_w": 3.1}
+    assert I._parse_text_line("collecting...") == {}

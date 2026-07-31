@@ -1,0 +1,59 @@
+# examples/plano/plano-config.yaml
+#
+# A minimal plano (katanemo/plano, the renamed archgw) config that puts plano
+# in front of a local OVMS server. Plano becomes an OpenAI-compatible proxy:
+# OVAT talks to plano exactly like it used to talk to OVMS directly, and plano
+# forwards the call on to OVMS while adding telemetry, routing, and guardrails.
+#
+# Start it with (see examples/plano/README.md for the full walkthrough):
+#   planoai up examples/plano/plano-config.yaml
+#
+# This file only has the two sections OVAT actually needs: one listener (the
+# door clients knock on) and one model provider (the backend behind that
+# door, our OVMS server). Every other plano feature (guardrails, agents,
+# prompt targets) is optional and left out on purpose to keep this readable.
+
+# Config schema version plano expects. v0.4.0 matches the plano release this
+# file was checked against (planoai CLI 0.4.27); it is not related to OVAT's
+# own version.
+version: v0.4.0
+
+# The "door": plano listens here for OpenAI-style chat completion requests.
+# type: model means "plain OpenAI-compatible proxy", no orchestration, no
+# routing between multiple agents, just one call in, one call out. This is
+# exactly the shape OVAT's agent loop already expects from an ovms_url.
+listeners:
+  - type: model                # OpenAI-compatible model proxy (not an agent listener)
+    name: ovat_model_listener   # a label only, shows up in plano's traces
+    address: 0.0.0.0            # listen on every interface (127.0.0.1 also works)
+    port: 12000                 # OVAT's workflow.yml points ovms_url at this port
+
+# The "backend": where plano actually sends the chat completion request once
+# it has decided what to do with it (routing/guardrails/tracing all happen
+# before this hop). We only have one backend, OVMS, so it is also the default.
+model_providers:
+  - name: ovms-qwen3-8b          # plano's label for this backend (shows up in traces)
+    provider_interface: openai   # OVMS speaks the OpenAI chat-completions dialect
+    model: Qwen3-8B-int4-ov      # must match model.name in examples/plano/workflow.yml
+    endpoint: 127.0.0.1          # host where `ovat serve` starts OVMS (same machine as plano here)
+    port: 8000                   # OVMS's default port, the same one model.ovms_url uses today
+    protocol: http                # plain HTTP: OVMS on the AI PC has no TLS in front of it
+    # THE FIX for mentor Ravi's /v1-vs-/v3 spike question: plano's default upstream
+    # path prefix is /v1, but OVMS's OpenAI-compatible API lives under /v3. Setting
+    # base_url_path_prefix here makes plano build "/v3/chat/completions" instead of
+    # "/v1/chat/completions" when it calls OVMS. No plano code change, just this line.
+    # See build_endpoint() in plano's crates/hermesllm/src/clients/endpoints.rs, and
+    # examples/plano/README.md for the full citation and explanation.
+    base_url_path_prefix: /v3
+    default: true                 # our only provider, so it is also the fallback
+
+# OpenTelemetry for three lines. This is the W9-W10 telemetry item obtained by
+# CONFIGURATION rather than code: plano turns every request through it into an
+# OTEL span with per-call latency and token counts, and OVAT adds no OTEL
+# dependency of its own. NeMo spends ~3,900 lines on the equivalent.
+#   planoai obs     live aggregate view while traffic flows
+#   planoai trace   one request in depth: routing, upstream call, latency
+tracing:
+  random_sampling: 100      # trace every request; lower it under real load
+  trace_arch_internal: true # include plano's own routing decisions, not just
+                            # the upstream call
