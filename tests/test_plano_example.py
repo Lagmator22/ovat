@@ -94,10 +94,31 @@ def test_the_config_validates_against_planos_own_schema():
     assert not set(config.get("tracing", {})) - tracing_allowed
 
 
-def test_the_model_name_matches_on_both_sides():
-    """plano routes by model name; a mismatch is a 404 at demo time."""
+def test_the_model_name_carries_a_provider_prefix_plano_can_split():
+    """plano REQUIRES <provider>/<model_id> and raises "Invalid model name"
+    without the slash (config_generator.py: model_name.split("/"), then
+    `if len(tokens) < 2: raise`). An earlier version of this file had a bare
+    model name and `planoai up` refused to start."""
+    model = _plano()["model_providers"][0]["model"]
+    assert "/" in model, f"plano will reject a bare model name: {model!r}"
+
+
+def test_the_part_after_the_prefix_is_what_ovms_actually_serves():
+    """plano strips the prefix (model_id = "/".join(tokens[1:])) and sends
+    only the remainder upstream, so the half after the slash has to be the
+    name OVMS serves or every request is a 404 at demo time."""
+    served = _plano()["model_providers"][0]["model"].split("/", 1)[1]
+    assert served == load_workflow(WORKFLOW).model.name
+
+
+def test_an_unsupported_provider_supplies_what_plano_demands_of_it():
+    """"ovms" is not one of plano's built-in providers. For an unsupported
+    one it requires BOTH base_url and provider_interface, and that pair is
+    the supported way to point plano at any OpenAI-compatible server it has
+    never heard of."""
     provider = _plano()["model_providers"][0]
-    assert provider["model"] == load_workflow(WORKFLOW).model.name
+    assert provider.get("base_url")
+    assert provider.get("provider_interface") == "openai"
 
 
 def test_tracing_is_on_so_the_gateway_earns_its_hop():
