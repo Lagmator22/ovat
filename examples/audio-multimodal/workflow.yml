@@ -1,0 +1,48 @@
+# Use case 3: audio + vision in one agent.
+#
+# The agent can listen and look. Ask about a .wav and it transcribes first,
+# then answers from the text; ask about an image and it describes it.
+#
+#   ovat serve examples/audio-multimodal/workflow.yml
+#   ovat run examples/audio-multimodal/workflow.yml \
+#       -i "What is said in examples/audio-multimodal/sample.wav?"
+#
+# Model downloads: see README.md in this folder. Whisper is 80 MB and the
+# vision half is already inside the LLM, so this example costs almost
+# nothing beyond the model the other two examples already use.
+
+model:
+  # Qwen3.5 is a UNIFIED export: text generation AND image understanding in
+  # one model. That is why there is no separate 5 GB vision model here --
+  # describe_image and the agent itself are the same weights on disk.
+  name: Qwen3.5-4B-int4-ov
+  source_model: OpenVINO/Qwen3.5-4B-int4-ov
+  device: GPU
+  ovms_url: http://localhost:8000/v3
+  tool_parser: auto
+  model_repository_path: models
+  # Transcription of a long file is not fast, and the agent waits on the tool.
+  request_timeout: 300
+
+tools:
+  # Speech to text, via OpenVINO Whisper. Point OVAT_WHISPER_MODEL at the
+  # exported whisper folder (see README.md).
+  - name: transcribe
+    type: builtin
+  # Image understanding, via the local VLM pipeline. Point OVAT_VLM_MODEL at
+  # a vision-capable export -- the SAME Qwen3.5 folder works.
+  - name: describe_image
+    type: builtin
+  # Kept so the agent has to pick between three tools rather than two.
+  - name: search_docs
+    type: builtin
+
+agent:
+  type: native
+  max_iterations: 8
+  system_prompt: >-
+    You can read documents, listen to audio and look at images. When the user
+    asks about an audio file, call transcribe first and answer from the
+    transcript. When the user asks about an image, call describe_image. Always
+    say which file you used. Never guess at the contents of a file you have
+    not opened with a tool.

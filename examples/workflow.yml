@@ -4,12 +4,12 @@
 #   ovat run examples/workflow.yml --input "your question"
 
 model:
-  name: Qwen3-8B-int4-ov          # the model name my OVMS server serves
+  name: Qwen3.5-4B-int4-ov          # the model name my OVMS server serves
   device: GPU                     # CPU, GPU, or NPU on the AI PC
   ovms_url: http://localhost:8000/v3 # for vm(linux) like wsl2 testing, format is like => ovms_url: http://[IP_ADDRESS]:8000/v3
-  tool_parser: hermes3            # correct parser for Qwen3 tool calls
+  tool_parser: auto              # let OVMS read the chat template and choose
   # Only used by `ovat serve` to start OVMS and locate the model:
-  source_model: OpenVINO/Qwen3-8B-int4-ov   # HF id (downloaded if not on disk)
+  source_model: OpenVINO/Qwen3.5-4B-int4-ov   # HF id (downloaded if not on disk)
   model_repository_path: models             # folder where models live (absolute path is fine)
 
 tools:

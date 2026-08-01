@@ -22,7 +22,13 @@ def test_init_writes_a_loadable_config(tmp_path):
     assert target.exists()
     # the file it wrote must itself be a valid workflow
     cfg = load_workflow(str(target))
-    assert cfg.model.name == "Qwen3-8B-int4-ov"
+    # Not a hardcoded model name: that only pinned whatever was current and
+    # broke on a deliberate change. What must hold is that the two model
+    # fields AGREE. `name` is what OVMS serves, `source_model` is what it
+    # pulls; if they disagree, serve downloads one model and then fails to
+    # find the other, which reads as "the starter config is broken".
+    assert cfg.model.source_model is not None
+    assert cfg.model.source_model.endswith("/" + cfg.model.name)
 
 
 def test_init_picks_the_device_this_machine_actually_has(tmp_path):
@@ -145,7 +151,12 @@ def test_run_trace_writes_the_json_report(tmp_path, monkeypatch):
     # platform default (cp1252 on Windows), which would break the moment a
     # model name or a tool name carried a non-ASCII character.
     data = json.loads(trace_path.read_text(encoding="utf-8"))
-    assert data["model"] == "Qwen3-8B-int4-ov"      # enriched from the config
+    # Compared against the config rather than a literal. What this line is
+    # really testing is that the trace is ENRICHED from the workflow at all --
+    # the model name is not something the agent reports, it is read from the
+    # config -- and pinning the current model name only made the test fail
+    # whenever the shipped example legitimately changed models.
+    assert data["model"] == load_workflow("examples/workflow.yml").model.name
     assert data["totals"]["prompt_tokens"] == 10    # the loop's numbers
     # psutil is a declared dependency, so a None here means the environment is
     # incomplete, not that the trace is wrong. Say so, instead of letting the

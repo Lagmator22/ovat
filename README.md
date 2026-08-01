@@ -47,10 +47,10 @@ while True:                                        # the loop, by hand
 
 ```yaml
 model:
-  name: Qwen3-8B-int4-ov
+  name: Qwen3.5-4B-int4-ov
   device: GPU
   ovms_url: http://localhost:8000/v3
-  tool_parser: hermes3
+  tool_parser: auto
 tools:
   - name: search_docs
     type: builtin
@@ -69,30 +69,196 @@ The agent never changes; only the YAML does.
 
 ---
 
-## Quickstart
+## Prerequisites
+
+Check these **before** installing. Skipping the driver step is the most
+common reason a GPU or NPU device never shows up in `ovat doctor`.
+
+| | Requirement | Notes |
+| --- | --- | --- |
+| **Python** | 3.10 – 3.14 | `python --version`. Wheels exist for all of these. |
+| **Git** | any | Needed to clone; OVAT is not on PyPI yet. |
+| **OS for the full agent** | Windows 11, Ubuntu 22.04/24.04, RHEL 9 | OVMS is x86-64 only. |
+| **OS for development** | + macOS (Apple Silicon or Intel) | Everything except serving. See [Platform support](#platform-support). |
+| **RAM** | 8 GB minimum, 16 GB comfortable | The default 4B model wants ~5 GB; a ~2 GB tier is documented below. Above 4B with long prompts, prefer 16 GB. |
+| **Disk** | ~8 GB free | Default model 3.5 GB, OVMS 126 MB zipped (more unpacked), Python deps ~2 GB, plus your index. |
+
+### Intel GPU / NPU drivers
+
+The CPU works with no driver work at all. For **GPU or NPU** on an Intel AI PC,
+update the driver first — an out-of-date driver typically shows up as the
+device simply being missing from `ovat doctor`, not as an error.
+
+| Device | Windows | Linux |
+| --- | --- | --- |
+| **GPU** (Arc / Iris Xe) | [Intel Arc & Iris Xe driver](https://www.intel.com/content/www/us/en/download/785597/intel-arc-iris-xe-graphics-windows.html) | [GPU configuration guide](https://docs.openvino.ai/2026/get-started/install-openvino/configurations/configurations-intel-gpu.html) |
+| **NPU** (Core Ultra) | [Intel NPU driver](https://www.intel.com/content/www/us/en/download/794734/intel-npu-driver-windows.html) | [NPU configuration guide](https://docs.openvino.ai/2026/get-started/install-openvino/configurations/configurations-intel-npu.html) |
+
+On **Windows** also install the
+[Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/VC_redist.x64.exe),
+which OVMS needs to start at all.
+
+Verify afterwards — the devices OpenVINO can actually see are listed by:
 
 ```bash
-# 1a. project virtual environment (recommended; from the repo root).
+ovat doctor workflow.yml     # look at the "OpenVINO devices" row
+```
+
+> **NPU cannot do tool calling.** Use `device: CPU` or `device: GPU` for
+> agent workflows. NPU is fine for embeddings and for plain chat.
+
+---
+
+## Install
+
+### 1. OVAT itself
+
+OVAT is **not published on PyPI yet**, so install it from a clone. `pip
+install ovat` will not work.
+
+```bash
+git clone https://github.com/Lagmator22/ovat.git
+cd ovat
+
 python -m venv .venv
-# Activate it: PowerShell: .\.venv\Scripts\Activate.ps1
-#              bash/zsh:    source .venv/bin/activate
+# Activate it: bash/zsh:    source .venv/bin/activate
+#              PowerShell:  .\.venv\Scripts\Activate.ps1
+
 python -m pip install -e ".[langchain,llamaindex,openai-agents,tui]"
+```
 
-# 1b. equivalent isolated global installation (choose this instead of 1a).
-pipx install ".[langchain,llamaindex,openai-agents,tui]"
+Extras, so you can install only what you need:
 
-# 2. check your machine is ready (Python, deps, devices, OVMS, a config)
-ovat doctor workflow.yml
+| Extra | Gives you |
+| --- | --- |
+| *(none)* | the native engine, all built-in tools, MCP, RAG, telemetry |
+| `langchain` / `llamaindex` / `openai-agents` | the matching `agent.type` |
+| `tui` | the full-screen launcher (`ovat` with no arguments) |
+| `convert` | `optimum-cli`, to convert HuggingFace models to OpenVINO IR |
+| `dev` | every framework above, plus pytest |
 
-# 3. scaffold a starter config you can edit
+### 2. OpenVINO Model Server (Windows / Linux)
+
+`ovat serve`, and every tool-calling `run`, needs OVMS. It is a single
+archive — no installer, and it does **not** go on `PATH`; OVAT finds it for
+you (see [`ovms_locator.py`](ovat/core/ovms_locator.py)).
+
+> **Download the `python_on` build.** The `python_off` (C++ only) package
+> **cannot do tool calling** — Intel's own docs state that its limited chat
+> template support means "using tools is not possible". Since tool calling is
+> the entire point of OVAT, the wrong archive produces an agent that answers
+> normally but silently never calls a tool.
+
+**Windows 11**
+
+```bat
+curl -L https://github.com/openvinotoolkit/model_server/releases/download/v2026.2.1/ovms_windows_2026.2.1_python_on.zip -o ovms.zip
+tar -xf ovms.zip
+.\ovms\setupvars.bat
+```
+
+**Ubuntu 24.04** (use `ubuntu22` or `redhat` in the filename for those)
+
+```bash
+wget https://github.com/openvinotoolkit/model_server/releases/download/v2026.2.1/ovms_ubuntu24_2026.2.1_python_on.tar.gz
+tar -xzvf ovms_ubuntu24_2026.2.1_python_on.tar.gz
+sudo apt update && sudo apt install -y libxml2 curl
+export LD_LIBRARY_PATH=${PWD}/ovms/lib
+export PATH=$PATH:${PWD}/ovms/bin
+export PYTHONPATH=${PWD}/ovms/lib/python
+```
+
+> Do **not** `pip install openvino`, `openvino-tokenizers` or `openvino-genai`
+> into the interpreter that OVMS's `PYTHONPATH` points at — the `python_on`
+> package ships its own copies and mixing them breaks both. OVAT's own venv is
+> separate, so a normal OVAT install is unaffected.
+
+Not on `PATH`? That is expected. Point OVAT at the folder once:
+
+```bash
+export OVAT_OVMS=/path/to/ovms          # or set model.ovms_binary in the YAML
+```
+
+macOS has no native OVMS build. See [Platform support](#platform-support).
+
+### 3. A model
+
+Two ways to get one; both land in the same place.
+
+**a. Let `ovat serve` fetch it** (needs OVMS; uses `ovms --pull`):
+
+```bash
+ovat serve workflow.yml        # downloads on first run, then serves
+```
+
+**b. Download the IR directly** (works anywhere, including macOS):
+
+```bash
+hf download OpenVINO/Qwen3.5-4B-int4-ov \
+    --local-dir models/OpenVINO/Qwen3.5-4B-int4-ov
+```
+
+These are already-converted OpenVINO IR models — no conversion step, no
+`optimum-cli`. Pick the tier that matches your machine:
+
+| Model | Download | RAM (est.) | Use it when |
+| --- | --- | --- | --- |
+| [`OpenVINO/Qwen3.5-4B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-4B-int4-ov) | **3.5 GB** | ~4.5–5.5 GB | **Default.** Text + vision + tools in one model. |
+| [`OpenVINO/Qwen3.5-0.8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-0.8B-int4-ov) | **0.9 GB** | ~1.5–2 GB | 8 GB laptop, or you want a fast first run. |
+| [`OpenVINO/Qwen3-8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3-8B-int4-ov) | 4.9 GB | ~6–7 GB | Strongest text answers; no vision. |
+| [`OpenVINO/whisper-base-int8-ov`](https://huggingface.co/OpenVINO/whisper-base-int8-ov) | 0.08 GB | small | The `transcribe` tool. |
+
+> **How the RAM column is derived**, since a wrong number here wastes a
+> download: it is *weights + KV cache + 15–20% runtime overhead*, the standard
+> INT4 estimate, applied to the weights actually on disk — not to the download
+> size. Those differ, and for these models it matters. A Qwen3.5 export is
+> **five** models, not one: `language_model` is 2.32 GB of the 4B's 3.24 GB,
+> with the rest in the text and vision embedding models that load alongside it.
+>
+> The KV cache grows with context, so long prompts cost more than the table
+> shows. Intel notes that models **above** 4B with prompts over 1024 tokens can
+> want more than 16 GB
+> ([release notes](https://docs.openvino.ai/2026/about-openvino/release-notes-openvino.html)).
+> Treat these as planning figures; measure on your own hardware with
+> `ovat run --trace`, which reports sampled peak RSS.
+
+The Qwen3.5 models are **unified**: one export does text generation, image
+understanding *and* tool calling, so the RAG, ReAct and multimodal examples
+all share a single download. They are also thinking models — they reason
+before answering, and OVAT folds that reasoning away in the TUI.
+
+The embedding model for RAG is the one thing that still needs converting,
+because no pre-built OpenVINO IR of it is published:
+
+```bash
+pip install "ovat[convert]"
+optimum-cli export openvino --model BAAI/bge-small-en-v1.5 \
+    --task feature-extraction models/bge-small-en-v1.5
+```
+
+---
+
+## Quickstart
+
+With the three steps above done:
+
+```bash
+# 1. scaffold a starter config you can edit
 ovat init workflow.yml
 
-# 4. index your documents so search_docs can find them
+# 2. check the machine and that config together
+#    (Python, deps, devices, OVMS, the YAML itself)
+ovat doctor workflow.yml
+
+# 3. prove the pipeline assembles -- no server, no model needed
+ovat run workflow.yml --input "hi" --dry-run
+# Built agent  model=Qwen3.5-4B-int4-ov  tools=['search_docs', 'transcribe']  max_iterations=10
+
+# 4. index your documents so search_docs can find them (optional)
 ovat index ./my-notes workflow.yml
 
-# 5. on the AI PC (Windows/Linux), start OVMS serving your model.
-#    serve returns once OVMS is READY and leaves it running in the
-#    background (pid recorded in ovms.pid, logs in ovms.log)
+# 5. Windows/Linux: start OVMS. Returns once it is READY and leaves it
+#    running in the background (pid in ovms.pid, logs in ovms.log)
 ovat serve workflow.yml
 
 # 6. ask the agent something
@@ -102,12 +268,20 @@ ovat run workflow.yml --input "summarise my meeting notes"
 ovat serve workflow.yml --stop
 ```
 
-No server handy? Prove the pipeline assembles without one:
+On **macOS**, steps 5 and 6 have no OVMS. Use the local path instead:
 
 ```bash
-ovat run workflow.yml --input "hi" --dry-run
-# Built agent  model=Qwen3-8B-int4-ov  tools=['search_docs', 'transcribe']  max_iterations=10
+hf download OpenVINO/Qwen3.5-0.8B-int4-ov --local-dir models/Qwen3.5-0.8B-int4-ov
+ovat chat workflow.yml --input "what did the Q3 review conclude?"
 ```
+
+### Three worked examples
+
+| Use case | Folder | What it shows |
+| --- | --- | --- |
+| **RAG** | [`examples/rag/`](examples/rag/) | Ask questions about your own documents, with citations. |
+| **ReAct** | [`examples/react/`](examples/react/) | The same agent through LangChain, and all four engines compared. |
+| **Audio + vision** | [`examples/audio-multimodal/`](examples/audio-multimodal/) | Transcribe a `.wav`, describe an image, in one agent. |
 
 ---
 
@@ -146,8 +320,8 @@ conversation across turns, and autosaves it under `.ovat/sessions/` (`/save
 path are remembered in `.ovat/chat_prefs.json`, so after the first time a
 bare `/chat` just works.
 
-**Isolation contract:** the plain CLI never needs the TUI. `pip install ovat`
-without the extra installs no TUI dependencies at all, every subcommand works
+**Isolation contract:** the plain CLI never needs the TUI. Installing without
+the `tui` extra pulls in no TUI dependencies at all, every subcommand works
 identically, and a bare `ovat` prints a pointer instead of a launcher. The
 TUI can be adopted, or removed, without touching the toolkit.
 
@@ -160,7 +334,7 @@ TUI can be adopted, or removed, without touching the toolkit.
 | `model` | `name` | model name OVMS serves |
 | | `device` | `CPU`, `GPU`, or `NPU` |
 | | `ovms_url` | where OVMS listens |
-| | `tool_parser` | how tool calls are decoded (`hermes3` for Qwen3) |
+| | `tool_parser` | how tool calls are decoded. `auto` lets OVMS read the chat template and choose — prefer it, since naming one overrides OVMS's own detection and the right answer differs per family (`hermes3` for Qwen3, `qwen3coder` for Qwen3.5) |
 | | `source_model` | (for `ovat serve`) HF id to download/serve |
 | | `model_repository_path` | (for `ovat serve`) folder where models live |
 | `tools` | `name` / `type` | `builtin` (`search_docs`, `transcribe`, `describe_image`) or `mcp_stdio` |
@@ -201,13 +375,18 @@ moving from a local embedder to a server-side one is a YAML edit, not a code
 change.
 
 ```bash
-# export an OpenVINO embedding model once (any optimum-cli export works)
+# Export an OpenVINO embedding model once (~130 MB). optimum-cli lives in the
+# `convert` extra; there is no pre-built OpenVINO IR of bge-small to download.
+pip install "ovat[convert]"
 optimum-cli export openvino --model BAAI/bge-small-en-v1.5 \
     --task feature-extraction models/bge-small-en-v1.5
 
 ovat index ./my-notes workflow.yml      # chunk + embed + store, with sources
 ovat run workflow.yml --input "what did the Q3 review conclude?"
 ```
+
+A full worked version of this, with sample documents, is in
+[`examples/rag/`](examples/rag/).
 
 Each result carries its source file, so the agent can cite where an answer came
 from.
@@ -219,11 +398,15 @@ your index with a **local** OpenVINO model, so you can test real RAG without a
 server (no tool-calling; it always retrieves then answers):
 
 ```bash
+hf download OpenVINO/Qwen3.5-0.8B-int4-ov --local-dir models/Qwen3.5-0.8B-int4-ov
 ovat index ./my-notes workflow.yml
-ovat chat workflow.yml --model-path models/Llama-3.2-3B-Instruct-INT4 \
+ovat chat workflow.yml --model-path models/Qwen3.5-0.8B-int4-ov \
     --input "what did the Q3 review conclude?"
 # → an answer grounded in your notes, with the source files listed
 ```
+
+Omit `--model-path` and OVAT finds a usable model itself, scanning
+`OVAT_MODELS`, `./models` and `~/models`.
 
 The full agentic path (the model deciding to call tools) still uses OVMS on the
 AI PC; `ovat chat` is the local retrieval-augmented fallback.
@@ -328,7 +511,7 @@ had to be solved, and each answer is in the config's comments:
 | Problem | Answer |
 | --- | --- |
 | plano calls `/v1`, OVMS serves `/v3` | No prefix setting exists: plano parses `base_url` and lifts the path out itself. Put `/v3` in the URL. |
-| plano refuses to start | The model name needs a `provider/` prefix (plano splits on `/`). Hence `ovms/Qwen3-8B-int4-ov`. |
+| plano refuses to start | The model name needs a `provider/` prefix (plano splits on `/`). Hence `ovms/Qwen3.5-4B-int4-ov`. |
 | plano rejects OVMS's reply | Its WASM filter requires a top-level `"id"`, which OVMS omits. [`ovms_id_bridge.py`](examples/plano/ovms_id_bridge.py) injects one. |
 
 plano ships Linux and macOS binaries only — there is **no Windows build**, so
@@ -423,11 +606,38 @@ Honest about where the abstraction holds and where it does not yet:
 | OVMS lifecycle: `ovat serve` + `--stop` (pidfile, no PATH edits) | |
 | Run traces: `ovat run --trace` (tokens, latency, RSS) | Intel UT streaming (writes binary traces; needs `bin2perfetto`) |
 | Telemetry sources + JSONL export, CLI and TUI page | OVMS Docker integration tests, stress tests |
-| OpenTelemetry through the plano gateway (config, not code) | |
-| `ovat doctor` platform-aware diagnostics | |
+| OpenTelemetry through the plano gateway (config, not code) | Published PyPI package (install from a clone for now) |
+| `ovat doctor` platform-aware diagnostics | CI |
+| Unified multimodal models (one export: text + vision + tools) | |
 
-OVMS runs on the Intel AI PC (Windows/Linux). On macOS you can develop and run
-the unit tests, but not serve a model.
+### Platform support
+
+| | macOS | Windows 11 | Linux (Ubuntu/RHEL) |
+| --- | --- | --- | --- |
+| `init` `doctor` `index` `validate` | ✅ | ✅ | ✅ |
+| `chat` (local model, no server) + TUI | ✅ | ✅ | ✅ |
+| `serve` / `models` (OVMS) | ❌ | ✅ | ✅ |
+| `run` / `bench` (tool-calling agent) | ❌ | ✅ | ✅ |
+| GPU / NPU acceleration | ❌ (CPU only) | ✅ | ✅ |
+
+OVMS is x86-64 only and has **no macOS build**. On Apple Silicon the official
+Docker image does run under Rosetta emulation — verified booting and serving a
+real model — which is fine for small models but slow for an 8B-class LLM. For
+day-to-day macOS work, `ovat chat` with a local `openvino_genai` model is the
+supported path and needs no server at all.
+
+---
+
+## Documentation
+
+| Document | What is in it |
+| --- | --- |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The layered design, all four engines, both serving paths, the telemetry layer, and the plano gateway. |
+| [`examples/rag/`](examples/rag/) | Retrieval-augmented Q&A over your own documents. |
+| [`examples/react/`](examples/react/) | The ReAct engine, and the same question across all four engines. |
+| [`examples/audio-multimodal/`](examples/audio-multimodal/) | Whisper transcription plus image understanding. |
+| [`examples/plano/`](examples/plano/) | OpenTelemetry through the plano AI gateway. |
+| [`AGENTS.md`](AGENTS.md) | Contributor notes: hard rules, landmines, and why things are the way they are. |
 
 ---
 

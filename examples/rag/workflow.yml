@@ -1,0 +1,56 @@
+# Use case 1: RAG -- ask questions about your own documents.
+#
+# Nothing leaves the machine. The agent searches a folder you indexed and
+# cites the file each fact came from, so answers are checkable rather than
+# merely plausible.
+#
+#   pip install "ovat[convert]"
+#   optimum-cli export openvino --model BAAI/bge-small-en-v1.5 \
+#       --task feature-extraction models/bge-small-en-v1.5
+#   ovat index ./examples/rag/docs examples/rag/workflow.yml
+#   ovat serve examples/rag/workflow.yml
+#   ovat run   examples/rag/workflow.yml -i "What is OVAT's memory budget?"
+#
+# See README.md in this folder for the macOS (no server) path.
+
+model:
+  # One 3.5 GB download covers this example and the other two. On an 8 GB
+  # machine swap both lines for Qwen3.5-0.8B-int4-ov (0.9 GB).
+  name: Qwen3.5-4B-int4-ov
+  source_model: OpenVINO/Qwen3.5-4B-int4-ov
+  device: GPU                     # CPU works; NPU cannot do tool calling
+  ovms_url: http://localhost:8000/v3
+  # Let OVMS read the chat template and pick the parser. Naming one here
+  # would OVERRIDE that, and Qwen3.5 does not use the hermes3 format.
+  tool_parser: auto
+  model_repository_path: models
+  request_timeout: 120            # first token from a cold model is not quick
+
+tools:
+  # The whole example. search_docs returns the matching chunks AND the path
+  # they came from, which is what makes the citation in the answer real.
+  - name: search_docs
+    type: builtin
+
+agent:
+  type: native                    # react | llamaindex | openai-agents also work
+  max_iterations: 6
+  system_prompt: >-
+    You answer questions about the user's own documents. Always call
+    search_docs before answering a question about their files, and cite the
+    source path you used. If the documents do not contain the answer, say so
+    plainly rather than guessing from general knowledge.
+
+rag:
+  embeddings:
+    provider: genai               # in-process; indexing needs no server
+    model: models/bge-small-en-v1.5
+    device: CPU
+    dim: 384                      # bge-small emits 384 numbers per chunk
+  retriever:
+    provider: sqlite-vec
+    db_path: examples/rag/rag_example.db
+  chunk:
+    size: 512                     # characters per chunk
+    overlap: 64                   # shared with the next chunk, so a sentence
+                                  # split across a boundary is still findable

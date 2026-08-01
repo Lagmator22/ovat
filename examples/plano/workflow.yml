@@ -30,14 +30,14 @@
 #   ovat run   examples/plano/workflow.yml --input "..."   # talks to plano
 
 model:
-  name: Qwen3-8B-int4-ov          # the model name my OVMS server serves
+  name: Qwen3.5-4B-int4-ov          # the model name my OVMS server serves
   device: GPU                     # CPU, GPU, or NPU on the AI PC
   ovms_url: http://localhost:12000/v1   # <-- plano's model listener, not OVMS directly.
                                           #     plano rewrites /v1 to OVMS's /v3 for us
                                           #     (base_url_path_prefix in plano-config.yaml).
   tool_parser: hermes3            # correct parser for Qwen3 tool calls
   # Only used by `ovat serve` to start OVMS and locate the model:
-  source_model: OpenVINO/Qwen3-8B-int4-ov   # HF id (downloaded if not on disk)
+  source_model: OpenVINO/Qwen3.5-4B-int4-ov   # HF id (downloaded if not on disk)
   model_repository_path: models             # folder where models live (absolute path is fine)
 
 tools:

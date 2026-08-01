@@ -6,12 +6,12 @@
 # only the config does.
 
 model:
-  name: Qwen2.5-1.5B-Instruct-int4-ov   # smaller model that fits in ~2 GB
+  name: Qwen3.5-0.8B-int4-ov   # smaller model that fits in ~2 GB
   device: CPU                           # no GPU needed
   ovms_url: http://localhost:8000/v3
-  tool_parser: hermes3
+  tool_parser: auto              # let OVMS read the chat template and choose
   # Only used by `ovat serve`:
-  source_model: OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov
+  source_model: OpenVINO/Qwen3.5-0.8B-int4-ov
   model_repository_path: models
 
 tools:
@@ -26,7 +26,7 @@ agent:
 # Without this block search_docs runs in STUB mode and returns fake text.
 # bge-small is ~130 MB and runs happily on the same 8 GB CPU-only laptop,
 # so the Minimal profile keeps real retrieval (matches the proposal's
-# "Qwen2.5-1.5B INT4 + bge-small" minimal tier).
+# small-model + bge-small minimal tier from the proposal).
 rag:
   embeddings:
     provider: genai

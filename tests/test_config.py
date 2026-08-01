@@ -112,10 +112,28 @@ def test_every_shipped_example_parses():
     import glob
     from ovat.config.workflow import load_workflow
 
-    examples = sorted(glob.glob("examples/*.yml"))
+    # Recursive: the use-case samples live one folder down (examples/rag/...)
+    # so each can carry its own README and sample data. A non-recursive glob
+    # silently skipped every one of them, which is the worst kind of test --
+    # green while the files it claims to cover drift out of the schema.
+    examples = sorted(glob.glob("examples/**/*.yml", recursive=True))
     assert examples, "no examples found to check"
     for path in examples:
         load_workflow(path)          # raises if the file has drifted
+
+
+def test_every_documented_use_case_has_a_runnable_example():
+    """The README sends users to one folder per use case. A dead link there
+    is the first thing a new user hits, so the folders are asserted to exist
+    with both a config and instructions."""
+    import os
+
+    for use_case in ("rag", "react", "audio-multimodal"):
+        folder = os.path.join("examples", use_case)
+        assert os.path.isfile(os.path.join(folder, "workflow.yml")), \
+            f"{folder} has no workflow.yml"
+        assert os.path.isfile(os.path.join(folder, "README.md")), \
+            f"{folder} has no README.md"
 
 
 def test_the_document_qa_sample_has_what_it_claims():

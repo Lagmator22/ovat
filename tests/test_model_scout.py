@@ -73,6 +73,26 @@ def _whisper(root, name="whisper-base"):
                        {"model_type": "whisper"})
 
 
+def _unified(root, name="Qwen3.5-0.8B-int4-ov"):
+    """A UNIFIED multimodal export: vision parts, but a real text LLM too.
+
+    This file list and config are copied from the actual
+    OpenVINO/Qwen3.5-0.8B-int4-ov repository, downloaded and loaded on
+    2026-08-01. It looks exactly like a VLM on disk, which is the whole
+    problem: the layout check alone calls it "vlm" and chat refuses it,
+    even though openvino_genai answers text-only prompts from it happily.
+    """
+    return _make_model(root, name,
+                       ["openvino_language_model.xml",
+                        "openvino_text_embeddings_model.xml",
+                        "openvino_vision_embeddings_model.xml",
+                        "openvino_vision_embeddings_merger_model.xml",
+                        "openvino_vision_embeddings_pos_model.xml"],
+                       {"model_type": "qwen3_5",
+                        "architectures": ["Qwen3_5ForConditionalGeneration"],
+                        "text_config": {"model_type": "qwen3_5_text"}})
+
+
 # identify_model: one folder, what is it
 
 def test_identifies_all_four_kinds(tmp_path):
@@ -80,6 +100,42 @@ def test_identifies_all_four_kinds(tmp_path):
     assert identify_model(_vlm(tmp_path))[0] == "vlm"
     assert identify_model(_embedder(tmp_path))[0] == "embeddings"
     assert identify_model(_whisper(tmp_path))[0] == "whisper"
+
+
+def test_a_unified_multimodal_export_is_not_mistaken_for_a_plain_vlm(tmp_path):
+    """Qwen3.5 ships vision parts AND serves text, so "vlm" is the wrong answer.
+
+    Verified on the real model: openvino_genai answers a text-only prompt from
+    OpenVINO/Qwen3.5-0.8B-int4-ov in 1.3s. Calling it "vlm" is what makes
+    `ovat chat` refuse the model Intel's own guidance recommends.
+    """
+    kind, why = identify_model(_unified(tmp_path))
+    assert kind == "unified", f"got {kind!r} ({why})"
+    # A pure vision model must NOT be swept up by the same rule.
+    assert identify_model(_vlm(tmp_path))[0] == "vlm"
+
+
+def test_a_unified_model_is_offered_as_both_a_text_llm_and_a_vision_model(
+        tmp_path, monkeypatch):
+    """One model, two roles. Filtering by either kind has to return it, or the
+    audio+multimodal example needs two downloads instead of one."""
+    folder = _unified(tmp_path)
+    monkeypatch.setenv("OVAT_MODELS", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    assert [m["path"] for m in find_models("llm")] == [folder]
+    assert [m["path"] for m in find_models("vlm")] == [folder]
+
+
+def test_chat_accepts_a_unified_model_instead_of_refusing_it(
+        tmp_path, monkeypatch):
+    """The regression this whole change exists to prevent: `ovat chat` told a
+    user their recommended model "is not a text LLM" and exited 1."""
+    from ovat.cli.main import resolve_chat_model
+
+    folder = _unified(tmp_path)
+    monkeypatch.setenv("OVAT_MODELS", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    assert resolve_chat_model(folder) == folder      # no typer.Exit
 
 
 def test_non_model_folders_are_rejected_kindly(tmp_path):

@@ -77,6 +77,42 @@ def test_prefix_caching_is_a_knob_not_a_constant(monkeypatch, tmp_path):
     assert "--enable_prefix_caching" not in captured["cmd"]
 
 
+def test_tool_parser_auto_lets_ovms_choose(monkeypatch, tmp_path):
+    """`auto` must OMIT --tool_parser, not pass the string "auto".
+
+    OVMS reads the model's chat template at startup and picks the right
+    parser itself, but only when the flag is absent -- an explicit value
+    always wins. OVAT passed --tool_parser unconditionally, so a config that
+    still said "hermes3" would override a correct auto-detection with a wrong
+    parser and tool calls would silently stop being decoded.
+
+    This is not hypothetical. Qwen3.5 emits
+
+        <tool_call><function=name><parameter=k>v</parameter></function></tool_call>
+
+    which is the qwen3coder shape, NOT hermes3's JSON body. OVMS ships no
+    qwen3_5 parser at all, so letting the server decide is the only forward
+    compatible answer for a family newer than OVAT's own parser list.
+    """
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakePopen()
+
+    monkeypatch.setattr("ovat.core.model_server.subprocess.Popen", fake_popen)
+
+    auto = ModelServer(model_name="m", tool_parser="auto")
+    auto.start(log_path=str(tmp_path / "a.log"), pid_path=str(tmp_path / "a.pid"))
+    assert "--tool_parser" not in captured["cmd"]
+    assert "auto" not in captured["cmd"]           # never passed as a value
+
+    explicit = ModelServer(model_name="m", tool_parser="hermes3")
+    explicit.start(log_path=str(tmp_path / "b.log"), pid_path=str(tmp_path / "b.pid"))
+    assert "--tool_parser" in captured["cmd"]      # an override still works
+    assert "hermes3" in captured["cmd"]
+
+
 def test_creation_flags_detach_ovms_on_windows_only(monkeypatch, tmp_path):
     """serve must leave OVMS running after the console that started it goes.
 

@@ -32,8 +32,24 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
         template) would generate until it exhausts the context window, which on
         CPU is minutes with the UI frozen and only Esc to get out. A cap you
         can raise beats an unbounded default you have to discover.
+
+        Which pipeline: a UNIFIED multimodal export (Qwen3.5) is a perfectly
+        good text LLM, but it will not load as one. Measured on the real
+        OpenVINO/Qwen3.5-0.8B-int4-ov: LLMPipeline CONSTRUCTS fine, taking
+        24.6s, and then dies on the first generate() with "Port for tensor
+        name input_ids was not found". VLMPipeline answers the same prompt in
+        1.3s and honours the same streamer contract. Constructing without
+        error is therefore not evidence the pipeline is the right one, so the
+        choice is made from the export's own layout instead.
         """
-        self.pipe = ov_genai.LLMPipeline(model_path, device)
+        # model_scout is the single source of truth for "what kind is this".
+        from ovat.core.model_scout import identify_model
+
+        self.is_unified = identify_model(model_path)[0] == "unified"
+        if self.is_unified:
+            self.pipe = ov_genai.VLMPipeline(model_path, device)
+        else:
+            self.pipe = ov_genai.LLMPipeline(model_path, device)
         # Read fresh on every chat() call, so a caller can retune the cap on a
         # live provider without paying to rebuild the pipeline.
         self.max_new_tokens = max_new_tokens
@@ -52,20 +68,41 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
         # openvino_genai; passing None would not be read as a number.
         limit = ({} if self.max_new_tokens is None
                  else {"max_new_tokens": self.max_new_tokens})
+        # VLMPipeline.generate REQUIRES images; there is no text-only overload,
+        # so an empty list is how a unified model is asked a text question.
+        if self.is_unified:
+            limit["images"] = []
         if on_token is None:
-            text = self.pipe.generate(prompt, **limit)
+            text = self._generate(prompt, **limit)
         else:
             def _streamer(token: str):
                 # on_token may return True to STOP generation early (that is
                 # openvino_genai's streamer contract); None/False continues.
                 return bool(on_token(token))
-            text = self.pipe.generate(prompt, streamer=_streamer, **limit)
+            text = self._generate(prompt, streamer=_streamer, **limit)
         return {
             "finish_reason": "stop", # as genai directly can't request tools so writes
             "content": str(text),    # text only then stops
             "tool_calls": None,
             "raw": text,
         }
+
+    def _generate(self, prompt: str, **kwargs):
+        """One generate call, with the chat session a unified model needs.
+
+        VLMPipeline needs start_chat()/finish_chat() around generation so the
+        model's own chat template is applied. Without it some models ramble
+        ("!!!!") instead of stopping, which is why vlm_genai.py does the same.
+        finish_chat() runs in a finally: an exception mid-generation must not
+        leave the pipeline stuck in a chat session for every later turn.
+        """
+        if not self.is_unified:
+            return self.pipe.generate(prompt, **kwargs)
+        self.pipe.start_chat()
+        try:
+            return self.pipe.generate(prompt, **kwargs)
+        finally:
+            self.pipe.finish_chat()
 
     @staticmethod # this helper doesn't need self, it's a plain function that lives in the class
     def _format(messages: list[dict]) -> str:
