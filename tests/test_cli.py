@@ -151,7 +151,12 @@ def test_run_trace_writes_the_json_report(tmp_path, monkeypatch):
     # platform default (cp1252 on Windows), which would break the moment a
     # model name or a tool name carried a non-ASCII character.
     data = json.loads(trace_path.read_text(encoding="utf-8"))
-    assert data["model"] == "Qwen3-8B-int4-ov"      # enriched from the config
+    # Compared against the config rather than a literal. What this line is
+    # really testing is that the trace is ENRICHED from the workflow at all --
+    # the model name is not something the agent reports, it is read from the
+    # config -- and pinning the current model name only made the test fail
+    # whenever the shipped example legitimately changed models.
+    assert data["model"] == load_workflow("examples/workflow.yml").model.name
     assert data["totals"]["prompt_tokens"] == 10    # the loop's numbers
     # psutil is a declared dependency, so a None here means the environment is
     # incomplete, not that the trace is wrong. Say so, instead of letting the
