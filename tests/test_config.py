@@ -122,6 +122,76 @@ def test_every_shipped_example_parses():
         load_workflow(path)          # raises if the file has drifted
 
 
+def test_every_config_the_docs_hand_to_ovat_chat_actually_has_rag():
+    """`ovat chat` exits 1 on a config with no rag: section.
+
+    Caught in review: the README's macOS path said `ovat chat workflow.yml`
+    right after `ovat init`, and the starter file ships rag: commented out on
+    purpose. So the one command macOS users are pointed at failed instantly
+    with "This workflow has no rag: section" -- the same species of defect
+    this whole change set exists to remove.
+
+    Scans the real markdown, so the docs and the configs cannot drift apart
+    silently again.
+
+    The bare name `workflow.yml` is checked SEPARATELY and by generating the
+    starter, never by loading the repo's own workflow.yml. This repo has a
+    development workflow.yml at its root that DOES carry a rag: block, so
+    resolving the name against the working tree made the first version of
+    this test pass while the documented command was still broken.
+    """
+    import glob
+    import re
+    from pathlib import Path
+
+    from ovat.cli.main import _STARTER_YAML
+    from ovat.config.workflow import load_workflow
+
+    docs = ["README.md"] + glob.glob("examples/**/README.md", recursive=True)
+    pattern = re.compile(r"ovat chat\s+(\S+\.yml)")
+    checked = 0
+    for doc in docs:
+        text = Path(doc).read_text(encoding="utf-8")
+        for config_path in pattern.findall(text):
+            if config_path == "workflow.yml":
+                # What the reader HAS at this point is `ovat init` output, not
+                # this repo's root file. Compare against the starter itself.
+                assert "\nrag:" in _STARTER_YAML, (
+                    f"{doc} runs `ovat chat workflow.yml`, which is the file "
+                    f"`ovat init` writes, and that starter has rag: commented "
+                    f"out -- the command exits 1. Point it at a config that "
+                    f"has retrieval, e.g. examples/rag/workflow.yml")
+            else:
+                assert load_workflow(config_path).rag is not None, (
+                    f"{doc} runs `ovat chat {config_path}`, but that config "
+                    f"has no rag: section, so the command exits 1")
+            checked += 1
+    assert checked, "no `ovat chat <config>` commands found to verify"
+
+
+def test_no_example_pairs_a_qwen35_model_with_a_hardcoded_parser():
+    """hermes3 does not merely under-perform on Qwen3.5, it decodes nothing.
+
+    Qwen3.5 emits <function=..><parameter=..>; hermes3 expects a JSON body.
+    Naming any parser also OVERRIDES OVMS's own chat-template detection, and
+    OVMS ships no qwen3_5 parser to name instead, so `auto` is the only
+    correct value for this family.
+
+    Caught in review: the plano example had its model switched to Qwen3.5
+    while keeping tool_parser: hermes3, which would have served the new model
+    with a parser guaranteed not to decode its tool calls.
+    """
+    import glob
+    from ovat.config.workflow import load_workflow
+
+    for path in sorted(glob.glob("examples/**/*.yml", recursive=True)):
+        cfg = load_workflow(path)
+        if "qwen3.5" in cfg.model.name.lower():
+            assert cfg.model.tool_parser == "auto", (
+                f"{path} serves {cfg.model.name} with "
+                f"tool_parser={cfg.model.tool_parser!r}; use 'auto'")
+
+
 def test_every_documented_use_case_has_a_runnable_example():
     """The README sends users to one folder per use case. A dead link there
     is the first thing a new user hits, so the folders are asserted to exist
