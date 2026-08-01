@@ -9,10 +9,18 @@ can refuse politely, suggest the right folder, or pick one automatically.
 
 Identification signals (checked in this order: file layout first because it
 never lies, then config.json):
+  - a vision layout whose family is ALSO a text LLM      -> a UNIFIED export
   - openvino_vision_*.xml / openvino_language_model.xml  -> a VLM export
   - openvino_encoder_model.xml + openvino_decoder_model.xml -> whisper-style
   - config.json model_type in the known VLM/whisper/embedding families
   - architectures ending in ForCausalLM (or a known text model_type) -> llm
+
+The "unified" kind exists because newer families (Qwen3.5) ship ONE export
+that is both a text LLM and a vision model: vision parts on disk, but text
+generation works perfectly. Verified 2026-08-01 on the real
+OpenVINO/Qwen3.5-0.8B-int4-ov: a text-only prompt answers in 1.3s. The
+layout check alone called it "vlm", so `ovat chat` refused the very model
+Intel's guidance recommends. A unified model answers to BOTH kind filters.
 
 Discovery roots for find_models(): the OVAT_MODELS env var (os.pathsep-
 separated folders) first, then ./models and ~/models. One level deep: model
@@ -28,6 +36,51 @@ _EMB_TYPES = {"bert", "roberta", "xlm-roberta", "distilbert", "mpnet",
               "nomic-bert", "new"}
 _LLM_TYPES = {"llama", "qwen2", "qwen3", "mistral", "phi", "phi3", "gemma",
               "gemma2", "gpt2", "opt", "falcon", "stablelm", "tinyllama"}
+
+# Families that ship ONE export serving as both a text LLM and a vision model.
+# Kept as data, not scattered `if`s, so adding the next family is one line.
+_UNIFIED_TYPES = {"qwen3_5", "qwen3_5_text", "qwen3_6"}
+
+# Asking for "llm" must also surface a unified export, and so must "vlm":
+# it genuinely is both, and the alternative is making users download two
+# models to do what one already does.
+_KIND_ALIASES = {"llm": {"llm", "unified"}, "vlm": {"vlm", "unified"}}
+
+
+def _is_unified_multimodal(model_type: str, architectures: list[str]) -> bool:
+    """Is this vision-layout export ALSO usable as a plain text LLM?
+
+    Called only for folders that already look like a vision export, so the
+    question is narrowly "is this one of the both-at-once families, or a
+    vision-only model like Qwen2-VL?".
+
+    Getting this wrong is expensive in both directions:
+      - too eager  -> `ovat chat` accepts a vision-only model and the user
+                      gets the C++ "Port for tensor name input_ids was not
+                      found" traceback this module exists to prevent.
+      - too strict -> the recommended model is refused as "not a text LLM".
+
+    Evidence available, from the real Qwen3.5 config.json:
+        model_type    = "qwen3_5"
+        architectures = ["Qwen3_5ForConditionalGeneration"]
+      versus a vision-only Qwen2-VL:
+        model_type    = "qwen2_vl"
+        architectures = ["Qwen2VLForConditionalGeneration"]
+    Note that BOTH end in ForConditionalGeneration, so the architecture
+    suffix alone cannot separate them.
+
+    An EXACT membership test, deliberately, not a prefix or substring rule.
+    "qwen3_5".startswith() style matching would also accept a future
+    qwen3_5_vl, and a vision-only model wrongly accepted here is precisely
+    the C++ traceback this module was written to stop. Exact matching fails
+    the other way instead: an unlisted family is refused with a readable
+    sentence, and adding it is one line in _UNIFIED_TYPES.
+
+    architectures is accepted but not consulted: both families end in
+    ForConditionalGeneration, so it cannot separate them. It stays in the
+    signature because the next family may need it and callers already pass it.
+    """
+    return model_type in _UNIFIED_TYPES
 
 
 def identify_model(path: str) -> tuple[str, str]:
@@ -46,15 +99,8 @@ def identify_model(path: str) -> tuple[str, str]:
     if not any(f.endswith(".xml") and f.startswith("openvino") for f in files):
         return "not-a-model", "no openvino*.xml inside, not an exported model"
 
-    # File layout first: a VLM export has vision/language parts instead of a
-    # single openvino_model.xml, and whisper exports encoder+decoder.
-    if any(f.startswith("openvino_vision") for f in files) or \
-            "openvino_language_model.xml" in files:
-        return "vlm", "vision-language export (vision/language model parts)"
-    if "openvino_encoder_model.xml" in files and \
-            "openvino_decoder_model.xml" in files:
-        return "whisper", "encoder+decoder export (speech-to-text)"
-
+    # config.json is read BEFORE the layout verdict now: a vision layout is no
+    # longer conclusive on its own, because a unified export wears the same one.
     model_type, architectures = "", []
     config_path = os.path.join(path, "config.json")
     if os.path.isfile(config_path):
@@ -65,6 +111,19 @@ def identify_model(path: str) -> tuple[str, str]:
             architectures = [str(a) for a in config.get("architectures") or []]
         except (OSError, ValueError):
             pass
+
+    # File layout: a VLM export has vision/language parts instead of a single
+    # openvino_model.xml, and whisper exports encoder+decoder.
+    if any(f.startswith("openvino_vision") for f in files) or \
+            "openvino_language_model.xml" in files:
+        if _is_unified_multimodal(model_type, architectures):
+            return "unified", (f"unified multimodal export "
+                               f"(model_type={model_type or 'unknown'}): "
+                               f"text LLM and vision model in one")
+        return "vlm", "vision-language export (vision/language model parts)"
+    if "openvino_encoder_model.xml" in files and \
+            "openvino_decoder_model.xml" in files:
+        return "whisper", "encoder+decoder export (speech-to-text)"
 
     if model_type in _VLM_TYPES:
         return "vlm", f"config model_type={model_type} (vision-language)"
@@ -146,7 +205,9 @@ def find_models(kind: str | None = None) -> list[dict]:
                            "path": candidate, "kind": model_kind, "why": why}
     models = sorted(found.values(), key=lambda m: m["name"].lower())
     if kind:
-        models = [m for m in models if m["kind"] == kind]
+        # A unified export satisfies both "llm" and "vlm"; see _KIND_ALIASES.
+        wanted = _KIND_ALIASES.get(kind, {kind})
+        models = [m for m in models if m["kind"] in wanted]
     return models
 
 

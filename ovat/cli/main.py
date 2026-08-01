@@ -439,7 +439,9 @@ def resolve_chat_model(model_path: str | None) -> str:
         return choice["path"]
 
     kind, why = identify_model(model_path)
-    if kind in ("llm", "unknown"):        # unknown = benefit of the doubt
+    # "unified" is a text LLM that also takes images (Qwen3.5); refusing it
+    # would reject the model the quickstart itself recommends.
+    if kind in ("llm", "unified", "unknown"):   # unknown = benefit of the doubt
         return model_path
     rprint(f"[red]{esc(os.path.basename(model_path.rstrip('/')))} is not a text "
            f"LLM[/red] [dim]({esc(why)})[/dim]; chat needs a text model.")

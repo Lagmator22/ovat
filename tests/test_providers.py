@@ -12,6 +12,7 @@ Two kinds of tests:
 OVMS plugs are tested for construction only (creating the client doesn't
 connect); full OVMS calls get tested once a server is up (Docker / AI PC).
 """
+import json
 import os
 
 import pytest
@@ -203,6 +204,82 @@ def test_the_cap_applies_on_the_streaming_path_too(monkeypatch):
     provider.chat([{"role": "user", "content": "hi"}], on_token=lambda t: False)
     assert pipe.calls[-1]["max_new_tokens"] == 64
     assert "streamer" in pipe.calls[-1]        # still streaming
+
+
+# Unified multimodal models load through VLMPipeline, not LLMPipeline.
+
+def _unified_export(tmp_path, name="Qwen3.5-0.8B-int4-ov"):
+    """The real Qwen3.5 file layout (verified against the downloaded repo)."""
+    folder = tmp_path / name
+    folder.mkdir()
+    for f in ("openvino_language_model.xml",
+              "openvino_text_embeddings_model.xml",
+              "openvino_vision_embeddings_model.xml"):
+        (folder / f).write_text("")
+    (folder / "config.json").write_text(json.dumps(
+        {"model_type": "qwen3_5",
+         "architectures": ["Qwen3_5ForConditionalGeneration"]}))
+    return str(folder)
+
+
+class _FakeVLMPipe(_FakePipe):
+    """VLMPipeline has the chat-session calls LLMPipeline does not."""
+
+    def __init__(self):
+        super().__init__()
+        self.chat_open = False
+
+    def start_chat(self):
+        self.chat_open = True
+
+    def finish_chat(self):
+        self.chat_open = False
+
+
+def test_a_unified_model_loads_through_vlm_pipeline(tmp_path, monkeypatch):
+    """MEASURED, not guessed: on the real Qwen3.5-0.8B, LLMPipeline builds
+    fine and then dies at generate() with
+
+        Port for tensor name input_ids was not found.
+
+    VLMPipeline answers the same prompt in 1.3s. Choosing the wrong one is a
+    C++ traceback on the user's first question, so the choice is asserted.
+    """
+    vlm_pipe = _FakeVLMPipe()
+
+    def _boom(*a, **k):
+        raise AssertionError("LLMPipeline cannot generate from this export")
+
+    monkeypatch.setattr(llm_genai.ov_genai, "LLMPipeline", _boom)
+    monkeypatch.setattr(llm_genai.ov_genai, "VLMPipeline",
+                        lambda path, device: vlm_pipe)
+
+    provider = GenAILLMProvider(_unified_export(tmp_path), max_new_tokens=32)
+    out = provider.chat([{"role": "user", "content": "hi"}])
+
+    assert out["content"] == "generated"
+    assert vlm_pipe.calls[-1]["max_new_tokens"] == 32
+    # VLMPipeline.generate REQUIRES images; omitting it is a TypeError.
+    assert vlm_pipe.calls[-1]["images"] == []
+
+
+def test_a_plain_text_export_still_uses_llm_pipeline(tmp_path, monkeypatch):
+    """The fix must not reroute ordinary text models through VLMPipeline."""
+    folder = tmp_path / "Llama-3.2-3B-Instruct-INT4"
+    folder.mkdir()
+    (folder / "openvino_model.xml").write_text("")
+    (folder / "config.json").write_text(json.dumps(
+        {"model_type": "llama", "architectures": ["LlamaForCausalLM"]}))
+
+    pipe = _FakePipe()
+    monkeypatch.setattr(llm_genai.ov_genai, "LLMPipeline",
+                        lambda path, device: pipe)
+    monkeypatch.setattr(llm_genai.ov_genai, "VLMPipeline",
+                        lambda *a, **k: pytest.fail("should not be used"))
+
+    provider = GenAILLMProvider(str(folder), max_new_tokens=16)
+    provider.chat([{"role": "user", "content": "hi"}])
+    assert "images" not in pipe.calls[-1]        # the text path, unchanged
 
 
 def test_model_manager_always_passes_the_repository_path(monkeypatch):
