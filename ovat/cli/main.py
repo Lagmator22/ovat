@@ -73,12 +73,22 @@ def _entry(ctx: typer.Context):
 _STARTER_YAML = """\
 # OVAT workflow. Edit this, then run:  ovat run workflow.yml --input "..."
 model:
-  name: Qwen3-8B-int4-ov
+  # Qwen3.5-4B is a UNIFIED model: text, vision and tool calling in one
+  # export, so the same file drives the RAG, ReAct and image examples.
+  # 3.5 GB to download, about 5 GB of RAM. Smaller box? Swap both lines
+  # below for Qwen3.5-0.8B-int4-ov (0.9 GB, ~2 GB RAM). Bigger box and want
+  # the strongest text answers? Qwen3-8B-int4-ov (4.9 GB) still works.
+  name: Qwen3.5-4B-int4-ov
   device: GPU
   ovms_url: http://localhost:8000/v3
-  tool_parser: hermes3
+  # auto = let OVMS read the model's chat template and pick the parser.
+  # Prefer this over naming one: an explicit parser OVERRIDES OVMS's own
+  # detection, and the right answer differs per family (Qwen3.5 emits
+  # qwen3coder-shaped calls, Qwen3 hermes3-shaped ones). Name one only to
+  # override, e.g. tool_parser: hermes3
+  tool_parser: auto
   # Only used by `ovat serve` to start OVMS and locate the model:
-  source_model: OpenVINO/Qwen3-8B-int4-ov
+  source_model: OpenVINO/Qwen3.5-4B-int4-ov
   model_repository_path: models     # set to an absolute path if needed, e.g. C:\\Users\\you\\models
   # Where ovms lives if it is NOT on PATH (file or folder), e.g. on Windows:
   # ovms_binary: C:\\Users\\you\\ovms_windows
@@ -103,8 +113,10 @@ agent:
 # search_docs answers in its documented stub mode instead, and every command
 # in the quickstart works on a fresh clone with no downloads.
 #
-# To switch on real vector search, export the embedder ONCE (about 130 MB):
+# To switch on real vector search, export the embedder ONCE (about 130 MB).
+# optimum-cli is NOT installed by default; it lives in the `convert` extra:
 #
+#   pip install "ovat[convert]"
 #   optimum-cli export openvino --model BAAI/bge-small-en-v1.5 \\
 #       --task feature-extraction models/bge-small-en-v1.5
 #
@@ -551,6 +563,11 @@ def index(
                "the commented [bold]rag:[/bold] block: export the embedder "
                "once with the [cyan]optimum-cli[/cyan] line above it, "
                "uncomment, then run this command again.")
+        # optimum-cli ships in an extra, so the line above is "command not
+        # found" until this runs. Saying so here costs one line and saves the
+        # user discovering it the hard way half way through the quickstart.
+        rprint("[dim]optimum-cli comes from[/dim] [bold]pip install "
+               "\"ovat\\[convert]\"[/bold][dim]; install it first.[/dim]")
         raise typer.Exit(code=1)
 
     # Building the retriever loads the embedding model. If that model is not on

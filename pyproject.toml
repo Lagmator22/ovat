@@ -20,6 +20,11 @@ dependencies = [
   "rich",
   # Peak-RSS measurement for `ovat run --trace` (the <8 GB memory criterion).
   "psutil",
+  # The `hf` CLI, so the documented "download an IR model" step actually
+  # exists. `ovms --pull` covers the AI PC, but OVMS does not run on macOS,
+  # where `ovat chat` still needs a model on disk -- and the README had no
+  # working answer for how to get one there. Pure Python, no build step.
+  "huggingface-hub",
 ]
 
 # Extras keep the base install light AND encode the isolation contract:
@@ -27,6 +32,14 @@ dependencies = [
 # - tui: the optional full-screen launcher. The plain CLI must work without
 #   it; that is what makes the TUI removable without breaking anything.
 [project.optional-dependencies]
+# convert: optimum-cli, for turning a HuggingFace model into OpenVINO IR.
+# The RAG quickstart cannot run without it -- there is no pre-converted
+# bge-small in the OpenVINO org, so `optimum-cli export openvino` is the only
+# way to get an embedder -- yet nothing installed it and the documented
+# command was a plain "command not found" on any clean machine.
+# An extra rather than a core dependency: it drags in torch, transformers and
+# nncf, which is multiple GB that a user who only runs `ovat run` never needs.
+convert = ["optimum-intel[openvino]>=2.0"]
 langchain = ["langchain>=1", "langchain-openai>=1", "langgraph>=1"]
 llamaindex = ["llama-index-core>=0.14", "llama-index-llms-openai-like>=0.5"]
 openai-agents = ["openai-agents>=0.1"]

@@ -75,8 +75,16 @@ class ModelServer:
             "--model_name", self.model_name,
             "--task", self.task,
             "--target_device", self.device,
-            "--tool_parser", self.tool_parser,
         ]
+        # "auto" means "say nothing and let OVMS decide". OVMS inspects the
+        # model's chat template at startup and picks the parser itself, but an
+        # explicit --tool_parser always wins, so passing one unconditionally
+        # made auto-detection unreachable. That matters for any family newer
+        # than OVAT's own list: Qwen3.5 emits qwen3coder-shaped tool calls
+        # (<function=..><parameter=..>), not hermes3 JSON, and OVMS ships no
+        # qwen3_5 parser -- forcing hermes3 there decodes nothing at all.
+        if self.tool_parser and self.tool_parser != "auto":
+            cmd += ["--tool_parser", self.tool_parser]
         # A knob, not a constant: some OVMS builds/devices reject the flag,
         # and turning it off should be a YAML edit, not a code edit.
         if self.enable_prefix_caching:
