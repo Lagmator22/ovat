@@ -61,6 +61,15 @@ flowchart TD
     OVMS <--> Gateway
     GenAI --> Hardware["💻 Intel Hardware (CPU / Arc GPU / NPU)"]
     OVMS --> Hardware
+
+    subgraph Telemetry ["Telemetry Layer 7 (in-process)"]
+        Sources["Sources<br/>AgentTrace / ProcessMemory<br/>System / IntelHardware"]
+        Sinks["Sinks<br/>JSONFile / LiveBuffer / FanOut"]
+        Sources -->|"Collector ticks every 0.5s"| Sinks
+    end
+
+    Engines -.->|"7. Sampled DURING the run"| Sources
+    Hardware -.-> Sources
 ```
 
 ---
@@ -126,6 +135,52 @@ flowchart TD
 
 ---
 
+### 5. Telemetry (Layer 7)
+
+Benchmarks are only worth something if the numbers are honest, so OVAT measures
+itself while it runs rather than guessing afterwards.
+
+```mermaid
+flowchart LR
+    subgraph Src ["Sources (where a number comes FROM)"]
+        S1["AgentTraceSource<br/>per-turn tokens, tool calls"]
+        S2["ProcessMemorySource<br/>sampled RSS"]
+        S3["SystemSource<br/>CPU / RAM"]
+        S4["IntelHardwareSource<br/>GPU / NPU utilisation"]
+    end
+
+    subgraph Snk ["Sinks (where it GOES)"]
+        K1["JSONFileSink<br/>JSON Lines on disk"]
+        K2["LiveBufferSink<br/>in-memory, for the TUI page"]
+        K3["FanOutSink<br/>both at once"]
+    end
+
+    Src -->|"Collector, every 0.5s"| Snk
+```
+
+- **Two axes, not one.** A measurement's *source* and its *destination* vary
+  independently, so any source can feed any sink. Wiring N sources to M sinks
+  directly costs N×M pieces that all have to agree; through the two ABCs in
+  `telemetry/base.py` it costs N+M.
+- **Sampled during the run, never after.** Peak memory read once at the end is
+  not a peak — Python has already freed the big allocations. `Collector` ticks
+  on a clock while the agent works.
+- **A telemetry source must never take the run down with it.** `sample()` is
+  contractually forbidden from raising; a source that cannot read its hardware
+  returns nothing and reports *why* through `unavailable`.
+- **Absent is not zero.** An unknown token count stays `None` and prints as a
+  dash. A `0` reads as "used no tokens", and a benchmark built on that is
+  quietly wrong — the worst kind.
+
+```bash
+ovat run workflow.yml --input "..." --telemetry run.jsonl
+```
+
+JSON Lines rather than one big array, so a run that is killed halfway still
+leaves a readable file and `tail -f` works while it is going.
+
+---
+
 ## 🔭 Why Use Plano? (The AI Gateway Layer)
 
 ### What is Plano?
@@ -142,8 +197,29 @@ flowchart LR
     Bridge -->|"4. Execute"| OVMS["OVMS GPU Server (:8000)"]
 ```
 
-- **Without Plano**: Adding OpenTelemetry tracing to OVAT would require adding thousands of lines of complex Python tracing code and heavy dependencies.
-- **With Plano**: Plano sits in front of OVMS as a proxy. Every request automatically generates real-time OpenTelemetry trace spans in `planoai obs` **with zero code changes in OVAT**.
+- **Without Plano**: emitting standards-compliant OpenTelemetry spans *per HTTP
+  request* would mean pulling the OTel SDK and its dependency tree into OVAT and
+  instrumenting every provider by hand.
+- **With Plano**: Plano sits in front of OVMS as a proxy, so every request
+  generates real-time OTel spans in `planoai obs` **with zero code changes in
+  OVAT**.
+
+### How this relates to Layer 7 (they are not the same thing)
+
+The two observe different things and neither replaces the other:
+
+| | Telemetry Layer 7 | Plano gateway |
+| :--- | :--- | :--- |
+| **Vantage point** | inside the OVAT process | on the wire, in front of OVMS |
+| **Sees** | per-turn tokens, tool calls, RSS, Intel GPU/NPU | request latency, status, OTel spans |
+| **Cannot see** | anything the server does internally | anything local — memory, NPU, which tool ran |
+| **Needs** | nothing, always available | a running gateway (Linux/WSL2) |
+
+Layer 7 is what makes `ovat bench` and `ovat run --trace` mean anything on a
+laptop with no gateway. Plano is what makes OVAT legible to an *existing*
+enterprise observability stack. The overlap is deliberate: when both are
+running, request latency measured at the gateway is an independent check on the
+numbers the in-process sampler reports.
 
 ---
 
@@ -183,4 +259,9 @@ planoai obs   # Open live OpenTelemetry dashboard
 | **OVMS LLM** | `ovat/providers/llm_ovms.py` | OpenAI SDK client talking to OVMS `/v3`. |
 | **Local GenAI** | `ovat/providers/llm_genai.py` | Direct C++ OpenVINO LLM execution. |
 | **ID Bridge** | `examples/plano/ovms_id_bridge.py` | Bridge for Plano chunked encoding and schema matching. |
+| **Telemetry Contracts** | `ovat/telemetry/base.py` | The `TelemetrySource` / `TelemetrySink` ABCs. |
+| **Telemetry Collector** | `ovat/telemetry/collector.py` | Ticks every source into every sink on a clock. |
+| **Telemetry Sources** | `ovat/telemetry/sources.py` | Agent trace, process RSS, system, Intel GPU/NPU. |
+| **Telemetry Sinks** | `ovat/telemetry/sinks.py` | JSON Lines file, live buffer, fan-out. |
 | **TUI Application** | `ovat/cli/tui.py` | Claude-Code-style terminal user interface. |
+| **Live Telemetry Page** | `ovat/cli/telemetry_screen.py` | Renders `LiveBufferSink` inside the TUI. |
