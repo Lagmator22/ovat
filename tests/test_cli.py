@@ -22,7 +22,13 @@ def test_init_writes_a_loadable_config(tmp_path):
     assert target.exists()
     # the file it wrote must itself be a valid workflow
     cfg = load_workflow(str(target))
-    assert cfg.model.name == "Qwen3-8B-int4-ov"
+    # Not a hardcoded model name: that only pinned whatever was current and
+    # broke on a deliberate change. What must hold is that the two model
+    # fields AGREE. `name` is what OVMS serves, `source_model` is what it
+    # pulls; if they disagree, serve downloads one model and then fails to
+    # find the other, which reads as "the starter config is broken".
+    assert cfg.model.source_model is not None
+    assert cfg.model.source_model.endswith("/" + cfg.model.name)
 
 
 def test_init_picks_the_device_this_machine_actually_has(tmp_path):
