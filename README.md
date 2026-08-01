@@ -80,8 +80,8 @@ common reason a GPU or NPU device never shows up in `ovat doctor`.
 | **Git** | any | Needed to clone; OVAT is not on PyPI yet. |
 | **OS for the full agent** | Windows 11, Ubuntu 22.04/24.04, RHEL 9 | OVMS is x86-64 only. |
 | **OS for development** | + macOS (Apple Silicon or Intel) | Everything except serving. See [Platform support](#platform-support). |
-| **RAM** | 8 GB minimum, 16 GB comfortable | The default model needs ~5 GB; a 0.9 GB model tier is documented below. |
-| **Disk** | ~8 GB free | Default model 3.5 GB, OVMS ~500 MB unpacked, Python deps ~2 GB, plus your index. |
+| **RAM** | 8 GB minimum, 16 GB comfortable | The default 4B model wants ~5 GB; a ~2 GB tier is documented below. Above 4B with long prompts, prefer 16 GB. |
+| **Disk** | ~8 GB free | Default model 3.5 GB, OVMS 126 MB zipped (more unpacked), Python deps ~2 GB, plus your index. |
 
 ### Intel GPU / NPU drivers
 
@@ -201,12 +201,26 @@ hf download OpenVINO/Qwen3.5-4B-int4-ov \
 These are already-converted OpenVINO IR models — no conversion step, no
 `optimum-cli`. Pick the tier that matches your machine:
 
-| Model | Download | RAM | Use it when |
+| Model | Download | RAM (est.) | Use it when |
 | --- | --- | --- | --- |
-| [`OpenVINO/Qwen3.5-4B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-4B-int4-ov) | **3.5 GB** | ~5 GB | **Default.** Text + vision + tools in one model. |
-| [`OpenVINO/Qwen3.5-0.8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-0.8B-int4-ov) | **0.9 GB** | ~2 GB | 8 GB laptop, or you want a fast first run. |
-| [`OpenVINO/Qwen3-8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3-8B-int4-ov) | 4.9 GB | ~6.5 GB | Strongest text answers; no vision. |
+| [`OpenVINO/Qwen3.5-4B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-4B-int4-ov) | **3.5 GB** | ~4.5–5.5 GB | **Default.** Text + vision + tools in one model. |
+| [`OpenVINO/Qwen3.5-0.8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-0.8B-int4-ov) | **0.9 GB** | ~1.5–2 GB | 8 GB laptop, or you want a fast first run. |
+| [`OpenVINO/Qwen3-8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3-8B-int4-ov) | 4.9 GB | ~6–7 GB | Strongest text answers; no vision. |
 | [`OpenVINO/whisper-base-int8-ov`](https://huggingface.co/OpenVINO/whisper-base-int8-ov) | 0.08 GB | small | The `transcribe` tool. |
+
+> **How the RAM column is derived**, since a wrong number here wastes a
+> download: it is *weights + KV cache + 15–20% runtime overhead*, the standard
+> INT4 estimate, applied to the weights actually on disk — not to the download
+> size. Those differ, and for these models it matters. A Qwen3.5 export is
+> **five** models, not one: `language_model` is 2.32 GB of the 4B's 3.24 GB,
+> with the rest in the text and vision embedding models that load alongside it.
+>
+> The KV cache grows with context, so long prompts cost more than the table
+> shows. Intel notes that models **above** 4B with prompts over 1024 tokens can
+> want more than 16 GB
+> ([release notes](https://docs.openvino.ai/2026/about-openvino/release-notes-openvino.html)).
+> Treat these as planning figures; measure on your own hardware with
+> `ovat run --trace`, which reports sampled peak RSS.
 
 The Qwen3.5 models are **unified**: one export does text generation, image
 understanding *and* tool calling, so the RAG, ReAct and multimodal examples
