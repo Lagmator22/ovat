@@ -54,7 +54,7 @@ flowchart TD
     end
     
     subgraph Tools ["Tool Ecosystem"]
-        Builtin["Builtin Tools:<br/>- search_docs (RAG)<br/>- transcribe (Whisper)<br/>- describe_image (Qwen2-VL)"]
+        Builtin["Builtin Tools:<br/>- search_docs (RAG)<br/>- transcribe (Whisper)<br/>- describe_image (local VLM)"]
         MCP["MCP Stdio Client<br/>(Model Context Protocol)"]
     end
     
@@ -115,6 +115,54 @@ flowchart LR
 
 ---
 
+### 3b. Model selection, and why "unified" is its own kind
+
+The default model is `Qwen3.5-4B-int4-ov` (3.5 GB). It replaced
+`Qwen3-8B-int4-ov` (4.9 GB) for two reasons: a smaller first download, and
+the fact that Qwen3.5 is a **unified** export — text generation, image
+understanding and tool calling in one set of weights. The RAG, ReAct and
+audio+vision examples therefore share a single download rather than needing
+a separate ~5 GB vision model.
+
+That created a genuine classification problem. On disk, a unified export is
+**indistinguishable from a vision-only model**: both have
+`openvino_vision_embeddings_*.xml` and `openvino_language_model.xml`, and
+neither has the plain `openvino_model.xml` that marks a text LLM.
+
+```mermaid
+flowchart TD
+    F["Model folder"] --> C{"openvino_vision_*.xml present?"}
+    C -->|"no"| L["kind = llm<br/>LLMPipeline"]
+    C -->|"yes"| M{"model_type in _UNIFIED_TYPES?"}
+    M -->|"no  (qwen2_vl, internvl_chat...)"| V["kind = vlm<br/>vision only"]
+    M -->|"yes (qwen3_5...)"| U["kind = unified<br/>VLMPipeline, answers to BOTH filters"]
+```
+
+Three decisions worth recording:
+
+| Decision | Why |
+| --- | --- |
+| `config.json` is read **before** the file layout is judged | Layout used to be treated as conclusive ("it never lies"). Unified models made it ambiguous, so layout now narrows the question instead of answering it. |
+| Detection is an **exact** `model_type` match, not a prefix | A prefix rule on `qwen3_5` would also accept a future `qwen3_5_vl`. Wrongly accepting a vision-only model produces a raw C++ traceback; wrongly rejecting one produces a readable sentence. Fail toward the readable sentence. |
+| A unified model answers to **both** `llm` and `vlm` filters | It genuinely is both. The alternative is asking users to download two models to do what one already does. |
+
+The failure this prevents is unusually nasty: `LLMPipeline` **constructs
+successfully** on a unified export (measured: 24.6 s) and only then dies on
+the first `generate()` with `Port for tensor name input_ids was not found`.
+Constructing without error is not evidence the pipeline is the right one, so
+the choice is made from the export's layout rather than from whether the
+constructor raised.
+
+**Tool parser selection** follows the same "let the authority decide"
+principle. OVMS inspects a model's chat template at startup and picks a
+parser itself, but only when `--tool_parser` is absent — an explicit value
+always wins. OVAT therefore supports `tool_parser: auto`, which omits the
+flag. This matters concretely: Qwen3.5 emits `qwen3coder`-shaped tool calls
+(`<function=..><parameter=..>`), not `hermes3` JSON, and OVMS ships no
+`qwen3_5` parser at all.
+
+---
+
 ### 4. Built-in Tools & MCP (Model Context Protocol)
 
 OVAT agents get work done using tools. Every tool defines its schema in one single source of truth:
@@ -128,7 +176,7 @@ flowchart TD
     
     Builtin --> T1["search_docs<br/>Vector Search over local .txt/.md files"]
     Builtin --> T2["transcribe<br/>Audio-to-text via OpenVINO Whisper"]
-    Builtin --> T3["describe_image<br/>Vision analysis via Qwen2-VL"]
+    Builtin --> T3["describe_image<br/>Vision analysis via a local VLM<br/>(Qwen3.5 serves as both LLM and VLM)"]
     
     MCP --> M1["External MCP Servers<br/>(GitHub, SQLite, Custom stdio tools)"]
 ```
