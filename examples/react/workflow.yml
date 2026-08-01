@@ -1,0 +1,54 @@
+# Use case 2: ReAct -- the same agent, run through LangChain.
+#
+# The point of this file is what is NOT in it. Compare it with
+# examples/rag/workflow.yml: the tools, the model and the prompt are the
+# same. One word differs -- agent.type -- and the loop is now LangChain's
+# create_agent instead of OVAT's own.
+#
+#   ovat serve examples/react/workflow.yml
+#   ovat run   examples/react/workflow.yml -i "What can you do?"
+#
+# Then prove the claim by running the SAME question through all four
+# engines against the SAME server:
+#
+#   ovat bench examples/react/workflow.yml -i "What can you do?" --out report.json
+#
+# Needs the extra:  pip install "ovat[langchain]"
+
+model:
+  name: Qwen3.5-4B-int4-ov
+  source_model: OpenVINO/Qwen3.5-4B-int4-ov
+  device: GPU
+  ovms_url: http://localhost:8000/v3
+  tool_parser: auto
+  model_repository_path: models
+  # LangChain adds a little overhead of its own on top of generation, and
+  # the first request also pays for the model warming up.
+  request_timeout: 180
+
+tools:
+  # Two tools, so the model has to CHOOSE rather than always calling the one
+  # thing available. Choosing wrongly is visible in the trace, which is what
+  # makes this a useful engine comparison rather than a smoke test.
+  - name: search_docs
+    type: builtin
+  - name: transcribe
+    type: builtin
+
+agent:
+  # THE one-word switch:
+  #   native         OVAT's own loop      (zero extra dependencies)
+  #   react          LangChain            <- this file
+  #   llamaindex     LlamaIndex           FunctionAgent
+  #   openai-agents  OpenAI Agents SDK    compatibility model
+  type: react
+  max_iterations: 8
+  system_prompt: >-
+    You are a helpful assistant with tools. Think about whether a tool is
+    needed before answering. Use search_docs for questions about the user's
+    files, and transcribe for questions about an audio file. Answer directly
+    from your own knowledge when no tool applies, and say which tool you used.
+
+# No rag: block, deliberately -- search_docs runs in its documented stub mode,
+# so this example needs no embedder and no indexing to demonstrate the engine
+# swap. Add the block from examples/rag/workflow.yml for real retrieval.
