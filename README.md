@@ -497,7 +497,7 @@ had to be solved, and each answer is in the config's comments:
 | Problem | Answer |
 | --- | --- |
 | plano calls `/v1`, OVMS serves `/v3` | No prefix setting exists: plano parses `base_url` and lifts the path out itself. Put `/v3` in the URL. |
-| plano refuses to start | The model name needs a `provider/` prefix (plano splits on `/`). Hence `ovms/Qwen3-8B-int4-ov`. |
+| plano refuses to start | The model name needs a `provider/` prefix (plano splits on `/`). Hence `ovms/Qwen3.5-4B-int4-ov`. |
 | plano rejects OVMS's reply | Its WASM filter requires a top-level `"id"`, which OVMS omits. [`ovms_id_bridge.py`](examples/plano/ovms_id_bridge.py) injects one. |
 
 plano ships Linux and macOS binaries only — there is **no Windows build**, so

@@ -17,13 +17,13 @@
 #   ovat chat examples/document-qa.yml
 
 model:
-  name: Qwen3-8B-int4-ov
+  name: Qwen3.5-4B-int4-ov
   device: GPU                     # NPU cannot do tool calling; see AGENTS.md
   ovms_url: http://localhost:8000/v3
-  tool_parser: hermes3            # how OVMS decodes Qwen3's tool calls
-  source_model: OpenVINO/Qwen3-8B-int4-ov
+  tool_parser: auto              # let OVMS read the chat template and choose
+  source_model: OpenVINO/Qwen3.5-4B-int4-ov
   model_repository_path: models
-  request_timeout: 120            # an 8B model on first token is not quick
+  request_timeout: 120            # first token from a cold model is not quick
 
 tools:
   # The retrieval half. search_docs answers from the folder you indexed and

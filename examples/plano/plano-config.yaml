@@ -29,13 +29,13 @@ model_providers:
     # (config_generator.py: model_name.split("/")) and raises "Invalid model
     # name" outright if there is no prefix. It then strips the prefix and
     # sends only the part after it upstream, so OVMS receives exactly
-    # "Qwen3-8B-int4-ov", which is what it serves.
+    # "Qwen3.5-4B-int4-ov", which is what it serves.
     #
     # "ovms" is not one of plano's built-in providers, and for an unsupported
     # provider it REQUIRES base_url and provider_interface, both of which are
     # here. That is the supported way to point plano at any OpenAI-compatible
     # server it has never heard of.
-    model: ovms/Qwen3-8B-int4-ov
+    model: ovms/Qwen3.5-4B-int4-ov
     # THE ANSWER TO THE /v1-vs-/v3 SPIKE, and simpler than it first looked.
     # plano defaults to calling upstreams at /v1; OVMS serves its OpenAI API
     # under /v3. There is no separate prefix field to set: plano's CLI parses
