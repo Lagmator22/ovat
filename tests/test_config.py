@@ -169,27 +169,49 @@ def test_every_config_the_docs_hand_to_ovat_chat_actually_has_rag():
     assert checked, "no `ovat chat <config>` commands found to verify"
 
 
-def test_no_example_pairs_a_qwen35_model_with_a_hardcoded_parser():
-    """hermes3 does not merely under-perform on Qwen3.5, it decodes nothing.
+def test_every_qwen35_config_names_the_parser_that_actually_decodes_it():
+    """Qwen3.5 needs tool_parser: qwen3coder. MEASURED, not reasoned.
 
-    Qwen3.5 emits <function=..><parameter=..>; hermes3 expects a JSON body.
-    Naming any parser also OVERRIDES OVMS's own chat-template detection, and
-    OVMS ships no qwen3_5 parser to name instead, so `auto` is the only
-    correct value for this family.
+    These configs shipped `auto` on the theory that OVMS inspects the chat
+    template and picks for itself, so naming a parser could only get in the
+    way. A clean-room run on the AI PC (2026-08-03) disproved it:
 
-    Caught in review: the plano example had its model switched to Qwen3.5
-    while keeping tool_parser: hermes3, which would have served the new model
-    with a parser guaranteed not to decode its tool calls.
+      auto        -> OVMS selected NOTHING and returned the tool call as
+                     plain text. finish_reason "stop", tool_calls 0, and the
+                     answer was the raw markup:
+                         <tool_call><function=search_docs>
+                         <parameter=query>OVAT memory budget</parameter>
+                         </function></tool_call>
+                     OVMS logged nothing at all about parser selection.
+      qwen3coder  -> finish_reason "tool_calls", the call decoded, the tool
+                     ran, and the answer cited its source.
+
+    So `auto` is not a safe default here, it is a silent failure: the agent
+    answers fluently while never once calling a tool, which is the hardest
+    kind of broken to notice. Every Qwen3.5 config must name qwen3coder.
     """
     import glob
+    from ovat.cli.main import _STARTER_YAML
     from ovat.config.workflow import load_workflow
 
+    checked = 0
+    # Only the tracked examples. The repo-root workflow.yml is gitignored, so
+    # it is absent from a fresh clone and cannot be part of the contract.
     for path in sorted(glob.glob("examples/**/*.yml", recursive=True)):
         cfg = load_workflow(path)
         if "qwen3.5" in cfg.model.name.lower():
-            assert cfg.model.tool_parser == "auto", (
+            assert cfg.model.tool_parser == "qwen3coder", (
                 f"{path} serves {cfg.model.name} with "
-                f"tool_parser={cfg.model.tool_parser!r}; use 'auto'")
+                f"tool_parser={cfg.model.tool_parser!r}. Use 'qwen3coder': "
+                f"measured on live OVMS, anything else decodes no tool calls "
+                f"at all while still answering, so the failure is silent.")
+            checked += 1
+    assert checked, "no Qwen3.5 config found to check"
+
+    # The starter `ovat init` writes is the very first config a new user runs,
+    # so it has to carry the right parser too -- it is not covered by the glob.
+    assert "Qwen3.5" in _STARTER_YAML and "qwen3coder" in _STARTER_YAML, (
+        "the starter config serves Qwen3.5 without naming qwen3coder")
 
 
 def test_every_documented_use_case_has_a_runnable_example():

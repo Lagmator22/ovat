@@ -63,6 +63,34 @@ def test_known_locations_are_the_last_resort(monkeypatch, tmp_path):
     assert "known location" in how
 
 
+def test_ovms_is_found_where_the_readme_tells_users_to_put_it(monkeypatch, tmp_path):
+    """The README's own install steps must produce a findable OVMS.
+
+    README.md says, run from inside the clone:
+
+        curl -L ...ovms_windows_....zip -o ovms.zip
+        tar -xf ovms.zip
+
+    which lands OVMS at <repo>/ovms. The search list held only ~/ovms_windows,
+    ~/ovms, C:\\ovms and C:\\ovms_windows, so a user who followed the
+    instructions EXACTLY got "not found (config, OVAT_OVMS, PATH, known
+    folders all empty)" and had to set OVAT_OVMS by hand.
+
+    Caught in the AI PC clean-room run: it only passed there because that
+    machine happened to already have ~/ovms_windows from an earlier manual
+    install -- the textbook "works on your laptop" pass.
+    """
+    monkeypatch.delenv("OVAT_OVMS", raising=False)
+    monkeypatch.setattr(ovms_locator.shutil, "which", lambda name: None)
+    project = tmp_path / "ovat"
+    (project / "ovms").mkdir(parents=True)
+    exe = _fake_binary(project / "ovms")
+    monkeypatch.chdir(project)
+    path, how = find_ovms()
+    assert path == exe, "OVMS unpacked per the README was not found"
+    assert "known location" in how
+
+
 def test_nothing_found_says_where_it_looked(monkeypatch):
     monkeypatch.delenv("OVAT_OVMS", raising=False)
     monkeypatch.setattr(ovms_locator.shutil, "which", lambda name: None)

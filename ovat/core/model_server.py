@@ -137,12 +137,67 @@ class ModelServer:
             self.stop()
             raise
 
-    def wait_until_ready(self, timeout: int = 120) -> bool:
-        """Poll the health endpoint until OVMS is up or we time out."""
+    # How long NOTHING may happen before we call it stalled. This is a stall
+    # budget, not a deadline: it restarts every time the server makes visible
+    # progress, so a download that keeps moving is never interrupted.
+    #
+    # There is deliberately no absolute cap. A first run has to fetch the
+    # model, and that time is unbounded -- gigabytes over whatever link the
+    # user has, which can be all night. The old code used a fixed 120s and so
+    # could not survive even a fast first run (measured: ~185s for Qwen3.5-4B
+    # on the AI PC). Raising the number does not fix the shape of the problem:
+    # any fixed value is either too small for a slow link or too large to
+    # notice a real hang. Watching progress instead is what curl does with
+    # --speed-time/--speed-limit and wget with --read-timeout.
+    DEFAULT_STALL_TIMEOUT = 300
+
+    def _progress_marker(self) -> tuple:
+        """A cheap fingerprint of "is anything still happening".
+
+        The log file grows as OVMS reports what it is doing, and the model
+        repository grows as bytes land on disk. Either moving means the server
+        is alive and working, even when the health endpoint is still refusing
+        connections. Both are wrapped in try/except because the log may not
+        exist yet and the repository may not exist at all on a first run.
+        """
+        log_size = 0
+        try:
+            log_size = os.path.getsize(self.log_path)
+        except OSError:
+            pass
+        repo_size = 0
+        try:
+            for root, _dirs, files in os.walk(self.model_repository_path):
+                for name in files:
+                    try:
+                        repo_size += os.path.getsize(os.path.join(root, name))
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+        return (log_size, repo_size)
+
+    def wait_until_ready(self, stall_timeout: float = DEFAULT_STALL_TIMEOUT,
+                         on_progress=None, max_polls: int | None = None) -> bool:
+        """Wait for OVMS to answer its health endpoint.
+
+        Returns False only when the server EXITS, or when it makes no visible
+        progress for `stall_timeout` seconds. A download that keeps advancing
+        is waited on for as long as it takes.
+
+        on_progress(elapsed_seconds) fires on every poll, so a caller can show
+        that something is still happening; silence followed by a failure reads
+        as a hang even when it was a download working normally.
+
+        max_polls bounds the loop for tests, which drive a fake clock.
+        """
         start = time.time()
-        while time.time() - start < timeout:
-            # If OVMS already exited, stop waiting the full timeout. The reason
-            # is in the log file (self.log_path) instead of being hidden.
+        last_change = start
+        marker = self._progress_marker()
+        polls = 0
+        while True:
+            # If OVMS already exited, stop waiting. The reason is in the log
+            # file (self.log_path) instead of being hidden.
             if self.process is not None and self.process.poll() is not None:
                 return False
             try:
@@ -151,8 +206,20 @@ class ModelServer:
                         return True
             except (urllib.error.URLError, OSError):
                 pass  # not up yet, keep waiting
+
+            current = self._progress_marker()
+            if current != marker:
+                marker = current
+                last_change = time.time()      # still working: reset the clock
+            elif time.time() - last_change >= stall_timeout:
+                return False                   # nothing has moved: really stuck
+
+            if on_progress is not None:
+                on_progress(time.time() - start)
+            polls += 1
+            if max_polls is not None and polls >= max_polls:
+                return False
             time.sleep(2)
-        return False
 
     def stop(self) -> None:
         """Stop OVMS: ask politely (SIGTERM), then force (SIGKILL).

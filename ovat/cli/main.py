@@ -81,12 +81,17 @@ model:
   name: Qwen3.5-4B-int4-ov
   device: GPU
   ovms_url: http://localhost:8000/v3
-  # auto = let OVMS read the model's chat template and pick the parser.
-  # Prefer this over naming one: an explicit parser OVERRIDES OVMS's own
-  # detection, and the right answer differs per family (Qwen3.5 emits
-  # qwen3coder-shaped calls, Qwen3 hermes3-shaped ones). Name one only to
-  # override, e.g. tool_parser: hermes3
-  tool_parser: auto
+  # How OVMS decodes the model's tool calls. NAME one; do not rely on `auto`.
+  #
+  # Measured against live OVMS on 2026-08-03: with `auto`, OVMS selected no
+  # parser for this family at all and handed the tool call back as plain
+  # text -- finish_reason "stop", zero tool calls, the raw
+  # <tool_call><function=...> markup printed as the answer. The agent looks
+  # like it is working and never calls a tool, which is the worst way for
+  # this to fail. With qwen3coder the same request decodes correctly.
+  #
+  # The right value is per FAMILY: qwen3coder for Qwen3.5, hermes3 for Qwen3.
+  tool_parser: qwen3coder
   # Only used by `ovat serve` to start OVMS and locate the model:
   source_model: OpenVINO/Qwen3.5-4B-int4-ov
   model_repository_path: models     # set to an absolute path if needed, e.g. C:\\Users\\you\\models
@@ -265,6 +270,12 @@ def run(
         rprint(f"[red]Error talking to OVMS at {esc(cfg.model.ovms_url)}[/red]: "
                f"{esc(exc)}")
         raise typer.Exit(code=1)
+    # Reasoning models narrate before answering. The TUI folds that away; the
+    # CLI printed it raw, so every answer from a Qwen3-family model arrived
+    # with a stray </think> in it (its chat template supplies the opening tag,
+    # so the model emits only the terminator). --trace still records the raw
+    # text; this is display only.
+    answer = ui.strip_thinking(answer) or answer
     # esc() stops the answer being read as markup; highlight=False stops rich
     # RE-styling it afterwards. Its highlighter treats plain text as a python
     # repr, so it bolds every bracket and colours bare numbers, which puts
@@ -767,6 +778,13 @@ def serve(
     config: str = typer.Argument(..., help="Workflow YAML whose model OVMS should serve."),
     stop: bool = typer.Option(False, "--stop",
                               help="Stop the OVMS started earlier by 'ovat serve'."),
+    stall_timeout: float = typer.Option(None, "--stall-timeout",
+                                        help="Give up after this many seconds "
+                                             "with NO progress at all (default "
+                                             "300). There is no overall time "
+                                             "limit: a download that keeps "
+                                             "moving is waited on for as long "
+                                             "as it takes."),
 ):
     """Start OVMS in the background (or stop it again with --stop). AI PC only.
 
@@ -799,6 +817,8 @@ def serve(
         enable_prefix_caching=cfg.model.enable_prefix_caching,
         binary=binary,
     )
+    if stall_timeout is None:
+        stall_timeout = ModelServer.DEFAULT_STALL_TIMEOUT
     rprint(f"[green]Starting OVMS[/green] for {esc(cfg.model.name)} on "
            f"{esc(cfg.model.device)} [dim](binary via {esc(how)})[/dim] ...")
     try:
@@ -806,14 +826,46 @@ def serve(
     except FileNotFoundError:
         _ovms_not_found(how)
         raise typer.Exit(code=1)
-    if server.wait_until_ready():
+    # The first run downloads the model (GBs), so this can legitimately take
+    # minutes. Printing elapsed time is what separates "working" from "hung":
+    # silence followed by a failure reads as the latter even when it was the
+    # former, which is exactly how the 120s cap used to present itself.
+    rprint(f"[dim]Waiting for OVMS. A first run downloads the model, which can "
+           f"take a long time on a slow link -- that is fine, there is no time "
+           f"limit while it is making progress. Detail in "
+           f"{esc(server.log_path)}. Ctrl-C to stop waiting.[/dim]")
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                  console=console, transient=True) as progress:
+        task = progress.add_task("starting OVMS...", total=None)
+
+        def _tick(elapsed: float) -> None:
+            mins, secs = divmod(int(elapsed), 60)
+            progress.update(task, description=f"starting OVMS... {mins}m{secs:02d}s")
+
+        ready = server.wait_until_ready(stall_timeout=stall_timeout,
+                                        on_progress=_tick)
+
+    if ready:
         rprint(f"[green]OVMS is ready[/green] at {esc(server.base_url)}  "
                f"[dim](pid {server.process.pid}, "
                f"logs in {esc(server.log_path)})[/dim]")
         rprint(f"[dim]It keeps running in the background. Stop it with:[/dim] "
                f"ovat serve {esc(config)} --stop")
+    elif server.process is not None and server.process.poll() is None:
+        # Still ALIVE, just not ready yet: almost always a download still in
+        # flight. Saying only "did not become ready" left the user with a
+        # failed command AND a live multi-GB server they did not know about,
+        # so the honest thing is to name both facts and not kill their work.
+        rprint(f"[yellow]OVMS made no progress for {int(stall_timeout)}s.[/yellow] "
+               "It is running but nothing is being written; it may be stuck, "
+               "or the download may have stalled.")
+        rprint(f"[dim]It is STILL RUNNING (pid {server.process.pid}). Check[/dim] "
+               f"{esc(server.log_path)}[dim]. If it is simply slow, re-run this "
+               f"command or raise the budget with[/dim] --stall-timeout"
+               f"[dim]. Stop it with[/dim] ovat serve {esc(config)} --stop")
+        raise typer.Exit(code=1)
     else:
-        rprint("[red]OVMS did not become ready in time.[/red] "
+        rprint("[red]OVMS exited without becoming ready.[/red] "
                f"See {esc(server.log_path)} for the reason.")
         raise typer.Exit(code=1)
 

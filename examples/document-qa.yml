@@ -20,7 +20,7 @@ model:
   name: Qwen3.5-4B-int4-ov
   device: GPU                     # NPU cannot do tool calling; see AGENTS.md
   ovms_url: http://localhost:8000/v3
-  tool_parser: auto              # let OVMS read the chat template and choose
+  tool_parser: qwen3coder     # MEASURED: 'auto' decodes no tool calls for Qwen3.5
   source_model: OpenVINO/Qwen3.5-4B-int4-ov
   model_repository_path: models
   request_timeout: 120            # first token from a cold model is not quick

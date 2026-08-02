@@ -80,30 +80,10 @@ REPLAY_RICH_TURNS = 6
 PREFS_FILE = "chat_prefs.json"
 SESSIONS_DIR = "sessions"
 
-# Reasoning models narrate before they answer. Qwen3 and the DeepSeek-R1
-# family wrap that narration in <think>…</think>; some exports spell it
-# <thinking>. Both spellings, any case, across newlines.
-_THINK_BLOCK = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>",
-                          re.DOTALL | re.IGNORECASE)
-_THINK_OPEN = re.compile(r"<think(?:ing)?>", re.IGNORECASE)
-
-
-def strip_thinking(text: str) -> str:
-    """Drop the reasoning blocks, leaving the answer.
-
-    Interesting once, clutter every time after: a single Qwen3 answer can
-    spend fifteen lines deciding what the question meant before saying
-    anything. This affects the DISPLAY only. The session keeps the raw text,
-    so /thinking on can bring it back and /save never loses it.
-    """
-    cleaned = _THINK_BLOCK.sub("", text)
-    # An unclosed block means generation stopped mid-thought: Esc, or the
-    # token cap ran out. Everything from the opening tag on is reasoning, so
-    # it goes too, rather than leaving a dangling "<think>" in the transcript.
-    match = _THINK_OPEN.search(cleaned)
-    if match:
-        cleaned = cleaned[:match.start()]
-    return cleaned.strip()
+# strip_thinking lives in ui.py, not here: the plain CLI needs it too and
+# this module imports textual. One copy, per the single-source-of-truth
+# rule -- two would drift the moment a new tag spelling turned up.
+from ovat.cli.ui import strip_thinking, _THINK_BLOCK, _THINK_OPEN
 
 
 def split_thinking(text: str) -> tuple:

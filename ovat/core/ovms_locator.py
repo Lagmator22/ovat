@@ -31,6 +31,26 @@ _KNOWN_DIRS = [
 ]
 
 
+def _search_dirs() -> list[str]:
+    """Every folder worth checking, resolved at CALL time.
+
+    ./ovms comes first and is not in _KNOWN_DIRS because it depends on the
+    working directory, which a module-level constant cannot see. It is here
+    because the README's own instructions put OVMS there: the install steps
+    say to run `curl -L ...ovms.zip -o ovms.zip` and `tar -xf ovms.zip` from
+    inside the clone, which unpacks to <repo>/ovms.
+
+    That folder was in none of the searched locations, so a user who followed
+    the documentation exactly was told "not found ... known folders all empty"
+    and had to set OVAT_OVMS by hand. It went unnoticed because every machine
+    that tested it already had OVMS installed somewhere else.
+    """
+    local = [os.path.abspath("ovms")]
+    if sys.platform != "win32":
+        local.append(os.path.abspath(os.path.join("ovms", "bin")))
+    return local + _KNOWN_DIRS
+
+
 def _as_binary(path: str) -> str | None:
     """Accept a file OR a folder; return the executable path if it exists."""
     path = os.path.expanduser(path)
@@ -67,7 +87,7 @@ def find_ovms(explicit: str | None = None) -> tuple[str | None, str]:
     if on_path:
         return on_path, "PATH"
 
-    for folder in _KNOWN_DIRS:
+    for folder in _search_dirs():
         found = _as_binary(folder)
         if found:
             return found, f"known location ({folder})"

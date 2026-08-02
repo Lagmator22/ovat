@@ -19,7 +19,7 @@ model:
   source_model: OpenVINO/Qwen3.5-4B-int4-ov
   device: GPU
   ovms_url: http://localhost:8000/v3
-  tool_parser: auto
+  tool_parser: qwen3coder     # MEASURED: 'auto' decodes no tool calls for Qwen3.5
   model_repository_path: models
   # Transcription of a long file is not fast, and the agent waits on the tool.
   request_timeout: 300

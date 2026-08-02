@@ -22,7 +22,7 @@ model:
   ovms_url: http://localhost:8000/v3
   # Let OVMS read the chat template and pick the parser. Naming one here
   # would OVERRIDE that, and Qwen3.5 does not use the hermes3 format.
-  tool_parser: auto
+  tool_parser: qwen3coder     # MEASURED: 'auto' decodes no tool calls for Qwen3.5
   model_repository_path: models
   request_timeout: 120            # first token from a cold model is not quick
 

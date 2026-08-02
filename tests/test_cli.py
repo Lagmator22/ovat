@@ -242,6 +242,50 @@ def test_run_rejects_an_unknown_engine_by_name():
     assert "react" in result.output            # and what is valid
 
 
+def test_run_does_not_leak_a_dangling_reasoning_tag(monkeypatch):
+    """Qwen3 emits a closing </think> with no opening tag.
+
+    Its chat template pre-fills the opening <think> itself, so the model only
+    ever produces the terminator. The TUI folds reasoning away and never shows
+    it; `ovat run` printed it verbatim, so every CLI answer on the AI PC ended
+    up carrying a stray </think>.
+
+    Everything BEFORE that terminator is reasoning, so it goes with it.
+    """
+    from ovat.cli import main as cli_main
+
+    class ThinkingAgent:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            return ("The user wants the capital of France. It is Paris.\n"
+                    "</think>\n\nParis.")
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: ThinkingAgent())
+    result = runner.invoke(app, ["run", "examples/react/workflow.yml", "-i", "hi"])
+    assert result.exit_code == 0
+    assert "</think>" not in result.output, "the reasoning terminator leaked"
+    assert "Paris." in result.output              # the answer survives
+    assert "The user wants" not in result.output  # the reasoning does not
+
+
+def test_run_still_prints_an_answer_that_has_no_reasoning(monkeypatch):
+    """Stripping must not eat an ordinary answer from a non-reasoning model."""
+    from ovat.cli import main as cli_main
+
+    class PlainAgent:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            return "Paris."
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: PlainAgent())
+    result = runner.invoke(app, ["run", "examples/react/workflow.yml", "-i", "hi"])
+    assert "Paris." in result.output
+
+
 def test_run_trace_writes_the_json_report(tmp_path, monkeypatch):
     # No OVMS here: swap the whole agent for a stub whose run() succeeds and
     # whose last_trace looks like a real native-loop trace. This tests the

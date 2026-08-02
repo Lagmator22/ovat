@@ -9,7 +9,7 @@ model:
   name: Qwen3.5-0.8B-int4-ov   # smaller model that fits in ~2 GB
   device: CPU                           # no GPU needed
   ovms_url: http://localhost:8000/v3
-  tool_parser: auto              # let OVMS read the chat template and choose
+  tool_parser: qwen3coder     # MEASURED: 'auto' decodes no tool calls for Qwen3.5
   # Only used by `ovat serve`:
   source_model: OpenVINO/Qwen3.5-0.8B-int4-ov
   model_repository_path: models

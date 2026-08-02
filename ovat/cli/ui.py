@@ -10,6 +10,7 @@ Nothing here is decorative-only. The styles below are referenced by name from
 the real command output, so changing a colour in one place restyles the whole
 CLI.
 """
+import re
 import sys
 
 from rich.console import Console
@@ -216,3 +217,46 @@ def status_text(status: str) -> Text:
     """Build the coloured glyph + label for a check status (ok/warn/fail)."""
     glyph, style = STATUS_GLYPH.get(status, ("?", "ovat.dim"))
     return Text(f"{glyph} {status}", style=style)
+
+
+# Reasoning models narrate before they answer. Qwen3 and the DeepSeek-R1
+# family wrap that narration in <think>…</think>; some exports spell it
+# <thinking>. Both spellings, any case, across newlines.
+#
+# This lives HERE, not in chat_screen.py where it started, because the plain
+# CLI needs it too and chat_screen imports textual. Moving it kept the
+# isolation contract intact: `ovat run` must work with no TUI installed.
+_THINK_BLOCK = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>",
+                          re.DOTALL | re.IGNORECASE)
+_THINK_OPEN = re.compile(r"<think(?:ing)?>", re.IGNORECASE)
+_THINK_CLOSE = re.compile(r"</think(?:ing)?>", re.IGNORECASE)
+
+
+def strip_thinking(text: str) -> str:
+    """Drop the reasoning, leaving the answer.
+
+    Interesting once, clutter every time after: a single Qwen3 answer can
+    spend fifteen lines deciding what the question meant before saying
+    anything. This affects DISPLAY only; the session keeps the raw text, so
+    /thinking on can bring it back and /save never loses it.
+
+    Three shapes, because models produce all three:
+
+    1. A complete <think>…</think> block.
+    2. An UNCLOSED <think>: generation stopped mid-thought (Esc, or the token
+       cap ran out). Everything from the opening tag on is reasoning.
+    3. A DANGLING </think> with no opening tag. Qwen3's chat template inserts
+       the opening tag itself, so the model only ever emits the terminator --
+       which meant every `ovat run` answer on the AI PC ended up carrying a
+       stray </think>. Everything BEFORE it is reasoning, so it goes too.
+    """
+    cleaned = _THINK_BLOCK.sub("", text)
+    match = _THINK_OPEN.search(cleaned)
+    if match:
+        cleaned = cleaned[:match.start()]
+    # Case 3 runs last, so a well-formed block has already been removed and
+    # cannot be mistaken for a dangling terminator.
+    closing = _THINK_CLOSE.search(cleaned)
+    if closing:
+        cleaned = cleaned[closing.end():]
+    return cleaned.strip()

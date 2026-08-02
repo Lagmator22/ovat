@@ -50,7 +50,7 @@ model:
   name: Qwen3.5-4B-int4-ov
   device: GPU
   ovms_url: http://localhost:8000/v3
-  tool_parser: auto
+  tool_parser: qwen3coder
 tools:
   - name: search_docs
     type: builtin
@@ -81,7 +81,7 @@ common reason a GPU or NPU device never shows up in `ovat doctor`.
 | **OS for the full agent** | Windows 11, Ubuntu 22.04/24.04, RHEL 9 | OVMS is x86-64 only. |
 | **OS for development** | + macOS (Apple Silicon or Intel) | Everything except serving. See [Platform support](#platform-support). |
 | **RAM** | 8 GB minimum, 16 GB comfortable | The default 4B model wants ~5 GB; a ~2 GB tier is documented below. Above 4B with long prompts, prefer 16 GB. |
-| **Disk** | ~8 GB free | Default model 3.5 GB, OVMS 126 MB zipped (more unpacked), Python deps ~2 GB, plus your index. |
+| **Disk** | ~8 GB free, **~15 GB with RAG** | Default model 3.5 GB, OVMS 126 MB zipped, Python deps ~2 GB. RAG needs the `convert` extra, which pulls torch + transformers + nncf — several GB more. |
 
 ### Intel GPU / NPU drivers
 
@@ -119,7 +119,8 @@ Install OVAT and the interactive TUI directly from PyPI. (We recommend using a v
 python -m venv .venv
 # Activate it:
 #   Mac/Linux:   source .venv/bin/activate
-#   Windows:     .\.venv\Scripts\Activate.ps1
+#   Windows:     .\.venv\Scripts\Activate.ps1     (PowerShell)
+#                .venv\Scripts\activate.bat        (cmd)
 
 pip install "ovat[tui]"
 ```
@@ -212,26 +213,32 @@ hf download OpenVINO/Qwen3.5-4B-int4-ov \
 These are already-converted OpenVINO IR models — no conversion step, no
 `optimum-cli`. Pick the tier that matches your machine:
 
-| Model | Download | RAM (est.) | Use it when |
+| Model | Download | RAM | Use it when |
 | --- | --- | --- | --- |
-| [`OpenVINO/Qwen3.5-4B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-4B-int4-ov) | **3.5 GB** | ~4.5–5.5 GB | **Default.** Text + vision + tools in one model. |
-| [`OpenVINO/Qwen3.5-0.8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-0.8B-int4-ov) | **0.9 GB** | ~1.5–2 GB | 8 GB laptop, or you want a fast first run. |
-| [`OpenVINO/Qwen3-8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3-8B-int4-ov) | 4.9 GB | ~6–7 GB | Strongest text answers; no vision. |
+| [`OpenVINO/Qwen3.5-4B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-4B-int4-ov) | **3.5 GB** | **4.3 GB steady, 6.5 GB peak** | **Default.** Text + vision + tools in one model. |
+| [`OpenVINO/Qwen3.5-0.8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-0.8B-int4-ov) | **0.9 GB** | ~1.5–2 GB (est.) | 8 GB laptop, or you want a fast first run. |
+| [`OpenVINO/Qwen3-8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3-8B-int4-ov) | 4.9 GB | ~6–7 GB (est.) | Strongest text answers; no vision. |
 | [`OpenVINO/whisper-base-int8-ov`](https://huggingface.co/OpenVINO/whisper-base-int8-ov) | 0.08 GB | small | The `transcribe` tool. |
 
-> **How the RAM column is derived**, since a wrong number here wastes a
-> download: it is *weights + KV cache + 15–20% runtime overhead*, the standard
-> INT4 estimate, applied to the weights actually on disk — not to the download
-> size. Those differ, and for these models it matters. A Qwen3.5 export is
-> **five** models, not one: `language_model` is 2.32 GB of the 4B's 3.24 GB,
-> with the rest in the text and vision embedding models that load alongside it.
+> **The 4B numbers are measured**, on an Intel AI PC serving through OVMS. Note
+> the **peak is 2.2 GB above the steady state** — the load spike is what
+> decides whether this fits, so an 8 GB machine is tight for the 4B and the
+> 0.8B tier is the safer choice there. The other rows are still estimates
+> (*weights + KV cache + 15–20% overhead*, applied to the weights on disk, not
+> the download size — a Qwen3.5 export is **five** models, and `language_model`
+> is only 2.32 GB of the 4B's 3.24 GB).
 >
-> The KV cache grows with context, so long prompts cost more than the table
-> shows. Intel notes that models **above** 4B with prompts over 1024 tokens can
-> want more than 16 GB
-> ([release notes](https://docs.openvino.ai/2026/about-openvino/release-notes-openvino.html)).
-> Treat these as planning figures; measure on your own hardware with
-> `ovat run --trace`, which reports sampled peak RSS.
+> **To measure it yourself, watch `ovms.exe`, not OVAT.** With OVMS serving,
+> the weights live in the *server* process; `ovat run --trace` reports the
+> **client's** peak RSS, which is around 0.45 GB and tells you nothing about
+> the model. Use Task Manager, or:
+>
+> ```powershell
+> Get-Process ovms | Select-Object WorkingSet64, PeakWorkingSet64
+> ```
+>
+> `--trace` peak RSS *is* the right number on the local `ovat chat` path, where
+> the model runs inside the OVAT process.
 
 The Qwen3.5 models are **unified**: one export does text generation, image
 understanding *and* tool calling, so the RAG, ReAct and multimodal examples
@@ -269,7 +276,11 @@ ovat run workflow.yml --input "hi" --dry-run
 ovat index ./my-notes workflow.yml
 
 # 5. Windows/Linux: start OVMS. Returns once it is READY and leaves it
-#    running in the background (pid in ovms.pid, logs in ovms.log)
+#    running in the background (pid in ovms.pid, logs in ovms.log).
+#    THE FIRST RUN DOWNLOADS THE MODEL (3.5 GB) and can take a long time on
+#    a slow link. That is expected: serve shows elapsed time and only gives
+#    up if nothing happens at all for 5 minutes, so it will wait as long as
+#    the download keeps moving. Detail lands in ovms.log.
 ovat serve workflow.yml
 
 # 6. ask the agent something
@@ -355,7 +366,7 @@ TUI can be adopted, or removed, without touching the toolkit.
 | `model` | `name` | model name OVMS serves |
 | | `device` | `CPU`, `GPU`, or `NPU` |
 | | `ovms_url` | where OVMS listens |
-| | `tool_parser` | how tool calls are decoded. `auto` lets OVMS read the chat template and choose — prefer it, since naming one overrides OVMS's own detection and the right answer differs per family (`hermes3` for Qwen3, `qwen3coder` for Qwen3.5) |
+| | `tool_parser` | how tool calls are decoded. **Name one** — `qwen3coder` for Qwen3.5, `hermes3` for Qwen3. `auto` is not reliable: measured on live OVMS, it selected no parser for Qwen3.5 and returned the tool call as plain text, so the agent answered fluently and never called a tool |
 | | `source_model` | (for `ovat serve`) HF id to download/serve |
 | | `model_repository_path` | (for `ovat serve`) folder where models live |
 | `tools` | `name` / `type` | `builtin` (`search_docs`, `transcribe`, `describe_image`) or `mcp_stdio` |

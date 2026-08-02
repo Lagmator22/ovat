@@ -77,6 +77,90 @@ def test_prefix_caching_is_a_knob_not_a_constant(monkeypatch, tmp_path):
     assert "--enable_prefix_caching" not in captured["cmd"]
 
 
+def test_a_download_that_keeps_moving_is_never_timed_out(monkeypatch, tmp_path):
+    """No absolute cap: a model download can legitimately take all night.
+
+    The old 120s cap could not cover even a fast first run. Measured on the
+    AI PC, 2026-08-03, serving Qwen3.5-4B from scratch: ~185s needed against
+    that 120s cap, so `ovat serve` could not succeed on any machine that had
+    to download -- i.e. every new machine.
+
+    Raising the number is not the fix either. Download time is unbounded: it
+    depends on the link, and on a slow one this is hours. Any fixed value is
+    either too small for a slow link or so large it is useless for detecting
+    a genuine hang. This is the same reason curl grew --speed-time/-limit and
+    wget grew --read-timeout: watch PROGRESS, not elapsed time.
+
+    So the clock only runs while nothing is happening. Here the server keeps
+    writing to its log, so it must still be waiting after well past any fixed
+    cap would have fired.
+    """
+    from ovat.core.model_server import ModelServer
+
+    server = ModelServer(model_name="m")
+    server.process = None
+    log = tmp_path / "ovms.log"
+    log.write_text("start")
+    server.log_path = str(log)
+
+    ticks = {"n": 0}
+    clock = {"t": 0.0}
+
+    def fake_sleep(seconds):
+        clock["t"] += seconds
+        ticks["n"] += 1
+        # Still downloading: the log grows on every poll.
+        log.write_text("x" * (ticks["n"] * 1000))
+
+    monkeypatch.setattr("ovat.core.model_server.time.sleep", fake_sleep)
+    monkeypatch.setattr("ovat.core.model_server.time.time", lambda: clock["t"])
+
+    # A 60s stall budget, but progress every poll, so it must run far past it.
+    server.wait_until_ready(stall_timeout=60, max_polls=200)
+    # The real assertion is about TIME, not poll count: it kept waiting for
+    # simulated minutes, well beyond both the 60s stall budget and the old
+    # 120s hard cap, purely because the download kept moving.
+    assert clock["t"] > 300, (
+        f"gave up after {clock['t']}s despite continuous progress; a stall "
+        f"budget must not behave like a deadline")
+
+
+def test_a_genuinely_stalled_server_still_gives_up(monkeypatch, tmp_path):
+    """The other half: no progress at all must not wait forever."""
+    from ovat.core.model_server import ModelServer
+
+    server = ModelServer(model_name="m")
+    server.process = None
+    log = tmp_path / "ovms.log"
+    log.write_text("start")          # never grows again
+    server.log_path = str(log)
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr("ovat.core.model_server.time.sleep",
+                        lambda s: clock.__setitem__("t", clock["t"] + s))
+    monkeypatch.setattr("ovat.core.model_server.time.time", lambda: clock["t"])
+
+    assert server.wait_until_ready(stall_timeout=60) is False
+    assert clock["t"] < 200, "waited far longer than the stall budget"
+
+
+def test_readiness_reports_progress_while_it_waits(monkeypatch, tmp_path):
+    """Silence then a failure reads as a hang, not as a download."""
+    from ovat.core.model_server import ModelServer
+
+    server = ModelServer(model_name="m")
+    server.process = None
+    server.log_path = str(tmp_path / "missing.log")
+    seen = []
+    clock = {"t": 0.0}
+    monkeypatch.setattr("ovat.core.model_server.time.sleep",
+                        lambda s: clock.__setitem__("t", clock["t"] + s))
+    monkeypatch.setattr("ovat.core.model_server.time.time", lambda: clock["t"])
+    server.wait_until_ready(stall_timeout=10,
+                            on_progress=lambda elapsed: seen.append(elapsed))
+    assert seen, "wait_until_ready never reported progress"
+
+
 def test_tool_parser_auto_lets_ovms_choose(monkeypatch, tmp_path):
     """`auto` must OMIT --tool_parser, not pass the string "auto".
 
