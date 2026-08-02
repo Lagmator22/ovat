@@ -77,7 +77,7 @@ common reason a GPU or NPU device never shows up in `ovat doctor`.
 | | Requirement | Notes |
 | --- | --- | --- |
 | **Python** | 3.10 – 3.14 | `python --version`. Wheels exist for all of these. |
-| **Git** | any | Needed to clone; OVAT is not on PyPI yet. |
+| **Git** | any | Optional (only needed for developer installation). |
 | **OS for the full agent** | Windows 11, Ubuntu 22.04/24.04, RHEL 9 | OVMS is x86-64 only. |
 | **OS for development** | + macOS (Apple Silicon or Intel) | Everything except serving. See [Platform support](#platform-support). |
 | **RAM** | 8 GB minimum, 16 GB comfortable | The default 4B model wants ~5 GB; a ~2 GB tier is documented below. Above 4B with long prompts, prefer 16 GB. |
@@ -113,16 +113,27 @@ ovat doctor workflow.yml     # look at the "OpenVINO devices" row
 
 ### 1. OVAT itself
 
-OVAT is **not published on PyPI yet**, so install it from a clone. `pip
-install ovat` will not work.
+Install OVAT and the interactive TUI directly from PyPI. (We recommend using a virtual environment):
+
+```bash
+python -m venv .venv
+# Activate it:
+#   Mac/Linux:   source .venv/bin/activate
+#   Windows:     .\.venv\Scripts\Activate.ps1
+
+pip install "ovat[tui]"
+```
+
+**For Developers (Optional)**
+
+If you want to edit the code or contribute, install from a clone instead:
 
 ```bash
 git clone https://github.com/Lagmator22/ovat.git
 cd ovat
 
 python -m venv .venv
-# Activate it: bash/zsh:    source .venv/bin/activate
-#              PowerShell:  .\.venv\Scripts\Activate.ps1
+# Activate it (see above)
 
 python -m pip install -e ".[langchain,llamaindex,openai-agents,tui]"
 ```
@@ -642,9 +653,10 @@ Honest about where the abstraction holds and where it does not yet:
 | OVMS lifecycle: `ovat serve` + `--stop` (pidfile, no PATH edits) | |
 | Run traces: `ovat run --trace` (tokens, latency, RSS) | Intel UT streaming (writes binary traces; needs `bin2perfetto`) |
 | Telemetry sources + JSONL export, CLI and TUI page | OVMS Docker integration tests, stress tests |
-| OpenTelemetry through the plano gateway (config, not code) | Published PyPI package (install from a clone for now) |
+| OpenTelemetry through the plano gateway (config, not code) | |
 | `ovat doctor` platform-aware diagnostics | CI |
 | Unified multimodal models (one export: text + vision + tools) | |
+| Published PyPI package |
 
 ### Platform support
 
