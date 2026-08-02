@@ -268,11 +268,21 @@ ovat run workflow.yml --input "summarise my meeting notes"
 ovat serve workflow.yml --stop
 ```
 
-On **macOS**, steps 5 and 6 have no OVMS. Use the local path instead:
+On **macOS**, steps 5 and 6 have no OVMS. Use the local path instead — note it
+uses [`examples/rag/workflow.yml`](examples/rag/workflow.yml), not the starter
+file: `ovat chat` answers *from your index*, so it needs a config with a `rag:`
+section, and the starter ships that block commented out.
 
 ```bash
+# the embedder, once (there is no pre-built OpenVINO IR of bge-small)
+pip install "ovat[convert]"
+optimum-cli export openvino --model BAAI/bge-small-en-v1.5 \
+    --task feature-extraction models/bge-small-en-v1.5
+
 hf download OpenVINO/Qwen3.5-0.8B-int4-ov --local-dir models/Qwen3.5-0.8B-int4-ov
-ovat chat workflow.yml --input "what did the Q3 review conclude?"
+ovat index ./examples/rag/docs examples/rag/workflow.yml
+ovat chat examples/rag/workflow.yml --input "What is OVAT's memory budget?"
+# → "Under 8 GB", and the source file it came from
 ```
 
 ### Three worked examples
@@ -397,10 +407,14 @@ OVMS does not run on macOS, but `openvino_genai` does. `ovat chat` answers from
 your index with a **local** OpenVINO model, so you can test real RAG without a
 server (no tool-calling; it always retrieves then answers):
 
+Both commands need a config carrying a `rag:` section — `ovat chat` answers
+from an index, so it exits early without one. `examples/rag/workflow.yml` has
+it; the file `ovat init` writes ships that block commented out.
+
 ```bash
 hf download OpenVINO/Qwen3.5-0.8B-int4-ov --local-dir models/Qwen3.5-0.8B-int4-ov
-ovat index ./my-notes workflow.yml
-ovat chat workflow.yml --model-path models/Qwen3.5-0.8B-int4-ov \
+ovat index ./my-notes examples/rag/workflow.yml
+ovat chat examples/rag/workflow.yml --model-path models/Qwen3.5-0.8B-int4-ov \
     --input "what did the Q3 review conclude?"
 # → an answer grounded in your notes, with the source files listed
 ```

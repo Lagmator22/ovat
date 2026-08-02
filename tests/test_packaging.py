@@ -1,7 +1,16 @@
 """Packaging metadata that keeps the contributor environment reproducible."""
 
 from pathlib import Path
-import tomllib
+
+# tomllib is stdlib only from 3.11. The project supports 3.10, and the README
+# advertises it, so importing it bare made this whole module fail to collect
+# on the oldest Python we claim to support -- a packaging test that cannot run
+# on a supported interpreter is worse than none. tomli is the same library
+# under its pre-stdlib name, and rides in the dev extra for 3.10 only.
+try:
+    import tomllib
+except ModuleNotFoundError:                  # Python 3.10
+    import tomli as tomllib
 
 
 def _extras():

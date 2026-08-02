@@ -47,7 +47,10 @@ tui = ["textual", "pyfiglet"]
 dev = ["pytest", "pytest-cov", "langchain>=1", "langchain-openai>=1",
        "langgraph>=1", "llama-index-core>=0.14",
        "llama-index-llms-openai-like>=0.5", "openai-agents>=0.1",
-       "textual", "pyfiglet"]
+       "textual", "pyfiglet",
+       # tomllib is stdlib from 3.11; on 3.10, which we support and advertise,
+       # the packaging tests need it under its original name.
+       "tomli; python_version < '3.11'"]
 
 [tool.pytest.ini_options]
 markers = [
