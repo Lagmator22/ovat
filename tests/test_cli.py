@@ -120,6 +120,128 @@ def test_doctor_survives_markup_in_a_config(tmp_path):
     assert "Q[/b]8B" in result.output
 
 
+def test_run_engine_flag_overrides_the_config(monkeypatch):
+    """`--engine` swaps the framework without editing YAML.
+
+    Testing one framework used to mean opening the workflow file, changing
+    agent.type, running, and changing it back -- painful on a remote AI PC
+    over SSH, which is exactly where the framework engines have to be tested
+    because they need a live OVMS.
+    """
+    from ovat.cli import main as cli_main
+
+    seen = {}
+
+    class StubAgent:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            return "ok"
+
+    def fake_build(cfg, skip_rag=False):
+        seen["type"] = cfg.agent.type
+        return StubAgent()
+
+    monkeypatch.setattr(cli_main, "build_agent", fake_build)
+    result = runner.invoke(app, ["run", "examples/react/workflow.yml",
+                                 "-i", "hi", "--engine", "llamaindex"])
+    assert result.exit_code == 0
+    assert seen["type"] == "llamaindex"        # the override reached the factory
+    # The banner reads the CONFIG, never a literal, so an override that did not
+    # write back to cfg would print the old engine and quietly mislead a demo.
+    assert "LlamaIndex" in result.output
+
+
+def test_run_without_engine_flag_keeps_the_config_value(monkeypatch):
+    """Omitting --engine must not disturb what the workflow already says."""
+    from ovat.cli import main as cli_main
+
+    seen = {}
+
+    class StubAgent:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            return "ok"
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: seen.update(
+                            type=cfg.agent.type) or StubAgent())
+    runner.invoke(app, ["run", "examples/react/workflow.yml", "-i", "hi"])
+    assert seen["type"] == "react"             # examples/react says react
+
+
+def _engine_used(monkeypatch, *args):
+    """Run `ovat run` with ARGS and report which engine reached the factory."""
+    from ovat.cli import main as cli_main
+
+    seen = {}
+
+    class StubAgent:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            return "ok"
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: seen.update(
+                            type=cfg.agent.type) or StubAgent())
+    result = runner.invoke(app, ["run", "examples/react/workflow.yml",
+                                 "-i", "hi", *args])
+    return seen.get("type"), result
+
+
+def test_bare_engine_flags_select_their_engine(monkeypatch):
+    """`--llamaindex` reads better than `--engine llamaindex` in a demo, and
+    typing it is the natural first guess."""
+    for flag, expected in (("--native", "native"),
+                           ("--react", "react"),
+                           ("--llamaindex", "llamaindex"),
+                           ("--openai-agents", "openai-agents")):
+        used, result = _engine_used(monkeypatch, flag)
+        assert used == expected, f"{flag} selected {used}"
+        assert result.exit_code == 0
+
+
+def test_library_names_work_as_aliases(monkeypatch):
+    """The engine is called `react` but the library is LangChain, and
+    `openai-agents` is the OpenAI SDK. Both names are what people actually
+    reach for, so both select the same engine rather than erroring."""
+    assert _engine_used(monkeypatch, "--langchain")[0] == "react"
+    assert _engine_used(monkeypatch, "--openai-sdk")[0] == "openai-agents"
+
+
+def test_two_different_engines_is_an_error_not_a_coin_flip(monkeypatch):
+    """Silently honouring one of them would make a benchmark lie about which
+    framework produced the numbers."""
+    used, result = _engine_used(monkeypatch, "--react", "--llamaindex")
+    assert result.exit_code != 0
+    assert used is None                       # nothing was built
+    assert "react" in result.output and "llamaindex" in result.output
+
+
+def test_the_same_engine_twice_is_fine(monkeypatch):
+    """--react --langchain name ONE engine. Rejecting that would be pedantry."""
+    used, result = _engine_used(monkeypatch, "--react", "--langchain")
+    assert result.exit_code == 0
+    assert used == "react"
+
+
+def test_engine_flag_and_a_bare_flag_must_agree(monkeypatch):
+    """Mixing the two spellings is fine when they mean the same engine."""
+    assert _engine_used(monkeypatch, "--engine", "react", "--langchain")[0] == "react"
+    assert _engine_used(monkeypatch, "--engine", "react", "--llamaindex")[1].exit_code != 0
+
+
+def test_run_rejects_an_unknown_engine_by_name():
+    """A typo must name the valid options, not fail inside the factory."""
+    result = runner.invoke(app, ["run", "examples/react/workflow.yml",
+                                 "-i", "hi", "--engine", "langchain"])
+    assert result.exit_code != 0
+    assert "langchain" in result.output        # says what was wrong
+    assert "react" in result.output            # and what is valid
+
+
 def test_run_trace_writes_the_json_report(tmp_path, monkeypatch):
     # No OVMS here: swap the whole agent for a stub whose run() succeeds and
     # whose last_trace looks like a real native-loop trace. This tests the

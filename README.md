@@ -375,6 +375,28 @@ add it and the tool returns real chunks with citations.
 
 All four expose the same configuration and tools; swapping is a one-word edit.
 
+For a single run, override `agent.type` without touching the file. The YAML is
+**never rewritten** — the next run goes back to whatever it says:
+
+```bash
+ovat run workflow.yml -i "..." --llamaindex        # bare flag
+ovat run workflow.yml -i "..." --engine llamaindex # or name it explicitly
+ovat bench workflow.yml -i "..." --engines native,react   # or compare them
+```
+
+Each engine answers to its library name too, because that is what people
+reach for first:
+
+| Flag | Also | Engine |
+| --- | --- | --- |
+| `--native` | | `native` |
+| `--react` | `--langchain` | `react` |
+| `--llamaindex` | | `llamaindex` |
+| `--openai-agents` | `--openai-sdk` | `openai-agents` |
+
+Naming two different engines is an error rather than a coin flip, so a trace
+can never report a framework that did not produce it.
+
 ---
 
 ## RAG: search your own documents

@@ -148,6 +148,23 @@ def run(
     input: str = typer.Option(None, "--input", "-i",
                               help="Your question for the agent. Not needed "
                                    "with --dry-run."),
+    engine: str = typer.Option(None, "--engine", "-e",
+                               help="Override agent.type for this run: "
+                                    "native, react, llamaindex, or "
+                                    "openai-agents."),
+    # The same choice as bare flags, because --llamaindex is what people
+    # actually type. Each engine also answers to its LIBRARY name: the engine
+    # is called `react` but the library is LangChain, and `--langchain` was
+    # the first guess made twice during review. A shorthand that reproduced
+    # that confusion would not be a shorthand.
+    native: bool = typer.Option(False, "--native",
+                                help="Shorthand for --engine native."),
+    react: bool = typer.Option(False, "--react", "--langchain",
+                               help="Shorthand for --engine react (LangChain)."),
+    llamaindex: bool = typer.Option(False, "--llamaindex",
+                                    help="Shorthand for --engine llamaindex."),
+    openai_agents: bool = typer.Option(False, "--openai-agents", "--openai-sdk",
+                                       help="Shorthand for --engine openai-agents."),
     dry_run: bool = typer.Option(False, "--dry-run",
                                  help="Build the agent and show it, but do not call the model."),
     trace: str = typer.Option(None, "--trace",
@@ -176,6 +193,44 @@ def run(
         raise typer.Exit(code=1)
     # Step 1: YAML -> validated config. A bad file fails loudly right here.
     cfg = _load_config(config)
+
+    # --engine overrides agent.type for THIS run only; the file is not touched.
+    # Testing one framework otherwise meant editing the YAML, running, and
+    # editing it back, which is miserable over SSH on the AI PC -- the one
+    # machine where the framework engines can be tested at all, since they
+    # need a live OVMS.
+    # Collect every engine the user named, however they spelled it. Gathering
+    # them into a SET first means --react --langchain (one engine, two names)
+    # is accepted while --react --llamaindex (two engines) is refused, without
+    # a special case for the aliases.
+    named = {name for flag, name in ((native, "native"),
+                                     (react, "react"),
+                                     (llamaindex, "llamaindex"),
+                                     (openai_agents, "openai-agents")) if flag}
+    if engine is not None:
+        named.add(engine)
+    if len(named) > 1:
+        # Picking one silently would make a trace report a framework that did
+        # not produce it, which is the kind of quiet wrongness that makes a
+        # benchmark worse than no benchmark.
+        rprint(f"[red]Pick one engine, not {len(named)}.[/red] You asked for: "
+               f"[bold]{', '.join(sorted(named))}[/bold].")
+        raise typer.Exit(code=1)
+    engine = named.pop() if named else None
+
+    if engine is not None:
+        from ovat.agent.factory import AGENT_TYPES
+        if engine not in AGENT_TYPES:
+            # Name the bad value AND the valid ones. "langchain" is the
+            # obvious wrong guess for the engine actually called "react".
+            rprint(f"[red]Unknown engine {esc(engine)}.[/red] Choose one of: "
+                   f"[bold]{', '.join(AGENT_TYPES)}[/bold].")
+            raise typer.Exit(code=1)
+        # Write it BACK into the config rather than passing it alongside.
+        # Everything downstream -- the banner, the trace's engine field --
+        # reads cfg.agent.type, so a value carried separately would leave
+        # both of them reporting the engine that did not run.
+        cfg.agent.type = engine
     # Step 2: config -> a fully wired agent (LLM + tools + loop). dry-run skips
     # loading the RAG model so the preview works on any machine.
     agent = build_agent(cfg, skip_rag=dry_run)

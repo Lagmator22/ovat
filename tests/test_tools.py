@@ -31,6 +31,55 @@ def test_search_docs_uses_real_retriever_when_given():
     assert out == [{"text": "match for python", "distance": 0.1}]
 
 
+def test_search_docs_reports_a_retrieval_failure_in_its_declared_shape():
+    """A failing retriever must come back as a RESULT, not a different type.
+
+    search_docs declares `-> list[dict]` and returned a bare string on error.
+    The native loop hid it, because AgentLoop._execute calls str() on whatever
+    a tool returns. Over MCP -- a path the README documents, with
+    `command: ["python", "-m", "ovat.tools.search_docs"]` -- FastMCP validates
+    the return against that annotation and raised instead:
+
+        Invalid structured content returned by tool search_docs:
+        'Error retrieving documents: db gone' is not of type 'array'
+
+    So a locked database became a client-side exception rather than a sentence
+    the model could read and recover from.
+    """
+    class Boom:
+        def retrieve(self, query, top_k=5):
+            raise RuntimeError("db gone")
+
+    out = search_docs_impl("q", retriever=Boom())
+    assert isinstance(out, list), f"declared list[dict], returned {type(out).__name__}"
+    assert len(out) == 1
+    assert "db gone" in out[0]["text"]      # the cause still reaches the model
+    assert out[0]["text"].startswith("Error")
+
+
+def test_search_docs_error_survives_a_real_mcp_round_trip():
+    """The regression above, through the actual MCP server rather than a mock."""
+    import asyncio
+
+    from fastmcp import Client
+    from ovat.tools import search_docs as sd
+
+    class Boom:
+        def retrieve(self, query, top_k=5):
+            raise RuntimeError("db gone")
+
+    async def call():
+        sd.configure(Boom())
+        try:
+            async with Client(sd.mcp) as client:
+                return await client.call_tool("search_docs", {"query": "q"})
+        finally:
+            sd.configure(None)              # never leak into other tests
+
+    result = asyncio.run(call())
+    assert "db gone" in str(result.content)
+
+
 # transcribe
 
 def test_transcribe_reports_missing_file_clearly():

@@ -54,7 +54,19 @@ Two deliberate behaviours in that table:
 
 ## Try the switch yourself
 
-Edit one line in `workflow.yml`:
+Fastest way — a flag, no file edit. The YAML is **never rewritten**, so the
+next run goes back to whatever it says:
+
+```bash
+ovat run examples/react/workflow.yml -i "What can you do?" --llamaindex
+ovat run examples/react/workflow.yml -i "What can you do?" --native
+```
+
+Each engine also answers to its library name, since that is the natural first
+guess: `--langchain` = `--react`, and `--openai-sdk` = `--openai-agents`.
+Naming two different engines is an error rather than a coin flip.
+
+To change it permanently, edit one line in `workflow.yml`:
 
 ```yaml
 agent:
