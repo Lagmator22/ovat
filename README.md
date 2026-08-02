@@ -375,6 +375,13 @@ add it and the tool returns real chunks with citations.
 
 All four expose the same configuration and tools; swapping is a one-word edit.
 
+For a single run, `--engine` overrides `agent.type` without touching the file:
+
+```bash
+ovat run workflow.yml -i "what tools do you have?" --engine llamaindex
+ovat bench workflow.yml -i "..." --engines native,react   # or compare them
+```
+
 ---
 
 ## RAG: search your own documents

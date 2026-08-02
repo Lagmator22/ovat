@@ -148,6 +148,10 @@ def run(
     input: str = typer.Option(None, "--input", "-i",
                               help="Your question for the agent. Not needed "
                                    "with --dry-run."),
+    engine: str = typer.Option(None, "--engine", "-e",
+                               help="Override agent.type for this run: "
+                                    "native, react, llamaindex, or "
+                                    "openai-agents."),
     dry_run: bool = typer.Option(False, "--dry-run",
                                  help="Build the agent and show it, but do not call the model."),
     trace: str = typer.Option(None, "--trace",
@@ -176,6 +180,25 @@ def run(
         raise typer.Exit(code=1)
     # Step 1: YAML -> validated config. A bad file fails loudly right here.
     cfg = _load_config(config)
+
+    # --engine overrides agent.type for THIS run only; the file is not touched.
+    # Testing one framework otherwise meant editing the YAML, running, and
+    # editing it back, which is miserable over SSH on the AI PC -- the one
+    # machine where the framework engines can be tested at all, since they
+    # need a live OVMS.
+    if engine is not None:
+        from ovat.agent.factory import AGENT_TYPES
+        if engine not in AGENT_TYPES:
+            # Name the bad value AND the valid ones. "langchain" is the
+            # obvious wrong guess for the engine actually called "react".
+            rprint(f"[red]Unknown engine {esc(engine)}.[/red] Choose one of: "
+                   f"[bold]{', '.join(AGENT_TYPES)}[/bold].")
+            raise typer.Exit(code=1)
+        # Write it BACK into the config rather than passing it alongside.
+        # Everything downstream -- the banner, the trace's engine field --
+        # reads cfg.agent.type, so a value carried separately would leave
+        # both of them reporting the engine that did not run.
+        cfg.agent.type = engine
     # Step 2: config -> a fully wired agent (LLM + tools + loop). dry-run skips
     # loading the RAG model so the preview works on any machine.
     agent = build_agent(cfg, skip_rag=dry_run)

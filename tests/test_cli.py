@@ -120,6 +120,66 @@ def test_doctor_survives_markup_in_a_config(tmp_path):
     assert "Q[/b]8B" in result.output
 
 
+def test_run_engine_flag_overrides_the_config(monkeypatch):
+    """`--engine` swaps the framework without editing YAML.
+
+    Testing one framework used to mean opening the workflow file, changing
+    agent.type, running, and changing it back -- painful on a remote AI PC
+    over SSH, which is exactly where the framework engines have to be tested
+    because they need a live OVMS.
+    """
+    from ovat.cli import main as cli_main
+
+    seen = {}
+
+    class StubAgent:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            return "ok"
+
+    def fake_build(cfg, skip_rag=False):
+        seen["type"] = cfg.agent.type
+        return StubAgent()
+
+    monkeypatch.setattr(cli_main, "build_agent", fake_build)
+    result = runner.invoke(app, ["run", "examples/react/workflow.yml",
+                                 "-i", "hi", "--engine", "llamaindex"])
+    assert result.exit_code == 0
+    assert seen["type"] == "llamaindex"        # the override reached the factory
+    # The banner reads the CONFIG, never a literal, so an override that did not
+    # write back to cfg would print the old engine and quietly mislead a demo.
+    assert "LlamaIndex" in result.output
+
+
+def test_run_without_engine_flag_keeps_the_config_value(monkeypatch):
+    """Omitting --engine must not disturb what the workflow already says."""
+    from ovat.cli import main as cli_main
+
+    seen = {}
+
+    class StubAgent:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            return "ok"
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: seen.update(
+                            type=cfg.agent.type) or StubAgent())
+    runner.invoke(app, ["run", "examples/react/workflow.yml", "-i", "hi"])
+    assert seen["type"] == "react"             # examples/react says react
+
+
+def test_run_rejects_an_unknown_engine_by_name():
+    """A typo must name the valid options, not fail inside the factory."""
+    result = runner.invoke(app, ["run", "examples/react/workflow.yml",
+                                 "-i", "hi", "--engine", "langchain"])
+    assert result.exit_code != 0
+    assert "langchain" in result.output        # says what was wrong
+    assert "react" in result.output            # and what is valid
+
+
 def test_run_trace_writes_the_json_report(tmp_path, monkeypatch):
     # No OVMS here: swap the whole agent for a stub whose run() succeeds and
     # whose last_trace looks like a real native-loop trace. This tests the
