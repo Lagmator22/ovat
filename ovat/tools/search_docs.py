@@ -46,7 +46,19 @@ def search_docs_impl(query: str, top_k: int = 5,
     try:
         return retriever.retrieve(query, top_k=top_k)
     except Exception as exc:
-        return f"Error retrieving documents: {exc}"
+        # The error is reported IN the declared shape, not as a bare string.
+        # Returning a str here read fine on the native path, because
+        # AgentLoop._execute calls str() on whatever a tool hands back. Over
+        # MCP it was a crash: FastMCP validates the return against this
+        # function's `-> list[dict]` annotation and rejected the string with
+        # "is not of type 'array'", so a locked database surfaced as a
+        # client-side exception instead of a sentence the model could read
+        # and recover from on its next turn.
+        return [{
+            "text": f"Error retrieving documents: {exc}",
+            "source": None,
+            "distance": 0.0,
+        }]
 
 
 # The OpenAI-style tool schema my agent loop shows the model. I keep it next to
