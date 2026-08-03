@@ -982,3 +982,49 @@ def test_indexing_without_rag_says_how_to_turn_it_on(tmp_path):
     assert "nothing is broken" in result.output
     assert "stub mode" in result.output
     assert "optimum-cli" in result.output
+
+
+def test_run_warns_when_a_tool_call_was_never_decoded(monkeypatch):
+    """Raw tool-call markup in the answer means no tool ran. Say so.
+
+    Twice now this has failed silently on live hardware: `tool_parser: auto`
+    selected no parser at all, and later an intermittent case where the model
+    emitted <parameter=search_docs> instead of <function=search_docs> and
+    qwen3coder correctly refused it. Both times the agent answered fluently
+    having called nothing, and only a trace inspection revealed it.
+    """
+    from ovat.cli import main as cli_main
+
+    class RawMarkupAgent:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            return ("<tool_call>\n<function=search_docs>\n"
+                    "<parameter=query>budget</parameter>\n"
+                    "</function>\n</tool_call>")
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: RawMarkupAgent())
+    result = runner.invoke(app, ["run", "examples/react/workflow.yml", "-i", "hi"])
+    # Collapse whitespace before matching: rich hard-wraps to the terminal
+    # width, so "never run" can arrive as "never \nrun" and a literal
+    # substring check fails on a warning that printed perfectly.
+    flat = " ".join(result.output.split())
+    assert "never run" in flat                    # the warning fired
+    assert "qwen3coder" in flat                   # and names the likely cause
+
+
+def test_run_does_not_warn_on_an_ordinary_answer(monkeypatch):
+    """The warning must not cry wolf on every normal reply."""
+    from ovat.cli import main as cli_main
+
+    class PlainAgent:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            return "OVAT targets under 8 GB. Source: examples/rag/docs/ovat-facts.md"
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: PlainAgent())
+    result = runner.invoke(app, ["run", "examples/react/workflow.yml", "-i", "hi"])
+    assert "never run" not in " ".join(result.output.split())

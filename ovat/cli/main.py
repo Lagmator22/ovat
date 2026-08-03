@@ -276,6 +276,25 @@ def run(
     # so the model emits only the terminator). --trace still records the raw
     # text; this is display only.
     answer = ui.strip_thinking(answer) or answer
+
+    # An answer that still CONTAINS tool-call markup is a tool call that was
+    # never decoded. The model asked for a tool, the parser did not recognise
+    # the shape, and the raw text came back as prose -- so the agent looks
+    # like it answered while no tool ever ran.
+    #
+    # Seen twice now, silently both times: first with tool_parser: auto, which
+    # selected no parser at all; then intermittently on a live python_on
+    # server where the model emitted <parameter=search_docs> instead of
+    # <function=search_docs> and qwen3coder correctly refused it. The second
+    # case did not reproduce after a restart, which is exactly why it needs to
+    # announce itself rather than wait to be noticed.
+    if ui.looks_like_undecoded_tool_call(answer):
+        rprint("[yellow]Warning: this answer still contains raw tool-call "
+               "markup, so the tool was never run.[/yellow]")
+        rprint(f"[dim]Usually the wrong[/dim] tool_parser [dim]for this model "
+               f"(Qwen3.5 needs[/dim] qwen3coder[dim], Qwen3 needs[/dim] "
+               f"hermes3[dim]). It can also be the model emitting a malformed "
+               f"call, which a retry often clears.[/dim]")
     # esc() stops the answer being read as markup; highlight=False stops rich
     # RE-styling it afterwards. Its highlighter treats plain text as a python
     # repr, so it bolds every bracket and colours bare numbers, which puts

@@ -260,3 +260,28 @@ def strip_thinking(text: str) -> str:
     if closing:
         cleaned = cleaned[closing.end():]
     return cleaned.strip()
+
+
+# Tool-call markup that reached the user as prose. Both spellings the wild has
+# produced: the correct <function=name>, and the malformed <parameter=name>
+# seen on a live server when the model got its own format wrong.
+_UNDECODED_TOOL_CALL = re.compile(
+    r"<tool_call>|</tool_call>|<function=|</function>|<parameter=",
+    re.IGNORECASE)
+
+
+def looks_like_undecoded_tool_call(text: str) -> bool:
+    """Did a tool call end up in the ANSWER instead of being executed?
+
+    When OVMS has the wrong tool_parser -- or the model emits a call the right
+    parser cannot read -- the markup is passed through as content. The agent
+    then answers fluently, having run no tool at all, and nothing anywhere
+    says so. That has happened twice: `tool_parser: auto` selecting no parser,
+    and an intermittent live failure where the model wrote
+    <parameter=search_docs> in place of <function=search_docs>.
+
+    Deliberately a plain substring check on the markers, not a parse. The
+    input is by definition malformed, so anything stricter would miss the
+    cases this exists to catch.
+    """
+    return bool(_UNDECODED_TOOL_CALL.search(text or ""))
