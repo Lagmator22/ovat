@@ -129,7 +129,7 @@ workflow.yml ──load_workflow()──> WorkflowConfig (pydantic, STRICT)
    to OVMS for exactly this reason.
 5. **Tests gate everything.** Run `python -m pytest -q` with the venv's own
    interpreter (`.venv/bin/python` on macOS, `.\.venv\Scripts\python.exe`
-   on the AI PC), never the system one. ~394 tests; must end green. Every fix
+   on the AI PC), never the system one. ~522 tests; must end green. Every fix
    ships with a test, and that test must FAIL with the fix backed out: verify
    it, do not assume. A test that passes against the broken code is worse
    than none, and that has happened here more than once. One logical change
@@ -144,6 +144,33 @@ workflow.yml ──load_workflow()──> WorkflowConfig (pydantic, STRICT)
    code with guidance; only write code for him when he explicitly asks.
 
 ## Landmines: each of these cost a whole session once
+
+- **`tool_parser: auto` decodes NOTHING for Qwen3.5.** OVMS documents that it
+  picks a parser from the chat template when the flag is absent, so `auto`
+  looked like the safe default. Measured on live OVMS: it selected no parser
+  at all and returned the tool call as plain text, `finish_reason: "stop"`,
+  zero tool calls, the raw `<tool_call><function=...>` markup printed as the
+  answer. `qwen3coder` is the correct value for Qwen3.5, `hermes3` for Qwen3.
+  NAME one. The failure is silent -- the agent answers fluently and simply
+  never calls a tool -- so it survives every test that only checks for an
+  answer. Check for a CITATION, or a tool_calls count in the trace.
+- **A pipeline that CONSTRUCTS is not the right pipeline.** On a unified
+  Qwen3.5 export, `openvino_genai.LLMPipeline` builds fine, taking 24.6s, and
+  then dies on the first `generate()` with "Port for tensor name input_ids was
+  not found". `VLMPipeline` is the one that works. So never infer support from
+  a successful constructor; pick from the export's file layout instead (see
+  `model_scout.identify_model`).
+- **Never time-box a model download.** `wait_until_ready` had a fixed 120s cap
+  and could not survive a first run, which needs ~185s just to fetch
+  Qwen3.5-4B, and far longer on a slow link. Raising the number does not fix
+  the shape: download time is unbounded. It is a STALL budget now -- the clock
+  resets whenever the log or the model repository grows -- so a download that
+  keeps moving is never interrupted while a wedged server still fails fast.
+- **`ovat run --trace` peak RSS measures the CLIENT, not the model.** With
+  OVMS serving, the weights live in `ovms.exe`; the trace reports ~0.45 GB and
+  says nothing about the model. Measured truth for Qwen3.5-4B: 4.3 GB steady,
+  6.5 GB peak, read from the OVMS process. The trace IS the right number on
+  the local `ovat chat` path, where the model runs in-process.
 
 Do not "improve" any of these without reading the reason first.
 
@@ -268,9 +295,35 @@ and a fake HOME, or they describe the developer's machine instead of the code.
   tokens reported as 0, bench hiding the install hint behind an exception
   class). Plus: a bad workflow path printed a raw traceback from all five
   commands that read one.
+- **Install repair 2026-08-01/03**, after Ravi could not install from the
+  README ("it only works on your laptop"). It was literally true. Six defects,
+  each reproduced before fixing: `pip install ovat` was documented while the
+  package was unpublished (PyPI 404); the quickstart never said `git clone`
+  yet step 1 was `pip install -e "."`; `doctor` ran BEFORE `init` created the
+  file it validates, so a new user's first command ended in red; `optimum-cli`
+  was instructed by both the README and `ovat init`'s own output while nothing
+  installed it; there were no OVMS install steps at all; and OVMS's `python_off`
+  build cannot tool-call, so the wrong archive gives an agent that answers
+  normally and silently never calls a tool. Delivered with it: a prerequisites
+  section (GPU/NPU drivers, VC++ redist), small models (4.88 GB -> 3.50 GB,
+  plus a 0.91 GB tier), `docs/ARCHITECTURE.md` linked from the README, three
+  worked examples (`examples/rag`, `react`, `audio-multimodal`), and
+  `docs/BLOG-OUTLINE.md`.
+- **Unified multimodal models**: Qwen3.5 is ONE export that is both a text LLM
+  and a VLM, so `model_scout` grew a third kind, `unified`, that answers to
+  both the `llm` and `vlm` filters. On disk it is indistinguishable from a
+  vision-only model, so config.json is read BEFORE the layout is judged.
+- **AI PC clean-room run 2026-08-03**: a fresh clone driven exactly as the
+  README says, with every OVAT_* variable cleared. Found five more, all
+  invisible on a machine that already worked: `tool_parser: auto` decoding
+  nothing, `serve` unable to survive a first-run download, the locator missing
+  the very folder the README says to unpack OVAT into, RAM figures measured on
+  the wrong process, and a stray `</think>` in every CLI answer. See Landmines.
+- Published to PyPI as `ovat` (0.9.x), so `pip install ovat` finally works.
+  `.github/workflows/publish.yml` handles releases.
 - Still open: W9-W10 remainder (OpenTelemetry proper, stress tests, OVMS
-  Docker integration tests), W11-W12 docs (no `docs/` folder, API reference,
-  quickstart or deployment guide yet), CI (deliberately postponed), and the
-  two mentor asks: strip/audit NVIDIA's NeMo Agent Toolkit for what OVAT
-  should adopt (Ravi: critical), and work out how to point katanemo/plano at
-  OVMS (its upstream path is /v1/chat/completions, OVMS serves /v3).
+  Docker integration tests), an API reference, CI for the test suite
+  (deliberately postponed), and the mentor ask to strip/audit NVIDIA's NeMo
+  Agent Toolkit for what OVAT should adopt (Ravi: critical). The plano ask is
+  DONE: `examples/plano/` points it at OVMS, with the /v1-vs-/v3 path, the
+  provider prefix and the missing-`id` bridge all solved and tested.
