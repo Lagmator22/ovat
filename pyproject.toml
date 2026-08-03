@@ -53,6 +53,13 @@ dev = ["pytest", "pytest-cov", "langchain>=1", "langchain-openai>=1",
        "tomli; python_version < '3.11'"]
 
 [tool.pytest.ini_options]
+# Collect ONLY our own tests. The README tells users to unpack OVMS into the
+# clone (<repo>/ovms), and the python_on build ships a full CPython whose
+# site-packages carries setuptools' own test suite -- so a bare `pytest -q`
+# in a repo set up exactly as documented died with 37 collection errors out
+# of ovms/python/Lib/site-packages/. Found on the AI PC, 2026-08-03.
+testpaths = ["tests"]
+norecursedirs = ["ovms", "models", ".venv", "build", "*.egg-info"]
 markers = [
   "live: tests that need a running OVMS server (AI PC only, skipped elsewhere)",
   "rag: tests that need the bge-small embedding model on disk (auto-skip if absent)",

@@ -102,13 +102,32 @@ class ModelServer:
         self.log_path = log_path
         self._log_file = open(log_path, "w", encoding="utf-8")
         try:
-            # When launching by full path, prepend the binary's folder to the
-            # child's PATH so OVMS finds its own DLLs/.so files; this is what
-            # setupvars.bat does, done for the user automatically.
+            # Give the child what setupvars.bat would have given it, so no
+            # user has to source anything by hand.
+            #
+            # The binary's own folder is not enough. The python_on build --
+            # which the README tells users to download, because python_off
+            # cannot do tool calling -- links python3xx.dll out of
+            # <ovms>/python, NOT the folder next to ovms.exe. Windows' "search
+            # the exe's own directory first" rule therefore never finds it,
+            # and the process dies instantly with 0xC0000135 DLL_NOT_FOUND,
+            # before it can write one byte to the log. `ovat serve` reported
+            # "OVMS exited without becoming ready" over an empty file.
+            #
+            # setupvars.bat sets PYTHONHOME and adds python/ and
+            # python/Scripts; all three are needed and all three are done here.
+            # Only when that folder EXISTS: a python_off install has no
+            # python/ directory, and pointing PYTHONHOME at a missing path
+            # would break the build that currently works.
             env = dict(os.environ)
             binary_dir = os.path.dirname(os.path.abspath(self.binary))
             if os.path.isdir(binary_dir):
-                env["PATH"] = binary_dir + os.pathsep + env.get("PATH", "")
+                extra = [binary_dir]
+                python_home = os.path.join(binary_dir, "python")
+                if os.path.isdir(python_home):
+                    extra += [python_home, os.path.join(python_home, "Scripts")]
+                    env["PYTHONHOME"] = python_home
+                env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
             # Windows console semantics: a child launched from a console is
             # ATTACHED to it. Closing that window sends CTRL_CLOSE_EVENT to every
             # attached process, and a Ctrl-C typed at the parent goes to the whole

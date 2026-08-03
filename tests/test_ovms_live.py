@@ -23,7 +23,7 @@ from ovat.providers.llm_ovms import OVMSLLMProvider
 # I read the server location from the environment so I never hardcode my AI PC
 # setup. Defaults match the OVMS quickstart command from my setup guide.
 OVMS_URL = os.environ.get("OVAT_OVMS_URL", "http://localhost:8000/v3")
-OVMS_MODEL = os.environ.get("OVAT_OVMS_MODEL", "Qwen3-8B-int4-ov")
+OVMS_MODEL = os.environ.get("OVAT_OVMS_MODEL", "Qwen3.5-4B-int4-ov")
 
 
 def _ovms_reachable() -> bool:

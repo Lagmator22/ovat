@@ -861,6 +861,18 @@ def test_telemetry_writes_json_lines(monkeypatch, tmp_path):
         json.loads(line)                          # every line stands alone
 
 
+def _unavailable_sources() -> dict:
+    """Which telemetry sources cannot run on THIS machine.
+
+    Intel UT is absent on macOS and present on the AI PC, so a test that
+    hardcodes either answer is testing the machine rather than the code.
+    """
+    from ovat.telemetry.sources import (IntelHardwareSource, ProcessMemorySource,
+                                        SystemSource)
+    return [s.name for s in (SystemSource(), ProcessMemorySource(),
+                             IntelHardwareSource()) if s.unavailable]
+
+
 def test_telemetry_says_which_sources_are_unavailable(monkeypatch, tmp_path):
     """A file of process memory alone, with no note that the hardware source
     was skipped, reads as a machine with an idle NPU rather than one that
@@ -880,7 +892,12 @@ def test_telemetry_says_which_sources_are_unavailable(monkeypatch, tmp_path):
 
     result = runner.invoke(app, ["run", str(config), "-i", "hi",
                                  "--telemetry", str(tmp_path / "t.jsonl")])
-    assert "unavailable" in result.output
+    # Only assert the notice when a source really IS unavailable. On the AI PC
+    # every source works, so demanding the word "unavailable" failed there --
+    # the test was describing a Mac, not the contract. The contract is: if a
+    # source cannot run, SAY SO; if they all run, there is nothing to say.
+    if _unavailable_sources():
+        assert "unavailable" in result.output
 
 
 # `ovat telemetry`: the same sources, for people who live in the terminal
@@ -897,7 +914,9 @@ def test_telemetry_names_the_sources_that_cannot_run_here():
     skipped, reads as a machine with an idle NPU rather than one that cannot
     see it."""
     result = runner.invoke(app, ["telemetry", "--once"])
-    assert "unavailable" in result.output
+    if _unavailable_sources():
+        assert "unavailable" in result.output
+    assert result.exit_code == 0        # the table renders either way
 
 
 def test_telemetry_exits_nonzero_when_nothing_can_be_measured(monkeypatch):

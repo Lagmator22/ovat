@@ -77,6 +77,96 @@ def test_prefix_caching_is_a_knob_not_a_constant(monkeypatch, tmp_path):
     assert "--enable_prefix_caching" not in captured["cmd"]
 
 
+def _never_ready(monkeypatch):
+    """Make the health probe always refuse.
+
+    Without this these tests call the REAL health URL on the default port, so
+    on a machine where `ovat serve` happens to be running OVMS answers 200 and
+    wait_until_ready returns on the first poll -- the test then fails claiming
+    the stall budget gave up instantly. Found on the AI PC, where three of
+    these failed for exactly that reason. And with nothing listening they each
+    burned a 2s connect timeout per poll, making the file take minutes.
+    """
+    def refuse(*args, **kwargs):
+        raise OSError("no server in this test")
+    monkeypatch.setattr("ovat.core.model_server.urllib.request.urlopen", refuse)
+
+
+def test_a_python_on_ovms_gets_the_env_setupvars_would_give_it(monkeypatch, tmp_path):
+    """The python_on OVMS build cannot start without its python folder.
+
+    Measured on the AI PC, 2026-08-03. The README tells users to download the
+    python_on archive -- correctly, because python_off cannot do tool calling
+    at all -- and OVAT then could not launch it:
+
+        ovms.exe --version  ->  exit -1073741515 (0xC0000135 DLL_NOT_FOUND)
+
+    and `ovat serve` reported "OVMS exited without becoming ready" over a
+    ZERO-BYTE log, because the process died before writing anything.
+
+    The cause: python_on links python312.dll, which lives in <ovms>\\python\\,
+    not beside ovms.exe. Prepending only the binary's own folder is therefore
+    NOT "what setupvars.bat does", as the old comment claimed -- setupvars
+    also sets PYTHONHOME and puts <ovms>\\python and <ovms>\\python\\Scripts
+    on PATH.
+
+    It went unnoticed because the machine that tested it had a python_off
+    build installed elsewhere, and only became reachable once the locator was
+    fixed to find the README's own <repo>/ovms folder.
+    """
+    from ovat.core.model_server import ModelServer
+
+    ovms_dir = tmp_path / "ovms"
+    (ovms_dir / "python" / "Scripts").mkdir(parents=True)
+    exe = ovms_dir / "ovms.exe"
+    exe.write_text("")
+
+    captured = {}
+
+    class FakePopen:
+        pid = 1
+
+    def fake_popen(cmd, env=None, **kwargs):
+        captured["env"] = env
+        return FakePopen()
+
+    monkeypatch.setattr("ovat.core.model_server.subprocess.Popen", fake_popen)
+    server = ModelServer(model_name="m", binary=str(exe))
+    server.start(log_path=str(tmp_path / "l.log"), pid_path=str(tmp_path / "p.pid"))
+
+    path = captured["env"]["PATH"]
+    assert str(ovms_dir) in path                       # the binary's own folder
+    assert str(ovms_dir / "python") in path, \
+        "python_on needs <ovms>/python on PATH for python3xx.dll"
+    assert str(ovms_dir / "python" / "Scripts") in path
+    assert captured["env"].get("PYTHONHOME") == str(ovms_dir / "python")
+
+
+def test_a_python_off_ovms_is_left_alone(monkeypatch, tmp_path):
+    """No python folder means a C++-only build: do not invent PYTHONHOME.
+
+    Setting it unconditionally would point a python_off server at a directory
+    that does not exist, which is a new way to break the build that currently
+    works.
+    """
+    from ovat.core.model_server import ModelServer
+
+    ovms_dir = tmp_path / "ovms"
+    ovms_dir.mkdir()
+    exe = ovms_dir / "ovms.exe"
+    exe.write_text("")
+    captured = {}
+
+    class FakePopen:
+        pid = 1
+
+    monkeypatch.setattr("ovat.core.model_server.subprocess.Popen",
+                        lambda cmd, env=None, **k: captured.update(env=env) or FakePopen())
+    server = ModelServer(model_name="m", binary=str(exe))
+    server.start(log_path=str(tmp_path / "l.log"), pid_path=str(tmp_path / "p.pid"))
+    assert "PYTHONHOME" not in captured["env"]
+
+
 def test_a_download_that_keeps_moving_is_never_timed_out(monkeypatch, tmp_path):
     """No absolute cap: a model download can legitimately take all night.
 
@@ -99,6 +189,7 @@ def test_a_download_that_keeps_moving_is_never_timed_out(monkeypatch, tmp_path):
 
     server = ModelServer(model_name="m")
     server.process = None
+    _never_ready(monkeypatch)
     log = tmp_path / "ovms.log"
     log.write_text("start")
     server.log_path = str(log)
@@ -131,6 +222,7 @@ def test_a_genuinely_stalled_server_still_gives_up(monkeypatch, tmp_path):
 
     server = ModelServer(model_name="m")
     server.process = None
+    _never_ready(monkeypatch)
     log = tmp_path / "ovms.log"
     log.write_text("start")          # never grows again
     server.log_path = str(log)
@@ -150,6 +242,7 @@ def test_readiness_reports_progress_while_it_waits(monkeypatch, tmp_path):
 
     server = ModelServer(model_name="m")
     server.process = None
+    _never_ready(monkeypatch)
     server.log_path = str(tmp_path / "missing.log")
     seen = []
     clock = {"t": 0.0}
