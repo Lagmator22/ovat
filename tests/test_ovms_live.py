@@ -9,7 +9,7 @@ at Docker or bare metal Windows without touching my fast unit tests.
 
 How to run these for real, from WSL on the AI PC with ovms.exe serving:
     OVAT_OVMS_URL=http://localhost:8000/v3 \
-    OVAT_OVMS_MODEL=Qwen3-8B-int4-ov \
+    OVAT_OVMS_MODEL=Qwen3.5-4B-int4-ov \
     pytest tests/test_ovms_live.py -v
 """
 import os

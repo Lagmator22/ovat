@@ -36,8 +36,32 @@ app = typer.Typer(
 )
 
 
+def _version_callback(value: bool) -> None:
+    """Print the installed version and exit.
+
+    Read from installed metadata rather than a literal, so it can never drift
+    from pyproject.toml. `ovat --version` used to exit 2 with a usage error,
+    leaving `pip show ovat` as the only way to answer "which build is this?" --
+    which is the first question anyone reviewing a bug report asks.
+    """
+    if not value:
+        return
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        rprint(f"ovat {version('ovat')}")
+    except PackageNotFoundError:
+        # Running from a source tree that was never installed.
+        rprint("ovat (version unknown: package metadata not found)")
+    raise typer.Exit()
+
+
 @app.callback()
-def _entry(ctx: typer.Context):
+def _entry(
+    ctx: typer.Context,
+    version: bool = typer.Option(False, "--version", "-V",
+                                 callback=_version_callback, is_eager=True,
+                                 help="Show the installed OVAT version and exit."),
+):
     """Open the TUI when `ovat` is run with no subcommand.
 
     typer runs this before any command. If the user typed a subcommand I get out

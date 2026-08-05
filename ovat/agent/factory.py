@@ -238,8 +238,13 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False):
     server. Dry-run proves the wiring on any machine, so it skips that load and
     search_docs stays in stub mode for the preview.
     """
-    # Build RAG first so the same retriever is shared by the in-process tool and
-    # the standalone MCP server (configure() sets the module-level slot too).
+    # Build RAG first so the in-process search_docs has its retriever.
+    #
+    # This does NOT reach a standalone MCP server, which the previous comment
+    # here claimed. configure() sets a module-level slot in THIS process; a
+    # `type: mcp_stdio` tool runs in a separate one and cannot see it. Such a
+    # server builds its own retriever from --config; see
+    # search_docs.configure_from_config.
     # Checked BEFORE anything is built. The framework engines each construct
     # their own client from a URL: LangChain a ChatOpenAI, LlamaIndex an
     # OpenAILike, the Agents SDK an AsyncOpenAI. None can consume an

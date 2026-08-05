@@ -97,7 +97,48 @@ def search_docs(query: str, top_k: int = 5) -> list[dict]:
     return search_docs_impl(query, top_k, _retriever)
 
 
+def configure_from_config(config_path: str) -> None:
+    """Build this process's OWN retriever from a workflow file.
+
+    Why this has to exist: configure() above is called by the factory, which
+    runs in the PARENT process. A tool declared `type: mcp_stdio` is launched
+    as a SEPARATE Python process, and objects do not cross a process boundary,
+    so that call never reached the server -- _retriever stayed None for its
+    whole life and every request took the stub branch.
+
+    Measured on the AI PC: the MCP path answered with the 104-character
+    "[stub] search_docs has no retriever wired yet" while the builtin path
+    retrieved 1932 real characters from the same index in the same session.
+    The agent then told the user it could not find anything.
+
+    The child therefore needs the config, not the object. Imported lazily so
+    running this module standalone stays cheap and the stub path pulls in no
+    OpenVINO.
+    """
+    from ovat.agent.factory import build_rag
+    from ovat.config.workflow import load_workflow
+
+    config = load_workflow(config_path)
+    if config.rag is None:
+        return          # no rag: section, so stub mode is the correct answer
+    configure(build_rag(config))
+
+
 if __name__ == "__main__":
-    # Note to myself: this runs the tool as a standalone MCP server so an agent
-    # can connect to it. My workflow YAML launches me with: python search_docs.py
+    # Standalone MCP server mode. A workflow launches this with:
+    #
+    #   command: ["python", "-m", "ovat.tools.search_docs", "--config", "workflow.yml"]
+    #
+    # --config is what makes real retrieval possible over the wire; without it
+    # this process has no rag: section to build from and answers in the
+    # documented stub mode, which is still how the tool runs by itself.
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", default=None,
+                        help="Workflow YAML whose rag: section this server "
+                             "should serve. Omit for stub mode.")
+    args = parser.parse_args()
+    if args.config:
+        configure_from_config(args.config)
     mcp.run()

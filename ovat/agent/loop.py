@@ -16,10 +16,19 @@ Exit when finish_reason is "stop". A max_iterations guard makes sure I can
 never spin forever.
 """
 import json
+import re
 import time
 
 from ovat.agent.session import Session
 from ovat.providers.base import LLMProvider
+
+
+# Tool-call markup that arrived as CONTENT instead of being decoded. Both the
+# well-formed spelling and the malformed <parameter= one seen live, where the
+# model wrote <parameter=search_docs> in place of <function=search_docs>.
+_UNDECODED_TOOL_CALL = re.compile(
+    r"<tool_call>|</tool_call>|<function=|</function>|<parameter=",
+    re.IGNORECASE)
 
 
 def _parse_args(arguments: str) -> dict | None:
@@ -110,6 +119,9 @@ class AgentLoop:
         # goes through _finish so the totals are always filled in.
         run_started = time.monotonic()
         turns: list[dict] = []
+        # A one-element list so the nested _finish closure can set it without
+        # a `nonlocal` declaration, matching how `turns` is shared.
+        undecoded = [False]
         self.last_trace = {"engine": self.engine_name, "turns": turns, "totals": {}}
 
         def _total(key: str):
@@ -130,6 +142,11 @@ class AgentLoop:
                 "prompt_tokens": _total("prompt_tokens"),
                 "completion_tokens": _total("completion_tokens"),
                 "tool_calls": sum(len(t["tool_calls"]) for t in turns),
+                # True when a tool call came back as text and was never run.
+                # Without this the trace shows tool_calls: 0, which reads as
+                # "the model chose not to use a tool" rather than "the request
+                # could not be decoded".
+                "undecoded_tool_call": undecoded[0],
             }
             return answer
 
@@ -153,7 +170,30 @@ class AgentLoop:
             # server can send content=None; the CLI would print literal "None".
             if reply["finish_reason"] != "tool_calls":
                 self.session.add_assistant(content=reply["content"])
-                return _finish(reply["content"] or "")
+                content = reply["content"] or ""
+                # A tool call the server could not decode arrives HERE, as
+                # prose, and handing it back as the answer is the worst
+                # available outcome: it reads as a fluent reply while no tool
+                # ran. Seen live with malformed qwen3coder markup the parser
+                # correctly refused. Report it as the failure it is, and mark
+                # the trace so `--trace` does not show a clean tool_calls: 0.
+                #
+                # The markup is deliberately NOT parsed into a real call.
+                # Guessing at broken output trades a loud failure for a silent
+                # wrong answer.
+                if _UNDECODED_TOOL_CALL.search(content):
+                    undecoded[0] = True
+                    return _finish(
+                        "Error: the model asked for a tool but the server "
+                        "could not decode the request, so no tool ran. This is "
+                        "usually the wrong tool_parser for this model family "
+                        "(Qwen3.5 needs qwen3coder, Qwen3 needs hermes3); it "
+                        "can also be a malformed call, which a retry often "
+                        "clears. The raw reply is in the session history and "
+                        "the trace; it is deliberately not repeated here, "
+                        "because printing it is what made this look like an "
+                        "answer in the first place.")
+                return _finish(content)
 
             # The model wants one or more tools. Guard the malformed case
             # first: finish_reason says tool_calls but the list is empty.

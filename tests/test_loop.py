@@ -135,7 +135,11 @@ def test_run_trace_records_turns_tokens_and_tool_calls():
     totals = trace["totals"]
     assert totals == {"turns": 2, "latency_s": totals["latency_s"],
                       "prompt_tokens": 250, "completion_tokens": 30,
-                      "tool_calls": 1}
+                      "tool_calls": 1,
+                      # False on a healthy run; True when a tool call came back
+                      # as text and never ran. Asserted here as part of the
+                      # exact shape so a future key cannot be added silently.
+                      "undecoded_tool_call": False}
 
 
 def test_run_trace_survives_replies_without_usage():
@@ -191,3 +195,56 @@ def test_malformed_json_args_are_reported_to_the_model_not_swallowed():
     assert called == []                              # the tool never ran blind
     tool_msg = next(m for m in agent.session.messages if m["role"] == "tool")
     assert "not valid JSON" in tool_msg["content"]   # the model sees its mistake
+
+
+def test_an_undecoded_tool_call_is_not_returned_as_the_answer():
+    """Raw tool-call markup arriving with finish_reason "stop" is a FAILURE.
+
+    Measured on the AI PC (v0.9.3, tool_parser: qwen3coder): on one OVMS
+    instance the model emitted malformed markup -- <parameter=search_docs>
+    where it should write <function=search_docs>, plus a closing </function>
+    with no opener -- so the server's parser legitimately could not decode it
+    and handed the whole thing back as content. finish_reason "stop",
+    tool_calls 0, exit 0, and that markup became the ANSWER.
+
+    4/4 consecutive runs on that instance; 12/13 fine after a restart. The
+    cause is unresolved and may be unfixable from here -- OVAT cannot stop a
+    model emitting bad output. What it CAN stop is presenting the result as a
+    fluent answer while no tool ran, which is the worst available outcome.
+
+    The loop already guards the mirror case just below this one (finish_reason
+    IS tool_calls but the list is empty), so this is the same treatment for the
+    same class of defect.
+    """
+    from ovat.agent.loop import AgentLoop
+
+    class RawMarkupLLM:
+        def chat(self, messages, tools=None):
+            return {"finish_reason": "stop",
+                    "content": ("<tool_call>\n<parameter=search_docs>\n"
+                                "<parameter=query>budget</parameter>\n"
+                                "</function>\n</tool_call>"),
+                    "tool_calls": None, "usage": None, "raw": None}
+
+    agent = AgentLoop(RawMarkupLLM(), tools={}, max_iterations=3)
+    answer = agent.run("what is the memory budget?")
+
+    assert "<tool_call>" not in answer, "raw markup became the answer"
+    assert "Error" in answer                      # it is reported AS a failure
+    assert "tool_parser" in answer                # and names the likely cause
+    # The trace must not read as a clean run that simply used no tools.
+    assert agent.last_trace["totals"].get("undecoded_tool_call") is True
+
+
+def test_a_normal_answer_is_untouched_by_that_guard():
+    """The guard must not fire on ordinary prose."""
+    from ovat.agent.loop import AgentLoop
+
+    class PlainLLM:
+        def chat(self, messages, tools=None):
+            return {"finish_reason": "stop", "content": "Under 8 GB.",
+                    "tool_calls": None, "usage": None, "raw": None}
+
+    agent = AgentLoop(PlainLLM(), tools={}, max_iterations=3)
+    assert agent.run("q") == "Under 8 GB."
+    assert not agent.last_trace["totals"].get("undecoded_tool_call")

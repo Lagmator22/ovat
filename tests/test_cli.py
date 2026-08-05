@@ -1028,3 +1028,19 @@ def test_run_does_not_warn_on_an_ordinary_answer(monkeypatch):
                         lambda cfg, skip_rag=False: PlainAgent())
     result = runner.invoke(app, ["run", "examples/react/workflow.yml", "-i", "hi"])
     assert "never run" not in " ".join(result.output.split())
+
+
+def test_ovat_version_reports_the_installed_version():
+    """`ovat --version` exited 2 with a usage error.
+
+    It is among the first things a new user types and the first thing a
+    reviewer types to establish which build they are looking at; the only way
+    to get it was `pip show ovat`. Found in the AI PC subcommand sweep.
+    """
+    from importlib.metadata import version
+
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    # Read from installed metadata, never a literal: a hardcoded string here
+    # would drift from pyproject.toml the first time either changed alone.
+    assert version("ovat") in result.output

@@ -215,3 +215,66 @@ def test_describe_image_follows_the_llm_recommendation(monkeypatch):
 
     monkeypatch.setattr(describe_image, "VLM_DEVICE", "GPU")
     assert describe_image._resolve_device() == "GPU"
+
+
+def test_the_mcp_server_can_build_its_own_retriever_from_a_config(tmp_path, monkeypatch):
+    """An MCP-served search_docs was PERMANENTLY stuck in stub mode.
+
+    factory.build_agent calls search_docs_tool.configure(retriever), but that
+    runs in the PARENT process. `type: mcp_stdio` launches a separate Python
+    via `python -m ovat.tools.search_docs`, whose __main__ was just mcp.run()
+    -- nothing in the child ever called configure(), and the child had no way
+    to see the parent's rag: config. So _retriever stayed None for the whole
+    life of the server and every call took the stub branch.
+
+    Measured on the AI PC: the MCP path returned the 104-char
+    "[stub] search_docs has no retriever wired yet" while the builtin path
+    retrieved 1932 real characters from the same index in the same session.
+    The comment in factory.py claiming the retriever is "shared by the
+    in-process tool and the standalone MCP server" was simply wrong: objects
+    do not cross a process boundary.
+
+    The child needs its own config so it can build its own retriever.
+    """
+    from ovat.tools import search_docs as sd
+
+    assert hasattr(sd, "configure_from_config"), \
+        "the MCP child has no way to build a retriever from a workflow file"
+
+    built = {}
+
+    def fake_build_rag(cfg):
+        built["name"] = cfg.model.name
+
+        class R:
+            def retrieve(self, query, top_k=5):
+                return [{"text": "real chunk", "source": "notes.md",
+                         "distance": 0.1}]
+        return R()
+
+    monkeypatch.setattr("ovat.agent.factory.build_rag", fake_build_rag)
+    config = tmp_path / "w.yml"
+    config.write_text(
+        "model:\n  name: m\n"
+        "rag:\n"
+        "  embeddings:\n    provider: genai\n    model: x\n    dim: 384\n"
+        "  retriever:\n    provider: sqlite-vec\n    db_path: x.db\n",
+        encoding="utf-8")
+
+    try:
+        sd.configure_from_config(str(config))
+        assert built["name"] == "m", "the child never loaded the config"
+        out = sd.search_docs_impl("q", retriever=sd._retriever)
+        assert out[0]["text"] == "real chunk"     # NOT the stub
+    finally:
+        sd.configure(None)
+
+
+def test_the_mcp_server_stays_in_stub_mode_with_no_config():
+    """Standalone-with-no-config must keep working: it is the documented way
+    to run the tool by itself, and tests depend on that branch."""
+    from ovat.tools import search_docs as sd
+
+    sd.configure(None)
+    out = sd.search_docs_impl("hello", retriever=sd._retriever)
+    assert "[stub]" in out[0]["text"]
