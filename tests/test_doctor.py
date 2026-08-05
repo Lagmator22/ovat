@@ -210,3 +210,45 @@ def test_the_routing_line_fits_the_doctor_table():
 
     config = WorkflowConfig(model={"name": "m", "device": "GPU"})
     assert len(check_device_routing(config).detail) <= 76
+
+
+def test_doctor_warns_when_a_declared_tool_has_no_model_on_disk(tmp_path, monkeypatch):
+    """describe_image and transcribe need a model; say so BEFORE the run.
+
+    Both degrade cleanly at call time -- no traceback, and the agent explains
+    itself in plain language -- but the AI PC sweep found neither had ever been
+    observed WORKING, because the models were absent and nothing said so until
+    the tool was already mid-run. doctor is where a missing prerequisite
+    belongs, next to the existing "search_docs mode" and "Embeddings model"
+    rows it mirrors.
+    """
+    from ovat.cli.diagnostics import run_checks
+
+    monkeypatch.delenv("OVAT_VLM_MODEL", raising=False)
+    monkeypatch.delenv("OVAT_WHISPER_MODEL", raising=False)
+    config = tmp_path / "w.yml"
+    config.write_text(
+        "model:\n  name: m\n"
+        "tools:\n"
+        "  - name: describe_image\n    type: builtin\n"
+        "  - name: transcribe\n    type: builtin\n", encoding="utf-8")
+
+    labels = {c.name: c for c in run_checks(str(config))}
+    assert "describe_image model" in labels
+    assert "transcribe model" in labels
+    assert labels["describe_image model"].status == "warn"
+    assert "OVAT_VLM_MODEL" in labels["describe_image model"].detail
+    assert "OVAT_WHISPER_MODEL" in labels["transcribe model"].detail
+
+
+def test_doctor_says_nothing_about_tools_that_are_not_declared(tmp_path):
+    """No vision tool in the workflow means no vision row. The table is a
+    report on THIS config, not a catalogue of everything OVAT could do."""
+    from ovat.cli.diagnostics import run_checks
+
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\ntools:\n  - name: search_docs\n"
+                      "    type: builtin\n", encoding="utf-8")
+    labels = {c.name for c in run_checks(str(config))}
+    assert "describe_image model" not in labels
+    assert "transcribe model" not in labels

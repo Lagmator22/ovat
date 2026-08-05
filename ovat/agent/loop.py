@@ -92,6 +92,26 @@ class AgentLoop:
         menu = [tool["schema"] for tool in self.tools.values()]
         return menu or None
 
+    @staticmethod
+    def _sources_in(result) -> list[str]:
+        """Source paths carried by a tool result, in order, deduplicated.
+
+        Retrieval tools return [{"text", "source", "distance"}, ...]. The loop
+        stringifies that for the model, so the paths were lost to everything
+        downstream -- and the CITATION then depended on the model choosing to
+        repeat them, which on live hardware it did most of the time but not
+        always. Capturing them here means OVAT can state the sources itself.
+        """
+        if not isinstance(result, list):
+            return []
+        found = []
+        for item in result:
+            if isinstance(item, dict):
+                source = item.get("source")
+                if source and source not in found:
+                    found.append(source)
+        return found
+
     def _execute(self, name: str, args: dict) -> str:
         """I run one tool by name and always return a string for the model.
 
@@ -108,7 +128,9 @@ class AgentLoop:
         try:
             result = self.tools[name]["function"](**args)
         except Exception as exc:
+            self._last_sources = []
             return f"Error: tool '{name}' raised {type(exc).__name__}: {exc}"
+        self._last_sources = self._sources_in(result)
         return str(result)
 
     def run(self, user_message: str) -> str:
@@ -232,6 +254,9 @@ class AgentLoop:
                     "arguments": args,
                     "duration_s": round(time.monotonic() - tool_started, 3),
                     "result_chars": len(result),
+                    # So a caller can cite sources without relying on the
+                    # model to have repeated them in its prose.
+                    "sources": getattr(self, "_last_sources", []),
                 })
                 self.session.add_tool_result(call.id, result)
 

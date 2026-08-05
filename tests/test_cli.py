@@ -1044,3 +1044,58 @@ def test_ovat_version_reports_the_installed_version():
     # Read from installed metadata, never a literal: a hardcoded string here
     # would drift from pyproject.toml the first time either changed alone.
     assert version("ovat") in result.output
+
+
+def test_run_prints_sources_even_when_the_model_forgets_to_cite(monkeypatch):
+    """The citation is the RAG demo's whole point; do not leave it to the model.
+
+    examples/rag/ promises an answer and its source. On the AI PC retrieval
+    fired every single time (traces show search_docs returning 1932 chars) but
+    the Source: line appeared in most runs and not all -- one gave the correct
+    "under 8 GB" with no source at all, another said "under 8 MB" while citing
+    correctly. The system prompt already asks for a citation; the model simply
+    does not always comply.
+
+    OVAT already KNOWS the sources: they are in the trace, on the tool result.
+    `ovat chat` prints a separate `sources:` line for exactly this reason, and
+    `ovat run` should behave the same rather than hoping.
+    """
+    from ovat.cli import main as cli_main
+
+    class ForgetfulAgent:
+        tools, max_iterations = {"search_docs": {}}, 5
+        last_trace = {
+            "engine": "native",
+            "turns": [{"latency_s": 0.1, "finish_reason": "tool_calls",
+                       "prompt_tokens": 1, "completion_tokens": 1,
+                       "tool_calls": [{"name": "search_docs", "arguments": {},
+                                       "duration_s": 0.1, "result_chars": 99,
+                                       "sources": ["examples/rag/docs/ovat-facts.md"]}]}],
+            "totals": {"turns": 1, "tool_calls": 1},
+        }
+
+        def run(self, text):
+            return "OVAT targets under 8 GB."      # no citation at all
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: ForgetfulAgent())
+    result = runner.invoke(app, ["run", "examples/react/workflow.yml", "-i", "hi"])
+    flat = " ".join(result.output.split())
+    assert "ovat-facts.md" in flat, "the source OVAT already knew was not shown"
+
+
+def test_run_prints_no_sources_line_when_nothing_was_retrieved(monkeypatch):
+    """No retrieval means no sources block -- do not print an empty header."""
+    from ovat.cli import main as cli_main
+
+    class PlainAgent:
+        tools, max_iterations = {}, 5
+        last_trace = {"engine": "native", "turns": [], "totals": {}}
+
+        def run(self, text):
+            return "Paris."
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: PlainAgent())
+    result = runner.invoke(app, ["run", "examples/react/workflow.yml", "-i", "hi"])
+    assert "sources:" not in result.output.lower()

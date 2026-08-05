@@ -201,6 +201,32 @@ def check_config(config_path: str) -> list[Check]:
             "text, not real retrieval. Add a rag: block and run 'ovat index'.",
         ))
 
+    # The other two builtin tools each need a model on disk, pointed at by an
+    # environment variable. Both fail politely at call time -- no traceback,
+    # and the agent explains itself -- but "fails politely" is not "works", and
+    # a verification sweep found neither had ever been seen working because
+    # nothing mentioned the missing model until the tool was already running.
+    # A missing prerequisite belongs here, beside the two rows above.
+    for tool_name, env_var, what in (
+            ("describe_image", "OVAT_VLM_MODEL", "vision-language"),
+            ("transcribe", "OVAT_WHISPER_MODEL", "Whisper speech-to-text")):
+        if tool_name not in tool_names:
+            continue                      # not declared: not this config's problem
+        label = f"{tool_name} model"
+        path = os.environ.get(env_var)
+        if path and os.path.exists(path):
+            checks.append(Check(label, OK, f"{env_var}={path}"))
+        elif path:
+            checks.append(Check(label, WARN,
+                                f"{env_var} points at {path}, which does not "
+                                f"exist; {tool_name} will report that it "
+                                f"cannot load its model"))
+        else:
+            checks.append(Check(label, WARN,
+                                f"{env_var} is not set, so {tool_name} has no "
+                                f"{what} model to load. Export one, then set "
+                                f"{env_var} to that folder."))
+
     # Only meaningful when the workflow configures RAG with the local embedder.
     if cfg.rag is not None and cfg.rag.embeddings.provider == "genai":
         model_path = cfg.rag.embeddings.model

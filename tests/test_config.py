@@ -381,3 +381,33 @@ def test_the_backend_description_cannot_be_mutated():
     backend = LLMBackend.from_config(WorkflowConfig(model={"name": "m"}))
     with pytest.raises(dataclasses.FrozenInstanceError):
         backend.temperature = 0.9
+
+
+def test_an_omitted_tool_parser_is_derived_from_the_model_not_hardcoded():
+    """The default was hermes3, which is WRONG for the default model.
+
+    Every shipped config names qwen3coder explicitly, so this was latent by
+    convention only: the moment anyone writes their own config and leaves the
+    field out, they got hermes3 against Qwen3.5 and tool calling silently
+    stopped. Flagged on the AI PC regression watch-list.
+
+    `auto` is not the answer either -- measured on live OVMS, it made OVMS
+    select no parser at all. So the default is derived from the model name,
+    which is information OVAT already has.
+    """
+    from ovat.config.workflow import WorkflowConfig
+
+    q35 = WorkflowConfig(model={"name": "Qwen3.5-4B-int4-ov"})
+    assert q35.model.tool_parser == "qwen3coder"
+
+    q3 = WorkflowConfig(model={"name": "Qwen3-8B-int4-ov"})
+    assert q3.model.tool_parser == "hermes3"
+
+    # An explicit value always wins; deriving must never override the user.
+    named = WorkflowConfig(model={"name": "Qwen3.5-4B-int4-ov",
+                                  "tool_parser": "hermes3"})
+    assert named.model.tool_parser == "hermes3"
+
+    # An unknown family keeps the historical default rather than guessing.
+    other = WorkflowConfig(model={"name": "some-new-model"})
+    assert other.model.tool_parser == "hermes3"

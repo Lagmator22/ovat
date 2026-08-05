@@ -871,3 +871,32 @@ def test_the_plano_tab_carries_the_commands_to_run_it():
             assert "base_url_path_prefix" in text     # the spike answer
             screen.collector.stop()
     _run(scenario())
+
+
+def test_the_tui_boots_lists_its_commands_and_exits():
+    """The one end-to-end smoke test the TUI never had.
+
+    Every other TUI test drives one widget or one screen. Nothing asserted
+    that the app BOOTS, shows the commands the README documents, and shuts
+    down again -- the launcher was verified only by a human watching it, and
+    an AI PC verification sweep could not run it at all because it takes over
+    the terminal's alternate screen.
+
+    Textual's headless Pilot is exactly the missing piece: no real terminal,
+    so this runs anywhere, including in CI.
+    """
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            # The commands the README promises are really on offer. Read
+            # from the shell's own template registry, which is what the slash
+            # menu renders, so this cannot drift from what the user sees.
+            from ovat.cli import shell
+            offered = set(shell.TEMPLATES_BY_NAME)
+            for documented in ("/chat", "/doctor", "/init", "/index", "/run"):
+                assert documented in offered, f"{documented} is not offered"
+            # And it comes down cleanly rather than hanging on exit.
+            app.exit()
+        assert app.return_code in (0, None)
+    _run(scenario())

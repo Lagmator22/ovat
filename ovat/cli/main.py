@@ -325,6 +325,25 @@ def run(
     # escape codes INSIDE the model's words: bad to read, and worse to pipe.
     rprint(esc(answer), highlight=False)
 
+    # State the sources OVAT already knows, rather than hoping the model
+    # repeated them. Measured on the AI PC: retrieval fired on every run, but
+    # the model's own "Source:" line appeared in most and not all -- and the
+    # citation is the entire point of the RAG example. `ovat chat` already
+    # prints this separately; `ovat run` now matches it.
+    # getattr, not agent.last_trace: only the native loop has that attribute.
+    # The three framework engines do not, so a bare access raises AttributeError
+    # and takes the whole run down -- which is exactly what it did before this
+    # line was written defensively.
+    sources = []
+    for turn in (getattr(agent, "last_trace", None) or {}).get("turns", []):
+        for call in turn.get("tool_calls", []):
+            for source in call.get("sources", []):
+                if source not in sources:
+                    sources.append(source)
+    if sources:
+        rprint(f"\n[dim]sources:[/dim] {esc(', '.join(sources))}",
+               soft_wrap=True)
+
     if collector is not None:
         collector.stop()
         rprint(f"[dim]telemetry written to[/dim] {esc(telemetry)}")

@@ -26,7 +26,7 @@ The YAML I am parsing looks like this:
       max_iterations: 10
 """
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictModel(BaseModel):
@@ -56,7 +56,9 @@ class ModelConfig(StrictModel):
     provider: str = "ovms"
     device: str = "CPU"                         # CPU, GPU, or NPU
     ovms_url: str = "http://localhost:8000/v3"  # where my OVMS server listens
-    tool_parser: str = "hermes3"                # how to decode tool calls
+    # How OVMS decodes tool calls. None means "derive it from the model name"
+    # (see _derive_tool_parser below); an explicit value always wins.
+    tool_parser: str | None = None
     # reasoning_parser is for thinking models like the Qwen3 30B variant. It
     # stays None for normal models, which is why I default it to None.
     reasoning_parser: str | None = None
@@ -88,6 +90,42 @@ class ModelConfig(StrictModel):
     # so `ovat serve`/`ovat models` accept the location here. Also settable
     # via the OVAT_OVMS environment variable; PATH still works too.
     ovms_binary: str | None = None
+
+    # Which OVMS parser suits which model family. Data, not branching, so a
+    # new family is one line. Longest prefix first: "qwen3.5" has to be tested
+    # before "qwen3", or every Qwen3.5 model matches the Qwen3 rule.
+    _PARSER_BY_FAMILY = (("qwen3.5", "qwen3coder"),
+                         ("qwen3_5", "qwen3coder"),
+                         ("qwen3", "hermes3"),
+                         ("qwen2", "hermes3"))
+    _DEFAULT_TOOL_PARSER = "hermes3"
+
+    @model_validator(mode="after")
+    def _derive_tool_parser(self):
+        """Fill in tool_parser from the model name when it was left out.
+
+        The field used to default to a hardcoded "hermes3", which is WRONG for
+        Qwen3.5 -- that family emits <function=..><parameter=..> and hermes3
+        expects a JSON body, so nothing decodes and the agent answers fluently
+        having called no tool. Every shipped config names qwen3coder, so the
+        bad default was latent by convention only: any config a user wrote
+        themselves without the field hit it.
+
+        "auto" is not the fix either. Measured on live OVMS: with no
+        --tool_parser flag it selected no parser at all and returned tool
+        calls as text. So OVAT derives the answer from information it already
+        has -- the model name -- and falls back to the historical default for
+        families it does not recognise, rather than guessing.
+
+        An explicit value is never touched.
+        """
+        if self.tool_parser is None:
+            name = (self.name or "").lower()
+            self.tool_parser = next(
+                (parser for family, parser in self._PARSER_BY_FAMILY
+                 if family in name),
+                self._DEFAULT_TOOL_PARSER)
+        return self
 
 
 class ToolConfig(StrictModel):
