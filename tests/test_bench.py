@@ -347,3 +347,21 @@ def test_bench_flags_an_undecoded_tool_call_too():
                            build_agent=lambda cfg: TracedAgent())
     assert row["ok"] is False
     assert "could not decode" in (row["error"] or "")
+
+
+def test_a_build_failure_is_a_row_not_a_crash():
+    """Checked because the v0.9.8 report suspected bench had `run`'s gap.
+
+    It does not: benchmark_engine already catches any build exception and turns
+    it into a row, which is the documented contract -- "a missing framework or
+    an unreachable OVMS is a RESULT, not a crash", because the whole point of a
+    comparison table is that the engine which failed is visible beside the ones
+    that did not. Pinned here so the suspicion does not have to be re-checked.
+    """
+    def boom(cfg):
+        raise RuntimeError("embeddings model not found at 'models/nope'")
+
+    row = benchmark_engine(_config(), "native", "q", build_agent=boom)
+    assert row["ok"] is False
+    assert "models/nope" in (row["error"] or "")     # the cause survives
+    assert row["engine"] == "native"                  # and it IS a row

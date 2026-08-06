@@ -1099,3 +1099,50 @@ def test_run_prints_no_sources_line_when_nothing_was_retrieved(monkeypatch):
                         lambda cfg, skip_rag=False: PlainAgent())
     result = runner.invoke(app, ["run", "examples/react/workflow.yml", "-i", "hi"])
     assert "sources:" not in result.output.lower()
+
+
+def test_run_reports_a_build_failure_instead_of_tracebacking(tmp_path, monkeypatch):
+    """`ovat run` tracebacked where `index` and `chat` explained themselves.
+
+    Found on the AI PC verifying v0.9.8. The friendly message added to
+    build_embedder reached two of the three commands that build a retriever:
+
+        ovat index  -> "Could not build the embedder/retriever: ..."   clean
+        ovat chat   -> "Could not build the retriever: ..."            clean
+        ovat run    -> full rich-rendered Python traceback, THEN the message
+
+    Because main.py's run() called build_agent() unprotected while those two
+    wrapped it. Same fact, same wording, one of three commands rude about it --
+    which is worse than being consistently rude, because it reads as a crash
+    rather than a misconfiguration.
+    """
+    from ovat.cli import main as cli_main
+
+    def boom(cfg, skip_rag=False):
+        raise RuntimeError("embeddings model not found at 'models/nope'")
+
+    monkeypatch.setattr(cli_main, "build_agent", boom)
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit), \
+        "the RuntimeError escaped as a traceback"
+    flat = " ".join(result.output.split())
+    assert "Could not build the agent" in flat
+    assert "models/nope" in flat            # the cause still reaches the user
+
+
+def test_dry_run_reports_a_build_failure_the_same_way(tmp_path, monkeypatch):
+    """--dry-run builds too, so it needs the same courtesy."""
+    from ovat.cli import main as cli_main
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: (_ for _ in ()).throw(
+                            RuntimeError("nope")))
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    result = runner.invoke(app, ["run", str(config), "--dry-run"])
+    assert result.exit_code == 1
+    assert "Could not build the agent" in " ".join(result.output.split())

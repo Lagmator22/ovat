@@ -262,7 +262,17 @@ def run(
         cfg.agent.type = engine
     # Step 2: config -> a fully wired agent (LLM + tools + loop). dry-run skips
     # loading the RAG model so the preview works on any machine.
-    agent = build_agent(cfg, skip_rag=dry_run)
+    # index and chat already wrapped their build; run did not, so the same
+    # RuntimeError -- a missing embeddings model, an engine whose extra is not
+    # installed -- reached the user as a rich-rendered traceback here while
+    # arriving as one clean sentence there. Errors are for users, and being
+    # rude in one command out of three reads as a crash rather than as a
+    # misconfiguration.
+    try:
+        agent = build_agent(cfg, skip_rag=dry_run)
+    except RuntimeError as exc:
+        rprint(f"[red]Could not build the agent:[/red] {esc(exc)}")
+        raise typer.Exit(code=1)
 
     # dry-run lets me prove the wiring on any machine, even with no OVMS server.
     if dry_run:
