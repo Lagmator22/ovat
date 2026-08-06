@@ -1,6 +1,6 @@
 [project]
 name = "ovat"
-version = "0.9.6"
+version = "0.9.7"
 description = "Agentic Toolkit for AI PC with OpenVINO: turn agent boilerplate into one YAML + one command."
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
