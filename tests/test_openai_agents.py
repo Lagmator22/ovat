@@ -227,3 +227,43 @@ def test_a_failed_agents_run_does_not_poison_the_next(monkeypatch):
     agent = OpenAIAgentsAgent(object(), tools, 3, None)
     assert "max of 3 steps" in agent.run("first")
     assert agent._input_items == []
+
+
+def test_markdown_fenced_arguments_parse_on_the_openai_sdk_path_too():
+    """The fence stripper reached the native loop but not this engine.
+
+    Small models wrap tool arguments in ```json fences because that is what
+    JSON looks like in their training data. loop.py strips them; the OpenAI
+    Agents SDK path hands the raw string to json.loads, so the same model
+    lost a turn to "could not parse tool arguments" on --openai-agents while
+    working fine on --native.
+
+    This is the only OTHER engine that parses arguments itself: LangChain and
+    LlamaIndex both derive a pydantic args_schema and let the framework do it.
+    """
+    import asyncio
+
+    pytest.importorskip("agents")
+    from ovat.agent.openai_agents_agent import _wrap_tools
+
+    called = {}
+
+    def echo(city: str) -> str:
+        called["city"] = city
+        return f"weather in {city}"
+
+    tools = {"get_weather": {
+        "schema": {"type": "function", "function": {
+            "name": "get_weather", "description": "weather",
+            "parameters": {"type": "object",
+                           "properties": {"city": {"type": "string"}},
+                           "required": ["city"]}}},
+        "function": echo,
+    }}
+
+    (wrapped,) = _wrap_tools(tools)
+    fenced = '```json\n{"city": "Tokyo"}\n```'
+    result = asyncio.run(wrapped.on_invoke_tool(None, fenced))
+
+    assert called.get("city") == "Tokyo", f"fenced args were not parsed: {result}"
+    assert "could not parse" not in str(result)

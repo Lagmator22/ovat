@@ -87,3 +87,39 @@ def says_nothing(text: str) -> bool:
     reply is not.
     """
     return not strip_thinking(text)
+
+
+def strip_code_fence(text: str) -> str:
+    """Remove a surrounding markdown code fence, if the model added one.
+
+    Small models wrap tool arguments in
+
+        ```json
+        {"city": "Tokyo"}
+        ```
+
+    because that is what JSON looks like everywhere in their training data.
+    That is invalid PACKAGING, not invalid intent, and rejecting it costs a
+    whole extra round trip while the model works out what was wrong.
+
+    Lives here, not inline in one caller, because TWO engines parse arguments
+    themselves: the native loop and the OpenAI Agents SDK wrapper. (LangChain
+    and LlamaIndex derive a pydantic args_schema and let the framework parse,
+    so they never see the raw string.) It was written inline in the loop first
+    and the SDK path silently missed out -- the same model then worked on
+    --native and lost a turn on --openai-agents. One copy, so that cannot
+    happen again.
+
+    Only unwraps; never validates. Whatever is inside is still handed to
+    json.loads, and a genuine mistake is still reported as one.
+    """
+    if not isinstance(text, str):
+        return text
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        newline = stripped.find("\n")
+        # Drop the opening fence, plus any language tag on that same line.
+        stripped = stripped[newline + 1:] if newline != -1 else stripped[3:]
+    if stripped.endswith("```"):
+        stripped = stripped[:-3]
+    return stripped.strip()

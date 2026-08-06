@@ -33,6 +33,7 @@ import asyncio
 import inspect
 import json
 
+from ovat.text import strip_code_fence
 from ovat.agent.arg_models import json_schema_for_tool
 from ovat.providers.backend import LLMBackend
 from ovat.config.workflow import WorkflowConfig
@@ -47,6 +48,10 @@ def _wrap_tools(tools: dict) -> list:
 
         async def on_invoke(context, arguments: str):
             """The SDK hands arguments over as a JSON STRING, not a dict."""
+            # Same unwrapping the native loop does. This engine is the only
+            # OTHER one that parses arguments itself, so it is the only other
+            # one that can be tripped by a fenced payload.
+            arguments = strip_code_fence(arguments)
             try:
                 kwargs = json.loads(arguments) if arguments else {}
             except (ValueError, TypeError) as exc:
