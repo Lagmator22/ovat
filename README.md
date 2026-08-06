@@ -637,7 +637,11 @@ curl -s http://<host>:8001/v3/models
 
 ```bash
 ovat serve examples/plano/workflow.yml            # OVMS on :8000
-python examples/plano/ovms_id_bridge.py           # bridge on :8001
+python examples/plano/ovms_id_bridge.py           # bridge on :8001 (localhost)
+# plano in WSL2/Docker instead? It has to reach this host across a network
+# namespace, so the bridge must listen wider -- and that endpoint is
+# UNAUTHENTICATED, so firewall the port:
+#   python examples/plano/ovms_id_bridge.py --host 0.0.0.0
 planoai up examples/plano/plano-config.yaml       # plano on :12000
 ovat run examples/plano/workflow.yml --input "hello"
 planoai obs                                       # live OTEL dashboard

@@ -287,14 +287,20 @@ class IntelHardwareSource(TelemetrySource):
         """Begin continuous collection in the background."""
         if self.unavailable or self._proc is not None:
             return
-        handle, self._out_path = tempfile.mkstemp(suffix=".json",
-                                                  prefix="ovat-ut-")
-        os.close(handle)
+        # A DIRECTORY, and one that ut is actually told about. The old code
+        # made a temp FILE and never passed it on the command line, so ut
+        # ignored it entirely and dumped its own binary traces
+        # (ut_default_output.*.bin, tens of MB) into whatever directory the
+        # user happened to run from. stop() then deleted the untouched temp
+        # file and left the real output behind -- so every `ovat run
+        # --telemetry` quietly added to a pile in the user's project folder.
+        self._out_path = tempfile.mkdtemp(prefix="ovat-ut-")
         try:
             self._proc = subprocess.Popen(
                 [self.binary, "--continuous",
                  "--enable", self.collectors,
-                 "--sampling-interval", str(self.sampling_interval_ms)],
+                 "--sampling-interval", str(self.sampling_interval_ms),
+                 "--output", self._out_path],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         except Exception:
             # A profiler that cannot start must not stop the agent running.
@@ -397,7 +403,10 @@ class IntelHardwareSource(TelemetrySource):
             self._proc = None
         if self._out_path and os.path.exists(self._out_path):
             try:
-                os.remove(self._out_path)
+                # rmtree, not remove: it is a directory now, and ut writes its
+                # binary traces inside it. Removing only the directory entry
+                # would leave those behind, which is the leak this fixes.
+                shutil.rmtree(self._out_path)
             except OSError:
                 pass
             self._out_path = None

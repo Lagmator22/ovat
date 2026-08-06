@@ -345,7 +345,12 @@ def test_stop_escalates_to_kill_and_still_cleans_up(monkeypatch, tmp_path):
 
 # stop_from_pidfile: the `ovat serve --stop` path, against a real process
 
-def test_stop_from_pidfile_stops_a_real_process(tmp_path):
+def test_stop_from_pidfile_stops_a_real_process(tmp_path, monkeypatch):
+    # Stubbed because this test is about SIGNALLING, not identity. The stand-in
+    # is a python process, which the identity probe correctly refuses to claim
+    # as our server; that probe has its own test.
+    monkeypatch.setattr("ovat.core.model_server._pid_is_our_server",
+                        lambda pid: True)
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     pid_path = str(tmp_path / "ovms.pid")
     with open(pid_path, "w", encoding="utf-8") as f:
@@ -392,6 +397,11 @@ def test_liveness_never_sends_signal_zero(tmp_path, monkeypatch):
     while passing on the one platform the bug actually affects, which is the
     worst possible way round.
     """
+    # Same reason as the test above: the stand-in sleeper is not named ovms, so
+    # the identity probe would refuse it. This test is about which SIGNAL is
+    # sent, not about whether the pid is ours.
+    monkeypatch.setattr("ovat.core.model_server._pid_is_our_server",
+                        lambda pid: True)
     import sys
 
     calls = []
@@ -418,12 +428,28 @@ def test_liveness_never_sends_signal_zero(tmp_path, monkeypatch):
 
 
 def test_a_live_pid_reads_as_running_and_a_dead_one_does_not():
-    """The replacement probe must still answer the question correctly."""
+    """The general liveness probe keeps its general meaning.
+
+    The identity check deliberately did NOT move in here: this function has
+    other callers that only want to know whether a pid exists. It lives in
+    _pid_is_our_server, which is the question asked before signalling.
+    """
     assert model_server._pid_is_running(os.getpid()) is True
 
     dead = subprocess.Popen([sys.executable, "-c", "pass"])
     dead.wait()
     assert model_server._pid_is_running(dead.pid) is False
+
+
+def test_stop_from_pidfile_refuses_to_kill_a_process_that_is_not_ovms(tmp_path):
+    """End to end: a recycled pid is left alone and the pidfile cleaned up."""
+    pid_file = tmp_path / "ovms.pid"
+    # This interpreter: alive, and definitely not ovms.
+    pid_file.write_text(str(os.getpid()), encoding="utf-8")
+    message = stop_from_pidfile(str(pid_file))
+    assert "not an ovms process" in message
+    assert not pid_file.exists()            # stale file cleaned up
+    assert os.getpid()                       # ...and we are still here
 
 
 def test_stop_from_pidfile_missing_file_is_a_calm_message(tmp_path):
@@ -472,3 +498,77 @@ def test_ovat_never_passes_signal_zero_or_one_anywhere():
         argument = match.group(1).strip()
         assert argument not in {"0", "1"}, (
             f"os.kill(..., {argument}) sends a console Ctrl-C on Windows")
+
+
+def test_the_health_check_bypasses_os_proxies(monkeypatch, tmp_path):
+    """A corporate proxy must not be consulted for a localhost health check.
+
+    urllib.request.urlopen honours getproxies(), which reads HTTP_PROXY /
+    ALL_PROXY from the environment. On a work laptop behind a proxy or VPN,
+    the check for http://localhost:8000 gets routed OUT to that proxy, which
+    refuses it -- so OVMS is serving perfectly and `ovat serve` reports it
+    never came up. An opener built with an empty ProxyHandler never consults
+    them.
+    """
+    from ovat.core.model_server import ModelServer
+
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:3128")
+    monkeypatch.setenv("ALL_PROXY", "http://proxy.invalid:3128")
+
+    seen = {}
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    class FakeOpener:
+        def open(self, url, timeout=None):
+            seen["url"] = url
+            return FakeResponse()
+
+    def fake_build_opener(*handlers):
+        seen["handlers"] = handlers
+        return FakeOpener()
+
+    monkeypatch.setattr("ovat.core.model_server.urllib.request.build_opener",
+                        fake_build_opener)
+    server = ModelServer(model_name="m")
+    server.process = None
+    server.log_path = str(tmp_path / "ovms.log")   # start() normally sets this
+    assert server.wait_until_ready(stall_timeout=5) is True
+    # A ProxyHandler was installed, and it was built with NO proxies.
+    handlers = seen.get("handlers") or ()
+    assert any(type(h).__name__ == "ProxyHandler" for h in handlers), \
+        "no ProxyHandler: OS proxy settings would still apply to localhost"
+
+
+def test_a_recycled_pid_is_not_killed(monkeypatch, tmp_path):
+    """pid_exists() alone will happily point SIGKILL at a stranger.
+
+    If the machine crashed and OVMS died, the OS is free to hand that pid to
+    something else -- explorer.exe, svchost, a database. `ovat serve --stop`
+    read the number out of ovms.pid, saw pid_exists() say True, and killed
+    whatever now owns it. The pidfile records a number, not an identity, so the
+    identity has to be checked before signalling.
+    """
+    from ovat.core import model_server
+
+    class NotOvms:
+        def name(self):
+            return "explorer.exe"
+
+    fake_psutil = type("psutil", (), {
+        "pid_exists": staticmethod(lambda pid: True),
+        "Process": staticmethod(lambda pid: NotOvms()),
+        "NoSuchProcess": type("NoSuchProcess", (Exception,), {}),
+        "AccessDenied": type("AccessDenied", (Exception,), {}),
+    })
+    monkeypatch.setitem(__import__("sys").modules, "psutil", fake_psutil)
+
+    assert model_server._pid_is_our_server(4242) is False, \
+        "a live process that is NOT ovms was claimed as our server"

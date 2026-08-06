@@ -10,6 +10,7 @@ The message shapes follow the OpenAI chat format, because OVMS speaks that
 format. The four roles I will ever store are: system, user, assistant, tool.
 """
 import json
+import threading
 
 
 class Session:
@@ -19,13 +20,21 @@ class Session:
         # I keep every message in order in this one list. Order matters,
         # the model reads it top to bottom like a script.
         self.messages: list[dict] = []
+        # The TUI streams an answer on a worker thread and saves from there,
+        # while the main thread can swap or mutate the session (/load, /clear)
+        # at any moment. json.dump iterating a list that another thread is
+        # appending to writes a truncated file -- and the file it truncates is
+        # the user's saved conversation. Appends and the save share this lock so
+        # a save always sees one consistent snapshot.
+        self._lock = threading.Lock()
         # The system prompt is optional. If I pass one, it always goes first.
         if system_prompt is not None:
             self.messages.append({"role": "system", "content": system_prompt})
 
     def add_user(self, content: str) -> None:
         """I call this when the human says something."""
-        self.messages.append({"role": "user", "content": content})
+        with self._lock:
+            self.messages.append({"role": "user", "content": content})
 
     def add_assistant(self, content: str | None = None,
                       tool_calls: list[dict] | None = None) -> None:
@@ -38,7 +47,8 @@ class Session:
         message: dict = {"role": "assistant", "content": content}
         if tool_calls:
             message["tool_calls"] = tool_calls
-        self.messages.append(message)
+        with self._lock:
+            self.messages.append(message)
 
     def add_tool_result(self, tool_call_id: str, content: str) -> None:
         """I call this after I run a tool, to feed its output back to the model.
@@ -47,16 +57,22 @@ class Session:
         the exact tool_call the model asked for, otherwise the model cannot
         tell which answer belongs to which question.
         """
-        self.messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "content": content,
-        })
+        with self._lock:
+            self.messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": content,
+            })
 
     def save(self, path: str) -> None:
         """I dump the whole history to a JSON file so I can resume later."""
+        with self._lock:
+            # A copy inside the lock, dumped outside it: json.dump does file
+            # I/O, and holding the lock across that would block the answer
+            # stream for as long as the write takes.
+            snapshot = list(self.messages)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.messages, f, indent=2)
+            json.dump(snapshot, f, indent=2)
 
     @classmethod
     def load(cls, path: str) -> "Session":

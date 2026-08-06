@@ -34,6 +34,26 @@ def _parse_args(arguments: str) -> dict | None:
     """
     if not arguments:
         return {}
+    # Small models often try to be helpful and wrap the JSON in a markdown
+    # fence, because that is what JSON looks like in their training data:
+    #
+    #     ```json
+    #     {"city": "Tokyo"}
+    #     ```
+    #
+    # That is not invalid intent, only invalid packaging, and rejecting it cost
+    # a whole extra round trip while the model worked out what was wrong. The
+    # fence is stripped before parsing; anything still unparseable after that
+    # is a genuine mistake and still reported as one.
+    if isinstance(arguments, str):
+        stripped = arguments.strip()
+        if stripped.startswith("```"):
+            newline = stripped.find("\n")
+            # Drop the opening fence and any language tag on that same line.
+            stripped = stripped[newline + 1:] if newline != -1 else stripped[3:]
+        if stripped.endswith("```"):
+            stripped = stripped[:-3]
+        arguments = stripped.strip()
     try:
         return json.loads(arguments)
     except (json.JSONDecodeError, TypeError):

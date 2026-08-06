@@ -7,6 +7,7 @@ requests to OVMS on port 8000, and injects `"id": "chatcmpl-ovms"` if missing.
 """
 import json
 import urllib.request
+import argparse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 
@@ -98,8 +99,33 @@ def main():
     # sit inside that one connection's handler loop and never accept another.
     # Symptom is not an error but a HANG, with each request slower than the
     # last as they queue: 5s, 33s, 64s, 100s, then never.
-    server = ThreadingHTTPServer(("0.0.0.0", 8001), OVMSBridgeHandler)
-    print("OVMS ID Bridge listening on http://0.0.0.0:8001 -> forwarding to :8000...")
+    # Loopback by DEFAULT. This used to bind 0.0.0.0 unconditionally, which
+    # put an unauthenticated door to the GPU on every interface: anyone on the
+    # same LAN or coffee-shop wifi could POST to /v3/chat/completions and spend
+    # your hardware. Nothing here checks credentials, because nothing here was
+    # ever meant to be reachable from off-box.
+    #
+    # It is a FLAG rather than a hardcoded 127.0.0.1 because the wider bind is
+    # genuinely needed in the setup this example documents: with plano in WSL2
+    # or Docker and OVMS on the Windows host, the bridge has to be reachable
+    # from another network namespace, and loopback is not. So that case opts in
+    # explicitly, and everyone else is closed by default.
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="Interface to bind. Default 127.0.0.1 (this "
+                             "machine only). Use 0.0.0.0 ONLY when plano runs "
+                             "in WSL2/Docker and must reach this host across a "
+                             "network namespace -- it exposes an "
+                             "unauthenticated endpoint to your whole network.")
+    parser.add_argument("--port", type=int, default=8001)
+    args = parser.parse_args()
+
+    if args.host == "0.0.0.0":
+        print("WARNING: binding 0.0.0.0 exposes this unauthenticated bridge to "
+              "your entire network. Firewall the port, or prefer 127.0.0.1.")
+    server = ThreadingHTTPServer((args.host, args.port), OVMSBridgeHandler)
+    print(f"OVMS ID Bridge listening on http://{args.host}:{args.port} "
+          f"-> forwarding to :8000...")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

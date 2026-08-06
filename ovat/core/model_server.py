@@ -220,7 +220,15 @@ class ModelServer:
             if self.process is not None and self.process.poll() is not None:
                 return False
             try:
-                with urllib.request.urlopen(self.health_url, timeout=2) as r:
+                # An opener with an EMPTY ProxyHandler, not urlopen. urlopen
+                # honours getproxies(), which reads HTTP_PROXY / ALL_PROXY from
+                # the environment -- so on a work laptop behind a proxy or VPN
+                # the check for http://localhost:8000 is routed out to that
+                # proxy, which refuses it. OVMS would be serving perfectly and
+                # `ovat serve` would report that it never came up.
+                opener = urllib.request.build_opener(
+                    urllib.request.ProxyHandler({}))
+                with opener.open(self.health_url, timeout=2) as r:
                     if r.status == 200:
                         return True
             except (urllib.error.URLError, OSError):
@@ -298,6 +306,33 @@ def _pid_is_running(pid: int) -> bool:
     return psutil.pid_exists(pid)
 
 
+def _pid_is_our_server(pid: int) -> bool:
+    """Is this pid alive AND actually an ovms process?
+
+    Separate from _pid_is_running on purpose. That one answers a general
+    liveness question and has other callers; THIS one is the question to ask
+    before signalling, because existence is not identity.
+
+    A pidfile records a NUMBER. Once the process it named has gone, the OS is
+    free to hand that number to something else -- explorer.exe, svchost, a
+    database. Acting on existence alone therefore pointed `ovat serve --stop`
+    at a stranger and killed it.
+
+    Unknown answers are treated as "not ours": without psutil, or when the
+    process refuses inspection, the safe move is to not signal.
+    """
+    try:
+        import psutil
+    except ImportError:
+        return False
+    if not psutil.pid_exists(pid):
+        return False
+    try:
+        return "ovms" in psutil.Process(pid).name().lower()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
+
+
 def stop_from_pidfile(pid_path: str = DEFAULT_PID_PATH, wait_seconds: float = 10.0) -> str:
     """Stop an OVMS recorded in a pidfile; return a short human message.
 
@@ -321,6 +356,16 @@ def stop_from_pidfile(pid_path: str = DEFAULT_PID_PATH, wait_seconds: float = 10
     if not _alive():
         os.remove(pid_path)
         return f"OVMS (pid {pid}) is not running; removed the stale pidfile."
+
+    # Alive is not enough: confirm it is OURS before signalling. If the machine
+    # crashed, OVMS died and the OS recycled that number, this pid now belongs
+    # to some unrelated program -- and killing it would be our bug, on their
+    # process. Refuse rather than guess, and say why.
+    if not _pid_is_our_server(pid):
+        os.remove(pid_path)
+        return (f"pid {pid} is running but is not an ovms process, so the "
+                f"pidfile is stale and something else now owns that number. "
+                f"Removed the pidfile and left that process alone.")
 
     os.kill(pid, signal.SIGTERM)    # ask politely first
     deadline = time.time() + wait_seconds

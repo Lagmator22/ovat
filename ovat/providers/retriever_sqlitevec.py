@@ -15,6 +15,7 @@ survive a restart: both the vectors and the text come back from disk, and new
 rowids are derived from the table (MAX(rowid)+1), so there is no collision.
 """
 import sqlite3
+import threading
 
 import sqlite_vec
 
@@ -27,6 +28,14 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
     def __init__(self, embedder: EmbeddingsProvider, dim: int = 384,
                  db_path: str = ":memory:"):
         self.embedder = embedder          # the helper that makes vectors
+        # check_same_thread=False below lets worker threads use this connection,
+        # which SQLite allows for READS but not for concurrent WRITES: two
+        # simultaneous add() calls would raise "database is locked". Today the
+        # only writer is `ovat index` (single-threaded) while the LangChain
+        # worker thread only retrieves, so this is insurance rather than a
+        # live bug -- but it is one line, and the alternative failure is a
+        # crash mid-index.
+        self._write_lock = threading.Lock()
         self.dim = dim                    # bge-small -> 384 numbers per vector
         # Open a SQLite database and load the vector-search extension into it.
         # check_same_thread=False because the LangChain (react) engine runs tool
@@ -116,7 +125,13 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         appended. That is a deliberate limit of the contract, not an oversight.
         """
         self._check_open()
-        vectors = self.embedder.embed(texts)
+        vectors = self.embedder.embed(texts)   # outside the lock: pure compute
+        with self._write_lock:
+            self._add_locked(texts, vectors, sources)
+
+    def _add_locked(self, texts: list[str], vectors: list,
+                    sources: list[str] | None) -> None:
+        """The write half of add(), serialised by the caller's lock."""
         if sources:
             # dict.fromkeys keeps first-seen order and drops repeats; the
             # indexer passes one file's source repeated per chunk, but the

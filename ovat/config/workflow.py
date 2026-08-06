@@ -223,5 +223,10 @@ def load_workflow(path: str) -> WorkflowConfig:
     the text, then validate the shape.
     """
     with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+        # `or {}` because yaml.safe_load returns None for a file that is empty
+        # or contains only comments. WorkflowConfig(**None) then raised
+        # "argument after ** must be a mapping, not NoneType" -- a Python
+        # internals message where the user needed "your workflow has no model
+        # section". An empty mapping lets pydantic say that instead.
+        data = yaml.safe_load(f) or {}
     return WorkflowConfig(**data)

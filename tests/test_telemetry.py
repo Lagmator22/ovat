@@ -4,6 +4,7 @@
 None of these need hardware: the point of the two ABCs is that a fake source
 and a fake sink exercise the whole path in milliseconds.
 """
+import os
 import pytest
 
 from ovat.telemetry.base import TelemetrySink, TelemetrySource
@@ -356,3 +357,54 @@ def test_a_ut_text_line_becomes_a_metric():
         "npu_utilization": 42.5}
     assert I._parse_text_line("Power W = 3.1 watts") == {"power_w": 3.1}
     assert I._parse_text_line("collecting...") == {}
+
+
+def test_intel_ut_is_told_where_to_write_and_cleans_it_up(monkeypatch, tmp_path):
+    """ut dumped binary traces into the user's project folder, forever.
+
+    start() created a temp FILE and never passed it on the command line, so ut
+    ignored it and wrote its own ut_default_output.*.bin (tens of MB) into the
+    current directory. stop() then deleted the untouched temp file and left the
+    real output behind. Every `ovat run --telemetry` added to the pile.
+    """
+    import shutil
+    from ovat.telemetry.sources import IntelHardwareSource
+
+    class FakeProc:
+        stdout = None
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            return 0
+
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakeProc()
+
+    monkeypatch.setattr("ovat.telemetry.sources.subprocess.Popen", fake_popen)
+    # unavailable is a computed property that short-circuits on macOS, so the
+    # platform is faked: this test is about the command line and the cleanup,
+    # not about discovery or which OS ut supports.
+    monkeypatch.setattr("ovat.telemetry.sources.sys.platform", "win32")
+    source = IntelHardwareSource()
+    source.binary = str(tmp_path / "ut")
+    assert source.unavailable is None, "fixture did not make ut look present"
+    source.start()
+
+    cmd = captured["cmd"]
+    assert "--output" in cmd, "ut was never told where to write"
+    out_dir = cmd[cmd.index("--output") + 1]
+    assert os.path.isdir(out_dir), "--output must name a real directory"
+
+    # Something ut-shaped lands in there; stop() must take the folder with it.
+    with open(os.path.join(out_dir, "ut_default_output.l0_gpu.bin"), "wb") as f:
+        f.write(b"\x00" * 32)
+    source.stop()
+    assert not os.path.exists(out_dir), "the trace directory was left behind"
