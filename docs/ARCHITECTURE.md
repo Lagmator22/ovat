@@ -14,15 +14,15 @@ path; this document is for contributors and for anyone evaluating the design.
 - [3. Layering rules that must not be broken](#3-layering-rules-that-must-not-be-broken)
 
 **The nine layers**
-- [Layer 1 — CLI and configuration](#layer-1--cli-and-configuration)
-- [Layer 2 — Framework integration](#layer-2--framework-integration)
-- [Layer 3 — Agent core](#layer-3--agent-core)
-- [Layer 4 — Provider abstraction](#layer-4--provider-abstraction)
-- [Layer 5 — Tools and MCP](#layer-5--tools-and-mcp)
-- [Layer 6 — Orchestration (A2A)](#layer-6--orchestration-a2a)
-- [Layer 7 — Observability](#layer-7--observability)
-- [Layer 8 — Deployment and serving](#layer-8--deployment-and-serving)
-- [Layer 9 — OpenVINO runtime and hardware](#layer-9--openvino-runtime-and-hardware)
+- [Layer 1: CLI and configuration](#layer-1-cli-and-configuration)
+- [Layer 2: Framework integration](#layer-2-framework-integration)
+- [Layer 3: Agent core](#layer-3-agent-core)
+- [Layer 4: Provider abstraction](#layer-4-provider-abstraction)
+- [Layer 5: Tools and MCP](#layer-5-tools-and-mcp)
+- [Layer 6: Orchestration (A2A)](#layer-6-orchestration-a2a)
+- [Layer 7: Observability](#layer-7-observability)
+- [Layer 8: Deployment and serving](#layer-8-deployment-and-serving)
+- [Layer 9: OpenVINO runtime and hardware](#layer-9-openvino-runtime-and-hardware)
 
 **Cross-cutting**
 - [Model selection, and why "unified" is its own kind](#model-selection-and-why-unified-is-its-own-kind)
@@ -42,7 +42,7 @@ OVAT sits between a developer and
 [OpenVINO Model Server](https://docs.openvino.ai/2026/model-server/ovms_what_is_openvino_model_server.html).
 OVMS handles inference, tool-call decoding, batching and device targeting. It
 deliberately does not decide *which* model, *which* device, *which* parser,
-*which* tools, or when to start and stop — and that gap is a couple of hundred
+*which* tools, or when to start and stop, and that gap is a couple of hundred
 lines of boilerplate that every project rewrites.
 
 OVAT turns that gap into a config file, the way `kubectl` wraps the Kubernetes
@@ -69,7 +69,7 @@ flowchart TD
     Config -->|"3. build wired agent"| Factory["Agent Factory<br/>(factory.py)"]
     Factory -->|"4. pick 1 of 4 engines"| Engines
 
-    subgraph Engines ["Layer 2/3 — Agent engines"]
+    subgraph Engines ["Layer 2/3. Agent engines"]
         Native["Native loop (loop.py)<br/>the only engine that traces tokens"]
         LangChain["LangChain (react)"]
         LlamaIndex["LlamaIndex"]
@@ -79,12 +79,12 @@ flowchart TD
     Engines -->|"5. call the LLM provider"| Providers
     Engines <-->|"6. execute tools"| Tools
 
-    subgraph Providers ["Layer 4 — Providers"]
+    subgraph Providers ["Layer 4. Providers"]
         GenAI["GenAI provider<br/>openvino_genai, in-process"]
         OVMS["OVMS provider<br/>OpenAI SDK → /v3"]
     end
 
-    subgraph Tools ["Layer 5 — Tools"]
+    subgraph Tools ["Layer 5. Tools"]
         Builtin["Builtin:<br/>search_docs · transcribe · describe_image"]
         MCP["MCP stdio client<br/>(any external server)"]
     end
@@ -97,7 +97,7 @@ flowchart TD
     GenAI --> Hardware["💻 Intel CPU / Arc GPU / NPU"]
     OVMS --> Hardware
 
-    subgraph Telemetry ["Layer 7 — Observability"]
+    subgraph Telemetry ["Layer 7. Observability"]
         Sources["Sources<br/>AgentTrace · ProcessMemory<br/>System · IntelHardware"]
         Sinks["Sinks<br/>JSONFile · LiveBuffer · FanOut"]
         Sources -->|"collector ticks ~0.5s"| Sinks
@@ -131,11 +131,11 @@ them via `arg_models.py`. Config validity lives in `workflow.py`. Config
 drift.
 
 **Errors are for users.** A tool or agent failure becomes a readable string the
-model or the human can act on — never a bare traceback on the CLI or TUI path.
+model or the human can act on, never a bare traceback on the CLI or TUI path.
 
 ---
 
-## Layer 1 — CLI and configuration
+## Layer 1: CLI and configuration
 
 **Files:** `ovat/cli/main.py`, `ovat/config/workflow.py`, `ovat/cli/ui.py`
 
@@ -162,13 +162,13 @@ flowchart LR
 ```
 
 `_load_config` is the only place allowed to call `load_workflow`, because it
-converts three distinct failures — file absent, YAML unparseable, schema
-mismatch — into three distinct sentences. Every command reads a workflow, so this
+converts three distinct failures, file absent, YAML unparseable, schema
+mismatch, into three distinct sentences. Every command reads a workflow, so this
 is the single busiest place the "errors are for users" rule applies.
 
 Two details that came from real failures:
 
-- `yaml.safe_load(f) or {}` — an empty or comments-only file yields `None`, and
+- `yaml.safe_load(f) or {}`, an empty or comments-only file yields `None`, and
   `WorkflowConfig(**None)` produced `argument after ** must be a mapping`, which
   is Python internals where the user needed "your config has no model section".
 - Every value that reaches the console goes through `esc()`. rich reads `[...]`
@@ -177,7 +177,7 @@ Two details that came from real failures:
 
 ---
 
-## Layer 2 — Framework integration
+## Layer 2: Framework integration
 
 **Files:** `langchain_agent.py`, `llamaindex_agent.py`, `openai_agents_agent.py`,
 `arg_models.py`, `providers/backend.py`
@@ -215,7 +215,7 @@ running.
 
 ---
 
-## Layer 3 — Agent core
+## Layer 3: Agent core
 
 **Files:** `ovat/agent/loop.py`, `ovat/agent/session.py`
 
@@ -257,18 +257,18 @@ Design points worth knowing:
   SDK engine, which is the only other engine that parses arguments itself.
 - **`Session` is thread-safe.** The TUI streams an answer on a worker thread and
   saves from there, while the main thread can `/load` or `/clear`. `json.dump`
-  iterating a list another thread is appending to writes a truncated file — and
+  iterating a list another thread is appending to writes a truncated file, and
   the file is the user's saved conversation. `save()` copies under the lock and
   writes outside it, so a slow disk cannot stall the answer stream.
 
 ---
 
-## Layer 4 — Provider abstraction
+## Layer 4: Provider abstraction
 
 **Files:** `providers/base.py` and the concrete plugs beside it
 
-Four ABCs — `LLMProvider`, `EmbeddingsProvider`, `RetrieverProvider`,
-`VLMProvider` — with the concrete class chosen by a **string** in the config.
+Four ABCs, `LLMProvider`, `EmbeddingsProvider`, `RetrieverProvider`,
+`VLMProvider`, with the concrete class chosen by a **string** in the config.
 Swapping a backend is a YAML edit, not a code change.
 
 ```mermaid
@@ -299,19 +299,19 @@ Notes on the retriever:
 
 - `check_same_thread=False`, because LangChain runs tools on a worker thread.
   SQLite permits threaded *reads* but not concurrent *writes*, so `add()` holds a
-  `threading.Lock` — the embedding call stays outside it, since that is pure
+  `threading.Lock`, the embedding call stays outside it, since that is pure
   compute.
 - Indexing a source **replaces** what that source had before, so `ovat index` is
   idempotent. It used to append, and three runs put the same chunk in three
   times, crowding out every other document.
 - Deleting a source touches two tables: `chunks` has a `source` column, the
   `vec0` virtual table does not. Getting that half-right leaves orphan vectors,
-  which `retrieve` matches and then silently skips — you ask for `top_k=5` and
+  which `retrieve` matches and then silently skips, you ask for `top_k=5` and
   quietly get two results with no error anywhere.
 
 ---
 
-## Layer 5 — Tools and MCP
+## Layer 5: Tools and MCP
 
 **Files:** `tools/search_docs.py`, `tools/transcribe.py`,
 `tools/describe_image.py`, `tools/mcp_client.py`
@@ -334,7 +334,7 @@ flowchart TD
 (anyio); OVAT's loop is not. Each server gets one background thread running one
 event loop, and one long-lived *manager* coroutine that connects, waits, and
 unwinds. anyio cancel scopes must be entered and exited by the same task, so
-`close()` cannot unwind the connection from outside — it sets an event and the
+`close()` cannot unwind the connection from outside, it sets an event and the
 manager unwinds itself.
 
 **A tool's error must match its declared shape.** `search_docs` is annotated
@@ -347,25 +347,25 @@ exception instead of a sentence the model could recover from.
 **An MCP server needs the config, not the object.** `configure(retriever)` runs
 in the parent process; `type: mcp_stdio` launches a *separate* Python, and objects
 do not cross a process boundary. So an MCP-served `search_docs` was permanently
-in stub mode — 104 characters of placeholder while the builtin path retrieved
+in stub mode, 104 characters of placeholder while the builtin path retrieved
 1932 real ones from the same index. The server now takes `--config` and builds
 its own retriever.
 
 ---
 
-## Layer 6 — Orchestration (A2A)
+## Layer 6: Orchestration (A2A)
 
 **Status: not implemented.** Scoped in the proposal as a stretch goal, with the
 core toolkit explicitly working without it.
 
 The intended shape is a minimal A2A server stub: an Agent Card at
 `/.well-known/agent.json` and JSON-RPC 2.0 `message/send`. The privacy rule that
-would govern it is already decided — only query text leaves the machine, never
+would govern it is already decided, only query text leaves the machine, never
 retrieved documents.
 
 ---
 
-## Layer 7 — Observability
+## Layer 7: Observability
 
 **Files:** `telemetry/base.py`, `sources.py`, `sinks.py`, `collector.py`
 
@@ -391,7 +391,7 @@ Telemetry does not run on macOS"* rather than showing zeros, because a missing
 sensor and an idle one look identical in a graph.
 
 **Peak RSS is sampled on a thread, during the run.** A single reading afterwards
-misses the peak entirely — Python has already freed the large allocations. Note
+misses the peak entirely. Python has already freed the large allocations. Note
 the scope: `--trace` measures the **OVAT** process, so with OVMS serving, the
 model's memory lives in `ovms.exe` and must be measured there. The trace *is* the
 right number for `ovat chat`, where the model runs in-process.
@@ -401,7 +401,7 @@ catches anyway, so one broken source cannot end the collection thread.
 
 ---
 
-## Layer 8 — Deployment and serving
+## Layer 8: Deployment and serving
 
 **Files:** `core/model_server.py`, `core/ovms_locator.py`, `core/model_manager.py`
 
@@ -427,7 +427,7 @@ works anyway.
 binary's folder: the `python_on` build links `python3xx.dll` from
 `<ovms>/python`, so `PYTHONHOME` and two extra `PATH` entries are required. Get
 this wrong and the process dies instantly with `0xC0000135 DLL_NOT_FOUND` before
-writing a single byte to the log — which reads as "OVMS had nothing to say"
+writing a single byte to the log, which reads as "OVMS had nothing to say"
 rather than "OVMS never started".
 
 **Readiness is a stall budget, not a deadline.** A first run downloads the model,
@@ -454,7 +454,7 @@ callers.
 
 ---
 
-## Layer 9 — OpenVINO runtime and hardware
+## Layer 9: OpenVINO runtime and hardware
 
 **File:** `core/device_manager.py`
 
@@ -468,7 +468,7 @@ flowchart TD
     Detect -->|"CPU + GPU"| NoNPU["emb → CPU<br/>LLM → GPU"]
     Detect -->|"CPU + GPU + NPU"| Full["emb → NPU<br/>LLM → GPU<br/>whisper → CPU"]
 
-    Full --> Limits["NPU limits — CRITICAL"]
+    Full --> Limits["NPU limits. CRITICAL"]
     Limits --> L1["NO tool calling"]
     Limits --> L2["NO continuous batching"]
     Limits --> L3["static shapes only"]
@@ -490,8 +490,7 @@ an agent.
 
 ## Model selection, and why "unified" is its own kind
 
-The default model is `Qwen3.5-4B-int4-ov`: 3.5 GB, and a **unified** export —
-text generation, image understanding and tool calling in one set of weights. The
+The default model is `Qwen3.5-4B-int4-ov`: 3.5 GB, and a **unified** export, text generation, image understanding and tool calling in one set of weights. The
 RAG, ReAct and audio+vision examples therefore share a single download instead of
 needing a separate ~5 GB vision model.
 
@@ -505,8 +504,8 @@ flowchart TD
     F["model folder"] --> C{"openvino_vision_*.xml present?"}
     C -->|"no"| L["kind = llm → LLMPipeline"]
     C -->|"yes"| M{"model_type in _UNIFIED_TYPES?"}
-    M -->|"no — qwen2_vl, internvl_chat, phi3_v"| V["kind = vlm → vision only"]
-    M -->|"yes — qwen3_5"| U["kind = unified → VLMPipeline<br/>answers to BOTH filters"]
+    M -->|"no, qwen2_vl, internvl_chat, phi3_v"| V["kind = vlm → vision only"]
+    M -->|"yes, qwen3_5"| U["kind = unified → VLMPipeline<br/>answers to BOTH filters"]
 ```
 
 | Decision | Why |
@@ -516,7 +515,7 @@ flowchart TD
 | A unified model answers to **both** `llm` and `vlm` filters | It genuinely is both. The alternative is two downloads for what one already does |
 
 The failure this prevents is unusually nasty: `LLMPipeline` **constructs
-successfully** on a unified export — measured at 24.6 s — and only then dies on
+successfully** on a unified export, measured at 24.6 s, and only then dies on
 the first `generate()` with *"Port for tensor name input_ids was not found"*.
 Constructing without error is not evidence the pipeline is right, so the choice is
 made from the export's layout instead.
@@ -568,7 +567,7 @@ flowchart TD
 
 Both set a flag in the trace totals, so `--trace` cannot show a clean
 `tool_calls: 0` that reads as "the model chose not to use a tool". `bench` reads
-those flags rather than the answer text, and scores such a row **not ok** — an
+those flags rather than the answer text, and scores such a row **not ok**, an
 earlier version tested the text and was defeated by a change in the same commit
 that turned an empty reply into an `Error:` string, which is not empty.
 
@@ -599,7 +598,7 @@ that changes its answer when you reorder the inputs is not measuring the inputs.
 ## The plano gateway
 
 [plano](https://github.com/katanemo/plano) (formerly archgw) is an AI proxy that
-turns every request into an OpenTelemetry span — **with no OTEL dependency added
+turns every request into an OpenTelemetry span, **with no OTEL dependency added
 to OVAT**. It is observability as configuration.
 
 ```mermaid
@@ -619,14 +618,13 @@ comments:
 | plano refuses to start | The model name needs a `provider/` prefix, because plano splits on `/`. Hence `ovms/Qwen3.5-4B-int4-ov` |
 | plano rejects OVMS's reply | Its WASM filter requires a top-level `"id"`, which OVMS omits. `ovms_id_bridge.py` injects one |
 
-The bridge binds `127.0.0.1` by default — nothing in it checks credentials, so a
+The bridge binds `127.0.0.1` by default, nothing in it checks credentials, so a
 wider bind is an open door to the GPU. `--host 0.0.0.0` exists because plano in
 WSL2 or Docker must reach the host across a network namespace, and it warns when
 used.
 
-**This is not the same thing as Layer 7.** Layer 7 measures what the *agent* did
-— tokens per turn, which tool ran, peak RSS. plano measures what the *transport*
-did — latency, TTFT, HTTP status. Neither substitutes for the other.
+**This is not the same thing as Layer 7.** Layer 7 measures what the *agent* did, tokens per turn, which tool ran, peak RSS. plano measures what the *transport*
+did, latency, TTFT, HTTP status. Neither substitutes for the other.
 
 ---
 
@@ -680,47 +678,47 @@ scope).
 One line each.
 
 **Config and CLI**
-- `config/workflow.py` — the pydantic schema. `StrictModel`: unknown keys are errors. New fields need schema + example + README row + a test
-- `cli/main.py` — every typer command. All printing via the one themed console; `_load_config` is the only loader
-- `cli/ui.py` — `PALETTE` (the single source of truth for all colours), theme, `wordmark()`
-- `cli/diagnostics.py` — doctor's checks, platform-aware
-- `text.py` — reasoning/markup helpers shared by the agent layer and the CLI
+- `config/workflow.py`, the pydantic schema. `StrictModel`: unknown keys are errors. New fields need schema + example + README row + a test
+- `cli/main.py`, every typer command. All printing via the one themed console; `_load_config` is the only loader
+- `cli/ui.py`, `PALETTE` (the single source of truth for all colours), theme, `wordmark()`
+- `cli/diagnostics.py`, doctor's checks, platform-aware
+- `text.py`, reasoning/markup helpers shared by the agent layer and the CLI
 
 **Agent**
-- `agent/loop.py` — the native loop and the run trace
-- `agent/factory.py` — config → wired agent; the tool registry lives here
-- `agent/arg_models.py` — derives per-framework argument models from each `SCHEMA`
-- `agent/langchain_agent.py` · `llamaindex_agent.py` · `openai_agents_agent.py` — the three framework engines
-- `agent/session.py` — conversation memory, thread-safe, with JSON save/load
-- `agent/rag_chat.py` — local retrieve-then-answer, with streaming
+- `agent/loop.py`, the native loop and the run trace
+- `agent/factory.py`, config → wired agent; the tool registry lives here
+- `agent/arg_models.py`, derives per-framework argument models from each `SCHEMA`
+- `agent/langchain_agent.py` · `llamaindex_agent.py` · `openai_agents_agent.py`, the three framework engines
+- `agent/session.py`, conversation memory, thread-safe, with JSON save/load
+- `agent/rag_chat.py`, local retrieve-then-answer, with streaming
 
 **Providers**
-- `providers/base.py` — the four ABCs
-- `providers/llm_ovms.py` — OpenAI SDK → OVMS `/v3`; returns `usage`; bounded by `request_timeout`
-- `providers/llm_genai.py` — local `openvino_genai`; routes unified exports through `VLMPipeline`
-- `providers/embeddings_genai.py` · `embeddings_ovms.py` — text → vectors
-- `providers/retriever_sqlitevec.py` — the vector store
-- `providers/vlm_genai.py` — vision, reached via `describe_image`
-- `providers/backend.py` — one shared description of the OVMS connection
+- `providers/base.py`, the four ABCs
+- `providers/llm_ovms.py`. OpenAI SDK → OVMS `/v3`; returns `usage`; bounded by `request_timeout`
+- `providers/llm_genai.py`, local `openvino_genai`; routes unified exports through `VLMPipeline`
+- `providers/embeddings_genai.py` · `embeddings_ovms.py`, text → vectors
+- `providers/retriever_sqlitevec.py`, the vector store
+- `providers/vlm_genai.py`, vision, reached via `describe_image`
+- `providers/backend.py`, one shared description of the OVMS connection
 
 **Core**
-- `core/model_server.py` — OVMS lifecycle: start, stall-budget readiness, stop, pidfile
-- `core/ovms_locator.py` — find the binary: config → env → PATH → known folders
-- `core/model_scout.py` — identify local model folders; the `unified` kind lives here
-- `core/device_manager.py` — CPU/GPU/NPU routing
-- `core/model_manager.py` — wraps `ovms --pull` / `--list_models`
+- `core/model_server.py`. OVMS lifecycle: start, stall-budget readiness, stop, pidfile
+- `core/ovms_locator.py`, find the binary: config → env → PATH → known folders
+- `core/model_scout.py`, identify local model folders; the `unified` kind lives here
+- `core/device_manager.py`. CPU/GPU/NPU routing
+- `core/model_manager.py`, wraps `ovms --pull` / `--list_models`
 
 **Tools, RAG, telemetry, bench**
-- `tools/search_docs.py` · `transcribe.py` · `describe_image.py` — built-ins, each also an MCP server
-- `tools/mcp_client.py` — MCP stdio client
-- `rag/indexer.py` — chunk and index `.txt`/`.md`
-- `telemetry/` — `base` (ABCs), `sources`, `sinks`, `collector`
-- `bench.py` — one question, several engines, one process each
+- `tools/search_docs.py` · `transcribe.py` · `describe_image.py`, built-ins, each also an MCP server
+- `tools/mcp_client.py`. MCP stdio client
+- `rag/indexer.py`, chunk and index `.txt`/`.md`
+- `telemetry/`, `base` (ABCs), `sources`, `sinks`, `collector`
+- `bench.py`, one question, several engines, one process each
 
 **TUI** (the `[tui]` extra)
-- `cli/tui.py` — launcher and masthead
-- `cli/shell.py` — subprocess exec layer, slash templates, `\r` progress sampling
-- `cli/chat_screen.py` — in-process chat: streaming, history, sessions, `/engine`
+- `cli/tui.py`, launcher and masthead
+- `cli/shell.py`, subprocess exec layer, slash templates, `\r` progress sampling
+- `cli/chat_screen.py`, in-process chat: streaming, history, sessions, `/engine`
 - `cli/doctor_screen.py` · `telemetry_screen.py` · `widgets.py` · `editing.py` · `theme.py` · `commands.py`
 
 Contributor rules and the landmine list live in [`AGENTS.md`](../AGENTS.md).

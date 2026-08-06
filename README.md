@@ -1,4 +1,4 @@
-# OVAT — OpenVINO Agentic Toolkit
+# OVAT: OpenVINO Agentic Toolkit
 
 **Build a tool-calling AI agent on an Intel AI PC from one YAML file and one command.**
 
@@ -24,7 +24,7 @@ No API keys, no cloud, nothing leaving the machine.
 - [Why OVAT](#why-ovat)
 - [Prerequisites](#prerequisites) · [Install](#install) · [Get a model](#get-a-model)
 - [Quickstart](#quickstart)
-- [Examples](#examples) — RAG, ReAct, audio + vision
+- [Examples](#examples): RAG, ReAct, audio + vision
 - [The workflow file](#the-workflow-file)
 - [Four engines, one config](#four-engines-one-config)
 - [Tools](#tools) · [Telemetry](#telemetry)
@@ -56,7 +56,7 @@ agent:
 ```
 
 The loop, schemas, history and error handling are the toolkit's job now. Moving
-from a 16 GB GPU box to an 8 GB CPU laptop is a three-line edit — compare
+from a 16 GB GPU box to an 8 GB CPU laptop is a three-line edit: compare
 [`examples/workflow.yml`](examples/workflow.yml) with
 [`examples/minimal.yml`](examples/minimal.yml).
 
@@ -66,13 +66,13 @@ from a 16 GB GPU box to an 8 GB CPU laptop is a three-line edit — compare
 
 | | Needs | Notes |
 | --- | --- | --- |
-| **Python** | 3.10 – 3.14 | `python --version` |
+| **Python** | 3.10, 3.14 | `python --version` |
 | **OS (full agent)** | Windows 11, Ubuntu 22.04/24.04, RHEL 9 | OVMS is x86-64 only |
 | **OS (development)** | + macOS | everything except serving |
 | **RAM** | 8 GB min, 16 GB comfortable | the default model wants ~5 GB |
 | **Disk** | ~8 GB, or ~15 GB with RAG | RAG pulls torch via the `convert` extra |
 
-**Using GPU or NPU?** Update the driver first — an old driver usually shows up as
+**Using GPU or NPU?** Update the driver first, an old driver usually shows up as
 the device simply being absent from `ovat doctor`, not as an error.
 
 | Device | Windows | Linux |
@@ -112,14 +112,14 @@ pip install "ovat[langchain,llamaindex,openai-agents,tui]"
 ### OpenVINO Model Server (Windows / Linux)
 
 `ovat serve`, and every tool-calling `run`, needs OVMS. It is one archive, no
-installer, and it does **not** need to be on `PATH` — OVAT finds it.
+installer, and it does **not** need to be on `PATH`. OVAT finds it.
 
 > ⚠️ **Download the `python_on` build.** The `python_off` (C++ only) package
-> **cannot do tool calling** — Intel's own docs state that its limited
+> **cannot do tool calling**. Intel's own docs state that its limited
 > chat-template support means "using tools is not possible". The wrong archive
 > gives you an agent that answers normally and silently never calls a tool.
 
-**Windows 11** — run this from the folder you want OVMS in:
+**Windows 11** (run this from the folder you want OVMS in):
 
 ```bat
 curl -L https://github.com/openvinotoolkit/model_server/releases/download/v2026.2.1/ovms_windows_2026.2.1_python_on.zip -o ovms.zip
@@ -141,7 +141,7 @@ yours lives elsewhere:
 export OVAT_OVMS=/path/to/ovms        # or set model.ovms_binary in the YAML
 ```
 
-macOS has no OVMS build — see [Platform support](#platform-support).
+macOS has no OVMS build. See [Platform support](#platform-support).
 
 ---
 
@@ -154,17 +154,17 @@ macOS has no OVMS build — see [Platform support](#platform-support).
 hf download OpenVINO/Qwen3.5-4B-int4-ov --local-dir models/OpenVINO/Qwen3.5-4B-int4-ov
 ```
 
-These are pre-converted OpenVINO IR — no conversion needed.
+These are pre-converted OpenVINO IR, no conversion needed.
 
 | Model | Download | RAM | Use it when |
 | --- | --- | --- | --- |
 | [`Qwen3.5-4B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-4B-int4-ov) | **3.5 GB** | 4.3 GB steady, **6.5 GB peak** | **Default.** Text + vision + tools in one model |
 | [`Qwen3.5-0.8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3.5-0.8B-int4-ov) | **0.9 GB** | ~2 GB | 8 GB machine, or a fast first run |
-| [`Qwen3-8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3-8B-int4-ov) | 4.9 GB | ~6–7 GB | strongest text answers; no vision |
+| [`Qwen3-8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3-8B-int4-ov) | 4.9 GB | ~6-7 GB | strongest text answers; no vision |
 | [`whisper-base-int8-ov`](https://huggingface.co/OpenVINO/whisper-base-int8-ov) | 0.08 GB | small | the `transcribe` tool |
 
 The 4B figures are **measured on an Intel AI PC**. The peak sits 2.2 GB above
-steady state, and the load spike is what decides whether a model fits — so 8 GB
+steady state, and the load spike is what decides whether a model fits, so 8 GB
 machines should prefer the 0.8B tier.
 
 Qwen3.5 is a **unified** model: text, images and tool calling in one export, so
@@ -191,7 +191,7 @@ ovat run workflow.yml -i "summarise my notes" # 5. ask something
 ovat serve workflow.yml --stop                # 6. shut it down
 ```
 
-**Step 4 takes a while the first time** — it downloads the model. That is
+**Step 4 takes a while the first time**, it downloads the model. That is
 expected: `serve` shows elapsed time and only gives up after five minutes of *no
 progress at all*, so a slow link is fine.
 
@@ -225,7 +225,7 @@ Each folder has its own README with the exact commands.
 | `model` | `name` | the model OVMS serves |
 | | `device` | `CPU`, `GPU`, or `NPU` |
 | | `ovms_url` | where OVMS listens (default `http://localhost:8000/v3`) |
-| | `tool_parser` | how tool calls are decoded — **`qwen3coder`** for Qwen3.5, `hermes3` for Qwen3. Derived from the model name if omitted |
+| | `tool_parser` | how tool calls are decoded, **`qwen3coder`** for Qwen3.5, `hermes3` for Qwen3. Derived from the model name if omitted |
 | | `source_model` | HF id that `ovat serve` downloads |
 | | `request_timeout` | per-request cap, in seconds |
 | `tools` | `name` / `type` | `builtin` (`search_docs`, `transcribe`, `describe_image`) or `mcp_stdio` |
@@ -243,11 +243,11 @@ every quickstart command works on a fresh install with nothing downloaded.
 
 `agent.type` picks the loop; nothing else in your config changes.
 
-- **`native`** — OVAT's own loop. Zero extra dependencies, and the only engine
+- **`native`**. OVAT's own loop. Zero extra dependencies, and the only engine
   that records per-turn token counts.
-- **`react`** — LangChain (`create_agent` + `ChatOpenAI` pointed at OVMS)
-- **`llamaindex`** — LlamaIndex `FunctionAgent` + `OpenAILike`
-- **`openai-agents`** — OpenAI Agents SDK compatibility model
+- **`react`**. LangChain (`create_agent` + `ChatOpenAI` pointed at OVMS)
+- **`llamaindex`**. LlamaIndex `FunctionAgent` + `OpenAILike`
+- **`openai-agents`**. OpenAI Agents SDK compatibility model
 
 Override for a single run without editing the file:
 
@@ -266,12 +266,12 @@ engine is a **row, not a crash**, and an engine that answered nothing scores
 
 ## Tools
 
-- **`search_docs`** — semantic search over your documents, returning source paths
-- **`transcribe`** — speech-to-text via OpenVINO Whisper; set `OVAT_WHISPER_MODEL`
-- **`describe_image`** — caption or answer questions about an image; set `OVAT_VLM_MODEL`
+- **`search_docs`**, semantic search over your documents, returning source paths
+- **`transcribe`**, speech-to-text via OpenVINO Whisper; set `OVAT_WHISPER_MODEL`
+- **`describe_image`**, caption or answer questions about an image; set `OVAT_VLM_MODEL`
 
 All three are also standalone [MCP](https://modelcontextprotocol.io) servers, so
-any MCP-aware agent can call them. And OVAT is an MCP **client** — point it at
+any MCP-aware agent can call them. And OVAT is an MCP **client**, point it at
 any server:
 
 ```yaml
@@ -301,7 +301,7 @@ ovat telemetry                                         # live table, no run
 Two rules the numbers follow:
 
 - **Unknown stays unknown.** If the server reports no token counts the field is
-  `null`, not `0` — a zero would read as "used no tokens".
+  `null`, not `0`, a zero would read as "used no tokens".
 - **An unavailable source says why**, instead of reporting zeros.
 
 `--trace` peak RSS measures the **OVAT process**. With OVMS serving, the model
@@ -332,7 +332,7 @@ local `openvino_genai` model and needs no server at all.
 | Agent answers fluently but **never calls a tool** | Wrong `tool_parser`. Qwen3.5 needs `qwen3coder`. OVAT warns rather than hiding this |
 | `OVMS exited without becoming ready`, empty log | The `python_off` build, or a missing VC++ Redistributable |
 | `ovat doctor` finds no OVMS | Set `OVAT_OVMS` to the unpacked folder |
-| No GPU/NPU listed in `doctor` | Driver out of date — see [Prerequisites](#prerequisites) |
+| No GPU/NPU listed in `doctor` | Driver out of date. See [Prerequisites](#prerequisites) |
 | `search_docs` returns `[stub]` | No `rag:` section, or no `--config` on the MCP command |
 | `serve` looks stuck | The first run downloads the model. Watch `ovms.log` |
 

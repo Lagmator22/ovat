@@ -17,7 +17,7 @@ your .md/.txt files ──ovat index──> chunks + vectors in sqlite-vec
 
 | | |
 | --- | --- |
-| Model | `OpenVINO/Qwen3.5-4B-int4-ov` (3.5 GB) — or the 0.8B tier, 0.9 GB |
+| Model | `OpenVINO/Qwen3.5-4B-int4-ov` (3.5 GB), or the 0.8B tier, 0.9 GB |
 | Embedder | `bge-small-en-v1.5`, converted once (~130 MB) |
 | Server | OVMS on Windows/Linux. macOS: use `ovat chat`, below |
 
@@ -39,7 +39,7 @@ ovat run examples/rag/workflow.yml -i "What is OVAT's memory budget?"
 ```
 
 Expected shape of the answer: **under 8 GB**, together with the path
-`examples/rag/docs/ovat-facts.md`. The citation is the point — it is what
+`examples/rag/docs/ovat-facts.md`. The citation is the point, it is what
 separates a retrieved answer from a plausible one.
 
 More questions the sample documents can answer, and pre-training cannot:
@@ -68,7 +68,7 @@ ovat chat examples/rag/workflow.yml -i "What is OVAT's memory budget?"
 - **`chunk.overlap` is not decoration.** Without it, a sentence that straddles
   a chunk boundary is findable by neither chunk.
 - **Leave the `rag:` block out entirely** and `search_docs` still answers, in
-  a documented stub mode — useful for testing wiring before downloading
+  a documented stub mode, useful for testing wiring before downloading
   anything.
 - **`dim` must match the embedder.** bge-small emits 384 numbers per chunk;
   a mismatch here is a confusing failure at query time, not at index time.

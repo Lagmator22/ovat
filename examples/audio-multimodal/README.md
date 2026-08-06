@@ -18,8 +18,8 @@ understanding in the same weights. So the agent's brain and its eyes are one
 
 | | Download |
 | --- | --- |
-| `OpenVINO/Qwen3.5-4B-int4-ov` — agent **and** vision | 3.5 GB |
-| `OpenVINO/whisper-base-int8-ov` — the ears | 0.08 GB |
+| `OpenVINO/Qwen3.5-4B-int4-ov`, agent **and** vision | 3.5 GB |
+| `OpenVINO/whisper-base-int8-ov`, the ears | 0.08 GB |
 | **Total** | **~3.6 GB** |
 
 A separate vision model would have been 5 GB on its own; the smallest

@@ -54,7 +54,7 @@ Two deliberate behaviours in that table:
 
 ## Try the switch yourself
 
-Fastest way — a flag, no file edit. The YAML is **never rewritten**, so the
+Fastest way, a flag, no file edit. The YAML is **never rewritten**, so the
 next run goes back to whatever it says:
 
 ```bash
@@ -73,7 +73,7 @@ agent:
   type: react          # -> native | llamaindex | openai-agents
 ```
 
-Nothing else changes — not the model, not the tools, not the prompt. Each
+Nothing else changes, not the model, not the tools, not the prompt. Each
 engine needs its own extra:
 
 | `agent.type` | Install |

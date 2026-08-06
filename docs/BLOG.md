@@ -1,6 +1,6 @@
 # Build a local AI agent on your Intel laptop with one YAML file
 
-*OVAT — the OpenVINO Agentic Toolkit — turns the boilerplate of a tool-calling
+*OVAT, the OpenVINO Agentic Toolkit, turns the boilerplate of a tool-calling
 agent into a config file, and runs the whole thing on your own hardware.*
 
 ---
@@ -11,9 +11,9 @@ agent into a config file, and runs the whole thing on your own hardware.*
 2. [What OVAT gives you](#2-what-ovat-gives-you)
 3. [Why OpenVINO and OVMS](#3-why-openvino-and-ovms)
 4. [Install and first run](#4-install-and-first-run)
-5. [Example 1 — Ask your own documents (RAG)](#5-example-1--ask-your-own-documents-rag)
-6. [Example 2 — Swap the agent framework in one word](#6-example-2--swap-the-agent-framework-in-one-word)
-7. [Example 3 — Listen and look (audio + vision)](#7-example-3--listen-and-look-audio--vision)
+5. [Example 1: Ask your own documents (RAG)](#5-example-1-ask-your-own-documents-rag)
+6. [Example 2: Swap the agent framework in one word](#6-example-2-swap-the-agent-framework-in-one-word)
+7. [Example 3: Listen and look (audio + vision)](#7-example-3-listen-and-look-audio--vision)
 8. [Choosing a model for your machine](#8-choosing-a-model-for-your-machine)
 9. [Where the time and memory actually go](#9-where-the-time-and-memory-actually-go)
 10. [Extending OVAT with your own tools](#10-extending-ovat-with-your-own-tools)
@@ -127,11 +127,11 @@ job, and OVMS is already very good at the hard parts:
 - **An OpenAI-compatible `/v3` endpoint**, so any client that speaks OpenAI works
 - **Tool-call decoding** via `--tool_parser`, in C++, not Python string-munging
 - **Continuous batching and prefix caching**
-- **Real device targeting** — the same model on CPU, integrated GPU, or NPU
+- **Real device targeting**, the same model on CPU, integrated GPU, or NPU
 
 What OVMS deliberately does not do is decide *for you*: which model, which
 device, which parser, which tools, when to start and stop. That gap is where a
-toolkit belongs — the same way `kubectl` wraps the Kubernetes API rather than
+toolkit belongs, the same way `kubectl` wraps the Kubernetes API rather than
 replacing it.
 
 OpenVINO matters for the other half: **INT4 quantised models that actually fit**.
@@ -160,7 +160,7 @@ chat. Agents need CPU or GPU.
 pip install ovat
 ```
 
-You also need OVMS, which is a single archive — no installer, and it does not
+You also need OVMS, which is a single archive, no installer, and it does not
 need to be on your `PATH`; OVAT finds it. On Windows:
 
 ```bat
@@ -199,7 +199,7 @@ ovat run workflow.yml -i "what tools do you have?"
 
 The first `serve` pulls a 3.5 GB model. It prints elapsed time as it goes and
 only gives up after five minutes of no progress at all, so a slow connection is
-fine — it will wait as long as the download keeps moving.
+fine, it will wait as long as the download keeps moving.
 
 **On a Mac?** OVMS is x86-64 only, so there is no server path. But
 `openvino_genai` runs natively, and `ovat chat` gives you real local RAG with no
@@ -207,7 +207,7 @@ server at all. Development on macOS, serving on the AI PC.
 
 ---
 
-## 5. Example 1 — Ask your own documents (RAG)
+## 5. Example 1: Ask your own documents (RAG)
 
 The most useful thing a local agent does: answer from your files, and tell you
 which file it used. Nothing is uploaded anywhere.
@@ -230,7 +230,7 @@ sources: examples/rag/docs/ovat-facts.md
 ```
 
 The `sources:` line is the point. Retrieval is easy to fake and hard to trust, so
-OVAT prints the paths **itself**, from the tool result — not by asking the model
+OVAT prints the paths **itself**, from the tool result, not by asking the model
 to remember to cite them. Models comply most of the time, which is exactly the
 sort of "most of the time" that ruins a demo.
 
@@ -261,7 +261,7 @@ of locally; `db_path` can live anywhere. Full walkthrough:
 
 ---
 
-## 6. Example 2 — Swap the agent framework in one word
+## 6. Example 2: Swap the agent framework in one word
 
 If you already use LangChain or LlamaIndex, you should not have to abandon it to
 run locally. OVAT supports four engines behind the same config:
@@ -271,11 +271,11 @@ agent:
   type: react        # native | react | llamaindex | openai-agents
 ```
 
-- **`native`** — OVAT's own loop. No extra dependencies, and the only engine that
+- **`native`**. OVAT's own loop. No extra dependencies, and the only engine that
   records per-turn token counts.
-- **`react`** — LangChain, `create_agent` + `ChatOpenAI` pointed at OVMS
-- **`llamaindex`** — LlamaIndex `FunctionAgent` + `OpenAILike`
-- **`openai-agents`** — the OpenAI Agents SDK, against a local server
+- **`react`**. LangChain, `create_agent` + `ChatOpenAI` pointed at OVMS
+- **`llamaindex`**. LlamaIndex `FunctionAgent` + `OpenAILike`
+- **`openai-agents`**, the OpenAI Agents SDK, against a local server
 
 Same model, same tools, same prompt. And because "it's just a one-word change" is
 easy to claim and easy to get wrong, OVAT ships the thing that checks:
@@ -284,7 +284,7 @@ easy to claim and easy to get wrong, OVAT ships the thing that checks:
 ovat bench examples/react/workflow.yml -i "What can you do?" --out report.json
 ```
 
-One question, every engine, one server, side by side — build time, answer time,
+One question, every engine, one server, side by side, build time, answer time,
 peak memory, token and tool-call counts. Two deliberate behaviours in that table:
 
 - **A failing engine is a row, not a crash.** A missing extra should not destroy
@@ -304,7 +304,7 @@ Full walkthrough: [`examples/react/`](../examples/react/).
 
 ---
 
-## 7. Example 3 — Listen and look (audio + vision)
+## 7. Example 3: Listen and look (audio + vision)
 
 Agents are more useful when they are not text-only. Two more built-in tools:
 
@@ -329,8 +329,8 @@ The agent decides to call `transcribe`, gets the text, and answers from it. Ask
 about an image instead and it calls `describe_image`.
 
 Note the third `export`: the vision model is the **same folder** as the agent's
-model. Qwen3.5 is a *unified* export — text generation and image understanding in
-one set of weights — so the whole example costs 3.5 GB plus 80 MB of Whisper,
+model. Qwen3.5 is a *unified* export, text generation and image understanding in
+one set of weights, so the whole example costs 3.5 GB plus 80 MB of Whisper,
 rather than adding a separate 5 GB vision model.
 
 Full walkthrough: [`examples/audio-multimodal/`](../examples/audio-multimodal/).
@@ -346,10 +346,10 @@ laptop cannot hold. Three tiers:
 | --- | --- | --- | --- |
 | `Qwen3.5-0.8B-int4-ov` | 0.9 GB | ~2 GB | 8 GB machines, fast iteration |
 | `Qwen3.5-4B-int4-ov` | 3.5 GB | 4.3 GB steady, **6.5 GB peak** | the default; 16 GB machines |
-| `Qwen3-8B-int4-ov` | 4.9 GB | ~6–7 GB | strongest text; no vision |
+| `Qwen3-8B-int4-ov` | 4.9 GB | ~6-7 GB | strongest text; no vision |
 
 The 4B numbers are measured on a real Intel AI PC. Note the peak sits **2.2 GB
-above** steady state — the load spike decides whether it fits, which is why an
+above** steady state, the load spike decides whether it fits, which is why an
 8 GB machine should start at 0.8B even though 4B "looks" like it fits.
 
 Switching tiers is two lines:
@@ -361,8 +361,7 @@ model:
 ```
 
 One more field matters more than it looks: `tool_parser`. It tells OVMS how to
-decode the model's tool calls, and the right answer differs by model family —
-`qwen3coder` for Qwen3.5, `hermes3` for Qwen3. Get it wrong and the model asks
+decode the model's tool calls, and the right answer differs by model family, `qwen3coder` for Qwen3.5, `hermes3` for Qwen3. Get it wrong and the model asks
 for a tool, the server cannot read the request, and you get a fluent answer that
 called nothing. OVAT derives it from the model name when you leave it out, and
 warns loudly if a tool call comes back undecoded.
@@ -400,14 +399,14 @@ Per-turn latency, tokens, which tool ran and for how long, and the sources it
 retrieved. `ovat telemetry` adds live CPU, RAM and Intel GPU/NPU numbers.
 
 Because this is a measurement tool, it follows two rules strictly. **Unknown
-stays unknown** — a server that reports no token counts produces `null`, never
+stays unknown**, a server that reports no token counts produces `null`, never
 `0`. And **an unavailable source says why**: on macOS the Intel row reads *"Intel
 Unified Telemetry does not run on macOS"* rather than showing zeros, because a
 missing sensor and an idle one look identical in a graph.
 
 For deeper observability there is an optional
 [plano](https://github.com/katanemo/plano) gateway integration that turns every
-request into an OpenTelemetry span — with no OTEL dependency added to OVAT.
+request into an OpenTelemetry span, with no OTEL dependency added to OVAT.
 See [`examples/plano/`](../examples/plano/).
 
 ---
@@ -460,10 +459,10 @@ ovat doctor workflow.yml
 
 If `doctor` is green, you are four commands from a working local agent.
 
-- **Repository** — <https://github.com/Lagmator22/ovat>
-- **Architecture** — [`docs/ARCHITECTURE.md`](ARCHITECTURE.md), the nine layers and why each exists
-- **Examples** — [`examples/`](../examples/), four runnable use cases
-- **OpenVINO Model Server** — <https://docs.openvino.ai/2026/model-server/ovms_what_is_openvino_model_server.html>
+- **Repository**, <https://github.com/Lagmator22/ovat>
+- **Architecture**, [`docs/ARCHITECTURE.md`](ARCHITECTURE.md), the nine layers and why each exists
+- **Examples**, [`examples/`](../examples/), four runnable use cases
+- **OpenVINO Model Server**, <https://docs.openvino.ai/2026/model-server/ovms_what_is_openvino_model_server.html>
 
 OVAT is Apache-2.0 and built as
 [Google Summer of Code 2026 project #18](https://github.com/openvinotoolkit/openvino)
