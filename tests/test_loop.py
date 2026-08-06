@@ -139,7 +139,8 @@ def test_run_trace_records_turns_tokens_and_tool_calls():
                       # False on a healthy run; True when a tool call came back
                       # as text and never ran. Asserted here as part of the
                       # exact shape so a future key cannot be added silently.
-                      "undecoded_tool_call": False}
+                      "undecoded_tool_call": False,
+                      "empty_answer": False}
 
 
 def test_run_trace_survives_replies_without_usage():
@@ -162,10 +163,24 @@ def test_run_trace_survives_replies_without_usage():
 # The three "model misbehaves" edge cases
 
 
-def test_none_content_final_answer_becomes_empty_string():
-    # A server may finish with content=None; the CLI must never print "None".
+def test_none_content_is_reported_rather_than_returned_as_silence():
+    """A server may finish with content=None. Two things must be true.
+
+    The original contract here was only the first: never print the literal
+    string "None". That still holds. But it returned "" instead, and an empty
+    answer turns out to be a SYMPTOM, not a benign edge case -- on live
+    hardware a mismatched tool_parser swallowed a reply and produced exactly
+    this, with bench scoring the row ok. Returning silence made that
+    indistinguishable from a model that simply had nothing to add.
+
+    So content=None is now reported as the failure it almost always is. The
+    literal "None" still never appears.
+    """
     agent = AgentLoop(FakeLLMProvider([reply("stop", content=None)]), tools={})
-    assert agent.run("hi") == ""
+    out = agent.run("hi")
+    assert "None" not in out                  # the original guarantee
+    assert "Error" in out and "no answer" in out.lower()
+    assert agent.last_trace["totals"]["empty_answer"] is True
 
 
 def test_empty_tool_calls_list_returns_immediately_instead_of_spinning():
@@ -248,3 +263,53 @@ def test_a_normal_answer_is_untouched_by_that_guard():
     agent = AgentLoop(PlainLLM(), tools={}, max_iterations=3)
     assert agent.run("q") == "Under 8 GB."
     assert not agent.last_trace["totals"].get("undecoded_tool_call")
+
+
+def test_a_reply_that_says_nothing_is_reported_not_returned_as_an_answer():
+    """The quietest member of the no-tool-called family.
+
+    Found on the AI PC (v0.9.6) by deliberately forcing tool_parser: hermes3
+    onto a Qwen3.5 model. hermes3 does not merely fail to decode that format --
+    it SWALLOWS the call. The reply was reasoning, then </think>, then nothing:
+
+        tool_calls 0, undecoded_tool_call False, and `bench` scored the row ok.
+
+    So neither existing guard sees it. There is no markup left for
+    looks_like_undecoded_tool_call to find, and finish_reason is a clean
+    "stop". An empty answer is the only remaining evidence, which makes it
+    worth treating as evidence: a model with genuinely nothing to say is
+    vanishingly rare, a pipeline that ate the reply is not.
+    """
+    from ovat.agent.loop import AgentLoop
+
+    class SwallowedLLM:
+        def chat(self, messages, tools=None):
+            # Reasoning, terminator, and then nothing at all.
+            return {"finish_reason": "stop",
+                    "content": "The user wants the memory budget.</think>",
+                    "tool_calls": None, "usage": None, "raw": None}
+
+    agent = AgentLoop(SwallowedLLM(), tools={}, max_iterations=3)
+    answer = agent.run("what is the memory budget?")
+
+    assert answer, "an empty answer was returned as if it were a reply"
+    assert "Error" in answer
+    assert "no answer" in answer.lower()
+    assert agent.last_trace["totals"].get("empty_answer") is True
+
+
+def test_a_real_answer_is_never_mistaken_for_an_empty_one():
+    """Reasoning followed by actual content must pass through untouched."""
+    from ovat.agent.loop import AgentLoop
+
+    class ThinkingLLM:
+        def chat(self, messages, tools=None):
+            return {"finish_reason": "stop",
+                    "content": "Deciding what they meant.</think>Under 8 GB.",
+                    "tool_calls": None, "usage": None, "raw": None}
+
+    agent = AgentLoop(ThinkingLLM(), tools={}, max_iterations=3)
+    # The raw text is preserved -- stripping reasoning is a DISPLAY concern,
+    # and --trace plus the session must keep what the model actually sent.
+    assert "Under 8 GB." in agent.run("q")
+    assert not agent.last_trace["totals"].get("empty_answer")

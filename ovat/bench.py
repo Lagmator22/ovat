@@ -117,6 +117,19 @@ def benchmark_engine(config, engine: str, question: str,
         row["latency_s"] = round(time.monotonic() - run_started, 3)
 
     row["peak_rss_mb"] = memory.peak_mb
+    # "ok" means the engine PRODUCED AN ANSWER, not merely that it did not
+    # raise. An engine whose reply was swallowed by a mismatched tool_parser
+    # returns cleanly with nothing in it, and scoring that ok made the whole
+    # table lie: the row read as a successful comparison while the model had
+    # said nothing and called no tool. Measured on live hardware with hermes3
+    # forced onto a Qwen3.5 model.
+    from ovat.text import says_nothing
+    if says_nothing(row.get("answer") or ""):
+        row["ok"] = False
+        row["error"] = ("the engine returned no answer (reply was empty, or "
+                        "only reasoning). Usually a tool_parser that does not "
+                        "match the model.")
+        return row
     row["ok"] = True
 
     # Tokens only where the engine actually recorded them. See the module

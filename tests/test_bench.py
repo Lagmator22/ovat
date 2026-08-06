@@ -274,3 +274,27 @@ def test_bench_refuses_an_empty_engine_list(tmp_path):
                                  "--engines", " , "])
     assert result.exit_code == 1
     assert "No engines" in result.output
+
+
+def test_bench_does_not_score_an_empty_answer_as_ok():
+    """"ok" must mean the engine ANSWERED, not merely that it did not raise.
+
+    Found on the AI PC: with tool_parser: hermes3 forced onto a Qwen3.5 model,
+    hermes3 SWALLOWED the tool call and the engine returned cleanly with a
+    reply containing only reasoning -- and bench scored the row ok. The point
+    of the table is a like-for-like comparison, so a row reading as success
+    while the model said nothing and called no tool makes the table lie.
+    """
+    row = benchmark_engine(
+        _config(), "native", "q",
+        build_agent=lambda cfg: _Agent(answer="reasoning only</think>"))
+    assert row["ok"] is False, "an empty answer was scored as a success"
+    assert "no answer" in (row["error"] or "")
+
+
+def test_bench_still_scores_a_real_answer_ok():
+    """The guard must not reject ordinary answers."""
+    row = benchmark_engine(_config(), "native", "q",
+                           build_agent=lambda cfg: _Agent(answer="Under 8 GB."))
+    assert row["ok"] is True
+    assert row["error"] is None

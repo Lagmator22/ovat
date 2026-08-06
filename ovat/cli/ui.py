@@ -219,69 +219,14 @@ def status_text(status: str) -> Text:
     return Text(f"{glyph} {status}", style=style)
 
 
-# Reasoning models narrate before they answer. Qwen3 and the DeepSeek-R1
-# family wrap that narration in <think>…</think>; some exports spell it
-# <thinking>. Both spellings, any case, across newlines.
-#
-# This lives HERE, not in chat_screen.py where it started, because the plain
-# CLI needs it too and chat_screen imports textual. Moving it kept the
-# isolation contract intact: `ovat run` must work with no TUI installed.
-_THINK_BLOCK = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>",
-                          re.DOTALL | re.IGNORECASE)
-_THINK_OPEN = re.compile(r"<think(?:ing)?>", re.IGNORECASE)
-_THINK_CLOSE = re.compile(r"</think(?:ing)?>", re.IGNORECASE)
-
-
-def strip_thinking(text: str) -> str:
-    """Drop the reasoning, leaving the answer.
-
-    Interesting once, clutter every time after: a single Qwen3 answer can
-    spend fifteen lines deciding what the question meant before saying
-    anything. This affects DISPLAY only; the session keeps the raw text, so
-    /thinking on can bring it back and /save never loses it.
-
-    Three shapes, because models produce all three:
-
-    1. A complete <think>…</think> block.
-    2. An UNCLOSED <think>: generation stopped mid-thought (Esc, or the token
-       cap ran out). Everything from the opening tag on is reasoning.
-    3. A DANGLING </think> with no opening tag. Qwen3's chat template inserts
-       the opening tag itself, so the model only ever emits the terminator --
-       which meant every `ovat run` answer on the AI PC ended up carrying a
-       stray </think>. Everything BEFORE it is reasoning, so it goes too.
-    """
-    cleaned = _THINK_BLOCK.sub("", text)
-    match = _THINK_OPEN.search(cleaned)
-    if match:
-        cleaned = cleaned[:match.start()]
-    # Case 3 runs last, so a well-formed block has already been removed and
-    # cannot be mistaken for a dangling terminator.
-    closing = _THINK_CLOSE.search(cleaned)
-    if closing:
-        cleaned = cleaned[closing.end():]
-    return cleaned.strip()
-
-
-# Tool-call markup that reached the user as prose. Both spellings the wild has
-# produced: the correct <function=name>, and the malformed <parameter=name>
-# seen on a live server when the model got its own format wrong.
-_UNDECODED_TOOL_CALL = re.compile(
-    r"<tool_call>|</tool_call>|<function=|</function>|<parameter=",
-    re.IGNORECASE)
-
-
-def looks_like_undecoded_tool_call(text: str) -> bool:
-    """Did a tool call end up in the ANSWER instead of being executed?
-
-    When OVMS has the wrong tool_parser -- or the model emits a call the right
-    parser cannot read -- the markup is passed through as content. The agent
-    then answers fluently, having run no tool at all, and nothing anywhere
-    says so. That has happened twice: `tool_parser: auto` selecting no parser,
-    and an intermittent live failure where the model wrote
-    <parameter=search_docs> in place of <function=search_docs>.
-
-    Deliberately a plain substring check on the markers, not a parse. The
-    input is by definition malformed, so anything stricter would miss the
-    cases this exists to catch.
-    """
-    return bool(_UNDECODED_TOOL_CALL.search(text or ""))
+# Text helpers live in ovat/text.py, not here: the agent loop needs them too
+# and it must not import from cli/. Re-exported under the old names so every
+# existing caller keeps working, and so there is still exactly ONE copy.
+from ovat.text import (  # noqa: E402  (re-export, deliberately at the bottom)
+    THINK_BLOCK as _THINK_BLOCK,
+    THINK_CLOSE as _THINK_CLOSE,
+    THINK_OPEN as _THINK_OPEN,
+    looks_like_undecoded_tool_call,
+    says_nothing,
+    strip_thinking,
+)

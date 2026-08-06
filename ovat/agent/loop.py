@@ -16,19 +16,11 @@ Exit when finish_reason is "stop". A max_iterations guard makes sure I can
 never spin forever.
 """
 import json
-import re
 import time
 
 from ovat.agent.session import Session
+from ovat.text import looks_like_undecoded_tool_call, says_nothing
 from ovat.providers.base import LLMProvider
-
-
-# Tool-call markup that arrived as CONTENT instead of being decoded. Both the
-# well-formed spelling and the malformed <parameter= one seen live, where the
-# model wrote <parameter=search_docs> in place of <function=search_docs>.
-_UNDECODED_TOOL_CALL = re.compile(
-    r"<tool_call>|</tool_call>|<function=|</function>|<parameter=",
-    re.IGNORECASE)
 
 
 def _parse_args(arguments: str) -> dict | None:
@@ -144,6 +136,7 @@ class AgentLoop:
         # A one-element list so the nested _finish closure can set it without
         # a `nonlocal` declaration, matching how `turns` is shared.
         undecoded = [False]
+        empty = [False]
         self.last_trace = {"engine": self.engine_name, "turns": turns, "totals": {}}
 
         def _total(key: str):
@@ -169,6 +162,10 @@ class AgentLoop:
                 # "the model chose not to use a tool" rather than "the request
                 # could not be decoded".
                 "undecoded_tool_call": undecoded[0],
+                # True when the reply carried no answer once reasoning was
+                # removed. Distinct from undecoded_tool_call: there the markup
+                # survives, here the parser ate it.
+                "empty_answer": empty[0],
             }
             return answer
 
@@ -203,7 +200,7 @@ class AgentLoop:
                 # The markup is deliberately NOT parsed into a real call.
                 # Guessing at broken output trades a loud failure for a silent
                 # wrong answer.
-                if _UNDECODED_TOOL_CALL.search(content):
+                if looks_like_undecoded_tool_call(content):
                     undecoded[0] = True
                     return _finish(
                         "Error: the model asked for a tool but the server "
@@ -215,6 +212,22 @@ class AgentLoop:
                         "the trace; it is deliberately not repeated here, "
                         "because printing it is what made this look like an "
                         "answer in the first place.")
+                # Third shape of the same failure, and the quietest. A parser
+                # that does not match the model's format can SWALLOW the call
+                # instead of passing it through: measured live with hermes3
+                # forced onto Qwen3.5, the reply was reasoning, then </think>,
+                # then nothing. Zero tool calls, no markup for the check above
+                # to find, finish_reason a clean "stop" -- and bench scored the
+                # row ok. An empty answer is the only evidence left, so it is
+                # treated as evidence.
+                if says_nothing(content):
+                    empty[0] = True
+                    return _finish(
+                        "Error: the model returned no answer. Its reply "
+                        "contained only reasoning, or nothing at all. This is "
+                        "usually a tool_parser that does not match the model "
+                        "(Qwen3.5 needs qwen3coder, Qwen3 needs hermes3), "
+                        "which can swallow the reply rather than pass it on.")
                 return _finish(content)
 
             # The model wants one or more tools. Guard the malformed case
