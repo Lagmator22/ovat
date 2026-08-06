@@ -12,6 +12,8 @@ provider as a STRING (genai vs ovms, sqlite-vec vs a future backend) and the
 factory maps that string to the matching concrete class. Swapping a backend is
 a one-line YAML edit, not a code change.
 """
+import os
+
 from ovat.agent.loop import AgentLoop
 from ovat.config.workflow import WorkflowConfig
 from ovat.providers.backend import LLMBackend
@@ -72,6 +74,21 @@ def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:
     emb = config.rag.embeddings
     if emb.provider == "genai":
         from ovat.providers.embeddings_genai import GenAIEmbeddingsProvider
+        # Check for the folder BEFORE handing the path to openvino_genai. A
+        # missing model there surfaces as a C++ assertion out of core.cpp
+        # ("Check 'util::directory_exists...'"), which the CLI then rendered as
+        # a traceback -- while `ovat doctor` was already reporting the same
+        # thing as a polite warn row. Errors are for users: same fact, same
+        # wording, one sentence.
+        if not os.path.isdir(emb.model):
+            raise RuntimeError(
+                f"embeddings model not found at {emb.model!r}. Export it once "
+                f"with:\n"
+                f"  pip install \"ovat[convert]\"\n"
+                f"  optimum-cli export openvino --model BAAI/bge-small-en-v1.5 "
+                f"--task feature-extraction {emb.model}\n"
+                f"then run 'ovat index <folder> <config>'. "
+                f"'ovat doctor <config>' reports this too.")
         return GenAIEmbeddingsProvider(model_path=emb.model, device=emb.device)
     if emb.provider == "ovms":
         from ovat.providers.embeddings_ovms import OVMSEmbeddingsProvider

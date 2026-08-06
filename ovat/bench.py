@@ -117,27 +117,47 @@ def benchmark_engine(config, engine: str, question: str,
         row["latency_s"] = round(time.monotonic() - run_started, 3)
 
     row["peak_rss_mb"] = memory.peak_mb
-    # "ok" means the engine PRODUCED AN ANSWER, not merely that it did not
-    # raise. An engine whose reply was swallowed by a mismatched tool_parser
-    # returns cleanly with nothing in it, and scoring that ok made the whole
-    # table lie: the row read as a successful comparison while the model had
-    # said nothing and called no tool. Measured on live hardware with hermes3
-    # forced onto a Qwen3.5 model.
-    from ovat.text import says_nothing
-    if says_nothing(row.get("answer") or ""):
-        row["ok"] = False
-        row["error"] = ("the engine returned no answer (reply was empty, or "
-                        "only reasoning). Usually a tool_parser that does not "
-                        "match the model.")
-        return row
-    row["ok"] = True
 
     # Tokens only where the engine actually recorded them. See the module
-    # docstring: absent is not zero.
+    # docstring: absent is not zero. Read BEFORE deciding ok, because the trace
+    # is what says whether this run actually did anything.
     totals = (getattr(agent, "last_trace", None) or {}).get("totals") or {}
     for key in ("prompt_tokens", "completion_tokens", "tool_calls"):
         if totals.get(key) is not None:
             row[key] = totals[key]
+
+    # "ok" means the engine PRODUCED AN ANSWER, not merely that it did not
+    # raise. An engine whose reply was swallowed by a mismatched tool_parser
+    # returns cleanly having said nothing, and scoring that ok made the table
+    # lie: a green row for a run that answered nothing.
+    #
+    # The TRACE decides this, not the answer text. A previous attempt tested
+    # says_nothing(row["answer"]) and was defeated by a change made in the SAME
+    # commit: the loop now turns an empty reply into an "Error: the model
+    # returned no answer" string, which is not empty, so the check passed and
+    # the row still scored ok. Verified on live hardware. The flags cannot be
+    # fooled that way, because they record what HAPPENED, not what was printed.
+    from ovat.text import says_nothing
+
+    failure = None
+    if totals.get("empty_answer"):
+        failure = ("the engine returned no answer (reply was empty, or only "
+                   "reasoning). Usually a tool_parser that does not match the "
+                   "model.")
+    elif totals.get("undecoded_tool_call"):
+        failure = ("the model asked for a tool but the server could not decode "
+                   "the request, so no tool ran. Usually a tool_parser that "
+                   "does not match the model.")
+    elif says_nothing(row.get("answer") or ""):
+        # Fallback for the three framework engines, which keep no trace at all:
+        # there, an empty answer is the only evidence available.
+        failure = "the engine returned no answer (reply was empty)."
+
+    if failure is not None:
+        row["ok"] = False
+        row["error"] = failure
+        return row
+    row["ok"] = True
     return row
 
 

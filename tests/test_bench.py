@@ -298,3 +298,52 @@ def test_bench_still_scores_a_real_answer_ok():
                            build_agent=lambda cfg: _Agent(answer="Under 8 GB."))
     assert row["ok"] is True
     assert row["error"] is None
+
+
+def test_bench_reads_the_trace_not_the_answer_text():
+    """The regression that shipped in 0.9.7 and was caught on hardware.
+
+    Two fixes in one commit defeated each other. The loop began converting an
+    empty reply into an "Error: the model returned no answer" string -- so the
+    bench guard, which tested says_nothing(answer), saw non-empty text and
+    scored the row ok. Verified on the AI PC: forcing hermes3 onto Qwen3.5 gave
+    ok=True, error=None, tool_calls=0, with the diagnosis sitting harmlessly in
+    the answer column. A green row for a run that answered nothing.
+
+    The trace flags cannot be fooled that way: they record what happened, not
+    what was printed.
+    """
+    class TracedAgent:
+        tools: dict = {}
+        # Exactly what the loop produces for a swallowed reply.
+        last_trace = {"engine": "native", "turns": [],
+                      "totals": {"turns": 1, "tool_calls": 0,
+                                 "empty_answer": True,
+                                 "undecoded_tool_call": False}}
+
+        def run(self, question):
+            return ("Error: the model returned no answer. Its reply contained "
+                    "only reasoning, or nothing at all.")
+
+    row = benchmark_engine(_config(), "native", "q",
+                           build_agent=lambda cfg: TracedAgent())
+    assert row["ok"] is False, "a non-empty error string scored as success"
+    assert "no answer" in (row["error"] or "")
+
+
+def test_bench_flags_an_undecoded_tool_call_too():
+    """The sibling flag gets the same treatment."""
+    class TracedAgent:
+        tools: dict = {}
+        last_trace = {"engine": "native", "turns": [],
+                      "totals": {"turns": 1, "tool_calls": 0,
+                                 "empty_answer": False,
+                                 "undecoded_tool_call": True}}
+
+        def run(self, question):
+            return "Error: the model asked for a tool but ..."
+
+    row = benchmark_engine(_config(), "native", "q",
+                           build_agent=lambda cfg: TracedAgent())
+    assert row["ok"] is False
+    assert "could not decode" in (row["error"] or "")

@@ -246,3 +246,37 @@ def test_close_agent_on_an_agent_with_no_servers_is_a_no_op():
         pass
 
     close_agent(Bare())               # must not raise
+
+
+def test_a_missing_embeddings_model_is_a_sentence_not_a_cpp_assertion(tmp_path):
+    """`ovat run` tracebacked where `ovat doctor` politely warned.
+
+    Found on the AI PC: with a rag: section pointing at an unexported embedder,
+    build_rag handed the path straight to openvino_genai and the failure came
+    back as a C++ assertion out of core.cpp --
+
+        RuntimeError: Exception from src\\inference\\src\\cpp\\core.cpp:84:
+        Check 'util::directory_exists(path)...'
+
+    -- which the CLI rendered as a traceback. doctor already reported the same
+    fact as an "Embeddings model ... not found" warn row, so the information
+    existed; only `run` was rude about it. Errors are for users.
+    """
+    import pytest
+    from ovat.agent.factory import build_rag
+    from ovat.config.workflow import WorkflowConfig
+
+    missing = str(tmp_path / "no-such-embedder")
+    config = WorkflowConfig(
+        model={"name": "m"},
+        rag={"embeddings": {"provider": "genai", "model": missing, "dim": 384},
+             "retriever": {"provider": "sqlite-vec",
+                           "db_path": str(tmp_path / "x.db")}})
+
+    with pytest.raises(RuntimeError) as caught:
+        build_rag(config)
+    message = str(caught.value)
+    assert "not found" in message
+    assert missing in message                 # names the path it looked at
+    assert "optimum-cli" in message           # and how to fix it
+    assert "core.cpp" not in message          # not the C++ assertion
