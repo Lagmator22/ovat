@@ -20,9 +20,12 @@ model:
   source_model: OpenVINO/Qwen3.5-4B-int4-ov
   device: GPU                     # CPU works; NPU cannot do tool calling
   ovms_url: http://localhost:8000/v3
-  # Let OVMS read the chat template and pick the parser. Naming one here
-  # would OVERRIDE that, and Qwen3.5 does not use the hermes3 format.
-  tool_parser: qwen3coder     # MEASURED: 'auto' decodes no tool calls for Qwen3.5
+  # Name the parser explicitly. Leaving this out, or setting 'auto', makes
+  # OVMS pick from the chat template -- and for Qwen3.5 it picks NOTHING:
+  # the tool call comes back as plain text and the agent silently never
+  # calls a tool. Measured on live OVMS. qwen3coder for Qwen3.5, hermes3
+  # for Qwen3. OVAT derives this from the model name if you omit it.
+  tool_parser: qwen3coder
   model_repository_path: models
   request_timeout: 120            # first token from a cold model is not quick
 
