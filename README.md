@@ -195,12 +195,20 @@ ovat serve workflow.yml --stop                # 6. shut it down
 expected: `serve` shows elapsed time and only gives up after five minutes of *no
 progress at all*, so a slow link is fine.
 
-On **macOS** there is no OVMS. Use the local path instead:
+On **macOS** there is no OVMS. Use the local path instead. `ovat chat` answers
+from an index, so it needs a config with a `rag:` section, which the example
+below provides:
 
 ```bash
+git clone https://github.com/Lagmator22/ovat.git && cd ovat   # for the examples
 hf download OpenVINO/Qwen3.5-0.8B-int4-ov --local-dir models/Qwen3.5-0.8B-int4-ov
-ovat index ./my-notes examples/rag/workflow.yml
-ovat chat examples/rag/workflow.yml -i "what did the Q3 review conclude?"
+
+pip install "ovat[convert]"                                   # for the embedder
+optimum-cli export openvino --model BAAI/bge-small-en-v1.5 \
+    --task feature-extraction models/bge-small-en-v1.5
+
+ovat index ./examples/rag/docs examples/rag/workflow.yml
+ovat chat examples/rag/workflow.yml -i "What is OVAT's memory budget?"
 ```
 
 ---
@@ -215,6 +223,11 @@ ovat chat examples/rag/workflow.yml -i "what did the Q3 review conclude?"
 | **OpenTelemetry** | [`examples/plano/`](examples/plano/) | Traces through the plano AI gateway |
 
 Each folder has its own README with the exact commands.
+
+> The examples are **not** included in the pip package, since they are project
+> files rather than library code. Clone the repo to run them:
+> `git clone https://github.com/Lagmator22/ovat.git && cd ovat`. Everything else
+> in this README works from `pip install ovat` alone.
 
 ---
 
