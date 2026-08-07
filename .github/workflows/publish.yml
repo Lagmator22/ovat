@@ -2,7 +2,19 @@ name: Publish to PyPI
 
 on:
     release:
-        types: [published] # This makes it run ONLY when you create a GitHub Release
+        types: [published] # fires when a GitHub Release is published
+    # Manual trigger, because the release event is not always enough on its own.
+    # v0.9.11 and v0.9.12 were both published correctly -- non-draft,
+    # non-prerelease, workflow active -- and neither produced a run, so PyPI sat
+    # two versions behind main and anyone following the README's `pip install
+    # ovat` got the older one. Without this there is no way to publish except by
+    # deleting and recreating the release.
+    workflow_dispatch:
+        inputs:
+            ref:
+                description: "Tag or branch to build and publish (e.g. v0.9.12)"
+                required: true
+                default: main
 
 jobs:
     build-and-publish:
@@ -18,6 +30,10 @@ jobs:
         steps:
             - name: Checkout code
               uses: actions/checkout@v4
+              with:
+                  # On a release event this resolves to the tag; on a manual run
+                  # it is whatever ref was asked for.
+                  ref: ${{ github.event.inputs.ref || github.ref }}
 
             - name: Set up Python
               uses: actions/setup-python@v5
