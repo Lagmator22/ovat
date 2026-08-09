@@ -123,3 +123,53 @@ def test_model_server_launches_the_resolved_binary(monkeypatch, tmp_path):
     server.start(log_path=str(tmp_path / "l.log"), pid_path=str(tmp_path / "p.pid"))
     assert captured["cmd"][0] == exe
     assert captured["env"]["PATH"].startswith(str(tmp_path))
+
+
+def test_managed_root_is_the_first_known_dir():
+    """`ovat setup` installs to ~/.ovat/ovms, so the locator must look there.
+
+    Pinned as a CONTRACT between two modules rather than by planting a file:
+    if the installer and the locator ever disagree on this path, a successful
+    download becomes invisible and the user is back to exporting OVAT_OVMS by
+    hand -- exactly what `ovat setup` exists to remove.
+    """
+    from ovat.core.ovms_installer import DEFAULT_ROOT
+
+    assert ovms_locator.MANAGED_ROOT == DEFAULT_ROOT
+    assert ovms_locator.MANAGED_ROOT.endswith(os.path.join(".ovat", "ovms"))
+    # Ahead of the legacy hand-unpack folders: the copy OVAT installed itself
+    # should answer before some older one lying around.
+    assert ovms_locator._KNOWN_DIRS[0] == ovms_locator.MANAGED_ROOT
+
+
+def test_managed_install_is_found(tmp_path, monkeypatch):
+    monkeypatch.delenv("OVAT_OVMS", raising=False)
+    monkeypatch.setattr(ovms_locator.shutil, "which", lambda name: None)
+    monkeypatch.chdir(tmp_path)                       # so ./ovms is empty
+    managed = tmp_path / "managed"
+    managed.mkdir()
+    exe = _fake_binary(managed)
+    monkeypatch.setattr(ovms_locator, "_KNOWN_DIRS", [str(managed)])
+
+    path, how = find_ovms()
+    assert path == exe
+    assert "known location" in how
+
+
+def test_local_ovms_still_beats_the_managed_one(tmp_path, monkeypatch):
+    """./ovms keeps winning, so no existing manual unpack changes meaning."""
+    monkeypatch.delenv("OVAT_OVMS", raising=False)
+    monkeypatch.setattr(ovms_locator.shutil, "which", lambda name: None)
+    monkeypatch.chdir(tmp_path)
+
+    local = tmp_path / "ovms"
+    local.mkdir()
+    local_exe = _fake_binary(local)
+
+    managed = tmp_path / "managed"
+    managed.mkdir()
+    _fake_binary(managed)
+    monkeypatch.setattr(ovms_locator, "_KNOWN_DIRS", [str(managed)])
+
+    path, _how = find_ovms()
+    assert path == local_exe

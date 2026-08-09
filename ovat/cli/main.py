@@ -10,6 +10,7 @@ The headline command is `run`: load a workflow YAML, build the agent, ask it
 my question, print the answer. That single line is the midterm demo.
 """
 import os
+import sys
 
 import typer
 from rich import box
@@ -833,16 +834,195 @@ def models(
         raise typer.Exit(code=1)
 
 
+def _macos_has_no_ovms() -> None:
+    """Say why there is nothing to install here, and what DOES work.
+
+    Not an error. Intel publishes Windows and Linux x86-64 builds only, so a
+    Mac has nothing to fetch -- and telling someone their machine is broken
+    when it is merely unsupported sends them debugging a wall.
+    """
+    rprint("[bold]macOS detected.[/bold]")
+    rprint("OVMS has no macOS build (Intel ships Windows + Linux x86-64 only), "
+           "so there is nothing to install here.")
+    rprint("")
+    rprint("What works on this Mac today:")
+    rprint("  [cyan]ovat chat <config>[/cyan]   local model, no server needed")
+    rprint("  [cyan]ovat init / doctor / index / validate[/cyan]")
+    rprint("")
+    rprint("To run the full agent, point at a Linux/Windows box:")
+    rprint("  [bold]model.ovms_url: http://<ai-pc>:8000/v3[/bold]")
+
+
+def _install_ovms(root=None, version=None, force=False) -> tuple:
+    """Download and unpack OVMS, drawing a progress bar. Returns (path, what).
+
+    The rich rendering lives here rather than in the installer module so that
+    module stays UI-free and importable from tests -- the same split
+    `index_folder(on_progress=...)` already uses.
+    """
+    from ovat.core import ovms_installer
+
+    root = root or ovms_installer.DEFAULT_ROOT
+    version = version or ovms_installer.OVMS_VERSION
+    asset, _url = ovms_installer.asset_for_platform(version)
+
+    with Progress(
+        SpinnerColumn(style=ui.BLUE),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(complete_style=ui.GREEN, finished_style=ui.GREEN),
+        TaskProgressColumn(),
+        console=console, transient=True,
+    ) as progress:
+        task = progress.add_task(f"downloading {asset}", total=None)
+
+        def tick(done: int, total: int) -> None:
+            progress.update(task, completed=done, total=total or None)
+
+        return ovms_installer.install(root=root, version=version,
+                                      force=force, on_progress=tick)
+
+
+def _offer_ovms_install(assume_yes: bool) -> str | None:
+    """Ask whether to fetch OVMS, then fetch it. Returns the path, or None.
+
+    Three cases, and the middle one matters most. On macOS there is nothing to
+    offer. With no terminal attached -- CI, a pipe, a scheduled job -- refuse
+    and point at `ovat setup`, because silently pulling 185 MB during someone's
+    build is a surprise nobody asked for. Only an interactive session prompts.
+    """
+    from ovat.core import ovms_installer
+
+    resolved = ovms_installer.asset_for_platform()
+    if resolved is None:
+        _macos_has_no_ovms()
+        return None
+    asset, _url = resolved
+
+    if not assume_yes and not sys.stdin.isatty():
+        rprint("[red]OVMS is not installed[/red] and this is not an "
+               "interactive terminal, so nothing was downloaded.")
+        rprint("Run [bold]ovat setup[/bold] once, or pass [bold]--yes[/bold] "
+               "to allow the download here.")
+        return None
+
+    if not assume_yes:
+        rprint("[yellow]OVMS is not installed.[/yellow]")
+        rprint(f"  download : [bold]{esc(asset)}[/bold]")
+        rprint(f"  install  : [bold]{esc(ovms_installer.DEFAULT_ROOT)}[/bold]")
+        # isatty() is necessary but NOT sufficient: measured on Windows, a
+        # cmd /c invocation with no human attached still reports a tty, so the
+        # prompt was reached and then died on EOF with a bare "Aborted." A
+        # refused or impossible answer is a "no", and it must say what to do
+        # next rather than leaving a stack-shaped word on the screen.
+        try:
+            answer = typer.prompt("Download it now? [Y/n]", default="Y",
+                                  show_default=False)
+        except (typer.Abort, EOFError, KeyboardInterrupt):
+            answer = "n"
+        if answer.strip().lower() not in {"", "y", "yes"}:
+            rprint("[dim]Nothing downloaded. Run[/dim] [bold]ovat setup[/bold] "
+                   "[dim]when you are ready.[/dim]")
+            return None
+
+    try:
+        binary, _what = _install_ovms()
+    except Exception as exc:
+        rprint(f"[red]Could not install OVMS:[/red] {esc(exc)}")
+        return None
+    rprint(f"[green]OVMS installed[/green] → {esc(binary)}")
+    return binary
+
+
 def _ovms_not_found(how: str) -> None:
     """One consistent, ACTIONABLE message wherever ovms cannot be found."""
     rprint(f"[red]Could not find the ovms binary[/red] [dim]({esc(how)})[/dim]")
-    rprint("Point OVAT at it one of these ways:")
-    rprint("  1. workflow.yml →  [bold]model.ovms_binary: C:\\Users\\you\\ovms_windows[/bold]")
-    rprint("  2. env var      →  [bold]set OVAT_OVMS=C:\\Users\\you\\ovms_windows[/bold]  "
+    if sys.platform == "darwin":
+        rprint("")
+        _macos_has_no_ovms()
+        return
+    # `ovat setup` leads because it is the only option that asks nothing of the
+    # user: it picks the right archive for this OS and puts it where the
+    # locator already looks, so PATH is never touched.
+    rprint("Fix it one of these ways:")
+    rprint("  1. [bold]ovat setup[/bold]  ← downloads OVMS for this OS, no PATH change")
+    rprint("  2. workflow.yml →  [bold]model.ovms_binary: C:\\Users\\you\\ovms_windows[/bold]")
+    rprint("  3. env var      →  [bold]set OVAT_OVMS=C:\\Users\\you\\ovms_windows[/bold]  "
            "(or export on Linux)")
-    rprint("  3. classic      →  add the OVMS folder to PATH")
-    rprint("[dim]macOS note: OVMS does not run on macOS at all; use 'ovat chat' "
-           "locally, or serve from an AI PC / Linux box.[/dim]")
+    rprint("  4. classic      →  add the OVMS folder to PATH")
+
+
+@app.command()
+def setup(
+    yes: bool = typer.Option(False, "--yes", "-y",
+                             help="Do not ask; just install."),
+    dest: str = typer.Option(None, "--dest",
+                             help="Install somewhere other than ~/.ovat/ovms."),
+    ovms_version: str = typer.Option(None, "--ovms-version",
+                                     help="Pin a different OVMS release."),
+    force: bool = typer.Option(False, "--force",
+                               help="Re-download even if one is installed."),
+    print_path: bool = typer.Option(False, "--print-path",
+                                    help="Print the binary path and exit."),
+):
+    """Install OpenVINO Model Server for this machine. Run once, no PATH edits.
+
+    Picks the right archive for this OS (and, on Linux, this distro), verifies
+    its checksum, and unpacks it into ~/.ovat/ovms -- a folder the locator
+    already searches. That last part is the point: nothing here touches PATH or
+    asks anyone to export OVAT_OVMS.
+    """
+    from ovat.core import ovms_installer
+    from ovat.core.ovms_locator import find_ovms
+
+    root = dest or ovms_installer.DEFAULT_ROOT
+
+    if print_path:
+        binary, how = find_ovms(None)
+        if binary is None:
+            rprint("[yellow]no ovms found[/yellow]")
+            raise typer.Exit(code=1)
+        rprint(f"{esc(binary)}  [dim]({esc(how)})[/dim]")
+        return
+
+    resolved = ovms_installer.asset_for_platform(
+        ovms_version or ovms_installer.OVMS_VERSION)
+    if resolved is None:
+        # Exit 0: there is nothing to do here, which is not a failure.
+        _macos_has_no_ovms()
+        return
+    asset, _url = resolved
+
+    existing = ovms_installer.installed_binary(root)
+    if existing and not force:
+        rprint(f"[green]OVMS is already installed[/green] → {esc(existing)}")
+        rprint("[dim]Re-download with[/dim] [bold]ovat setup --force[/bold]")
+        return
+
+    rprint(f"  download : [bold]{esc(asset)}[/bold]")
+    rprint(f"  install  : [bold]{esc(root)}[/bold]")
+    if not yes and sys.stdin.isatty():
+        # Same reasoning as _offer_ovms_install: a prompt that cannot be
+        # answered is a "no", not a traceback-shaped "Aborted."
+        try:
+            answer = typer.prompt("Continue? [Y/n]", default="Y",
+                                  show_default=False)
+        except (typer.Abort, EOFError, KeyboardInterrupt):
+            answer = "n"
+        if answer.strip().lower() not in {"", "y", "yes"}:
+            rprint("[dim]Nothing downloaded. Re-run[/dim] [bold]ovat setup "
+                   "--yes[/bold] [dim]to install without asking.[/dim]")
+            raise typer.Exit(code=1)
+
+    try:
+        binary, _what = _install_ovms(root=root, version=ovms_version,
+                                      force=force)
+    except Exception as exc:
+        rprint(f"[red]Could not install OVMS:[/red] {esc(exc)}")
+        raise typer.Exit(code=1)
+
+    rprint(f"[green]OVMS installed[/green] → {esc(binary)}")
+    rprint("[dim]No PATH change needed; OVAT looks here on its own.[/dim]")
+    rprint("[dim]Check it with[/dim] [bold]ovat doctor[/bold]")
 
 
 @app.command()
@@ -850,6 +1030,8 @@ def serve(
     config: str = typer.Argument(..., help="Workflow YAML whose model OVMS should serve."),
     stop: bool = typer.Option(False, "--stop",
                               help="Stop the OVMS started earlier by 'ovat serve'."),
+    yes: bool = typer.Option(False, "--yes", "-y",
+                             help="If OVMS is missing, install it without asking."),
     stall_timeout: float = typer.Option(None, "--stall-timeout",
                                         help="Give up after this many seconds "
                                              "with NO progress at all (default "
@@ -877,8 +1059,16 @@ def serve(
     # folders), so a setupvars.bat-style install just works with no PATH edit.
     binary, how = find_ovms(cfg.model.ovms_binary)
     if binary is None:
-        _ovms_not_found(how)
-        raise typer.Exit(code=1)
+        # Missing OVMS is the single most common first-run stop, and it used to
+        # end here with four manual options. Offer to fix it instead: the
+        # helper declines on macOS and in non-interactive shells, so this can
+        # never turn into a surprise 185 MB download inside a build.
+        binary = _offer_ovms_install(yes)
+        if binary is None:
+            if sys.platform != "darwin":
+                _ovms_not_found(how)
+            raise typer.Exit(code=1)
+        how = "ovat setup"
     server = ModelServer(
         model_name=cfg.model.name,
         source_model=cfg.model.source_model,

@@ -111,10 +111,28 @@ pip install "ovat[langchain,llamaindex,openai-agents,tui]"
 
 ### OpenVINO Model Server (Windows / Linux)
 
-`ovat serve`, and every tool-calling `run`, needs OVMS. It is one archive, no
-installer, and it does **not** need to be on `PATH`. OVAT finds it.
+`ovat serve`, and every tool-calling `run`, needs OVMS. One command installs it:
 
-> ⚠️ **Download the `python_on` build.** The `python_off` (C++ only) package
+```bash
+ovat setup
+```
+
+That picks the right archive for your OS (and, on Linux, your distro), checks
+its SHA-256, and unpacks it into `~/.ovat/ovms` — a folder OVAT already
+searches. **Nothing is added to `PATH` and no environment variable is needed.**
+Run it once per machine; it is safe to run again.
+
+On macOS it prints why there is nothing to install and what to use instead —
+Intel ships Windows and Linux x86-64 builds only.
+
+If you skip this step, `ovat serve` notices OVMS is missing and offers to do it
+for you. It never downloads unattended: with no terminal attached (CI, a pipe)
+it stops and tells you to run `ovat setup`.
+
+<details>
+<summary>Install it by hand instead (air-gapped machines, or a build you already have)</summary>
+
+> ⚠️ **Take the `python_on` build.** The `python_off` (C++ only) package
 > **cannot do tool calling**. Intel's own docs state that its limited
 > chat-template support means "using tools is not possible". The wrong archive
 > gives you an agent that answers normally and silently never calls a tool.
@@ -134,12 +152,22 @@ tar -xzvf ovms_ubuntu24_2026.2.1_python_on.tar.gz
 sudo apt update && sudo apt install -y libxml2 curl
 ```
 
-OVAT searches `./ovms`, `~/ovms_windows`, `~/ovms`, `C:\ovms`, and `PATH`. If
-yours lives elsewhere:
+`ovat serve` sets the library paths for you. If you launch `ovms` **yourself**
+on Linux, it needs them exported first, or it cannot load its own `.so` files:
+
+```bash
+export LD_LIBRARY_PATH=${PWD}/ovms/lib
+export PYTHONPATH=${PWD}/ovms/lib/python
+```
+
+OVAT searches `./ovms`, `~/.ovat/ovms`, `~/ovms_windows`, `~/ovms`, `C:\ovms`,
+and `PATH`. If yours lives elsewhere:
 
 ```bash
 export OVAT_OVMS=/path/to/ovms        # or set model.ovms_binary in the YAML
 ```
+
+</details>
 
 macOS has no OVMS build. See [Platform support](#platform-support).
 
@@ -183,17 +211,21 @@ optimum-cli export openvino --model BAAI/bge-small-en-v1.5 \
 ## Quickstart
 
 ```bash
-ovat init workflow.yml                        # 1. write a starter config
-ovat doctor workflow.yml                      # 2. check machine + config
-ovat run workflow.yml -i "hi" --dry-run       # 3. no server, no model needed
-ovat serve workflow.yml                       # 4. start OVMS
-ovat run workflow.yml -i "summarise my notes" # 5. ask something
-ovat serve workflow.yml --stop                # 6. shut it down
+ovat setup                                    # 1. install OVMS (once per machine)
+ovat init workflow.yml                        # 2. write a starter config
+ovat doctor workflow.yml                      # 3. check machine + config
+ovat run workflow.yml -i "hi" --dry-run       # 4. no server, no model needed
+ovat serve workflow.yml                       # 5. start OVMS
+ovat run workflow.yml -i "summarise my notes" # 6. ask something
+ovat serve workflow.yml --stop                # 7. shut it down
 ```
 
-**Step 4 takes a while the first time**, it downloads the model. That is
+**Step 5 takes a while the first time**, it downloads the model. That is
 expected: `serve` shows elapsed time and only gives up after five minutes of *no
 progress at all*, so a slow link is fine.
+
+Skipping step 1 is fine too — `ovat serve` will offer to install OVMS when it
+finds none.
 
 On **macOS** there is no OVMS. Use the local path instead. `ovat chat` answers
 from an index, so it needs a config with a `rag:` section, which the example
