@@ -160,13 +160,24 @@ def check_ovms_serving(config_binary: str | None = None) -> Check:
                      "OVMS does not run on macOS; develop + chat locally "
                      "here; run 'ovat serve'/'ovat run' on an AI PC or "
                      "Linux/Windows box")
+    from ovat.core.ovms_installer import DEFAULT_ROOT
     from ovat.core.ovms_locator import find_ovms
     path, how = find_ovms(config_binary)
     if path:
-        return Check("OVMS serving", OK, f"ovms via {how}: {path}")
+        # Say WHICH install answered. Once `ovat setup` exists a machine can
+        # easily have two -- a managed one and an older manual unpack -- and
+        # "which ovms am I actually running" should not need a filesystem hunt
+        # to answer.
+        managed = os.path.normcase(os.path.abspath(path)).startswith(
+            os.path.normcase(os.path.abspath(DEFAULT_ROOT)))
+        origin = "managed by 'ovat setup'" if managed else "manual install"
+        return Check("OVMS serving", OK, f"ovms via {how} [{origin}]: {path}")
+    # One actionable line beats four options: `ovat setup` asks nothing of the
+    # user and edits no PATH.
     return Check("OVMS serving", WARN,
-                 f"ovms {how}; set model.ovms_binary in workflow.yml or "
-                 f"the OVAT_OVMS env var to its folder")
+                 f"ovms {how}. Run 'ovat setup' to install it (no PATH change "
+                 f"needed), or point model.ovms_binary / OVAT_OVMS at a folder "
+                 f"you already have")
 
 
 def check_config(config_path: str) -> list[Check]:

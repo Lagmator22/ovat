@@ -13,6 +13,7 @@ dependency. Needs the `ovms` binary to actually start (Linux/Windows/Docker).
 import os
 import signal
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -128,6 +129,30 @@ class ModelServer:
                     extra += [python_home, os.path.join(python_home, "Scripts")]
                     env["PYTHONHOME"] = python_home
                 env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
+
+            # The same problem on Linux, with different names. There the
+            # archive puts the binary at <root>/bin/ovms and its shared
+            # objects at <root>/lib, so the directory above the binary is the
+            # root -- not the binary's own folder as on Windows. Without
+            # LD_LIBRARY_PATH the loader cannot find those .so files and ovms
+            # dies before logging anything, which is the exact Linux mirror of
+            # the 0xC0000135 failure described above. setupvars on Linux
+            # exports LD_LIBRARY_PATH=<root>/lib and PYTHONPATH=<root>/lib/
+            # python; both are done here so nobody has to source anything.
+            #
+            # Guarded on the directories existing, like PYTHONHOME above, so a
+            # layout without them is left exactly as it was.
+            if sys.platform != "win32":
+                root = os.path.dirname(binary_dir)
+                lib = os.path.join(root, "lib")
+                if os.path.isdir(lib):
+                    env["LD_LIBRARY_PATH"] = os.pathsep.join(
+                        p for p in (lib, env.get("LD_LIBRARY_PATH", "")) if p)
+                    lib_python = os.path.join(lib, "python")
+                    if os.path.isdir(lib_python):
+                        env["PYTHONPATH"] = os.pathsep.join(
+                            p for p in (lib_python, env.get("PYTHONPATH", ""))
+                            if p)
             # Windows console semantics: a child launched from a console is
             # ATTACHED to it. Closing that window sends CTRL_CLOSE_EVENT to every
             # attached process, and a Ctrl-C typed at the parent goes to the whole
