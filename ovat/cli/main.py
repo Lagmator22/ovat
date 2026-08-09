@@ -943,11 +943,20 @@ def _ovms_not_found(how: str) -> None:
     # `ovat setup` leads because it is the only option that asks nothing of the
     # user: it picks the right archive for this OS and puts it where the
     # locator already looks, so PATH is never touched.
+    # Show a path from THIS operating system. Options 2 and 3 hardcoded a
+    # Windows path, so a Linux user was told to point at
+    # C:\Users\you\ovms_windows and a "(or export on Linux)" aside was left to
+    # carry the whole translation. Measured in an Ubuntu 24.04 container: the
+    # refusal message is otherwise correct, and this was the one line in it
+    # that could not be pasted.
+    if sys.platform == "win32":
+        example, setter = r"C:\Users\you\ovms_windows", "set"
+    else:
+        example, setter = "~/ovms", "export"
     rprint("Fix it one of these ways:")
     rprint("  1. [bold]ovat setup[/bold]  ← downloads OVMS for this OS, no PATH change")
-    rprint("  2. workflow.yml →  [bold]model.ovms_binary: C:\\Users\\you\\ovms_windows[/bold]")
-    rprint("  3. env var      →  [bold]set OVAT_OVMS=C:\\Users\\you\\ovms_windows[/bold]  "
-           "(or export on Linux)")
+    rprint(f"  2. workflow.yml →  [bold]model.ovms_binary: {esc(example)}[/bold]")
+    rprint(f"  3. env var      →  [bold]{setter} OVAT_OVMS={esc(example)}[/bold]")
     rprint("  4. classic      →  add the OVMS folder to PATH")
 
 

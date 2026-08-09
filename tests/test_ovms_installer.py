@@ -138,7 +138,13 @@ def test_extract_flattens_the_top_level_directory(tmp_path):
     # <root>/ovms.exe, NOT <root>/ovms/ovms.exe -- the locator only searches
     # the former, so one extra level makes a correct download invisible.
     assert (dest / installer._EXE).is_file()
-    assert not (dest / "ovms").exists()
+    # The archive's wrapper DIRECTORY must be gone. Checked as is_dir() and not
+    # exists(): off Windows _EXE is plain "ovms", so `not (dest/"ovms").exists()`
+    # asserted the very path the line above requires to be a file, and the test
+    # could only pass on Windows. It has been red on Linux and macOS since it
+    # was written, which is how a suite reported green on one machine and
+    # nowhere else.
+    assert not (dest / "ovms").is_dir()
 
 
 def test_unsafe_members_are_skipped(tmp_path):

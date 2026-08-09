@@ -25,6 +25,59 @@ import urllib.request
 DEFAULT_PID_PATH = "ovms.pid"
 
 
+def ovms_env(binary: str, base: dict | None = None) -> dict:
+    """The environment OVMS needs to find its own libraries. What setupvars does.
+
+    A module-level function, not inline in start(), so it can be TESTED and
+    PROVED. It used to live inside start(), where the only way to exercise it
+    was to launch a real server, so on Linux -- where nobody had run it -- the
+    claim "OVAT sets the library paths for you" rested on nothing. A clean
+    Ubuntu 24.04 container confirms the failure it prevents is real:
+
+        ovms: error while loading shared libraries: libtbb.so.12:
+        cannot open shared object file: No such file or directory
+
+    WINDOWS. The python_on build -- the one the README insists on, because
+    python_off cannot tool-call -- links python3xx.dll out of <ovms>/python,
+    NOT the folder beside ovms.exe, so the "search the exe's own directory"
+    rule never finds it. The process dies with 0xC0000135 before writing one
+    byte, and `ovat serve` reported "exited without becoming ready" over an
+    empty log. setupvars.bat sets PYTHONHOME and adds python/ and
+    python/Scripts; all three happen here.
+
+    LINUX. Same failure, different names and a different SHAPE: the archive
+    puts the binary at <root>/bin/ovms and its .so files at <root>/lib, so the
+    root is the directory ABOVE the binary, not the binary's own folder as on
+    Windows. Getting that one level wrong is the whole bug.
+
+    Every branch is guarded on the directory existing, so a layout that does
+    not have it is left exactly as it was rather than pointed at nothing.
+    """
+    env = dict(os.environ if base is None else base)
+    binary_dir = os.path.dirname(os.path.abspath(binary))
+    if not os.path.isdir(binary_dir):
+        return env
+
+    extra = [binary_dir]
+    python_home = os.path.join(binary_dir, "python")
+    if os.path.isdir(python_home):
+        extra += [python_home, os.path.join(python_home, "Scripts")]
+        env["PYTHONHOME"] = python_home
+    env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
+
+    if sys.platform != "win32":
+        root = os.path.dirname(binary_dir)
+        lib = os.path.join(root, "lib")
+        if os.path.isdir(lib):
+            env["LD_LIBRARY_PATH"] = os.pathsep.join(
+                p for p in (lib, env.get("LD_LIBRARY_PATH", "")) if p)
+            lib_python = os.path.join(lib, "python")
+            if os.path.isdir(lib_python):
+                env["PYTHONPATH"] = os.pathsep.join(
+                    p for p in (lib_python, env.get("PYTHONPATH", "")) if p)
+    return env
+
+
 class ModelServer:
     """Manages the OVMS process: start, wait-until-ready, stop."""
 
@@ -120,39 +173,7 @@ class ModelServer:
             # Only when that folder EXISTS: a python_off install has no
             # python/ directory, and pointing PYTHONHOME at a missing path
             # would break the build that currently works.
-            env = dict(os.environ)
-            binary_dir = os.path.dirname(os.path.abspath(self.binary))
-            if os.path.isdir(binary_dir):
-                extra = [binary_dir]
-                python_home = os.path.join(binary_dir, "python")
-                if os.path.isdir(python_home):
-                    extra += [python_home, os.path.join(python_home, "Scripts")]
-                    env["PYTHONHOME"] = python_home
-                env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
-
-            # The same problem on Linux, with different names. There the
-            # archive puts the binary at <root>/bin/ovms and its shared
-            # objects at <root>/lib, so the directory above the binary is the
-            # root -- not the binary's own folder as on Windows. Without
-            # LD_LIBRARY_PATH the loader cannot find those .so files and ovms
-            # dies before logging anything, which is the exact Linux mirror of
-            # the 0xC0000135 failure described above. setupvars on Linux
-            # exports LD_LIBRARY_PATH=<root>/lib and PYTHONPATH=<root>/lib/
-            # python; both are done here so nobody has to source anything.
-            #
-            # Guarded on the directories existing, like PYTHONHOME above, so a
-            # layout without them is left exactly as it was.
-            if sys.platform != "win32":
-                root = os.path.dirname(binary_dir)
-                lib = os.path.join(root, "lib")
-                if os.path.isdir(lib):
-                    env["LD_LIBRARY_PATH"] = os.pathsep.join(
-                        p for p in (lib, env.get("LD_LIBRARY_PATH", "")) if p)
-                    lib_python = os.path.join(lib, "python")
-                    if os.path.isdir(lib_python):
-                        env["PYTHONPATH"] = os.pathsep.join(
-                            p for p in (lib_python, env.get("PYTHONPATH", ""))
-                            if p)
+            env = ovms_env(self.binary)
             # Windows console semantics: a child launched from a console is
             # ATTACHED to it. Closing that window sends CTRL_CLOSE_EVENT to every
             # attached process, and a Ctrl-C typed at the parent goes to the whole

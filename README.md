@@ -66,11 +66,34 @@ from a 16 GB GPU box to an 8 GB CPU laptop is a three-line edit: compare
 
 | | Needs | Notes |
 | --- | --- | --- |
-| **Python** | 3.10, 3.14 | `python --version` |
+| **Python** | 3.10, 3.14 | `python3 --version` (see below on Linux) |
 | **OS (full agent)** | Windows 11, Ubuntu 22.04/24.04, RHEL 9 | OVMS is x86-64 only |
 | **OS (development)** | + macOS | everything except serving |
 | **RAM** | 8 GB min, 16 GB comfortable | the default model wants ~5 GB |
 | **Disk** | ~8 GB, or ~15 GB with RAG | RAG pulls torch via the `convert` extra |
+
+### Linux: install Python and OVMS's system libraries first
+
+A minimal Linux image (a container, a fresh VM, a server install) ships with
+**no Python at all**, and OVMS needs `libxml2`. Verified in a clean
+`ubuntu:24.04` container, where `python3`, `pip` and `venv` are all absent:
+
+```bash
+# Ubuntu 22.04 / 24.04
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip libxml2 curl
+
+# RHEL 9 / Rocky / Alma
+sudo dnf install -y python3 python3-pip libxml2 curl
+```
+
+On Linux the interpreter is **`python3`**, not `python`, and `python3-venv` is
+a separate package from `python3` on Debian and Ubuntu. Then:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+```
+
+Everything after this point is the same on every platform.
 
 **Using GPU or NPU?** Update the driver first, an old driver usually shows up as
 the device simply being absent from `ovat doctor`, not as an error.

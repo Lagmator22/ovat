@@ -572,3 +572,55 @@ def test_a_recycled_pid_is_not_killed(monkeypatch, tmp_path):
 
     assert model_server._pid_is_our_server(4242) is False, \
         "a live process that is NOT ovms was claimed as our server"
+
+
+def test_ovms_env_points_at_the_lib_dir_beside_the_binary_on_linux(tmp_path,
+                                                                   monkeypatch):
+    """The Linux archive puts .so files one level ABOVE the binary's folder.
+
+    Measured in a clean ubuntu:24.04 container: without LD_LIBRARY_PATH the
+    binary dies with "libtbb.so.12: cannot open shared object file" before
+    logging anything. Getting the level wrong is the whole bug -- <root>/lib,
+    not <root>/bin/lib.
+    """
+    from ovat.core.model_server import ovms_env
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    root = tmp_path / "ovms"
+    (root / "bin").mkdir(parents=True)
+    (root / "lib" / "python").mkdir(parents=True)
+    binary = root / "bin" / "ovms"
+    binary.write_text("", encoding="utf-8")
+
+    env = ovms_env(str(binary), base={})
+    assert env["LD_LIBRARY_PATH"].split(os.pathsep)[0] == str(root / "lib")
+    assert env["PYTHONPATH"].split(os.pathsep)[0] == str(root / "lib" / "python")
+
+
+def test_ovms_env_keeps_any_library_path_the_user_already_had(tmp_path,
+                                                              monkeypatch):
+    """Prepend, never replace: clobbering LD_LIBRARY_PATH would break whatever
+    else the caller's shell needed."""
+    from ovat.core.model_server import ovms_env
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    root = tmp_path / "ovms"
+    (root / "bin").mkdir(parents=True)
+    (root / "lib").mkdir()
+    binary = root / "bin" / "ovms"
+    binary.write_text("", encoding="utf-8")
+
+    env = ovms_env(str(binary), base={"LD_LIBRARY_PATH": "/opt/mine"})
+    assert env["LD_LIBRARY_PATH"] == f"{root / 'lib'}{os.pathsep}/opt/mine"
+
+
+def test_ovms_env_leaves_a_layout_without_lib_alone(tmp_path, monkeypatch):
+    """A build with no lib/ must not get a variable pointing at nothing."""
+    from ovat.core.model_server import ovms_env
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    binary = tmp_path / "ovms"
+    binary.write_text("", encoding="utf-8")
+
+    env = ovms_env(str(binary), base={})
+    assert "LD_LIBRARY_PATH" not in env
