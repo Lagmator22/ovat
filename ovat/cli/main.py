@@ -908,6 +908,12 @@ def _offer_ovms_install(assume_yes: bool) -> str | None:
     if not assume_yes:
         rprint("[yellow]OVMS is not installed.[/yellow]")
         rprint(f"  download : [bold]{esc(asset)}[/bold]")
+    # Say so BEFORE the download, while the choice can still be
+    # changed. Ubuntu 26.04 was silently handed the ubuntu24 archive,
+    # which cannot start there at all.
+    note = ovms_installer.linux_support_note()
+    if note:
+        rprint(f"  [yellow]note[/yellow]     : {esc(note)}")
         rprint(f"  install  : [bold]{esc(ovms_installer.DEFAULT_ROOT)}[/bold]")
         # isatty() is necessary but NOT sufficient: measured on Windows, a
         # cmd /c invocation with no human attached still reports a tty, so the
@@ -1008,6 +1014,12 @@ def setup(
         return
 
     rprint(f"  download : [bold]{esc(asset)}[/bold]")
+    # Say so BEFORE the download, while the choice can still be
+    # changed. Ubuntu 26.04 was silently handed the ubuntu24 archive,
+    # which cannot start there at all.
+    note = ovms_installer.linux_support_note()
+    if note:
+        rprint(f"  [yellow]note[/yellow]     : {esc(note)}")
     rprint(f"  install  : [bold]{esc(root)}[/bold]")
     if not yes and sys.stdin.isatty():
         # Same reasoning as _offer_ovms_install: a prompt that cannot be

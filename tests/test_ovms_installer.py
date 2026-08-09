@@ -238,3 +238,84 @@ def test_install_refuses_on_macos(tmp_path, monkeypatch):
                         lambda version=None: None)
     with pytest.raises(RuntimeError, match="macOS"):
         installer.install(root=str(tmp_path / "root"))
+
+
+def _tar_with_read_only_tree(path):
+    """An archive shaped like the real one: 0o555 dirs and libraries."""
+    import tarfile, tempfile
+    src = tempfile.mkdtemp()
+    os.makedirs(os.path.join(src, "ovms", "lib"))
+    os.makedirs(os.path.join(src, "ovms", "bin"))
+    for rel in ("ovms/lib/libovms_shared.so", f"ovms/bin/{installer._EXE}"):
+        with open(os.path.join(src, rel), "w", encoding="utf-8") as handle:
+            handle.write("x")
+
+    def read_only(info):
+        info.mode = 0o555
+        return info
+
+    with tarfile.open(path, "w:gz") as tf:
+        tf.add(os.path.join(src, "ovms"), arcname="ovms", filter=read_only)
+    return src
+
+
+@pytest.mark.skipif(sys.platform == "win32",
+                    reason="Unix permission bits; Windows zip restores none")
+def test_extract_survives_the_read_only_modes_the_archive_ships(tmp_path):
+    """OVMS ships 0o555 directories, and unlinking needs write on the PARENT.
+
+    shutil.move falls back to copy-then-rmtree across filesystems, so this blew
+    up with EACCES on 'libovms_shared.so' for every non-root user. Root has
+    CAP_DAC_OVERRIDE and never saw it, which is why Docker, CI and the
+    maintainer's own container all reported success.
+    """
+    archive = tmp_path / "ovms.tar.gz"
+    _tar_with_read_only_tree(str(archive))
+    dest = tmp_path / "root"
+
+    installer._extract(str(archive), str(dest))
+    assert (dest / "bin" / installer._EXE).is_file()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix permission bits")
+def test_extract_can_overwrite_a_previous_read_only_install(tmp_path):
+    """Re-running setup must replace an install whose dirs are also 0o555.
+
+    rmtree(ignore_errors=True) turned "could not delete the old one" into a
+    silent no-op, so a re-install would look fine and leave the old build.
+    """
+    archive = tmp_path / "ovms.tar.gz"
+    _tar_with_read_only_tree(str(archive))
+    dest = tmp_path / "root"
+
+    installer._extract(str(archive), str(dest))
+    installer._extract(str(archive), str(dest))     # the second one is the test
+    assert (dest / "bin" / installer._EXE).is_file()
+
+
+@pytest.mark.parametrize("os_release, expect_note", [
+    ('ID=ubuntu\nVERSION_ID="24.04"\n', False),
+    ('ID=ubuntu\nVERSION_ID="22.04"\n', False),
+    ('ID=ubuntu\nVERSION_ID="26.04"\n', True),      # no build exists; must warn
+    ('ID=rhel\nVERSION_ID="9.4"\n', False),
+    ('ID=arch\n', True),
+])
+def test_unsupported_distros_are_warned_about(tmp_path, monkeypatch,
+                                              os_release, expect_note):
+    """Ubuntu 26.04 was handed the ubuntu24 archive silently, and it cannot
+    start there. A guess is allowed; a SILENT guess is not."""
+    monkeypatch.setattr(sys, "platform", "linux")
+    release = tmp_path / "os-release"
+    release.write_text(os_release, encoding="utf-8")
+    real_open = open
+
+    def fake_open(path, *args, **kwargs):
+        if path == "/etc/os-release":
+            return real_open(release, *args, **kwargs)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", fake_open)
+    note = installer.linux_support_note()
+    assert (note is not None) is expect_note
+    if expect_note:
+        assert "ubuntu24" in note

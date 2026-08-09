@@ -79,12 +79,17 @@ A minimal Linux image (a container, a fresh VM, a server install) ships with
 `ubuntu:24.04` container, where `python3`, `pip` and `venv` are all absent:
 
 ```bash
-# Ubuntu 22.04 / 24.04
+# Ubuntu 22.04 / 24.04  (the releases Intel builds OVMS for)
 sudo apt update && sudo apt install -y python3 python3-venv python3-pip libxml2 curl
 
 # RHEL 9 / Rocky / Alma
 sudo dnf install -y python3 python3-pip libxml2 curl
 ```
+
+> **Ubuntu 26.04 and newer are not supported yet.** There is no OVMS build for
+> them, the package is named `libxml2-16` rather than `libxml2`, and the
+> ubuntu24 archive cannot start there because it needs that release's system
+> libraries. `ovat setup` warns before downloading. Use 22.04 or 24.04.
 
 On Linux the interpreter is **`python3`**, not `python`, and `python3-venv` is
 a separate package from `python3` on Debian and Ubuntu. Then:

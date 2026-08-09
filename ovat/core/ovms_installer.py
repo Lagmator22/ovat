@@ -41,6 +41,26 @@ DEFAULT_ROOT = os.path.join(os.path.expanduser("~"), ".ovat", "ovms")
 _EXE = "ovms.exe" if sys.platform == "win32" else "ovms"
 
 
+def _os_release() -> dict:
+    """/etc/os-release as a dict, or {} if it cannot be read.
+
+    Shared by _linux_flavour and linux_support_note so the two cannot disagree
+    about what distro this is -- the flavour chosen and the warning about it
+    must come from one reading, not two.
+    """
+    data = {}
+    try:
+        with open("/etc/os-release", encoding="utf-8") as handle:
+            for line in handle:
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                data[key.strip()] = value.strip().strip('"').strip("'")
+    except OSError:
+        return {}
+    return data
+
+
 def _linux_flavour() -> str:
     """Which Linux archive this distro needs: ubuntu24, ubuntu22 or redhat.
 
@@ -54,15 +74,8 @@ def _linux_flavour() -> str:
     own libraries, which reads as "OVAT is broken" rather than "your distro is
     not on the list".
     """
-    data = {}
-    try:
-        with open("/etc/os-release", encoding="utf-8") as handle:
-            for line in handle:
-                if "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                data[key.strip()] = value.strip().strip('"').strip("'")
-    except OSError:
+    data = _os_release()
+    if not data:
         return "ubuntu24"
 
     ident = (data.get("ID") or "").lower()
@@ -75,6 +88,53 @@ def _linux_flavour() -> str:
             "rhel" in like or "fedora" in like:
         return "redhat"
     return "ubuntu24"
+
+
+#: Ubuntu releases Intel actually publishes a build for. Anything else gets
+#: the newest one as a guess, and the user is TOLD, because the failure mode
+#: is a binary that cannot load its own libraries -- which reads as "OVAT is
+#: broken", not "your distro is not on the list".
+_SUPPORTED_UBUNTU = ("22", "24")
+
+
+def linux_support_note() -> str | None:
+    """A warning for this distro, or None when it is one Intel builds for.
+
+    Reported from Ubuntu 26.04: it was handed the ubuntu24 archive with no
+    warning at all, and that binary cannot start there -- it wants
+    libpython3.12.so.1.0, libxml2.so.2 and libtbb.so.12, none of which 26.04
+    carries. The old code called this "the documented fallback" and documented
+    it only in a docstring the user never sees.
+
+    A note rather than a refusal: a guess that works is common (Mint, Pop,
+    Debian derivatives all resolve to ubuntu24 and are usually fine), so
+    blocking would break more people than it protects. Saying so costs
+    nothing and turns a baffling crash into an expected one.
+    """
+    if sys.platform != "linux":
+        return None
+    data = _os_release()
+    ident = (data.get("ID") or "").lower()
+    like = (data.get("ID_LIKE") or "").lower()
+    version = data.get("VERSION_ID") or ""
+
+    if ident == "ubuntu":
+        if not version.startswith(_SUPPORTED_UBUNTU):
+            return (f"Ubuntu {version} has no OVMS build; installing the "
+                    f"ubuntu24 one. If it will not start, that is why: it "
+                    f"needs this release's system libraries. Use Ubuntu "
+                    f"22.04 or 24.04 for a supported install.")
+        return None
+    if ident in {"rhel", "centos", "fedora", "rocky", "almalinux"} or \
+            "rhel" in like or "fedora" in like:
+        return None
+    if "ubuntu" in like or "debian" in like:
+        return (f"{ident or 'this distro'} is not one Intel builds for; "
+                f"using the ubuntu24 archive, which usually works on "
+                f"Ubuntu/Debian derivatives.")
+    return (f"{ident or 'this distro'} is not a distro Intel publishes OVMS "
+            f"for; trying the ubuntu24 archive. If it will not start, that "
+            f"is why.")
 
 
 def asset_for_platform(version: str = OVMS_VERSION) -> tuple | None:
@@ -163,6 +223,64 @@ def _is_safe_member(name: str) -> bool:
     return ".." not in parts
 
 
+def _make_owner_writable(root: str) -> None:
+    """Add the owner's write bit everywhere under `root`.
+
+    OVMS ships its libraries AND their directories mode 0o555, and unlinking a
+    file requires write permission on the file's PARENT DIRECTORY, not on the
+    file. So the shutil.move below -- which falls back to copy-then-rmtree
+    whenever staging and destination are on different filesystems, and /tmp
+    usually is -- died for every non-root user with
+
+        PermissionError: [Errno 13] Permission denied: 'libovms_shared.so'
+
+    while root sailed through, because CAP_DAC_OVERRIDE ignores permission
+    bits entirely. That is why this passed in Docker, in CI and in the
+    maintainer's own container -- all of them root -- and failed for the first
+    real user who ran it as themselves. Verified as uid 1001 on Ubuntu 24.04.
+
+    Directories get +wx (descend and modify), files get +w. Symlinks are
+    skipped: chmod follows them, so touching one would change the mode of
+    whatever it points at instead.
+    """
+    def relax(path: str, is_dir: bool) -> None:
+        if os.path.islink(path):
+            return
+        try:
+            mode = os.stat(path).st_mode
+            os.chmod(path, mode | (0o300 if is_dir else 0o200))
+        except OSError:
+            # Best effort. A file we cannot chmod is one the move may fail on,
+            # and that failure is far more informative than one raised here.
+            pass
+
+    relax(root, True)
+    for dirpath, dirnames, filenames in os.walk(root):
+        for name in dirnames:
+            relax(os.path.join(dirpath, name), True)
+        for name in filenames:
+            relax(os.path.join(dirpath, name), False)
+
+
+def _extract_tar(tf, staging: str, members) -> None:
+    """Unpack a tar, pinning the extraction filter rather than inheriting it.
+
+    Python's default changed under us. 3.14 makes `data` the default, and
+    `data` REFUSES the absolute symlinks these archives contain, so the same
+    code that worked on 3.12 raises AbsoluteLinkError on 3.14 -- reported from
+    Ubuntu 26.04. Asking for `tar` explicitly keeps one behaviour across every
+    version instead of tracking the interpreter's.
+
+    Path traversal is already blocked by _is_safe_member before we get here,
+    which is the protection `data` would otherwise be providing.
+    """
+    try:
+        tf.extractall(staging, members=members, filter="tar")
+    except TypeError:
+        # Python 3.10/3.11 without the backport: no filter= parameter at all.
+        tf.extractall(staging, members=members)
+
+
 def _extract(archive: str, into: str) -> None:
     """Unpack, then flatten the archive's own top-level ovms/ directory.
 
@@ -182,7 +300,11 @@ def _extract(archive: str, into: str) -> None:
             with tarfile.open(archive, "r:gz") as tf:
                 members = [m for m in tf.getmembers()
                            if _is_safe_member(m.name)]
-                tf.extractall(staging, members=members)
+                _extract_tar(tf, staging, members)
+
+        # Before anything is moved. The archive's own 0o555 directories would
+        # otherwise make the move below fail for every non-root user.
+        _make_owner_writable(staging)
 
         entries = os.listdir(staging)
         root = staging
@@ -194,8 +316,15 @@ def _extract(archive: str, into: str) -> None:
             source = os.path.join(root, name)
             destination = os.path.join(into, name)
             if os.path.exists(destination):
-                shutil.rmtree(destination, ignore_errors=True) \
-                    if os.path.isdir(destination) else os.remove(destination)
+                # Relax first: an EARLIER install left 0o555 directories here
+                # too, so rmtree(ignore_errors=True) would quietly fail to
+                # clear them and the move would then land on a non-empty path.
+                # Silently doing nothing is the worst of the options.
+                if os.path.isdir(destination):
+                    _make_owner_writable(destination)
+                    shutil.rmtree(destination)
+                else:
+                    os.remove(destination)
             shutil.move(source, destination)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
@@ -239,7 +368,12 @@ def install(root: str = DEFAULT_ROOT, version: str = OVMS_VERSION,
                     f"with; nothing was installed.")
 
         if force and os.path.isdir(root):
-            shutil.rmtree(root, ignore_errors=True)
+            # Same reason as in _extract: the install we are replacing is full
+            # of 0o555 directories, and ignore_errors would turn "could not
+            # delete the old one" into a silent no-op, so --force would appear
+            # to work while leaving the previous version in place.
+            _make_owner_writable(root)
+            shutil.rmtree(root)
         _extract(archive, root)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
