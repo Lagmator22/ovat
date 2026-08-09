@@ -274,6 +274,20 @@ def _extract_tar(tf, staging: str, members) -> None:
     Path traversal is already blocked by _is_safe_member before we get here,
     which is the protection `data` would otherwise be providing.
     """
+    # Force the owner's write bit ON before a single byte is written. This is
+    # the fix, and it has to happen HERE rather than afterwards: OVMS ships
+    # 0o555 DIRECTORIES, tarfile creates a directory before the members inside
+    # it, and writing a file into a directory with no write bit fails outright.
+    # The extraction itself raises, so any repair that runs after extractall
+    # never executes -- which is exactly what an earlier attempt at this got
+    # wrong, and why it still failed on a real archive while passing against a
+    # synthetic one whose member ordering happened to avoid the case.
+    #
+    # Mutating members is deliberate over a filter= callable: it behaves
+    # identically on 3.10 through 3.14, whereas the filter API arrived in 3.12
+    # and was only partly backported.
+    for member in members:
+        member.mode |= 0o700 if member.isdir() else 0o600
     try:
         tf.extractall(staging, members=members, filter="tar")
     except TypeError:
