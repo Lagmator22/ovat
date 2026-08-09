@@ -23,7 +23,12 @@ def test_minimal_config_fills_defaults():
     assert cfg.agent.type == "native"
     assert cfg.agent.max_iterations == 10
     assert cfg.tools == []
-    assert cfg.model.request_timeout == 120.0    # bounded, never the SDK's ~600s
+    # Bounded, so a hung server is still an error rather than a frozen CLI --
+    # but 20 minutes, not 2. Measured on a CPU-only box: a plain completion
+    # returns in a second while a cold AGENT request (system prompt + tool
+    # schemas + history, verbose small model) took 1056s, so the old 120s cut
+    # off a server that was working and reported it as a timeout.
+    assert cfg.model.request_timeout == 1200.0
 
 
 def test_request_timeout_is_configurable():

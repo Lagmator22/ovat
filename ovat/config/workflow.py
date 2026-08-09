@@ -67,10 +67,26 @@ class ModelConfig(StrictModel):
     # OVMS at a relative "models" folder with nothing in it, so it cannot start.
     source_model: str | None = None             # HF id, e.g. OpenVINO/Qwen3-8B-int4-ov
     model_repository_path: str = "models"       # folder on disk where models live
-    # Cap on ONE HTTP request to OVMS. Without this the OpenAI SDK waits ~10
-    # minutes on a hung server. 120s is generous for slow CPU generation but
-    # still turns a dead server into a clear error instead of a frozen CLI.
-    request_timeout: float = 120.0
+    # Cap on ONE HTTP request to OVMS. Without any cap the OpenAI SDK waits
+    # ~10 minutes on a hung server, so a number is still needed; the question
+    # is only which one.
+    #
+    # 120s looked generous and was not. Measured on a CPU-only Ubuntu 24.04
+    # box with Qwen3.5-0.8B: a plain 32-token completion comes back in ONE
+    # SECOND, so the server is plainly healthy -- but an agent request carries
+    # the system prompt, the tool schemas and the whole history, and a verbose
+    # small model then generates for minutes on CPU. The first cold run took
+    # 1056s. What the user saw was "Request timed out." from a server that was
+    # answering fine, which reads as a broken install on the very first
+    # command a new user runs.
+    #
+    # 20 minutes. That is long enough that no honest CPU generation is cut
+    # off, and the cost is the opposite case: a genuinely wedged server now
+    # takes 20 minutes to say so rather than 2. That trade is deliberate. A
+    # slow machine is COMMON and the failure is silent and confusing; a hung
+    # server is RARE and, when it happens, `ovat doctor` names it in seconds.
+    # Anyone who wants the old behaviour sets this to 120 in their workflow.
+    request_timeout: float = 1200.0
     # Sampling temperature, applied by EVERY engine. It lives here rather
     # than in each engine because two of them used to hardcode 0 while the
     # other two took the server's default, which made a cross-engine

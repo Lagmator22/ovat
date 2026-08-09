@@ -131,8 +131,22 @@ tools:
 
 agent:
   type: native
+  # How many tool-calling rounds before the loop gives up. Each round is a
+  # full request to the model, so on a CPU-only machine this number IS the
+  # wall-clock cost: measured at ~16 minutes for a cold run of 10 rounds, and
+  # 4 seconds once the prefix cache is warm. Lower it to 3-4 if you are on
+  # CPU and would rather have a fast wrong answer than a slow right one.
   max_iterations: 10
   system_prompt: "You are a helpful assistant that uses tools when needed."
+
+# NO GPU? Two things make a CPU-only machine behave.
+#   - Keep model.device: CPU (above) and expect the FIRST question of a
+#     session to be slow; later ones hit OVMS's prefix cache and return in
+#     seconds. That is caching warming up, not a fault.
+#   - A very small model is a false economy here. Qwen3.5-0.8B fits anywhere
+#     but is not reliable at tool calling -- asked what tools it has, it
+#     invents an answer instead of listing them, which makes a working
+#     toolkit look broken. Prefer the 4B default whenever the RAM allows.
 
 # RAG for the search_docs tool: OFF until you switch it on, and deliberately.
 #
