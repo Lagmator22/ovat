@@ -304,6 +304,26 @@ def run(
     except Exception as exc:
         rprint(f"[red]Error talking to OVMS at {esc(cfg.model.ovms_url)}[/red]: "
                f"{esc(exc)}")
+        # A timeout is the one failure here whose fix is a config value, and
+        # the SDK's own words ("Request timed out.") name neither the setting
+        # nor the file. Measured on a CPU-only Ubuntu box: the server answers a
+        # single completion in about a second, but a full agent turn is
+        # max_iterations rounds of them, so the FIRST run of a cold agent
+        # blows the 120 s default and looks like a broken server rather than a
+        # budget that is too small. On a GPU the same run never comes close,
+        # which is why this had to be found on the slowest machine, not the
+        # fastest.
+        if "timed out" in str(exc).lower() or "timeout" in type(exc).__name__.lower():
+            rprint("")
+            rprint("[yellow]That was a timeout, not a crash.[/yellow] The "
+                   "server is probably fine, the budget was too small.")
+            rprint(f"  In [bold]{esc(config)}[/bold], raise "
+                   f"[bold]model.request_timeout[/bold] "
+                   f"(currently {cfg.model.request_timeout:.0f}s):")
+            rprint("      [cyan]model:[/cyan]")
+            rprint("        [cyan]request_timeout: 900[/cyan]")
+            rprint("  CPU-only machines need this; a GPU rarely does. Lowering "
+                   "[bold]agent.max_iterations[/bold] also shortens the turn.")
         raise typer.Exit(code=1)
     # Reasoning models narrate before answering. The TUI folds that away; the
     # CLI printed it raw, so every answer from a Qwen3-family model arrived

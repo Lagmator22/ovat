@@ -1146,3 +1146,64 @@ def test_dry_run_reports_a_build_failure_the_same_way(tmp_path, monkeypatch):
     result = runner.invoke(app, ["run", str(config), "--dry-run"])
     assert result.exit_code == 1
     assert "Could not build the agent" in " ".join(result.output.split())
+
+
+def test_a_timeout_names_the_setting_that_fixes_it(tmp_path, monkeypatch):
+    """"Request timed out." names neither the knob nor the file.
+
+    Measured on a CPU-only Ubuntu box: the server answers one completion in
+    about a second, but an agent turn is max_iterations rounds of them, so a
+    cold first run blows the 120 s default and reads as a broken server. The
+    fix is a config value, so the message has to say which one.
+    """
+    cfg = tmp_path / "w.yml"
+    cfg.write_text(
+        "model:\n  name: X\n  ovms_url: http://localhost:8000/v3\n"
+        "agent:\n  type: native\n", encoding="utf-8")
+
+    class TimesOut:
+        last_trace = {}
+
+        def run(self, _):
+            raise RuntimeError("Request timed out.")
+
+        def close(self):
+            pass
+
+    from ovat.cli import main as cli_main
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: TimesOut())
+    result = runner.invoke(app, ["run", str(cfg), "-i", "hi"])
+
+    assert result.exit_code == 1
+    assert "request_timeout" in result.output
+    assert "timeout, not a crash" in result.output
+    # and it must point at THEIR file, not a generic one
+    assert "w.yml" in result.output
+
+
+def test_an_ordinary_failure_does_not_get_the_timeout_advice(tmp_path,
+                                                             monkeypatch):
+    """Only timeouts. Telling someone to raise request_timeout after a
+    connection refused would send them to the wrong place entirely."""
+    cfg = tmp_path / "w.yml"
+    cfg.write_text(
+        "model:\n  name: X\n  ovms_url: http://localhost:8000/v3\n"
+        "agent:\n  type: native\n", encoding="utf-8")
+
+    class Refused:
+        last_trace = {}
+
+        def run(self, _):
+            raise RuntimeError("Connection refused")
+
+        def close(self):
+            pass
+
+    from ovat.cli import main as cli_main
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: Refused())
+    result = runner.invoke(app, ["run", str(cfg), "-i", "hi"])
+
+    assert result.exit_code == 1
+    assert "request_timeout" not in result.output

@@ -196,7 +196,17 @@ def _download(url: str, target: str, on_progress=None) -> None:
     exactly what a proxy is for, whereas a request to localhost must never go
     through one.
     """
-    with urllib.request.urlopen(url, timeout=60) as response:
+    # A STALL budget, not a deadline for the download. urlopen's timeout is
+    # per socket operation, so it only fires when nothing arrives for that
+    # long -- a slow but moving 185 MB transfer is never interrupted, however
+    # many minutes it takes. That is the same shape as wait_until_ready's
+    # stall clock, and the reason is the landmine written down there: a fixed
+    # budget for an unbounded transfer cannot be set correctly, only set
+    # wrong. 300 s rather than 60 because a congested or proxied link can go
+    # quiet for a while and still be healthy, and the cost of waiting too long
+    # on a genuinely dead connection is far smaller than failing a download
+    # that was going to finish.
+    with urllib.request.urlopen(url, timeout=300) as response:
         total = int(response.headers.get("Content-Length") or 0)
         done = 0
         with open(target, "wb") as handle:
