@@ -3,7 +3,7 @@
 
 Plano (planoai) strictly requires a top-level `"id"` field in chat.completion
 responses. OVMS omits this field. This bridge listens on port 8001, forwards
-requests to OVMS on port 8000, and injects `"id": "chatcmpl-ovms"` if missing.
+requests to OVMS on port 8002, and injects `"id": "chatcmpl-ovms"` if missing.
 """
 import json
 import urllib.request
@@ -11,8 +11,17 @@ import argparse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 
+#: Where OVMS listens. ONE definition, read by both the class default and the
+#: --target-port flag, because they disagreed: the class said 8000 while the
+#: flag defaulted to 8002, so importing this handler without running main()
+#: silently forwarded to the wrong port. 8002 rather than 8000 because plano
+#: takes 8000 as the client-facing listener and OVMS moves out of its way
+#: (model.ovms_port in the workflow).
+OVMS_PORT = 8002
+
+
 class OVMSBridgeHandler(BaseHTTPRequestHandler):
-    target_port = 8000
+    target_port = OVMS_PORT
 
     # HTTP/1.1 because Envoy (what plano runs on) treats an HTTP/1.0 upstream
     # differently and stopped reading long bodies part-way: a 5 KB answer
@@ -120,8 +129,9 @@ def main():
                              "network namespace - it exposes an "
                              "unauthenticated endpoint to your whole network.")
     parser.add_argument("--port", type=int, default=8001)
-    parser.add_argument("--target-port", type=int, default=8002,
-                        help="Port where OVMS is listening. Default 8002.")
+    parser.add_argument("--target-port", type=int, default=OVMS_PORT,
+                        help=f"Port where OVMS is listening. "
+                             f"Default {OVMS_PORT}.")
     args = parser.parse_args()
 
     if args.host == "0.0.0.0":

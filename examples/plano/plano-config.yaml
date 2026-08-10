@@ -43,10 +43,16 @@ model_providers:
     # internally (config_generator.py, get_endpoint_and_port). So the whole
     # fix is putting /v3 in this URL.
     #
-    # THE PORT IS 8001, NOT 8000, AND THAT IS DELIBERATE. plano's Envoy WASM
-    # filter rejects any response without a top-level "id" field, which OVMS
-    # does not send. ovms_id_bridge.py listens on 8001, forwards to OVMS on
-    # 8000, and injects it. So this points at the BRIDGE, not at OVMS.
+    # THE PORT IS 8001, AND THAT IS DELIBERATE. plano's Envoy WASM filter
+    # rejects any response without a top-level "id" field, which OVMS does not
+    # send. ovms_id_bridge.py listens on 8001, forwards to OVMS on 8002, and
+    # injects it. So this points at the BRIDGE, not at OVMS.
+    #
+    # The whole chain, and why each hop has the port it has:
+    #   client  -> 8000   plano's listener, so no client config changes
+    #   plano   -> 8001   the id bridge
+    #   bridge  -> 8002   OVMS itself (model.ovms_port in workflow.yml)
+    # OVMS moved off 8000 so plano could take the port clients already knew.
     #
     # THE HOST DEPENDS ON WHERE PLANO RUNS. Pick your row, run the command,
     # paste the result in below. The value committed here is one developer's
