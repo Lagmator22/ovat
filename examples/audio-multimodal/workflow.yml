@@ -22,7 +22,7 @@ model:
   tool_parser: qwen3coder     # MEASURED: 'auto' decodes no tool calls for Qwen3.5
   model_repository_path: models
   # Transcription of a long file is not fast, and the agent waits on the tool.
-  request_timeout: 300
+  request_timeout: 1200
 
 tools:
   # Speech to text, via OpenVINO Whisper. Point OVAT_WHISPER_MODEL at the

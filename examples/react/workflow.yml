@@ -24,7 +24,7 @@ model:
   model_repository_path: models
   # LangChain adds a little overhead of its own on top of generation, and
   # the first request also pays for the model warming up.
-  request_timeout: 180
+  request_timeout: 1200
 
 tools:
   # Two tools, so the model has to CHOOSE rather than always calling the one

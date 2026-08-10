@@ -23,7 +23,7 @@ model:
   tool_parser: qwen3coder     # MEASURED: 'auto' decodes no tool calls for Qwen3.5
   source_model: OpenVINO/Qwen3.5-4B-int4-ov
   model_repository_path: models
-  request_timeout: 120            # first token from a cold model is not quick
+  request_timeout: 1200            # first token from a cold model is not quick
 
 tools:
   # The retrieval half. search_docs answers from the folder you indexed and
@@ -42,9 +42,9 @@ agent:
   max_iterations: 10
   system_prompt: >-
     You answer questions about the user's own documents. Always call
-    search_docs before answering a question about their files, and cite the
+    the "search_docs" tool before answering a question about their files, and cite the
     source path you used. If the documents do not contain the answer, say so
-    plainly rather than guessing from general knowledge.
+    plainly rather than guessing from general knowledge. Never attempt to use a tool named "search" - you must explicitly call "search_docs".
 
 rag:
   embeddings:
