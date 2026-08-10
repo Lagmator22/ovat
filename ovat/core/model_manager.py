@@ -8,6 +8,7 @@ which is expected. The point is a clean Python API over the CLI so the rest of
 the toolkit never builds command strings by hand. Basically easy access to the ovms cli.
 """
 import subprocess
+from ovat.core.model_server import ovms_env
 
 class ModelManager:
     """Wraps OVMS model-management CLI commands (--pull, --list_models)."""
@@ -36,7 +37,7 @@ class ModelManager:
         result = subprocess.run(
             [self.ovms, "--pull", "--source_model", source_model,
              "--model_repository_path", model_repository_path],
-            capture_output=True, text=True,
+            capture_output=True, text=True, env=ovms_env(self.ovms)
         )
         if result.returncode != 0:
             raise RuntimeError(f"Model pull failed: {result.stderr.strip()}")
@@ -60,6 +61,7 @@ class ModelManager:
                  "--model_repository_path", model_repository_path],
                 capture_output=True, text=True, errors="replace",
                 timeout=self.LIST_TIMEOUT_S,
+                env=ovms_env(self.ovms)
             )
         except subprocess.TimeoutExpired:
             raise RuntimeError(
