@@ -51,6 +51,7 @@ async def _open_doctor(app, pilot, config_path=None):
         await pilot.pause()
         if not any(worker.is_running for worker in app.workers):
             break
+    await pilot.pause()
     return screen
 
 
@@ -280,12 +281,18 @@ def test_typing_slash_opens_a_filtered_menu(monkeypatch):
             assert palette.display is False
 
             screen.query_one("#doc-input", Input).value = "/"
-            await pilot.pause()
+            for _ in range(10):
+                await pilot.pause()
+                if palette.display and palette.option_count == 5:
+                    break
             assert palette.display is True
             assert palette.option_count == 5          # every command
 
             screen.query_one("#doc-input", Input).value = "/c"
-            await pilot.pause()
+            for _ in range(10):
+                await pilot.pause()
+                if palette.option_count == 2:
+                    break
             assert palette.option_count == 2          # /copy and /clear
     _run(scenario())
 
