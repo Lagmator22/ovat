@@ -985,10 +985,16 @@ def test_indexing_without_rag_says_how_to_turn_it_on(tmp_path):
 
     result = runner.invoke(app, ["index", str(folder), str(out)])
     assert result.exit_code == 1
+    # Collapse whitespace first. Rich wraps to the terminal width and tmp_path
+    # is long, so the phrase breaks across lines and a raw substring check
+    # fails on correct output -- the same trap as the malformed-YAML test, and
+    # it reappeared here the moment xdist changed the reported width. Any
+    # assertion against Rich output needs this.
+    flat = " ".join(result.output.split())
     # Off, not broken; still usable; and where to look.
-    assert "nothing is broken" in result.output
-    assert "stub mode" in result.output
-    assert "optimum-cli" in result.output
+    assert "nothing is broken" in flat
+    assert "stub mode" in flat
+    assert "optimum-cli" in flat
 
 
 def test_run_warns_when_a_tool_call_was_never_decoded(monkeypatch):
@@ -1214,3 +1220,64 @@ def test_an_ordinary_failure_does_not_get_the_timeout_advice(tmp_path,
 
     assert result.exit_code == 1
     assert "request_timeout" not in result.output
+
+
+# --------------------------------------------------------------------------
+# Every command must be reachable THROUGH the CLI, not only through the
+# module it wraps. setup, serve and models had thorough library tests and no
+# invocation test at all, so a broken option name, a typo'd import inside the
+# command body, or a Typer signature the runner rejects would have shipped
+# green. These are cheap, and they close the last three gaps.
+# --------------------------------------------------------------------------
+
+def test_setup_command_is_reachable_and_reports_what_it_did(monkeypatch):
+    from ovat.core import ovms_installer
+
+    monkeypatch.setattr(ovms_installer, "install",
+                        lambda **kw: ("/somewhere/ovms", "installed"))
+    monkeypatch.setattr(ovms_installer, "asset_for_platform",
+                        lambda version=None: ("ovms_test.tar.gz", "file:///x"))
+    monkeypatch.setattr(ovms_installer, "linux_support_note", lambda: None)
+
+    result = runner.invoke(app, ["setup", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "/somewhere/ovms" in result.output
+    # The promise the README makes, in the command's own words.
+    assert "PATH" in result.output
+
+
+def test_setup_says_nothing_to_do_on_macos_and_exits_zero(monkeypatch):
+    """Not an error. An unsupported platform is a fact to report, and exiting
+    1 would fail any script that runs setup unconditionally."""
+    from ovat.cli import main as cli_main
+    monkeypatch.setattr(cli_main.sys, "platform", "darwin")
+    result = runner.invoke(app, ["setup"])
+    assert result.exit_code == 0, result.output
+    assert "macOS" in result.output
+    assert "ovat chat" in result.output          # says what DOES work
+
+
+def test_serve_stop_is_reachable_through_the_cli(monkeypatch, tmp_path):
+    from ovat.core import model_server
+
+    cfg = tmp_path / "w.yml"
+    cfg.write_text("model:\n  name: X\nagent:\n  type: native\n",
+                   encoding="utf-8")
+    monkeypatch.setattr(model_server, "stop_from_pidfile",
+                        lambda *a, **k: "Stopped OVMS (pid 4321).")
+
+    result = runner.invoke(app, ["serve", str(cfg), "--stop"])
+    assert result.exit_code == 0, result.output
+    assert "4321" in result.output
+
+
+def test_models_list_is_reachable_and_needs_no_network(monkeypatch):
+    from ovat.core import ovms_locator
+
+    monkeypatch.setattr(ovms_locator, "find_ovms",
+                        lambda explicit=None: (None, "not found (test)"))
+    result = runner.invoke(app, ["models", "list"])
+    # Either it lists, or it explains it cannot find ovms. What it must NOT do
+    # is raise: `models` is the one command whose whole job is talking to a
+    # binary that is usually absent.
+    assert "Traceback" not in result.output

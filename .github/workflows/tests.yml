@@ -87,7 +87,14 @@ jobs:
             - name: Suite
               # `live` needs a running OVMS and `rag` needs an embedding model
               # on disk; both auto-skip, and neither belongs in CI.
-              run: python -m pytest -q -m "not live"
+              #
+              # -n auto because the Windows runner took 22 MINUTES against 2.5
+              # locally. The cost is dozens of Textual tests that each drive a
+              # real event loop, and Windows process and file IO are simply
+              # slower; there is no single hot spot to optimise. Splitting
+              # across cores is the fix, and process isolation is if anything
+              # safer than the shared interpreter these already ran in.
+              run: python -m pytest -q -m "not live" -n auto
 
     isolation:
         # AGENTS.md rule 3: the plain CLI must work with NO optional extra
