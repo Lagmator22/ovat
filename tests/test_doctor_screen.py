@@ -30,10 +30,27 @@ FAKE_CHECKS = [
 
 
 async def _open_doctor(app, pilot, config_path=None):
+    """Push the doctor screen and wait until its checks worker has finished.
+
+    The pause BEFORE wait_for_complete is what makes this reliable. The worker
+    is started from on_mount, so on a slow runner it may not exist yet at the
+    moment we ask to wait for it -- wait_for_complete then returns instantly
+    with nothing to wait for, and the test reads an empty log. That failed on
+    the Windows runner while passing on every developer machine, which makes
+    it the same environment-sensitive class as everything else this release
+    fixed: a test measuring the scheduler rather than the code.
+
+    The loop afterwards is belt and braces: workers can enqueue further work,
+    so we re-check a bounded number of times rather than trusting one pass.
+    """
     screen = DoctorScreen(config_path=config_path)
     app.push_screen(screen)
-    await app.workers.wait_for_complete()      # the checks worker
-    await pilot.pause()
+    await pilot.pause()                        # let on_mount start the worker
+    for _ in range(50):                        # bounded: never hangs the suite
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        if not any(worker.is_running for worker in app.workers):
+            break
     return screen
 
 

@@ -15,6 +15,7 @@ survive a restart: both the vectors and the text come back from disk, and new
 rowids are derived from the table (MAX(rowid)+1), so there is no collision.
 """
 import sqlite3
+import sys
 import threading
 
 import sqlite_vec
@@ -43,6 +44,32 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         # agent loop is sequential (one query at a time), so sharing the single
         # connection across threads is safe here; SQLite just blocks it by default.
         self.db = sqlite3.connect(db_path, check_same_thread=False)
+        # sqlite-vec is a loadable SQLite EXTENSION, and a Python can be built
+        # without the ability to load one: CPython compiled with
+        # --disable-loadable-sqlite-extensions simply has no
+        # enable_load_extension method. Homebrew and python.org macOS builds
+        # ship that way, and so does the macOS Python on GitHub's runners.
+        #
+        # Unguarded, the first thing a user saw was
+        #   AttributeError: 'sqlite3.Connection' object has no attribute
+        #   'enable_load_extension'
+        # which says nothing about SQLite extensions, nothing about their
+        # Python, and nothing about what to do. Rule 6: a failure a person has
+        # to act on is a sentence, not a traceback.
+        if not hasattr(self.db, "enable_load_extension"):
+            self.db.close()
+            raise RuntimeError(
+                f"This Python cannot load SQLite extensions, and vector "
+                f"search needs one (sqlite-vec).\n"
+                f"  interpreter: {sys.executable}\n"
+                f"It was built with --disable-loadable-sqlite-extensions, "
+                f"which is common for Homebrew and python.org macOS builds.\n"
+                f"Fix it one of these ways:\n"
+                f"  1. use a Python that allows extensions "
+                f"(pyenv, uv, conda, or your distro's python3)\n"
+                f"  2. on macOS: brew install python and use that interpreter\n"
+                f"  3. leave the rag: block out of your workflow; search_docs "
+                f"then answers in stub mode and everything else still works")
         self.db.enable_load_extension(True)
         sqlite_vec.load(self.db)
         self.db.enable_load_extension(False)

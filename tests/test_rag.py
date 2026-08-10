@@ -18,6 +18,57 @@ from ovat.rag.indexer import chunk_text, index_folder
 from ovat.tools.search_docs import search_docs_impl
 
 
+# sqlite-vec is a loadable SQLite EXTENSION, and CPython can be built without
+# the ability to load one (--disable-loadable-sqlite-extensions). Homebrew and
+# python.org macOS builds ship that way, and so does the macOS Python on
+# GitHub's runners, where these tests failed with
+#   AttributeError: 'sqlite3.Connection' object has no attribute
+#   'enable_load_extension'
+# That is a property of the interpreter, not a defect in this code, so it
+# SKIPS. The product now raises a readable explanation there instead of an
+# AttributeError, and that behaviour is asserted separately below.
+def _can_load_extensions() -> bool:
+    import sqlite3
+    connection = sqlite3.connect(":memory:")
+    try:
+        return hasattr(connection, "enable_load_extension")
+    finally:
+        connection.close()
+
+
+needs_extensions = pytest.mark.skipif(
+    not _can_load_extensions(),
+    reason="this Python was built without loadable SQLite extension support")
+pytestmark = needs_extensions
+
+
+def test_a_python_without_extension_support_gets_a_sentence_not_a_traceback(
+        monkeypatch):
+    """The one test in this file that must run EVERYWHERE, including on the
+    interpreters the rest skip on."""
+    import sqlite3
+
+    class NoExtensions:
+        """A connection like the one a --disable-loadable-sqlite-extensions
+        build hands back: no enable_load_extension attribute at all."""
+
+        def __init__(self, *a, **k):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(sqlite3, "connect", lambda *a, **k: NoExtensions())
+    with pytest.raises(RuntimeError) as caught:
+        SQLiteVecRetrieverProvider(embedder=object(), dim=4)
+
+    message = str(caught.value)
+    assert "cannot load SQLite extensions" in message
+    assert "sqlite-vec" in message
+    # and it must say what to DO, not only what is wrong
+    assert "stub mode" in message
+
+
 class FakeEmbedder:
     """Deterministic stand-in for a real embedder.
 

@@ -389,12 +389,22 @@ def test_intel_ut_is_told_where_to_write_and_cleans_it_up(monkeypatch, tmp_path)
         return FakeProc()
 
     monkeypatch.setattr("ovat.telemetry.sources.subprocess.Popen", fake_popen)
+    # CONSTRUCT FIRST, then fake the platform. `sources.sys` IS the sys module,
+    # so setting sys.platform here is global: __init__ calls find_ut(), which
+    # calls shutil.which(), which then takes its WINDOWS branch on Linux and
+    # dies with
+    #   AttributeError: 'NoneType' object has no attribute
+    #   'NeedCurrentDirectoryForExePath'
+    # because _winapi is None off Windows. The test failed on Linux while the
+    # product was fine. Nothing after construction touches shutil, so doing
+    # discovery on the real platform and faking only what `unavailable` reads
+    # keeps the fake as narrow as the thing it is standing in for.
+    source = IntelHardwareSource()
+    source.binary = str(tmp_path / "ut")
     # unavailable is a computed property that short-circuits on macOS, so the
     # platform is faked: this test is about the command line and the cleanup,
     # not about discovery or which OS ut supports.
     monkeypatch.setattr("ovat.telemetry.sources.sys.platform", "win32")
-    source = IntelHardwareSource()
-    source.binary = str(tmp_path / "ut")
     assert source.unavailable is None, "fixture did not make ut look present"
     source.start()
 
