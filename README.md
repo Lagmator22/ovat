@@ -2,9 +2,9 @@
 
 **Build a tool-calling AI agent on an Intel AI PC from one YAML file and one command.**
 
-[![Tests](https://github.com/Lagmator22/ovat/actions/workflows/tests.yml/badge.svg)](https://github.com/Lagmator22/ovat/actions/workflows/tests.yml)
 [![PyPI](https://img.shields.io/pypi/v/ovat)](https://pypi.org/project/ovat/)
 [![Python](https://img.shields.io/pypi/pyversions/ovat)](https://pypi.org/project/ovat/)
+[![License](https://img.shields.io/pypi/l/ovat)](LICENSE)
 
 ```bash
 pip install ovat
