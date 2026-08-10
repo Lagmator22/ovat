@@ -23,7 +23,7 @@ jobs:
     suite:
         name: ${{ matrix.os }} · py${{ matrix.python }}${{ matrix.note }}
         runs-on: ${{ matrix.os }}
-        timeout-minutes: 25
+        timeout-minutes: 40
         strategy:
             # One red cell must not cancel the others. Knowing a failure is
             # Ubuntu-22-only rather than universal is most of the diagnosis,
@@ -108,7 +108,16 @@ jobs:
               # slower; there is no single hot spot to optimise. Splitting
               # across cores is the fix, and process isolation is if anything
               # safer than the shared interpreter these already ran in.
-              run: python -m pytest -q -m "not live" -n auto
+              # --dist loadfile keeps a FILE's tests on one worker. The
+              # Textual tests each drive a real event loop, and interleaving
+              # them across workers made four of them fail on the Windows
+              # runner purely on timing. Grouping by file also means the heavy
+              # imports (openvino, langchain, llama_index, textual) are paid
+              # once per worker for a whole file rather than thrashed between
+              # them -- which is where Windows was losing time, since it
+              # re-imports that stack per worker and its process startup is
+              # slower than Linux's.
+              run: python -m pytest -q -m "not live" -n auto --dist loadfile
 
     isolation:
         # AGENTS.md rule 3: the plain CLI must work with NO optional extra

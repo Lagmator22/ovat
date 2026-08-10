@@ -70,10 +70,29 @@ def _log_text(screen) -> str:
 
 
 async def _push_ready_screen(app, pilot, tmp_path):
+    """Push the chat screen and wait until it is genuinely usable.
+
+    The pause BEFORE wait_for_complete is what makes this reliable: the load
+    worker is started from on_mount, so on a slow machine it does not exist
+    yet when we ask to wait for it, wait_for_complete returns instantly with
+    nothing to wait for, and the test then queries a screen that has not
+    finished composing. On the Windows runner that surfaced as
+    NoMatches("No nodes match '#chat-view'") -- the widget was real, the test
+    was simply early.
+
+    Waiting on the WIDGET rather than only on the workers is the part that
+    matters: workers finishing and the DOM being ready are two different
+    events, and it was the second one every failing test depended on.
+    """
     screen = ChatScreen("w.yml", "model-dir", cwd=str(tmp_path))
     app.push_screen(screen)
-    await app.workers.wait_for_complete()      # the load worker
-    await pilot.pause()
+    await pilot.pause()                        # let on_mount start the worker
+    for _ in range(60):                        # bounded: never hangs the suite
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        if screen.query("#chat-view") and not any(
+                worker.is_running for worker in app.workers):
+            break
     return screen
 
 
