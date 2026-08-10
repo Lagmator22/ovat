@@ -151,7 +151,7 @@ ovat setup
 ```
 
 That picks the right archive for your OS (and, on Linux, your distro), checks
-its SHA-256, and unpacks it into `~/.ovat/ovms` — a folder OVAT already
+its SHA-256, and unpacks it into `~/.ovat/ovms` - a folder OVAT already
 searches. **Nothing is added to `PATH` and no environment variable is needed.**
 Run it once per machine; it is safe to run again.
 
@@ -257,7 +257,7 @@ ovat serve workflow.yml --stop                # 7. shut it down
 expected: `serve` shows elapsed time and only gives up after five minutes of *no
 progress at all*, so a slow link is fine.
 
-Skipping step 1 is fine too — `ovat serve` will offer to install OVMS when it
+Skipping step 1 is fine too - `ovat serve` will offer to install OVMS when it
 finds none.
 
 On **macOS** there is no OVMS. Use the local path instead. `ovat chat` answers
@@ -303,6 +303,7 @@ Each folder has its own README with the exact commands.
 | `model` | `name` | the model OVMS serves |
 | | `device` | `CPU`, `GPU`, or `NPU` |
 | | `ovms_url` | where OVMS listens (default `http://localhost:8000/v3`) |
+| | `ovms_port` | internal port for `ovat serve` when fronted by a proxy (default 8000) |
 | | `tool_parser` | how tool calls are decoded, **`qwen3coder`** for Qwen3.5, `hermes3` for Qwen3. Derived from the model name if omitted |
 | | `source_model` | HF id that `ovat serve` downloads |
 | | `request_timeout` | per-request cap, in seconds |

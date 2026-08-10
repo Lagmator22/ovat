@@ -411,7 +411,7 @@ catches anyway, so one broken source cannot end the collection thread.
 Installing used to be four manual steps and one judgement call: read the
 README, pick one archive out of six, unpack it, then usually export
 `OVAT_OVMS` because it landed somewhere the locator does not search. The
-judgement call is the dangerous part — the `python_off` build cannot tool-call,
+judgement call is the dangerous part - the `python_off` build cannot tool-call,
 and choosing it gives an agent that answers fluently and silently never calls a
 tool.
 
@@ -433,7 +433,7 @@ flowchart TD
 
 **Why this is not part of `pip install`.** The archive is 126–185 MB, Linux
 needs three builds that cannot be chosen at wheel-build time, wheels have no
-post-install hook, and macOS has no build at all — a bundled wheel would charge
+post-install hook, and macOS has no build at all - a bundled wheel would charge
 every Mac user ~180 MB for a binary that cannot run. A subcommand that fetches
 on demand is the shape `playwright install` and `python -m spacy download` use.
 
@@ -443,7 +443,7 @@ on demand is the shape `playwright install` and `python -m spacy download` use.
 flattened. And every member's owner-write bit is forced **before** extraction
 begins: OVMS ships mode `0o555`, and reopening such a file for write fails for
 anyone without `CAP_DAC_OVERRIDE`. That made install fail for every non-root
-Linux user while passing in Docker, in CI and in a maintainer's container — all
+Linux user while passing in Docker, in CI and in a maintainer's container - all
 of which run as root.
 
 ### Starting it: `ovat serve`
@@ -465,7 +465,7 @@ flowchart TD
 **The locator searches `./ovms` first**, because that is where the README's own
 install steps unpack it. It also checks `~/.ovat/ovms` (where `ovat setup`
 puts it), `~/ovms_windows`, `~/ovms`, `C:\ovms` and `PATH`. Windows installs
-are essentially never on `PATH`, which is why `serve` works anyway — and why
+are essentially never on `PATH`, which is why `serve` works anyway - and why
 nothing in OVAT ever edits it.
 
 **`ovms_env()` is what setupvars would have done, and it is not cosmetic.** On
@@ -482,7 +482,7 @@ level wrong is the whole bug. Proven by running the same binary twice:
 | under `ovms_env()` | 0 | `OpenVINO Model Server 2026.2.1` |
 
 It lives as a module-level function rather than inline in `start()` precisely
-so it can be tested without launching a server — while it was inline, the
+so it can be tested without launching a server - while it was inline, the
 Linux branch had never been executed once.
 
 **The child environment is what `setupvars.bat` would have set.** Not just the

@@ -30,13 +30,13 @@ flowchart TD
     end
 
     subgraph WSL2 ["WSL2 Linux Environment"]
-        Plano["Plano AI Gateway<br/>(:12000 /v1/chat/completions)"]
+        Plano["Plano AI Gateway<br/>(:8000 /v1/chat/completions)"]
         Obs["Plano OTEL Dashboard<br/>(planoai obs :4317)"]
     end
 
     subgraph WinHost ["Windows Host Environment"]
         Bridge["OVMS ID Bridge<br/>(python ovms_id_bridge.py :8001)"]
-        OVMS["OpenVINO Model Server<br/>(:8000/v3/chat/completions on GPU)"]
+        OVMS["OpenVINO Model Server<br/>(:8002/v3/chat/completions on GPU)"]
     end
 
     OVAT -->|"1. POST /v1/chat/completions"| Plano
@@ -58,11 +58,11 @@ Plano expects upstreams to speak standard OpenAI `/v1` paths, whereas OVMS serve
 
 ### 2. Cross-OS Networking (Windows Host + WSL2)
 Plano publishes binaries for Linux and macOS, but has no native Windows build (running `planoai up` directly on Windows CMD raises `Error: Unsupported platform windows/amd64`). Therefore, Plano runs inside WSL2 or Docker (`--docker`), while OVMS runs natively on the Windows host to access Intel Arc GPU hardware.
-- **Solution**: Inside WSL2, the Windows Host is reached via the gateway IP found by `ip route | grep default | awk '{print $3}'` (e.g. `172.22.64.1`). Windows Defender Firewall port 8000 is opened via `netsh advfirewall`.
+- **Solution**: Inside WSL2, the Windows Host is reached via the gateway IP found by `ip route | grep default | awk '{print $3}'` (e.g. `172.22.64.1`). Windows Defender Firewall port 8001 is opened via `netsh advfirewall`.
 
 ### 3. Response Schema Matching (`ovms_id_bridge.py`)
 Plano's Envoy WASM filter (`llm_gateway`) strictly requires a top-level `"id"` string field in JSON responses. OVMS returns valid OpenAI JSON but omits the top-level `"id"` string, and Plano sends chunked HTTP requests (`Transfer-Encoding: chunked`).
-- **Solution**: `examples/plano/ovms_id_bridge.py` is a 30-line Python bridge that handles chunked HTTP bodies from Plano, forwards to OVMS (`:8000`), injects `"id": "chatcmpl-ovms"`, and returns the clean JSON to Plano.
+- **Solution**: `examples/plano/ovms_id_bridge.py` is a 30-line Python bridge that handles chunked HTTP bodies from Plano, forwards to OVMS (`:8002`), injects `"id": "chatcmpl-ovms"`, and returns the clean JSON to Plano.
 
 ---
 
@@ -78,7 +78,7 @@ Open **Command Prompt (`cmd.exe`)** on Windows:
 cd C:\Users\devcloud\ovat
 ovat serve examples\plano\workflow.yml
 ```
-*(Wait until it prints `OVMS is ready at http://localhost:8000/v3`)*
+*(Wait until it prints `OVMS is ready at http://localhost:8002/v3`)*
 
 ---
 

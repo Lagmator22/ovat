@@ -30,7 +30,7 @@ tools:
   - name: transcribe
     type: builtin
   # Image understanding, via the local VLM pipeline. Point OVAT_VLM_MODEL at
-  # a vision-capable export -- the SAME Qwen3.5 folder works.
+  # a vision-capable export - the SAME Qwen3.5 folder works.
   - name: describe_image
     type: builtin
   # Kept so the agent has to pick between three tools rather than two.

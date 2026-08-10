@@ -57,7 +57,7 @@ ovat serve examples/audio-multimodal/workflow.yml
 ovat run examples/audio-multimodal/workflow.yml \
     -i "What is said in examples/audio-multimodal/sample.wav?"
 
-# look -- reusing an image already in this repo, so nothing to download
+# look - reusing an image already in this repo, so nothing to download
 ovat run examples/audio-multimodal/workflow.yml \
     -i "Describe the image at ovat/assets/intel-phase-1.png"
 ```

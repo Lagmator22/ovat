@@ -1,4 +1,4 @@
-# Use case 1: RAG -- ask questions about your own documents.
+# Use case 1: RAG - ask questions about your own documents.
 #
 # Nothing leaves the machine. The agent searches a folder you indexed and
 # cites the file each fact came from, so answers are checkable rather than
@@ -21,7 +21,7 @@ model:
   device: GPU                     # CPU works; NPU cannot do tool calling
   ovms_url: http://localhost:8000/v3
   # Name the parser explicitly. Leaving this out, or setting 'auto', makes
-  # OVMS pick from the chat template -- and for Qwen3.5 it picks NOTHING:
+  # OVMS pick from the chat template - and for Qwen3.5 it picks NOTHING:
   # the tool call comes back as plain text and the agent silently never
   # calls a tool. Measured on live OVMS. qwen3coder for Qwen3.5, hermes3
   # for Qwen3. OVAT derives this from the model name if you omit it.

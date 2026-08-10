@@ -20,7 +20,7 @@ listeners:
   - type: model
     name: ovat_model_listener
     address: 0.0.0.0
-    port: 12000
+    port: 8000
 
 model_providers:
   - name: ovms-qwen3-8b

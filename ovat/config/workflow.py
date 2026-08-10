@@ -56,6 +56,8 @@ class ModelConfig(StrictModel):
     provider: str = "ovms"
     device: str = "CPU"                         # CPU, GPU, or NPU
     ovms_url: str = "http://localhost:8000/v3"  # where my OVMS server listens
+    # Port for OVMS to bind to when running via `ovat serve`
+    ovms_port: int = 8000
     # How OVMS decodes tool calls. None means "derive it from the model name"
     # (see _derive_tool_parser below); an explicit value always wins.
     tool_parser: str | None = None

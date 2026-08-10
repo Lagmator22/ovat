@@ -1256,6 +1256,43 @@ def test_setup_says_nothing_to_do_on_macos_and_exits_zero(monkeypatch):
     assert "macOS" in result.output
     assert "ovat chat" in result.output          # says what DOES work
 
+def test_serve_passes_ovms_port_to_modelserver(monkeypatch, tmp_path):
+    from ovat.cli import main as cli_main
+    monkeypatch.setattr(cli_main.sys, "platform", "linux")
+    cfg = tmp_path / "w.yml"
+    cfg.write_text("model:\n  name: X\n  ovms_port: 8002\nagent:\n  type: native\n", encoding="utf-8")
+
+    captured_kwargs = {}
+
+    class FakeModelServer:
+        DEFAULT_STALL_TIMEOUT = 120
+        def __init__(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            self.model_name = kwargs.get("model_name")
+            self.port = kwargs.get("port")
+            class DummyProc:
+                pid = 1234
+                def poll(self): return None
+            self.process = DummyProc()
+            self.log_path = ""
+            self.base_url = f"http://localhost:{self.port or 8000}/v3"
+        def wait_until_ready(self, *args, **kwargs):
+            return True
+        def start(self, *args, **kwargs):
+            pass
+        def stop(self):
+            pass
+
+    from ovat.core import model_server
+    monkeypatch.setattr(model_server, "ModelServer", FakeModelServer)
+    from ovat.core import model_scout, ovms_locator
+    monkeypatch.setattr(model_scout, "identify_model", lambda *args: "llm")
+    monkeypatch.setattr(ovms_locator, "find_ovms", lambda *args: ("/path/to/ovms", "1.0"))
+
+    result = runner.invoke(app, ["serve", str(cfg)])
+    assert result.exit_code == 0, result.output
+    assert captured_kwargs.get("port") == 8002
+
 
 def test_serve_stop_is_reachable_through_the_cli(monkeypatch, tmp_path):
     from ovat.core import model_server

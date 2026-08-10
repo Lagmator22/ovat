@@ -32,7 +32,8 @@
 model:
   name: Qwen3.5-4B-int4-ov          # the model name my OVMS server serves
   device: GPU                     # CPU, GPU, or NPU on the AI PC
-  ovms_url: http://localhost:12000/v1   # <-- plano's model listener, not OVMS directly.
+  ovms_port: 8002                 # <-- ovat serve binds OVMS to 8002 so plano can take 8000
+  ovms_url: http://localhost:8000/v1   # <-- plano's model listener, not OVMS directly.
                                           #     plano rewrites /v1 to OVMS's /v3 for us
                                           #     (base_url_path_prefix in plano-config.yaml).
   tool_parser: qwen3coder     # MEASURED: 'auto' decodes no tool calls for Qwen3.5

@@ -12,6 +12,8 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 
 class OVMSBridgeHandler(BaseHTTPRequestHandler):
+    target_port = 8000
+
     # HTTP/1.1 because Envoy (what plano runs on) treats an HTTP/1.0 upstream
     # differently and stopped reading long bodies part-way: a 5 KB answer
     # arrived as 2.8 KB, cut mid-string, and the JSON would not parse. Short
@@ -47,8 +49,8 @@ class OVMSBridgeHandler(BaseHTTPRequestHandler):
             content_len = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_len)
         
-        # Forward request to OVMS on port 8000
-        target_url = f"http://127.0.0.1:8000{self.path}"
+        # Forward request to OVMS on target port
+        target_url = f"http://127.0.0.1:{self.target_port}{self.path}"
         headers = {
             "Content-Type": "application/json",
             "User-Agent": "OpenAI/Python 2.51.0",
@@ -115,17 +117,20 @@ def main():
                         help="Interface to bind. Default 127.0.0.1 (this "
                              "machine only). Use 0.0.0.0 ONLY when plano runs "
                              "in WSL2/Docker and must reach this host across a "
-                             "network namespace -- it exposes an "
+                             "network namespace - it exposes an "
                              "unauthenticated endpoint to your whole network.")
     parser.add_argument("--port", type=int, default=8001)
+    parser.add_argument("--target-port", type=int, default=8002,
+                        help="Port where OVMS is listening. Default 8002.")
     args = parser.parse_args()
 
     if args.host == "0.0.0.0":
         print("WARNING: binding 0.0.0.0 exposes this unauthenticated bridge to "
               "your entire network. Firewall the port, or prefer 127.0.0.1.")
+    OVMSBridgeHandler.target_port = args.target_port
     server = ThreadingHTTPServer((args.host, args.port), OVMSBridgeHandler)
     print(f"OVMS ID Bridge listening on http://{args.host}:{args.port} "
-          f"-> forwarding to :8000...")
+          f"-> forwarding to :{args.target_port}...")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
