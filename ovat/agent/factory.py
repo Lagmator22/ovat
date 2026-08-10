@@ -71,7 +71,19 @@ def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:
     concrete provider lazily so that merely importing the factory (or running a
     test that never touches RAG) does not drag in openvino_genai.
     """
-    assert config.rag is not None
+    if config.rag is None:
+        # A real exception with a real message, not `assert`. An AssertionError
+        # carries no text -- str(AssertionError()) is "" -- and every caller
+        # wraps this in `except Exception`, so an assert here reaches the user
+        # as "Could not build the retriever: " with nothing after the colon.
+        # That is worse than the traceback it was meant to prevent: a blank
+        # error tells you neither what happened nor what to do. Asserts are
+        # also stripped by `python -O`, so the guarantee evaporates in exactly
+        # the build where you would want it most.
+        raise ValueError(
+            "this workflow has no rag: section, so there is no embedder to "
+            "build. Add one, or call build_rag(), which returns None here "
+            "rather than raising.")
     emb = config.rag.embeddings
     if emb.provider == "genai":
         from ovat.providers.embeddings_genai import GenAIEmbeddingsProvider
@@ -108,7 +120,19 @@ def build_retriever(config: WorkflowConfig,
     Takes the embedder as an argument (composition) so a test can hand in a fake
     embedder and exercise the whole store without loading a real model.
     """
-    assert config.rag is not None
+    if config.rag is None:
+        # A real exception with a real message, not `assert`. An AssertionError
+        # carries no text -- str(AssertionError()) is "" -- and every caller
+        # wraps this in `except Exception`, so an assert here reaches the user
+        # as "Could not build the retriever: " with nothing after the colon.
+        # That is worse than the traceback it was meant to prevent: a blank
+        # error tells you neither what happened nor what to do. Asserts are
+        # also stripped by `python -O`, so the guarantee evaporates in exactly
+        # the build where you would want it most.
+        raise ValueError(
+            "this workflow has no rag: section, so there is no embedder to "
+            "build. Add one, or call build_rag(), which returns None here "
+            "rather than raising.")
     ret = config.rag.retriever
     if ret.provider in ("sqlite-vec", "sqlite_vec"):
         from ovat.providers.retriever_sqlitevec import SQLiteVecRetrieverProvider

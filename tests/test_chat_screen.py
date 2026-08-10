@@ -93,6 +93,7 @@ async def _push_ready_screen(app, pilot, tmp_path):
         if screen.query("#chat-view") and not any(
                 worker.is_running for worker in app.workers):
             break
+    await pilot.pause()
     return screen
 
 
@@ -531,12 +532,18 @@ def test_typing_slash_opens_a_filtered_chat_menu(monkeypatch, tmp_path):
             assert palette.display is False
 
             screen.query_one("#chat-input", ChatInput).value = "/"
-            await pilot.pause()
+            for _ in range(50):
+                await pilot.pause()
+                if palette.display and palette.option_count == len(chat_screen.CHAT_COMMANDS):
+                    break
             assert palette.display is True
             assert palette.option_count == len(chat_screen.CHAT_COMMANDS)
 
             screen.query_one("#chat-input", ChatInput).value = "/t"
-            await pilot.pause()
+            for _ in range(50):
+                await pilot.pause()
+                if palette.option_count == 2:
+                    break
             assert palette.option_count == 2          # /thinking and /tokens
     _run(scenario())
 
@@ -554,7 +561,10 @@ def test_choosing_from_the_chat_menu_fills_the_line_for_an_argument(
             palette = screen.query_one("#chat-palette", OptionList)
 
             inp.value = "/tok"
-            await pilot.pause()
+            for _ in range(50):
+                await pilot.pause()
+                if palette.display:
+                    break
             await pilot.press("down")
             await pilot.pause()
             await pilot.press("enter")
@@ -574,7 +584,10 @@ def test_escape_closes_the_chat_menu_before_leaving(monkeypatch, tmp_path):
             screen = await _push_ready_screen(app, pilot, tmp_path)
             palette = screen.query_one("#chat-palette", OptionList)
             screen.query_one("#chat-input", ChatInput).value = "/"
-            await pilot.pause()
+            for _ in range(50):
+                await pilot.pause()
+                if palette.display:
+                    break
             assert palette.display is True
 
             await pilot.press("escape")
