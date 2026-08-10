@@ -71,6 +71,7 @@ def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:
     concrete provider lazily so that merely importing the factory (or running a
     test that never touches RAG) does not drag in openvino_genai.
     """
+    assert config.rag is not None
     emb = config.rag.embeddings
     if emb.provider == "genai":
         from ovat.providers.embeddings_genai import GenAIEmbeddingsProvider
@@ -107,6 +108,7 @@ def build_retriever(config: WorkflowConfig,
     Takes the embedder as an argument (composition) so a test can hand in a fake
     embedder and exercise the whole store without loading a real model.
     """
+    assert config.rag is not None
     ret = config.rag.retriever
     if ret.provider in ("sqlite-vec", "sqlite_vec"):
         from ovat.providers.retriever_sqlitevec import SQLiteVecRetrieverProvider

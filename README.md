@@ -303,6 +303,7 @@ Each folder has its own README with the exact commands.
 | `model` | `name` | the model OVMS serves |
 | | `device` | `CPU`, `GPU`, or `NPU` |
 | | `ovms_url` | where OVMS listens (default `http://localhost:8000/v3`) |
+| | `ovms_port` | internal port for `ovat serve` when fronted by a proxy (default 8000) |
 | | `tool_parser` | how tool calls are decoded, **`qwen3coder`** for Qwen3.5, `hermes3` for Qwen3. Derived from the model name if omitted |
 | | `source_model` | HF id that `ovat serve` downloads |
 | | `request_timeout` | per-request cap, in seconds |

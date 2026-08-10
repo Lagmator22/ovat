@@ -58,7 +58,7 @@ Plano expects upstreams to speak standard OpenAI `/v1` paths, whereas OVMS serve
 
 ### 2. Cross-OS Networking (Windows Host + WSL2)
 Plano publishes binaries for Linux and macOS, but has no native Windows build (running `planoai up` directly on Windows CMD raises `Error: Unsupported platform windows/amd64`). Therefore, Plano runs inside WSL2 or Docker (`--docker`), while OVMS runs natively on the Windows host to access Intel Arc GPU hardware.
-- **Solution**: Inside WSL2, the Windows Host is reached via the gateway IP found by `ip route | grep default | awk '{print $3}'` (e.g. `172.22.64.1`). Windows Defender Firewall ports 8001/8002 are opened via `netsh advfirewall`.
+- **Solution**: Inside WSL2, the Windows Host is reached via the gateway IP found by `ip route | grep default | awk '{print $3}'` (e.g. `172.22.64.1`). Windows Defender Firewall port 8001 is opened via `netsh advfirewall`.
 
 ### 3. Response Schema Matching (`ovms_id_bridge.py`)
 Plano's Envoy WASM filter (`llm_gateway`) strictly requires a top-level `"id"` string field in JSON responses. OVMS returns valid OpenAI JSON but omits the top-level `"id"` string, and Plano sends chunked HTTP requests (`Transfer-Encoding: chunked`).
