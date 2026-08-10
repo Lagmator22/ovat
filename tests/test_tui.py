@@ -140,11 +140,17 @@ def test_run_template_puts_the_cursor_in_the_config_gap():
             inp.value = "/run"
             await pilot.pause()
             await pilot.press("tab")
-            await pilot.pause()
+            # call_after_refresh schedules the cursor move for the NEXT refresh
+            # cycle, so one pause is not always enough on a slow Windows runner.
+            expected = len("ovat run ")
+            for _ in range(30):
+                await pilot.pause()
+                if inp.cursor_position == expected:
+                    break
             assert inp.value == 'ovat run  --input ""'
             # The next keystrokes are the config path, so the cursor must sit
             # in the gap after "ovat run ", not at the end of the line.
-            assert inp.cursor_position == len("ovat run ")
+            assert inp.cursor_position == expected
     _run(scenario())
 
 

@@ -103,7 +103,13 @@ def test_chat_commands_are_scoped_to_the_chat_screen(monkeypatch, tmp_path):
             assert ChatCommands not in OvatTUI.COMMANDS      # not app-wide
             screen = ChatScreen("w.yml", "m", cwd=str(tmp_path))
             app.push_screen(screen)
-            await app.workers.wait_for_complete()
+            await pilot.pause()                    # let on_mount fire
+            for _ in range(60):
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+                if screen.query("#chat-view") and not any(
+                        w.is_running for w in app.workers):
+                    break
             await pilot.pause()
             assert ChatCommands in ChatScreen.COMMANDS       # scoped to here
 
@@ -124,7 +130,13 @@ def test_the_reasoning_entry_describes_what_it_will_do(monkeypatch, tmp_path):
         async with app.run_test() as pilot:
             screen = ChatScreen("w.yml", "m", cwd=str(tmp_path))
             app.push_screen(screen)
-            await app.workers.wait_for_complete()
+            await pilot.pause()                    # let on_mount fire
+            for _ in range(60):
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+                if screen.query("#chat-view") and not any(
+                        w.is_running for w in app.workers):
+                    break
             await pilot.pause()
 
             assert "Show reasoning" in [t for t, _, _
