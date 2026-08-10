@@ -678,6 +678,7 @@ def chat(
 
     try:
         retriever = build_rag(cfg)
+        assert retriever is not None
     except Exception as exc:
         rprint(f"[red]Could not build the retriever:[/red] {esc(exc)}")
         raise typer.Exit(code=1)
@@ -747,6 +748,7 @@ def index(
     # disk yet, say so plainly instead of dumping a pipeline traceback.
     try:
         retriever = build_rag(cfg)
+        assert retriever is not None
     except Exception as exc:
         rprint(f"[red]Could not build the embedder/retriever:[/red] {esc(exc)}")
         rprint("[yellow]Tip:[/yellow] make sure the embeddings model in "
@@ -1129,6 +1131,7 @@ def serve(
         source_model=cfg.model.source_model,
         model_repository_path=cfg.model.model_repository_path,
         device=cfg.model.device,
+        port=cfg.model.ovms_port,
         tool_parser=cfg.model.tool_parser,
         reasoning_parser=cfg.model.reasoning_parser,
         enable_prefix_caching=cfg.model.enable_prefix_caching,
