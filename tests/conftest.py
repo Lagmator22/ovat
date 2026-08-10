@@ -107,3 +107,27 @@ def reply(finish_reason: str, content=None, tool_calls=None) -> dict:
         "tool_calls": tool_calls,
         "raw": None,
     }
+
+
+@pytest.fixture(autouse=True)
+def _wide_console(monkeypatch):
+    """Pin the terminal width for every test.
+
+    Rich wraps its output to the detected terminal width, and assertions
+    against that output then measure the WINDOW rather than the code. This has
+    now broken four separate tests in four different ways: a phrase split as
+    "not \\nvalid YAML", another as "nothing is \\nbroken", and -- once xdist
+    changed the reported width -- a path split MID-WORD as "workflo\\nw.yml".
+    Each looked like a product failure and each time the product was correct.
+
+    Rich reads COLUMNS before asking the terminal, so setting it once here
+    fixes the width everywhere: pytest's own capture, a CliRunner, an xdist
+    worker, a narrow CI runner. 200 is wider than any line this project
+    prints, so nothing wraps and no test can accidentally depend on where it
+    would have.
+
+    Tests that genuinely care about wrapping should set their own width
+    explicitly rather than inherit whatever the machine happened to have.
+    """
+    monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setenv("LINES", "50")

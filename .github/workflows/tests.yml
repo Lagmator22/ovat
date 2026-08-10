@@ -61,6 +61,20 @@ jobs:
                   python-version: ${{ matrix.python }}
                   cache: pip
 
+            # UTF-8 mode everywhere, because Windows otherwise picks cp1252
+            # and OVAT's own output stops round-tripping. The chat header
+            # separates its fields with U+00B7 MIDDLE DOT, which cp1252
+            # encodes as the single byte 0xb7; reading that back as UTF-8
+            # raises, and the Textual harness died in teardown with
+            #   UnicodeDecodeError: 'utf-8' codec can't decode byte 0xb7
+            # while the app itself was fine. This is what PEP 540 exists for,
+            # and it is the default from 3.15 onwards.
+            - name: Use UTF-8 for I/O on every platform
+              shell: bash
+              run: |
+                  echo "PYTHONUTF8=1" >> "$GITHUB_ENV"
+                  echo "PYTHONIOENCODING=utf-8" >> "$GITHUB_ENV"
+
             # Runners are NOT root, which is the point: the OVMS installer
             # passed in Docker, in CI and in a maintainer's container -- all
             # root -- and failed for the first real user, because
