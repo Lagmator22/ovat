@@ -1,8 +1,8 @@
-# Use case 2: ReAct -- the same agent, run through LangChain.
+# Use case 2: ReAct - the same agent, run through LangChain.
 #
 # The point of this file is what is NOT in it. Compare it with
 # examples/rag/workflow.yml: the tools, the model and the prompt are the
-# same. One word differs -- agent.type -- and the loop is now LangChain's
+# same. One word differs - agent.type - and the loop is now LangChain's
 # create_agent instead of OVAT's own.
 #
 #   ovat serve examples/react/workflow.yml
@@ -49,6 +49,6 @@ agent:
     files, and transcribe for questions about an audio file. Answer directly
     from your own knowledge when no tool applies, and say which tool you used.
 
-# No rag: block, deliberately -- search_docs runs in its documented stub mode,
+# No rag: block, deliberately - search_docs runs in its documented stub mode,
 # so this example needs no embedder and no indexing to demonstrate the engine
 # swap. Add the block from examples/rag/workflow.yml for real retrieval.

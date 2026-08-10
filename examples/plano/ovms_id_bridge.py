@@ -117,7 +117,7 @@ def main():
                         help="Interface to bind. Default 127.0.0.1 (this "
                              "machine only). Use 0.0.0.0 ONLY when plano runs "
                              "in WSL2/Docker and must reach this host across a "
-                             "network namespace -- it exposes an "
+                             "network namespace - it exposes an "
                              "unauthenticated endpoint to your whole network.")
     parser.add_argument("--port", type=int, default=8001)
     parser.add_argument("--target-port", type=int, default=8002,

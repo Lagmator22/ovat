@@ -162,25 +162,25 @@ ovat setup
 ```
 
 That is the whole install. `ovat setup` works out which operating system you
-are on — and on Linux, which distribution — downloads the matching OpenVINO
+are on - and on Linux, which distribution - downloads the matching OpenVINO
 Model Server archive, checks its SHA-256, and unpacks it into `~/.ovat/ovms`,
 a folder OVAT already searches. **Nothing is added to your `PATH` and no
 environment variable is needed.** Run it once per machine; running it again is
 a no-op.
 
 On macOS it tells you there is nothing to install, because Intel publishes
-Windows and Linux x86-64 builds only, and points you at `ovat chat` — which
+Windows and Linux x86-64 builds only, and points you at `ovat chat` - which
 runs a model locally with no server at all.
 
 > **Why a subcommand and not the wheel?** The archive is 126–185 MB, Linux
 > needs three different builds that cannot be chosen when a wheel is built,
-> and macOS has no build at all — so bundling it would charge every Mac user
+> and macOS has no build at all - so bundling it would charge every Mac user
 > ~180 MB for a binary that cannot run. This is the same shape as
 > `playwright install`.
 
 If you would rather unpack it yourself, the README has the manual steps. One
 warning if you do: take the **`python_on`** build. The C++-only `python_off`
-package cannot do tool calling, and the failure is silent — the agent answers
+package cannot do tool calling, and the failure is silent - the agent answers
 normally and simply never calls a tool.
 
 Then:

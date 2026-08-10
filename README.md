@@ -151,7 +151,7 @@ ovat setup
 ```
 
 That picks the right archive for your OS (and, on Linux, your distro), checks
-its SHA-256, and unpacks it into `~/.ovat/ovms` — a folder OVAT already
+its SHA-256, and unpacks it into `~/.ovat/ovms` - a folder OVAT already
 searches. **Nothing is added to `PATH` and no environment variable is needed.**
 Run it once per machine; it is safe to run again.
 
@@ -257,7 +257,7 @@ ovat serve workflow.yml --stop                # 7. shut it down
 expected: `serve` shows elapsed time and only gives up after five minutes of *no
 progress at all*, so a slow link is fine.
 
-Skipping step 1 is fine too — `ovat serve` will offer to install OVMS when it
+Skipping step 1 is fine too - `ovat serve` will offer to install OVMS when it
 finds none.
 
 On **macOS** there is no OVMS. Use the local path instead. `ovat chat` answers
