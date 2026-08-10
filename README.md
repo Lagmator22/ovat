@@ -2,10 +2,15 @@
 
 **Build a tool-calling AI agent on an Intel AI PC from one YAML file and one command.**
 
+[![Tests](https://github.com/Lagmator22/ovat/actions/workflows/tests.yml/badge.svg)](https://github.com/Lagmator22/ovat/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/ovat)](https://pypi.org/project/ovat/)
+[![Python](https://img.shields.io/pypi/pyversions/ovat)](https://pypi.org/project/ovat/)
+
 ```bash
 pip install ovat
+ovat setup                                    # install the model server, once
 ovat init workflow.yml
-ovat serve workflow.yml                       # start the model server
+ovat serve workflow.yml                       # start it
 ovat run workflow.yml -i "what do my notes say about Q3?"
 ```
 

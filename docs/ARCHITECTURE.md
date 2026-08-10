@@ -403,14 +403,58 @@ catches anyway, so one broken source cannot end the collection thread.
 
 ## Layer 8: Deployment and serving
 
-**Files:** `core/model_server.py`, `core/ovms_locator.py`, `core/model_manager.py`
+**Files:** `core/ovms_installer.py`, `core/model_server.py`, `core/ovms_locator.py`,
+`core/model_manager.py`
+
+### Getting OVMS onto the machine: `ovat setup`
+
+Installing used to be four manual steps and one judgement call: read the
+README, pick one archive out of six, unpack it, then usually export
+`OVAT_OVMS` because it landed somewhere the locator does not search. The
+judgement call is the dangerous part — the `python_off` build cannot tool-call,
+and choosing it gives an agent that answers fluently and silently never calls a
+tool.
+
+```mermaid
+flowchart TD
+    S["ovat setup"] --> P{"platform"}
+    P -->|darwin| M["explain: no macOS build · exit 0"]
+    P -->|win32| W["ovms_windows_..._python_on.zip"]
+    P -->|linux| L["read /etc/os-release →<br/>ubuntu22 · ubuntu24 · redhat"]
+    L -->|unknown distro| WARN["warn, then try ubuntu24"]
+    W --> DL["download"]
+    L --> DL
+    WARN --> DL
+    DL --> SHA{"SHA-256 matches?"}
+    SHA -->|no| STOP["refuse · install nothing"]
+    SHA -->|yes| EX["extract: flatten the archive's ovms/ wrapper,<br/>force the owner's write bit on every member"]
+    EX --> R["~/.ovat/ovms/bin/ovms"]
+```
+
+**Why this is not part of `pip install`.** The archive is 126–185 MB, Linux
+needs three builds that cannot be chosen at wheel-build time, wheels have no
+post-install hook, and macOS has no build at all — a bundled wheel would charge
+every Mac user ~180 MB for a binary that cannot run. A subcommand that fetches
+on demand is the shape `playwright install` and `python -m spacy download` use.
+
+**Two extraction details are load-bearing.** The archive contains a single
+`ovms/` directory; extracting it verbatim under `~/.ovat/ovms` would give
+`~/.ovat/ovms/ovms/bin/ovms`, one level below where the locator looks, so it is
+flattened. And every member's owner-write bit is forced **before** extraction
+begins: OVMS ships mode `0o555`, and reopening such a file for write fails for
+anyone without `CAP_DAC_OVERRIDE`. That made install fail for every non-root
+Linux user while passing in Docker, in CI and in a maintainer's container — all
+of which run as root.
+
+### Starting it: `ovat serve`
 
 ```mermaid
 flowchart TD
     Serve["ovat serve"] --> Locate["find_ovms()"]
     Locate -->|"config → OVAT_OVMS → PATH → known dirs"| Found{"found?"}
-    Found -->|"no"| Hint["say where it looked"]
-    Found -->|"yes"| Env["build child env<br/>PATH + PYTHONHOME"]
+    Found -->|"no, and a TTY"| Offer["offer ovat setup"]
+    Found -->|"no, and no TTY"| Refuse["refuse · download nothing"]
+    Found -->|"yes"| Env["ovms_env()<br/>PATH + PYTHONHOME + LD_LIBRARY_PATH"]
     Env --> Spawn["Popen, logs to a FILE"]
     Spawn --> Wait["wait_until_ready()<br/>STALL budget, no deadline"]
     Wait -->|"health 200"| Ready["ready; pid in ovms.pid"]
@@ -419,9 +463,27 @@ flowchart TD
 ```
 
 **The locator searches `./ovms` first**, because that is where the README's own
-install steps unpack it. It also checks `~/ovms_windows`, `~/ovms`, `C:\ovms` and
-`PATH`. Windows installs are essentially never on `PATH`, which is why `serve`
-works anyway.
+install steps unpack it. It also checks `~/.ovat/ovms` (where `ovat setup`
+puts it), `~/ovms_windows`, `~/ovms`, `C:\ovms` and `PATH`. Windows installs
+are essentially never on `PATH`, which is why `serve` works anyway — and why
+nothing in OVAT ever edits it.
+
+**`ovms_env()` is what setupvars would have done, and it is not cosmetic.** On
+Windows the `python_on` build links `python3xx.dll` out of `<ovms>/python`, not
+the folder beside `ovms.exe`, so the process dies with `0xC0000135` before
+writing one byte of log. On Linux the shape is different: the binary sits at
+`<root>/bin/ovms` and its shared objects at `<root>/lib`, so the root is the
+directory *above* the binary, not the binary's own folder. Getting that one
+level wrong is the whole bug. Proven by running the same binary twice:
+
+| | exit | output |
+| --- | --- | --- |
+| bare | 127 | `libtbb.so.12: cannot open shared object file` |
+| under `ovms_env()` | 0 | `OpenVINO Model Server 2026.2.1` |
+
+It lives as a module-level function rather than inline in `start()` precisely
+so it can be tested without launching a server — while it was inline, the
+Linux branch had never been executed once.
 
 **The child environment is what `setupvars.bat` would have set.** Not just the
 binary's folder: the `python_on` build links `python3xx.dll` from

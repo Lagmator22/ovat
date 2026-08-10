@@ -1,0 +1,163 @@
+name: Tests
+
+# Every bug this project shipped lived in a gap between two machines:
+# `.exe` vs no extension, backslash vs forward slash, Python present vs
+# absent, uid 0 vs uid 1000, SQLite 3.37 vs 3.45. None of them were logic
+# errors, and none would ever appear on a single box. So this matrix is not
+# "a few platforms for confidence" -- it is chosen to open as many of those
+# dimensions at once as GitHub offers.
+on:
+    push:
+        branches: [main]
+    pull_request:
+    workflow_dispatch:
+
+concurrency:
+    # A new push supersedes an in-flight run on the same ref. Reviewing the
+    # results of code that has already been replaced wastes minutes and,
+    # worse, invites a decision based on a stale answer.
+    group: tests-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    suite:
+        name: ${{ matrix.os }} · py${{ matrix.python }}${{ matrix.note }}
+        runs-on: ${{ matrix.os }}
+        timeout-minutes: 25
+        strategy:
+            # One red cell must not cancel the others. Knowing a failure is
+            # Ubuntu-22-only rather than universal is most of the diagnosis,
+            # and fail-fast throws that away.
+            fail-fast: false
+            matrix:
+                include:
+                    # THE IMPORTANT ONE. Ubuntu 22.04 ships SQLite 3.37,
+                    # below the 3.38 where LIMIT began reaching virtual
+                    # tables, and Python 3.10 is the oldest this project
+                    # claims. RAG was silently broken here for every user
+                    # while passing everywhere else. Oldest-supported is the
+                    # cheapest single cell because the most dimensions differ.
+                    - os: ubuntu-22.04
+                      python: "3.10"
+                      note: " · oldest supported"
+                    - os: ubuntu-24.04
+                      python: "3.12"
+                      note: ""
+                    # Windows is the only platform where the executable has an
+                    # extension and paths use backslashes. A suite that runs
+                    # nowhere else once passed ONLY here.
+                    - os: windows-latest
+                      python: "3.12"
+                      note: ""
+                    - os: macos-latest
+                      python: "3.13"
+                      note: " · dev only"
+
+        steps:
+            - uses: actions/checkout@v5
+
+            - uses: actions/setup-python@v6
+              with:
+                  python-version: ${{ matrix.python }}
+                  cache: pip
+
+            # Runners are NOT root, which is the point: the OVMS installer
+            # passed in Docker, in CI and in a maintainer's container -- all
+            # root -- and failed for the first real user, because
+            # CAP_DAC_OVERRIDE ignores the 0o555 modes the archive ships.
+            - name: Confirm this is not a root shell
+              if: runner.os != 'Windows'
+              run: |
+                  echo "uid=$(id -u) user=$(whoami)"
+                  test "$(id -u)" -ne 0 || { echo "::error::running as root; the install path this suite guards is only meaningful unprivileged"; exit 1; }
+
+            - name: Record the environment the results belong to
+              shell: python
+              run: |
+                  import platform, sqlite3, sys
+                  print("python :", sys.version.split()[0])
+                  print("platform:", platform.platform())
+                  # Printed on every run because a version boundary here is
+                  # what made RAG fail on 22.04 and pass everywhere else.
+                  print("sqlite :", sqlite3.sqlite_version)
+
+            - name: Install with every optional engine
+              run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+            - name: Suite
+              # `live` needs a running OVMS and `rag` needs an embedding model
+              # on disk; both auto-skip, and neither belongs in CI.
+              run: python -m pytest -q -m "not live"
+
+    isolation:
+        # AGENTS.md rule 3: the plain CLI must work with NO optional extra
+        # installed. Nothing in the suite above can prove that, because it
+        # installs [dev], which pulls in every framework. Without this job the
+        # contract is only enforced by a test that runs in an environment
+        # where it cannot fail.
+        name: base install pulls in no optional dependency
+        runs-on: ubuntu-22.04
+        timeout-minutes: 12
+        steps:
+            - uses: actions/checkout@v5
+            - uses: actions/setup-python@v6
+              with:
+                  python-version: "3.10"
+                  cache: pip
+
+            - name: Install the BASE package only
+              run: python -m pip install --upgrade pip && python -m pip install .
+
+            - name: Importing the CLI must not drag in a framework or the TUI
+              shell: python
+              run: |
+                  import subprocess, sys
+                  # A subprocess, not an import here: this file's own process
+                  # may already have imported something, and then the check
+                  # would pass by accident.
+                  code = (
+                      "import ovat.cli.main, sys;"
+                      "bad=[m for m in ('textual','pyfiglet','langchain',"
+                      "'llama_index','agents') if m in sys.modules];"
+                      "print('leaked:', bad);"
+                      "sys.exit(1 if bad else 0)"
+                  )
+                  sys.exit(subprocess.run([sys.executable, "-c", code]).returncode)
+
+            - name: Every command still answers without the extras
+              run: |
+                  ovat --version
+                  for c in run chat index init models setup serve doctor telemetry bench; do
+                      printf '%-10s ' "$c"
+                      ovat $c --help > /dev/null && echo ok || { echo FAIL; exit 1; }
+                  done
+
+    wheel:
+        # What users receive, not what the repo contains. PyPI served a build
+        # three commits behind the README for two releases running, and
+        # `ovat setup` did not exist in the version `pip install ovat` gave
+        # people while the README's second line told them to run it.
+        name: the built wheel installs and runs
+        runs-on: ubuntu-22.04
+        timeout-minutes: 12
+        steps:
+            - uses: actions/checkout@v5
+            - uses: actions/setup-python@v6
+              with:
+                  python-version: "3.10"
+                  cache: pip
+
+            - name: Build
+              run: python -m pip install --upgrade pip build && python -m build
+
+            - name: Install the wheel into a clean environment and use it
+              run: |
+                  python -m venv /tmp/fresh
+                  /tmp/fresh/bin/python -m pip install --quiet dist/*.whl
+                  /tmp/fresh/bin/ovat --version
+                  /tmp/fresh/bin/ovat setup --help > /dev/null
+                  /tmp/fresh/bin/ovat init /tmp/w.yml
+                  /tmp/fresh/bin/ovat doctor /tmp/w.yml
+                  # --dry-run builds the whole agent without a server, so this
+                  # exercises config load, the factory and every tool schema.
+                  /tmp/fresh/bin/ovat run /tmp/w.yml -i hi --dry-run

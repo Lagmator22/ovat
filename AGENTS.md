@@ -319,11 +319,40 @@ and a fake HOME, or they describe the developer's machine instead of the code.
   nothing, `serve` unable to survive a first-run download, the locator missing
   the very folder the README says to unpack OVAT into, RAM figures measured on
   the wrong process, and a stray `</think>` in every CLI answer. See Landmines.
-- Published to PyPI as `ovat` (0.9.x), so `pip install ovat` finally works.
-  `.github/workflows/publish.yml` handles releases.
-- Still open: W9-W10 remainder (OpenTelemetry proper, stress tests, OVMS
-  Docker integration tests), an API reference, CI for the test suite
-  (deliberately postponed), and the mentor ask to strip/audit NVIDIA's NeMo
-  Agent Toolkit for what OVAT should adopt (Ravi: critical). The plano ask is
-  DONE: `examples/plano/` points it at OVMS, with the /v1-vs-/v3 path, the
-  provider prefix and the missing-`id` bridge all solved and tested.
+- Published to PyPI as `ovat`. `.github/workflows/publish.yml` handles
+  releases, triggered by `workflow_dispatch` rather than the release event:
+  0.9.11 and 0.9.12 were both published correctly and NEITHER fired the
+  workflow, so PyPI sat two versions behind main while the README told people
+  to run a command that did not exist in what they installed.
+- **Install repair, 0.9.14 to 1.0.0.** `ovat setup` installs OVMS in one
+  command, no PATH edit (`core/ovms_installer.py`). Then five bugs found by
+  running it somewhere else, all one species -- code correct only on the
+  machine that wrote it:
+    1. install failed for EVERY non-root Linux user (0o555 members reopened
+       for write; root has CAP_DAC_OVERRIDE, so Docker/CI/containers all
+       passed)
+    2. the Linux `LD_LIBRARY_PATH` branch had never been executed once; it is
+       now `model_server.ovms_env()`, testable, and proved by A/B
+    3. the suite could only pass on Windows (one assertion required a file to
+       both exist and not exist wherever `_EXE` is plain `ovms`)
+    4. `request_timeout: 120` cut off working CPU servers (an agent turn is
+       max_iterations rounds; first cold run measured 1056s)
+    5. RAG silently returned nothing on SQLite < 3.38 -- Ubuntu 22.04 --
+       because `LIMIT ?` only reaches a virtual table from 3.38. `k = ?` is
+       sqlite-vec's own form and needs no push-down. It did not error; it
+       answered confidently with no citation.
+- **CI exists now** (`.github/workflows/tests.yml`), and the matrix is chosen,
+  not arbitrary: ubuntu-22.04 + py3.10 is the oldest supported everything,
+  which is where the most dimensions differ at once and where 3 of the 5 bugs
+  above lived. Jobs also assert the runner is not root, that a BASE install
+  imports no framework or textual (rule 3, which the [dev] suite cannot
+  prove), and that the built WHEEL installs and runs.
+- Verified for 1.0.0: Ubuntu 22.04.5 / SQLite 3.37.2 as uid 1000 (580 passed,
+  live RAG citation, 4/4 engines), Windows 11 / Arc 140V GPU + NPU (setup,
+  serve, run, bench, stop), macOS as dev only.
+- Still open: OpenTelemetry proper, stress tests, OVMS Docker integration
+  tests, an API reference, GPU/NPU verification on LINUX (WSL2 exposes no
+  /dev/dri), and the mentor ask to strip/audit NVIDIA's NeMo Agent Toolkit
+  (Ravi: critical). The plano ask is DONE: `examples/plano/` points it at
+  OVMS, with the /v1-vs-/v3 path, the provider prefix and the missing-`id`
+  bridge all solved and tested.
