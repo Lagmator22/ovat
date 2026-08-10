@@ -388,7 +388,7 @@ model runs in-process.
 
 | | macOS | Windows 11 | Linux |
 | --- | --- | --- | --- |
-| `init` `doctor` `index` `validate` | ✅ | ✅ | ✅ |
+| `init` `doctor` `index` `setup` `telemetry` | ✅ | ✅ | ✅ |
 | `chat` (local model, no server) + TUI | ✅ | ✅ | ✅ |
 | `serve` `models` `run` `bench` | ❌ | ✅ | ✅ |
 | GPU / NPU | ❌ CPU only | ✅ | ✅ |

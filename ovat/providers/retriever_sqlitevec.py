@@ -157,9 +157,26 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         self._check_open()
         qvec = self.embedder.embed([query])[0]         # embed the question
         # Step 1: nearest-neighbour search on the vector table.
+        # `k = ?`, not `LIMIT ?`. Both express "give me the nearest top_k", but
+        # LIMIT only reaches a virtual table if SQLite pushes it down into
+        # xBestIndex, and SQLite only started doing that in 3.38. On anything
+        # older sqlite-vec never sees a bound and refuses the query outright:
+        #
+        #   sqlite3.OperationalError: A LIMIT or 'k = ?' constraint is
+        #   required on vec0 knn queries.
+        #
+        # Ubuntu 22.04 -- a platform this project's own README supports --
+        # ships SQLite 3.37.2. Windows ships 3.50.4 and Ubuntu 24.04 ships
+        # 3.45, so the same sqlite-vec 0.1.9 worked on every machine this had
+        # ever been run on, and RAG was silently broken for everyone else:
+        # `ovat index` reported success, the query returned nothing, and the
+        # model improvised an answer with no citation.
+        #
+        # `k = ?` is sqlite-vec's own KNN form and needs no push-down, so it
+        # behaves identically on both sides of 3.38.
         rows = self.db.execute(
             "SELECT rowid, distance FROM docs "
-            "WHERE embedding MATCH ? ORDER BY distance LIMIT ?",
+            "WHERE embedding MATCH ? AND k = ? ORDER BY distance",
             (sqlite_vec.serialize_float32(qvec), top_k),
         ).fetchall()
         # Step 2: pull the matching text + source from the chunks table by rowid.

@@ -279,3 +279,30 @@ def test_chunks_without_a_source_are_still_stored():
     retriever.add(["no source here"])
     retriever.add(["no source here"])
     assert _rowcounts(retriever) == (2, 2)
+
+
+def test_knn_query_uses_k_not_limit():
+    """`LIMIT ?` only reaches a virtual table if SQLite pushes it into
+    xBestIndex, and SQLite only started doing that in 3.38.
+
+    Ubuntu 22.04 -- supported in this project's own README -- ships 3.37.2, so
+    sqlite-vec refused the query outright: "A LIMIT or 'k = ?' constraint is
+    required on vec0 knn queries." Windows ships 3.50.4 and Ubuntu 24.04 ships
+    3.45, so every machine this had run on hid it, and RAG failed silently for
+    everyone else -- index reported success, retrieval returned nothing, and
+    the model answered with no citation.
+
+    Asserted against the source because reproducing it needs an interpreter
+    linked against SQLite < 3.38, which the machines running this suite are
+    not.
+    """
+    import inspect
+    from ovat.providers import retriever_sqlitevec
+
+    source = inspect.getsource(retriever_sqlitevec.SQLiteVecRetrieverProvider.retrieve)
+    # Comment lines dropped: the comment explaining the bug necessarily
+    # contains the very string this asserts is absent from the SQL.
+    code = "\n".join(line for line in source.splitlines()
+                     if not line.lstrip().startswith("#"))
+    assert "k = ?" in code, "KNN must use sqlite-vec's own k = ? form"
+    assert "LIMIT ?" not in code, "LIMIT ? breaks on SQLite < 3.38"

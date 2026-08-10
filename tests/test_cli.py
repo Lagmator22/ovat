@@ -675,8 +675,15 @@ def test_malformed_yaml_gives_the_line_and_column(tmp_path):
     result = runner.invoke(app, ["run", str(config), "-i", "hi"])
     assert result.exit_code == 1
     assert "Traceback" not in result.output
-    assert "not valid YAML" in result.output
-    assert "line" in result.output
+    # Collapse whitespace before matching. Rich wraps to the terminal width,
+    # so on a narrow console this message breaks as "not \nvalid YAML" and a
+    # substring check fails -- on the product being RIGHT. It passed on a wide
+    # developer console and failed in a container, which makes it the same
+    # environment-sensitive class of bug as everything else this release
+    # fixed: a test that measures the window rather than the code.
+    flat = " ".join(result.output.split())
+    assert "not valid YAML" in flat
+    assert "line" in flat
 
 
 def test_an_unknown_key_is_named_and_explained(tmp_path):
