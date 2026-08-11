@@ -1233,6 +1233,12 @@ def test_an_ordinary_failure_does_not_get_the_timeout_advice(tmp_path,
 def test_setup_command_is_reachable_and_reports_what_it_did(monkeypatch):
     from ovat.core import ovms_installer
 
+    # installed_binary too, not just install(): the command checks for an
+    # existing install FIRST and reports "already installed", so on any machine
+    # that really has OVMS this asserted against the real path. It passed only
+    # where OVMS was absent -- the same works-on-my-machine shape this release
+    # is about, and I wrote it.
+    monkeypatch.setattr(ovms_installer, "installed_binary", lambda root=None: None)
     monkeypatch.setattr(ovms_installer, "install",
                         lambda **kw: ("/somewhere/ovms", "installed"))
     monkeypatch.setattr(ovms_installer, "asset_for_platform",

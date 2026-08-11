@@ -12,7 +12,13 @@ class DeviceManager:
     """Detects available hardware and recommends a device per model type.
 
     Routing rules (Layer 9 proposal table):
-      - Embeddings -> NPU if available (small, static-shape, low power). NPU can't do tool calling, 
+      - Embeddings -> NPU if available (small, static-shape, low power).
+        MEASURED ON AN AI PC, 2026-08-11: OVMS does not start on NPU for
+        either Qwen3.5-4B or Qwen3.5-0.8B. Both fail identically at model
+        COMPILATION -- [NPU_VCL] Compilation failed (0x78000004) -- before a
+        single token is generated. Not a tool-calling limit, and not the
+        dynamic-shape limit either: the export does not compile for the NPU
+        plugin on this stack. Embeddings compile and run there fine. the NPU is not used for the LLM (see below), 
                       so ONLY embeddings go here.
       - LLM        -> GPU if available (dynamic shapes, KV cache, tool calling).
       - Whisper    -> CPU (small model, CPU latency is fine).

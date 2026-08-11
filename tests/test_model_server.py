@@ -89,6 +89,17 @@ def _never_ready(monkeypatch):
     """
     def refuse(*args, **kwargs):
         raise OSError("no server in this test")
+    # build_opener().open(), NOT urlopen: the proxy fix changed the call and
+    # this guard was not updated, so the probe reached real localhost:8000. A
+    # live OVMS answered 200 and wait_until_ready returned on the first poll;
+    # with nothing listening it burned a 2s connect timeout per poll and hung
+    # the file. Both halves of one dead patch.
+    class _Opener:
+        def open(self, *a, **k):
+            return refuse(*a, **k)
+
+    monkeypatch.setattr("ovat.core.model_server.urllib.request.build_opener",
+                        lambda *a, **k: _Opener())
     monkeypatch.setattr("ovat.core.model_server.urllib.request.urlopen", refuse)
 
 
