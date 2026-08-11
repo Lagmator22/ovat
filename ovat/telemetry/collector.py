@@ -27,6 +27,26 @@ class Collector:
         return [s for s in self.sources if s.unavailable is None]
 
     @property
+    def notes(self) -> dict:
+        """Sources that ARE live but cannot currently produce numbers.
+
+        A third state, and the one that reads worst when it is not shown.
+        `unavailable` covers a source that could not start; this covers one
+        that started and emits nothing anyway -- Intel UT on a build whose
+        continuous mode writes binary traces instead of streaming values.
+        Reported from an AI PC: the table showed no GPU, NPU or power rows and
+        no line saying why, which is indistinguishable from idle hardware.
+        """
+        found = {}
+        for source in self.sources:
+            if getattr(source, "unavailable", None) is not None:
+                continue                      # already explained elsewhere
+            note = getattr(source, "note", None)
+            if note:
+                found[source.name] = note
+        return found
+
+    @property
     def unavailable(self) -> dict:
         """name -> the sentence explaining why, for the page to show.
 

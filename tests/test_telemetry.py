@@ -418,3 +418,36 @@ def test_intel_ut_is_told_where_to_write_and_cleans_it_up(monkeypatch, tmp_path)
         f.write(b"\x00" * 32)
     source.stop()
     assert not os.path.exists(out_dir), "the trace directory was left behind"
+
+
+def test_a_source_that_is_live_but_silent_is_reported():
+    """Three states, not two: unavailable, live-and-producing, live-and-silent.
+
+    Intel UT on a build whose continuous mode writes binary traces starts
+    fine and emits nothing. Reported from an AI PC: no GPU, NPU or power rows
+    and no line saying why, which is indistinguishable from idle hardware.
+    """
+    from ovat.telemetry.collector import Collector
+
+    class Silent:
+        name = "intel"
+        unavailable = None                      # it DID start
+        note = "writes binary traces; decode with bin2perfetto"
+
+        def sample(self):
+            return {}
+
+    class Fine:
+        name = "system"
+        unavailable = None
+        note = None
+
+        def sample(self):
+            return {"cpu_pct": 3.0}
+
+    collector = Collector([Silent(), Fine()], sink=None)
+    assert collector.notes == {
+        "intel": "writes binary traces; decode with bin2perfetto"}
+    # a healthy source contributes no note, and an explained-elsewhere one
+    # must not be reported twice
+    assert "system" not in collector.notes

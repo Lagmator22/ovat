@@ -1321,6 +1321,13 @@ def telemetry(
     for name, reason in collector.unavailable.items():
         rprint(f"[yellow]{esc(name)}[/yellow] unavailable: [dim]{esc(reason)}"
                f"[/dim]")
+    # And the third state: started, but producing nothing. Without this the
+    # table just has no Intel rows, which reads as idle hardware rather than
+    # unreadable hardware -- the same "absent is not zero" rule the token
+    # counts follow.
+    for name, note in collector.notes.items():
+        rprint(f"[yellow]{esc(name)}[/yellow] live but silent: "
+               f"[dim]{esc(note)}[/dim]")
     if not collector.available:
         rprint("[red]No telemetry sources work here.[/red]")
         raise typer.Exit(code=1)
