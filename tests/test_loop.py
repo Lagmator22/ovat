@@ -318,3 +318,31 @@ def test_a_real_answer_is_never_mistaken_for_an_empty_one():
     # and --trace plus the session must keep what the model actually sent.
     assert "Under 8 GB." in agent.run("q")
     assert not agent.last_trace["totals"].get("empty_answer")
+
+
+def test_an_undecoded_tool_call_names_the_cache_as_well_as_the_parser():
+    """The parser is the obvious cause and often not the real one.
+
+    Measured on an AI PC: 4/4 runs failed with a correct tool_parser on a
+    server whose KV cache was at 98-100%, and 17/17 succeeded on a freshly
+    started one. The old message named only the parser, which sent a whole
+    verification session chasing a component that was working.
+    """
+    class CutOffMidCall:
+        """What a full KV cache produces: generation stops mid-markup, so the
+        server has a fragment to parse and correctly refuses it."""
+
+        def chat(self, messages, tools=None):
+            return {"finish_reason": "stop",
+                    "content": "<tool_call>\n<function=search_docs>\n<parameter=",
+                    "tool_calls": None, "usage": None, "raw": None}
+
+    agent = AgentLoop(CutOffMidCall(), tools={}, max_iterations=2)
+    answer = agent.run("anything")
+
+    assert agent.last_trace["totals"]["undecoded_tool_call"] is True
+    assert agent.last_trace["totals"]["failed"] is True
+    # both causes, and what to do about the one that is not obvious
+    assert "tool_parser" in answer
+    assert "KV cache" in answer
+    assert "ovms_cache_size_gb" in answer or "Restart OVMS" in answer

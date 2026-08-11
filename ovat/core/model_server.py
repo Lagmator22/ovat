@@ -87,6 +87,7 @@ class ModelServer:
                  reasoning_parser: str | None = None,
                  task: str = "text_generation",
                  enable_prefix_caching: bool = True,
+                 cache_size_gb: float | None = None,
                  binary: str = "ovms"):
         self.model_name = model_name
         # Note to myself: source_model is the Hugging Face id OVMS downloads if
@@ -102,6 +103,7 @@ class ModelServer:
         # task text_generation is what turns on the chat endpoints I call.
         self.task = task
         self.enable_prefix_caching = enable_prefix_caching
+        self.cache_size_gb = cache_size_gb
         # The resolved executable ("ovms" if on PATH, or a full path found by
         # ovms_locator). Launching by full path means no setupvars.bat needed.
         self.binary = binary
@@ -143,6 +145,8 @@ class ModelServer:
         # and turning it off should be a YAML edit, not a code edit.
         if self.enable_prefix_caching:
             cmd += ["--enable_prefix_caching", "true"]
+        if self.cache_size_gb:
+            cmd += ["--cache_size", str(self.cache_size_gb)]
         if self.reasoning_parser:
             cmd += ["--reasoning_parser", self.reasoning_parser]
         # I only add source_model when I have one. On the first run OVMS uses it

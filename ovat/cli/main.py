@@ -1145,6 +1145,7 @@ def serve(
         tool_parser=cfg.model.tool_parser,
         reasoning_parser=cfg.model.reasoning_parser,
         enable_prefix_caching=cfg.model.enable_prefix_caching,
+        cache_size_gb=cfg.model.ovms_cache_size_gb,
         binary=binary,
     )
     if stall_timeout is None:

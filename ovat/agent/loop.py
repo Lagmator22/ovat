@@ -216,14 +216,24 @@ class AgentLoop:
                     undecoded[0] = True
                     return _finish(
                         "Error: the model asked for a tool but the server "
-                        "could not decode the request, so no tool ran. This is "
-                        "usually the wrong tool_parser for this model family "
-                        "(Qwen3.5 needs qwen3coder, Qwen3 needs hermes3); it "
-                        "can also be a malformed call, which a retry often "
-                        "clears. The raw reply is in the session history and "
-                        "the trace; it is deliberately not repeated here, "
-                        "because printing it is what made this look like an "
-                        "answer in the first place.")
+                        "could not decode the request, so no tool ran.\n"
+                        "Two causes, and the second is easy to mistake for "
+                        "the first:\n"
+                        "  1. the wrong tool_parser for this model family "
+                        "(Qwen3.5 needs qwen3coder, Qwen3 needs hermes3). "
+                        "Check it once; if it is right, it is not this.\n"
+                        "  2. the server ran out of KV cache. A full cache "
+                        "leaves no room to finish generating, so the tool-call "
+                        "markup is cut off mid-block and a parser cannot "
+                        "decode a fragment. Measured on an AI PC: 4/4 runs "
+                        "failed this way on a server whose cache was at 98-100%, "
+                        "and 17/17 succeeded on a freshly started one -- same "
+                        "model, same parser. Restart OVMS, or raise "
+                        "model.ovms_cache_size_gb.\n"
+                        "The raw reply is in the session history and the "
+                        "trace; it is deliberately not repeated here, because "
+                        "printing it is what made this look like an answer in "
+                        "the first place.")
                 # Third shape of the same failure, and the quietest. A parser
                 # that does not match the model's format can SWALLOW the call
                 # instead of passing it through: measured live with hermes3

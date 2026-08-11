@@ -108,6 +108,22 @@ class ModelConfig(StrictModel):
     # so `ovat serve`/`ovat models` accept the location here. Also settable
     # via the OVAT_OVMS environment variable; PATH still works too.
     ovms_binary: str | None = None
+    # KV cache OVMS may use, in GB. None means "do not pass the flag", so the
+    # server keeps its own default and this changes nothing for anyone who
+    # does not set it.
+    #
+    # Why it is worth having. Measured on an AI PC: a long-lived server whose
+    # KV cache was reported at 98-100% of 3.6 GB failed 4/4 agent runs with a
+    # tool call the parser could not decode, while a freshly started server on
+    # the same machine, same model and same parser, decoded 17/17. A full cache
+    # leaves no room to finish generating, the `<tool_call>` markup is cut off
+    # mid-block, and a parser cannot decode a fragment -- so it passes it
+    # through as prose and the agent answers having run no tool.
+    #
+    # It looks like a parser bug and it is a capacity problem, which is why it
+    # cost a whole session to chase. Raise this if you run many turns or long
+    # answers in one session.
+    ovms_cache_size_gb: float | None = None
 
     # Which OVMS parser suits which model family. Data, not branching, so a
     # new family is one line. Longest prefix first: "qwen3.5" has to be tested
