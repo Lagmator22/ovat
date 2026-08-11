@@ -18,7 +18,7 @@
 
 model:
   name: Qwen3.5-4B-int4-ov
-  device: GPU                     # NPU cannot do tool calling; see AGENTS.md
+  device: GPU                     # NPU is a poor fit for agents (static shapes); use CPU or GPU
   ovms_url: http://localhost:8000/v3
   tool_parser: qwen3coder     # MEASURED: 'auto' decodes no tool calls for Qwen3.5
   source_model: OpenVINO/Qwen3.5-4B-int4-ov

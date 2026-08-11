@@ -11,7 +11,7 @@ because Python has already freed the large allocations by then.
 
 The device routing table sends the LLM to the GPU when one is present,
 embeddings to the CPU, and Whisper to the CPU. The NPU is never chosen for a
-tool-calling agent, because the NPU does not support tool calling. The NPU is
+tool-calling agent, because the NPU plugin favours static shapes while an agent prompt grows every round. The NPU is
 still used for embeddings and for plain chat.
 
 ## The four engines

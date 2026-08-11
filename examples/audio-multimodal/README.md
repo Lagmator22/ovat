@@ -83,4 +83,4 @@ token counts where the server reports them.
 - **Absolute paths are safest** for `OVAT_VLM_MODEL` and
   `OVAT_WHISPER_MODEL`; a relative path is resolved from wherever you
   launched the command.
-- **NPU cannot do tool calling.** Keep `device:` on `CPU` or `GPU` here.
+- **Keep `device:` on `CPU` or `GPU`.** No accelerator executes tools; the NPU is a poor fit because its plugin favours static shapes while an agent prompt grows every round.

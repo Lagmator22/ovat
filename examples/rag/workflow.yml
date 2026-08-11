@@ -18,7 +18,7 @@ model:
   # machine swap both lines for Qwen3.5-0.8B-int4-ov (0.9 GB).
   name: Qwen3.5-4B-int4-ov
   source_model: OpenVINO/Qwen3.5-4B-int4-ov
-  device: GPU                     # CPU works; NPU cannot do tool calling
+  device: GPU                     # NPU is a poor fit for agents (static shapes); use CPU or GPU
   ovms_url: http://localhost:8000/v3
   # Name the parser explicitly. Leaving this out, or setting 'auto', makes
   # OVMS pick from the chat template - and for Qwen3.5 it picks NOTHING:
