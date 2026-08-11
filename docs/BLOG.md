@@ -358,6 +358,13 @@ laptop cannot hold. Three tiers:
 | `Qwen3.5-4B-int4-ov` | 3.5 GB | 4.3 GB steady, **6.5 GB peak** | the default; 16 GB machines |
 | `Qwen3-8B-int4-ov` | 4.9 GB | ~6-7 GB | strongest text; no vision |
 
+> **These are steady-state figures for a short answer.** A long generation grows
+> the KV cache as it goes, and that is not included above. Measured on an AI PC
+> during a runaway 18-minute request, the KV cache grew 3.6 → 5.8 GB and
+> `ovms.exe` reached **10.6 GB** resident. Cap it with `agent.max_iterations`
+> and the model's own answer length if you are near your RAM limit; the steady
+> figures are what to plan for, not a ceiling.
+
 The 4B numbers are measured on a real Intel AI PC; the rows written with `~` are estimates from parameter count and precision, not measurements. Note the peak sits **2.2 GB
 above** steady state, the load spike decides whether it fits, which is why an
 8 GB machine should start at 0.8B even though 4B "looks" like it fits.

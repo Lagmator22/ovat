@@ -232,6 +232,13 @@ These are pre-converted OpenVINO IR, no conversion needed.
 
 **Which of these are measured.** The Qwen3.5-4B row is measured on an Intel AI PC, read from the OVMS process (the model's memory lives there, not in OVAT). Download sizes come from the model cards. Every figure written with `~` is an ESTIMATE from parameter count and precision, not a measurement -- if you need a number you can rely on for capacity planning, measure it on your own machine with `ovat run --telemetry`.
 
+> **These are steady-state figures for a short answer.** A long generation grows
+> the KV cache as it goes, and that is not included above. Measured on an AI PC
+> during a runaway 18-minute request, the KV cache grew 3.6 → 5.8 GB and
+> `ovms.exe` reached **10.6 GB** resident. Cap it with `agent.max_iterations`
+> and the model's own answer length if you are near your RAM limit; the steady
+> figures are what to plan for, not a ceiling.
+
 The 4B figures are **measured on an Intel AI PC**. The peak sits 2.2 GB above
 steady state, and the load spike is what decides whether a model fits, so 8 GB
 machines should prefer the 0.8B tier.
