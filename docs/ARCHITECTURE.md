@@ -109,28 +109,29 @@ flowchart TD
 
 ---
 
-## 3. Layering rules that must not be broken
+## 3. Four design rules, and what each protects
 
-Four invariants. Each exists because breaking it caused a real bug.
+If you extend OVAT, these are the constraints to work within. Each one exists
+because breaking it produced a bug that reached a user.
 
-**The CLI must work with no TUI installed.** `textual` and `pyfiglet` live in the
+**Optional dependencies stay optional.** `textual` and `pyfiglet` live in the
 `[tui]` extra only. Module-level `import textual` is permitted in exactly six
 files (`tui.py`, `chat_screen.py`, `doctor_screen.py`, `widgets.py`, `theme.py`,
 `commands.py`) and `tests/test_tui_isolation.py` enforces it. The same applies to
 the framework engines: importing the CLI must pull in none of langchain,
 llama_index or agents.
 
-**`ovat/agent/` must not import from `ovat/cli/`.** The loop is not allowed to
+**The agent core does not depend on presentation.** The loop is not allowed to
 depend on presentation. When both layers needed the same text helpers, the answer
 was a neutral `ovat/text.py`, not an upward import.
 
-**One source of truth per concept.** Colours live in `ui.PALETTE`. Tool contracts
+**Each concept is defined in exactly one place.** Colours live in `ui.PALETTE`. Tool contracts
 live in the co-located `SCHEMA` dicts, and every engine derives arguments from
 them via `arg_models.py`. Config validity lives in `workflow.py`. Config
 *loading* happens only in `main._load_config`. A second copy is how two copies
 drift.
 
-**Errors are for users.** A tool or agent failure becomes a readable string the
+**Failures are written for the person reading them.** A tool or agent failure becomes a readable string the
 model or the human can act on, never a bare traceback on the CLI or TUI path.
 
 ---
@@ -289,11 +290,15 @@ flowchart TD
     end
 ```
 
-`build_llm` is annotated `-> LLMProvider`, not a concrete class. It once returned
-`-> OVMSLLMProvider` and hardcoded that plug, which made `GenAILLMProvider`
-unreachable from `build_agent` even though it honoured the contract. **A factory
-whose signature names a concrete class has stopped using its own abstraction, and
-the annotation is the tell.**
+**How to add an LLM backend.** Implement `LLMProvider` (one method, `chat`),
+then register it in `build_llm` behind a `model.provider` string. Nothing above
+Layer 4 changes: the agent loop and all four engines only ever see the
+interface.
+
+The factory returns `LLMProvider`, never a concrete class. That is deliberate
+and worth copying if you extend it — a factory whose return type names one
+implementation can only ever produce that implementation, however many others
+satisfy the contract.
 
 Notes on the retriever:
 
@@ -556,8 +561,9 @@ The default model is `Qwen3.5-4B-int4-ov`: 3.5 GB, and a **unified** export, tex
 RAG, ReAct and audio+vision examples therefore share a single download instead of
 needing a separate ~5 GB vision model.
 
-That created a real classification problem. On disk, a unified export is
-**indistinguishable** from a vision-only one: both carry
+**Why OVAT has to inspect the folder rather than trust the file layout.**
+A unified export and a vision-only one are indistinguishable on disk: both
+carry
 `openvino_vision_embeddings_*.xml` and `openvino_language_model.xml`, and neither
 has the plain `openvino_model.xml` that marks a text LLM.
 

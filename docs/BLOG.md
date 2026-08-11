@@ -28,6 +28,20 @@ An "AI agent" is a simple idea: a model that can call your functions. Ask it
 about a file, and instead of guessing, it calls `search_docs` and reads the
 answer back to you.
 
+**The thing worth changing is not how much code that takes — it is that it
+takes code at all.** Building an agent should be a matter of stating what you
+want: this model, on this device, with these tools and this system prompt.
+Instead it means picking an orchestration framework, learning its API, wiring a
+model server to it, and rewriting the same loop each time you change your mind
+about any of those.
+
+OVAT makes those choices **configuration**. The framework is one word in a YAML
+file, and swapping it changes nothing else — not your tools, not your prompt,
+not a line of Python. That is the difference: you spend your attention on the
+tools, the prompt and the model, and none of it on the machinery underneath.
+
+Here is the machinery you would otherwise own.
+
 The idea is simple. The code is not. Here is the smallest honest version of a
 tool-calling agent against a local model server:
 
@@ -347,10 +361,19 @@ Full walkthrough: [`examples/audio-multimodal/`](../examples/audio-multimodal/).
 
 ---
 
-## 8. Choosing a model for your machine
+## 8. System requirements
 
-The single most common way to have a bad first experience is picking a model your
-laptop cannot hold. Three tiers:
+Start from what your machine has, then pick the model that fits it.
+
+| You have | Start with | Expect |
+| --- | --- | --- |
+| **8 GB RAM** | `Qwen3.5-0.8B-int4-ov` | fast, fine for wiring up tools; weaker answers |
+| **16 GB RAM** | `Qwen3.5-4B-int4-ov` (default) | text, vision and tool calling in one model |
+| **16 GB + Arc GPU** | same, `device: GPU` | measured 11 s vs 19 s on CPU for the same question |
+| **No Intel GPU** | same, `device: CPU` | works; the first question of a session is slow, later ones hit the prefix cache |
+| **macOS** | `ovat chat` | development and local retrieval; OVMS has no macOS build |
+
+And the models themselves:
 
 | Model | Download | RAM | For |
 | --- | --- | --- | --- |
