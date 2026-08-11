@@ -229,6 +229,9 @@ These are pre-converted OpenVINO IR, no conversion needed.
 | [`Qwen3-8B-int4-ov`](https://huggingface.co/OpenVINO/Qwen3-8B-int4-ov) | 4.9 GB | ~6-7 GB | strongest text answers; no vision |
 | [`whisper-base-int8-ov`](https://huggingface.co/OpenVINO/whisper-base-int8-ov) | 0.08 GB | small | the `transcribe` tool |
 
+
+**Which of these are measured.** The Qwen3.5-4B row is measured on an Intel AI PC, read from the OVMS process (the model's memory lives there, not in OVAT). Download sizes come from the model cards. Every figure written with `~` is an ESTIMATE from parameter count and precision, not a measurement -- if you need a number you can rely on for capacity planning, measure it on your own machine with `ovat run --telemetry`.
+
 The 4B figures are **measured on an Intel AI PC**. The peak sits 2.2 GB above
 steady state, and the load spike is what decides whether a model fits, so 8 GB
 machines should prefer the 0.8B tier.

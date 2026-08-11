@@ -234,7 +234,7 @@ ovat run examples/rag/workflow.yml -i "What is OVAT's memory budget?"
 ```
 
 ```
-OVAT's memory budget is under 8 GB for a full agent run on the minimal tier.
+On the minimal tier a full agent run fits in 8 GB. That is the target the project set itself; the number to trust on your own machine is the one `ovat run --telemetry` reports there.
 
 sources: examples/rag/docs/ovat-facts.md
 ```
@@ -358,7 +358,7 @@ laptop cannot hold. Three tiers:
 | `Qwen3.5-4B-int4-ov` | 3.5 GB | 4.3 GB steady, **6.5 GB peak** | the default; 16 GB machines |
 | `Qwen3-8B-int4-ov` | 4.9 GB | ~6-7 GB | strongest text; no vision |
 
-The 4B numbers are measured on a real Intel AI PC. Note the peak sits **2.2 GB
+The 4B numbers are measured on a real Intel AI PC; the rows written with `~` are estimates from parameter count and precision, not measurements. Note the peak sits **2.2 GB
 above** steady state, the load spike decides whether it fits, which is why an
 8 GB machine should start at 0.8B even though 4B "looks" like it fits.
 
