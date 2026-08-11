@@ -11,6 +11,7 @@ The retriever argument is any RetrieverProvider. I never name a concrete class
 here, so the same indexer works whether the vectors land in sqlite-vec today or
 some other backend tomorrow.
 """
+import os
 from pathlib import Path
 
 from ovat.providers.base import RetrieverProvider
@@ -94,15 +95,27 @@ def index_folder(folder: str, retriever: RetrieverProvider,
     total_chunks = 0
     for done, path in enumerate(paths, start=1):
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
+            # utf-8-SIG, not utf-8: a file saved with a BOM (the Windows default
+            # for several editors, and what Notepad writes) starts with U+FEFF,
+            # and plain utf-8 keeps it. It then rode into the chunk, the vector
+            # and the citation -- retrieval on an AI PC returned
+            # '\ufeffThe Q3 review concluded...' as the stored text. utf-8-sig
+            # strips it when present and is identical to utf-8 when it is not.
+            text = path.read_text(encoding="utf-8-sig", errors="ignore")
         except (OSError, UnicodeDecodeError):
             if on_progress is not None:
                 on_progress(done, total, str(path))
             continue
         chunks = chunk_text(text, size=size, overlap=overlap)
         if chunks:
-            # One source string per chunk, all pointing back at this file.
-            sources = [str(path)] * len(chunks)
+            # NORMALISED, because the source string is the key add() deletes
+            # by before re-inserting. "docs\\notes.md" and ".\\docs\\notes.md"
+            # are the same file and different strings, so indexing the same
+            # folder twice via different path spellings appended instead of
+            # replacing: one AI PC index held three identical copies of the
+            # same document, which then crowd out every other result.
+            key = os.path.normpath(str(path))
+            sources = [key] * len(chunks)
             retriever.add(chunks, sources=sources)
             total_files += 1
             total_chunks += len(chunks)

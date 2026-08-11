@@ -1324,3 +1324,48 @@ def test_models_list_is_reachable_and_needs_no_network(monkeypatch):
     # is raise: `models` is the one command whose whole job is talking to a
     # binary that is usually absent.
     assert "Traceback" not in result.output
+
+
+def test_a_run_that_could_not_answer_exits_non_zero(monkeypatch):
+    """Failures are delivered AS the answer, so the exit code is the only
+    signal a script can read.
+
+    The loop returns "Error: ..." as the answer text because the model has to
+    be able to read it. `ovat run` then printed it and exited 0, so on an AI PC
+    four consecutive failed runs all reported success -- undetectable by CI, a
+    benchmark, or any wrapper script.
+    """
+    from ovat.cli import main as cli_main
+
+    class Failing:
+        tools, max_iterations = {}, 5
+        last_trace = {"totals": {"failed": True, "undecoded_tool_call": True}}
+
+        def run(self, text):
+            return ("Error: the model asked for a tool but the server could "
+                    "not decode the request, so no tool ran.")
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: Failing())
+    result = runner.invoke(app, ["run", "examples/workflow.yml", "-i", "hi"])
+
+    assert result.exit_code == 1
+    # and the human still gets the explanation, not just a bare status
+    assert "could not decode" in result.output
+
+
+def test_a_successful_run_still_exits_zero(monkeypatch):
+    """The other half: a good answer must not be reported as a failure."""
+    from ovat.cli import main as cli_main
+
+    class Working:
+        tools, max_iterations = {}, 5
+        last_trace = {"totals": {"failed": False}}
+
+        def run(self, text):
+            return "I have search_docs and transcribe."
+
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: Working())
+    result = runner.invoke(app, ["run", "examples/workflow.yml", "-i", "hi"])
+    assert result.exit_code == 0

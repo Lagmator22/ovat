@@ -344,6 +344,11 @@ def run(
     # with a stray </think> in it (its chat template supplies the opening tag,
     # so the model emits only the terminator). --trace still records the raw
     # text; this is display only.
+    # A run that could not answer must EXIT non-zero. The loop returns its
+    # failures as the answer text (the model needs to read them), so without
+    # this the CLI printed "Error: ..." and reported success.
+    failed = bool((getattr(agent, "last_trace", None) or {})
+                  .get("totals", {}).get("failed"))
     answer = ui.strip_thinking(answer) or answer
 
     # An answer that still CONTAINS tool-call markup is a tool call that was
@@ -394,6 +399,13 @@ def run(
         rprint(f"[dim]telemetry written to[/dim] {esc(telemetry)}")
     if trace:
         _write_trace(trace, cfg, agent, peak_rss_mb=memory.peak_mb)
+
+    # LAST, after the answer, the sources, the telemetry and the trace have all
+    # been written. The exit code is the only part of this a script can read,
+    # and a run that could not answer has to report that -- but a non-zero exit
+    # must not cost the human the diagnostic output that explains it.
+    if failed:
+        raise typer.Exit(code=1)
 
 
 def _exit_is_a_folder(path: str):

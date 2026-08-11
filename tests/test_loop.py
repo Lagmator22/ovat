@@ -140,7 +140,12 @@ def test_run_trace_records_turns_tokens_and_tool_calls():
                       # as text and never ran. Asserted here as part of the
                       # exact shape so a future key cannot be added silently.
                       "undecoded_tool_call": False,
-                      "empty_answer": False}
+                      "empty_answer": False,
+                      # False on a healthy run. `ovat run` reads this to decide
+                      # its exit code: the loop returns its failures AS the
+                      # answer text, so without a flag a failed run exited 0
+                      # and no script could tell it apart from a good one.
+                      "failed": False}
 
 
 def test_run_trace_survives_replies_without_usage():

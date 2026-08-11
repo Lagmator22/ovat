@@ -170,6 +170,14 @@ class AgentLoop:
                 # removed. Distinct from undecoded_tool_call: there the markup
                 # survives, here the parser ate it.
                 "empty_answer": empty[0],
+                # The run did not produce a usable answer. Every "Error: ..."
+                # string this loop returns is delivered AS the answer, because
+                # the model has to be able to read it -- but `ovat run` then
+                # printed it and exited 0, so a failed run was indistinguishable
+                # from a good one to any script, CI job or benchmark. Measured
+                # on an AI PC: four consecutive failures, all exit 0.
+                "failed": bool(undecoded[0] or empty[0]
+                               or answer.startswith("Error: ")),
             }
             return answer
 

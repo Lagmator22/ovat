@@ -357,3 +357,49 @@ def test_knn_query_uses_k_not_limit():
                      if not line.lstrip().startswith("#"))
     assert "k = ?" in code, "KNN must use sqlite-vec's own k = ? form"
     assert "LIMIT ?" not in code, "LIMIT ? breaks on SQLite < 3.38"
+
+
+def test_indexing_the_same_folder_twice_does_not_duplicate(tmp_path):
+    """The source string is the key add() deletes by before re-inserting, so a
+    different SPELLING of the same path appended instead of replacing.
+
+    Measured on an AI PC: one index held three identical copies of the same
+    document, which then crowd out every other result at retrieval.
+    """
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    (folder / "q3.md").write_text("The Q3 review concluded revenue grew 12%.",
+                                  encoding="utf-8")
+
+    class Recorder:
+        def __init__(self):
+            self.by_source = {}
+
+        def add(self, texts, sources=None):
+            for text, source in zip(texts, sources or []):
+                self.by_source.setdefault(source, []).clear()
+                self.by_source[source].append(text)
+
+    store = Recorder()
+    index_folder(str(folder), store)
+    import os as _os
+    index_folder(str(folder) + _os.sep + ".", store)   # same files, other spelling
+    assert len(store.by_source) == 1, store.by_source.keys()
+
+
+def test_a_byte_order_mark_never_reaches_the_chunk(tmp_path):
+    """Windows editors write a BOM. utf-8 keeps U+FEFF, and it rode all the way
+    into the stored text and the citation."""
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    (folder / "bom.md").write_text("Revenue grew 12 percent.",
+                                   encoding="utf-8-sig")
+
+    seen = []
+
+    class Collect:
+        def add(self, texts, sources=None):
+            seen.extend(texts)
+
+    index_folder(str(folder), Collect())
+    assert seen and not seen[0].startswith("﻿"), repr(seen[:1])
