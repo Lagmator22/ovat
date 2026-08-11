@@ -317,3 +317,33 @@ def test_model_manager_reports_a_refusal_as_a_readable_error(monkeypatch):
                         lambda cmd, **kw: Result())
     with pytest.raises(RuntimeError, match="no such repository"):
         ModelManager("ovms").list_models()
+
+
+def test_a_v1_url_against_ovms_names_the_path_and_the_fix():
+    """OVMS serves /v3. A /v1 base_url is plano's listener path.
+
+    Copy the plano example, run without plano, and OVMS answers every request
+    with `400 {'error': 'Invalid request URL'}` -- a message that names neither
+    the path nor the fix, while the server itself is perfectly healthy. Hit in
+    the TUI chat screen on a real AI PC.
+    """
+    from ovat.providers.llm_ovms import OVMSLLMProvider
+
+    provider = OVMSLLMProvider(base_url="http://localhost:8000/v1", model="m")
+    explained = provider._explain(
+        Exception("Error code: 400 - {'error': 'Invalid request URL'}"))
+
+    message = str(explained)
+    assert "/v1" in message and "/v3" in message
+    assert "plano" in message
+    assert "http://localhost:8000/v3" in message      # the corrected URL
+
+
+def test_an_unrelated_failure_is_passed_through_untouched():
+    """Only URL errors get the URL explanation. A connection refused rewritten
+    as advice about /v3 would send the reader somewhere useless."""
+    from ovat.providers.llm_ovms import OVMSLLMProvider
+
+    provider = OVMSLLMProvider(base_url="http://localhost:8000/v3", model="m")
+    original = Exception("Connection refused")
+    assert provider._explain(original) is original

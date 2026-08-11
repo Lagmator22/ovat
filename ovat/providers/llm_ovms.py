@@ -40,6 +40,46 @@ class OVMSLLMProvider(LLMProvider):
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
         extra = {} if self.max_tokens is None else {"max_tokens": self.max_tokens}
         extra["temperature"] = self.temperature
+        try:
+            return self._ask(messages, tools, extra)
+        except Exception as exc:
+            raise self._explain(exc) from exc
+
+    def _explain(self, exc: Exception) -> Exception:
+        """Turn OVMS's "Invalid request URL" into the sentence behind it.
+
+        OVMS serves its OpenAI API under /v3. A base_url ending in /v1 is
+        plano's listener path, not OVMS's, so pointing a client at
+        localhost:8000/v1 with no gateway running reaches OVMS and gets
+
+            Error code: 400 - {'error': 'Invalid request URL'}
+
+        which names neither the path nor the fix. This is easy to hit because
+        the plano example config legitimately uses /v1 -- copy it, run without
+        plano, and the server is healthy while every request 400s.
+        """
+        text = str(exc)
+        if "Invalid request URL" not in text and "404" not in text:
+            return exc
+        url = str(getattr(self.client, "base_url", "")).rstrip("/")
+        if url.endswith("/v1"):
+            return RuntimeError(
+                f"OVMS rejected the request URL. model.ovms_url ends in /v1, "
+                f"which is the plano gateway's path -- OVMS itself serves its "
+                f"OpenAI API under /v3.\n"
+                f"  now:  {url}\n"
+                f"  try:  {url[:-3]}/v3\n"
+                f"Use /v1 only when plano is actually running in front of "
+                f"OVMS; otherwise point straight at /v3.")
+        if not url.endswith("/v3"):
+            return RuntimeError(
+                f"OVMS rejected the request URL: {text}\n"
+                f"model.ovms_url is {url!r}; OVMS serves its OpenAI API under "
+                f"/v3, so the URL normally ends there.")
+        return exc
+
+    def _ask(self, messages: list[dict], tools: list[dict] | None,
+             extra: dict) -> dict:
         response = self.client.chat.completions.create(
             model=self.model, #model name is pulled from the YAML config file
             messages=messages,
