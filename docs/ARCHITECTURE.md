@@ -534,19 +534,19 @@ flowchart TD
     Limits --> L1["NO tool calling"]
     Limits --> L2["NO continuous batching"]
     Limits --> L3["static shapes only"]
-    Limits --> L4["INT4 export only"]
+    Limits --> L4["prefers static shapes"]
 ```
 
 | Model type | Device | Why |
 | --- | --- | --- |
 | Embeddings (~130 MB) | NPU if present | static shape, small, low power |
-| LLM (INT4) | GPU | dynamic shapes, KV cache, **tool calling** |
+| LLM (low-bit: INT4 / INT8) | GPU | dynamic shapes, KV cache, **tool calling** |
 | Whisper (~80 MB) | CPU | small enough that CPU latency is fine |
-| Anything, no accelerator | CPU | always works, INT4 quantised |
+| Anything, no accelerator | CPU | always works; low-bit weights keep it in RAM |
 
-**The NPU cannot do tool calling.** It is the single most important hardware
-constraint in the project, and the reason `device: NPU` is never the default for
-an agent.
+**Prefer `CPU` or `GPU` for agents, not `NPU`.** Not because the NPU "cannot tool call" -- no accelerator executes tools. The device runs the model; the agent loop parses the tool call out of the generated text and runs the Python function itself, so tool calling is a property of the model and the parser, not the hardware. The real constraint is shape: OpenVINO's NPU plugin favours static shapes and a bounded context, while an agent turn grows the prompt on every round as history and tool results accumulate. That is a poor fit, and it is why NPU is never the default for an agent. It is a good fit for embeddings and single-turn chat, where the shape is fixed.
+
+> This has NOT been measured on an AI PC. It follows from how the NPU plugin works, and it should be verified before it is stated as a hardware limit.
 
 ---
 

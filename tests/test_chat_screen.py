@@ -533,7 +533,7 @@ def test_typing_slash_opens_a_filtered_chat_menu(monkeypatch, tmp_path):
 
             screen.query_one("#chat-input", ChatInput).value = "/"
             for _ in range(50):
-                await pilot.pause()
+                await pilot.pause(0.05)
                 if palette.display and palette.option_count == len(chat_screen.CHAT_COMMANDS):
                     break
             assert palette.display is True
@@ -541,7 +541,7 @@ def test_typing_slash_opens_a_filtered_chat_menu(monkeypatch, tmp_path):
 
             screen.query_one("#chat-input", ChatInput).value = "/t"
             for _ in range(50):
-                await pilot.pause()
+                await pilot.pause(0.05)
                 if palette.option_count == 2:
                     break
             assert palette.option_count == 2          # /thinking and /tokens
@@ -562,7 +562,7 @@ def test_choosing_from_the_chat_menu_fills_the_line_for_an_argument(
 
             inp.value = "/tok"
             for _ in range(50):
-                await pilot.pause()
+                await pilot.pause(0.05)
                 if palette.display:
                     break
             await pilot.press("down")
@@ -585,7 +585,7 @@ def test_escape_closes_the_chat_menu_before_leaving(monkeypatch, tmp_path):
             palette = screen.query_one("#chat-palette", OptionList)
             screen.query_one("#chat-input", ChatInput).value = "/"
             for _ in range(50):
-                await pilot.pause()
+                await pilot.pause(0.05)
                 if palette.display:
                     break
             assert palette.display is True

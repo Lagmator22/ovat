@@ -7,7 +7,7 @@ agent into a config file, and runs the whole thing on your own hardware.*
 
 ## Contents
 
-1. [The problem: agents are 90% plumbing](#1-the-problem-agents-are-90-plumbing)
+1. [The problem: most of an agent is plumbing](#1-the-problem-most-of-an-agent-is-plumbing)
 2. [What OVAT gives you](#2-what-ovat-gives-you)
 3. [Why OpenVINO and OVMS](#3-why-openvino-and-ovms)
 4. [Install and first run](#4-install-and-first-run)
@@ -22,7 +22,7 @@ agent into a config file, and runs the whole thing on your own hardware.*
 
 ---
 
-## 1. The problem: agents are 90% plumbing
+## 1. The problem: most of an agent is plumbing
 
 An "AI agent" is a simple idea: a model that can call your functions. Ask it
 about a file, and instead of guessing, it calls `search_docs` and reads the
@@ -134,7 +134,7 @@ device, which parser, which tools, when to start and stop. That gap is where a
 toolkit belongs, the same way `kubectl` wraps the Kubernetes API rather than
 replacing it.
 
-OpenVINO matters for the other half: **INT4 quantised models that actually fit**.
+OpenVINO matters for the other half: **low-bit weights (INT4, INT8) that actually fit**.
 A 4B-parameter model in INT4 is a 3.5 GB download and runs on an integrated GPU.
 That is the difference between "you need a datacentre" and "you need a laptop".
 
@@ -149,8 +149,7 @@ routes accordingly:
 | Anything, no accelerator | CPU | always works |
 
 One caveat worth knowing up front, because it is easy to lose an afternoon to:
-**the NPU cannot do tool calling.** It is excellent for embeddings and plain
-chat. Agents need CPU or GPU.
+**prefer CPU or GPU for an agent, not the NPU.** No accelerator executes tools: the device generates text, and the agent loop parses the tool call out of it and runs the Python function itself. The NPU is a poor fit for a different reason -- its plugin favours static shapes and a bounded context, while an agent turn grows the prompt every round. It is excellent for embeddings and single-turn chat.
 
 ---
 

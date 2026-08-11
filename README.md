@@ -117,8 +117,13 @@ On Windows also install the
 [Visual C++ Redistributable](https://aka.ms/vs/17/release/VC_redist.x64.exe),
 which OVMS needs in order to start at all.
 
-> **NPU cannot do tool calling.** Use `device: CPU` or `GPU` for agents. NPU is
-> fine for embeddings and plain chat.
+> **Prefer `CPU` or `GPU` for agents, not `NPU`.** No accelerator executes
+> tools: the device runs the model, and the agent loop parses the tool call out
+> of the generated text and runs the Python function itself. Tool calling is a
+> property of the model and the parser, not the hardware. The NPU is a poor fit
+> for a different reason -- its plugin favours static shapes and a bounded
+> context, while an agent turn grows the prompt every round. It is a good fit
+> for embeddings and single-turn chat, where the shape is fixed.
 
 ---
 

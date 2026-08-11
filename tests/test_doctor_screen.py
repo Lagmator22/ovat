@@ -186,11 +186,16 @@ def test_checks_that_blow_up_are_reported_not_crashed(monkeypatch):
         app = OvatTUI()
         async with app.run_test() as pilot:
             screen = await _open_doctor(app, pilot)
+            # pause(delay), not a bare pause(): a bare one yields without
+            # advancing real time, so fifty of them can finish in microseconds
+            # having observed nothing. The message arrives via call_from_thread
+            # on a loaded Windows runner, so the clock has to move.
+            text = ""
             for _ in range(50):
                 text = _log_text(screen)
                 if "could not run the checks" in text:
                     break
-                await pilot.pause()
+                await pilot.pause(0.05)
             assert "could not run the checks" in text
             assert "openvino import died" in text
             assert app.screen is screen         # still usable, not torn down
@@ -286,7 +291,7 @@ def test_typing_slash_opens_a_filtered_menu(monkeypatch):
 
             screen.query_one("#doc-input", Input).value = "/"
             for _ in range(50):
-                await pilot.pause()
+                await pilot.pause(0.05)
                 if palette.display and palette.option_count == 5:
                     break
             assert palette.display is True
@@ -294,7 +299,7 @@ def test_typing_slash_opens_a_filtered_menu(monkeypatch):
 
             screen.query_one("#doc-input", Input).value = "/c"
             for _ in range(50):
-                await pilot.pause()
+                await pilot.pause(0.05)
                 if palette.option_count == 2:
                     break
             assert palette.option_count == 2          # /copy and /clear
