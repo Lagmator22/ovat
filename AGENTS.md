@@ -212,6 +212,21 @@ Do not "improve" any of these without reading the reason first.
   Textual's generic `get_selection` returns None and the clipboard comes back
   empty. `SelectableRichLog` implements it; use that class, not `RichLog`.
 
+- **Tool calls that stop decoding on a LONG-LIVED OVMS, not a fresh one.**
+  Measured 2026-08-12: 4/4 agent runs failed with `undecoded_tool_call: true`
+  and `tool_calls: 0` on an OVMS instance that had already served a bench and
+  several long runs, with its KV cache reported at 98-100% of 3.6 GB (it later
+  reached 5.8 GB, `ovms.exe` 10.6 GB RSS). Against a FRESHLY started server on
+  the same machine, same model, same `tool_parser: qwen3coder`, the identical
+  prompt decoded 17/17 -- 8 repeats plus 8 varied prompts including a
+  multi-round transcribe-and-summarise. Nothing in the decode path changed
+  between the two sessions.
+  So this is UNREPRODUCED, not fixed, and the suspect is server/cache state
+  rather than the parser. Do not close it on a clean-server pass. Before a
+  demo, restart OVMS; if it ever recurs, capture `--trace` AND the KV-cache
+  figures from `ovat telemetry` in the same window, because the trace alone
+  cannot distinguish a parser fault from an exhausted cache.
+
 ## Environment variables
 
 `OVAT_OVMS` (ovms binary/folder) · `OVAT_MODELS` (model discovery roots,

@@ -18,11 +18,12 @@ class DeviceManager:
         COMPILATION -- [NPU_VCL] Compilation failed (0x78000004) -- before a
         single token is generated. Not a tool-calling limit, and not the
         dynamic-shape limit either: the export does not compile for the NPU
-        plugin on this stack. Embeddings compile and run there fine. the NPU is not used for the LLM (see below), 
-                      so ONLY embeddings go here.
+        plugin on this stack. Embeddings compile and run there fine, which is
+        why they are the only thing routed here.
       - LLM        -> GPU if available (dynamic shapes, KV cache, tool calling).
       - Whisper    -> CPU (small model, CPU latency is fine).
-      - Anything   -> CPU as the universal fallback (always works, INT4).
+      - Anything   -> CPU as the universal fallback (always works; low-bit
+                      weights keep the model in RAM).
     """
 
     def __init__(self):
