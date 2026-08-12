@@ -19,16 +19,17 @@ Three things are load-bearing here, each a bug avoided:
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import (DataTable, Digits, Footer, Label, ProgressBar,
-                             Rule, Sparkline, Static, TabbedContent, TabPane)
+                             Rule, Static, TabbedContent, TabPane)
 
 from ovat.cli import ui
 from ovat.cli.commands import ScreenCommands
 from ovat.telemetry.collector import Collector
 from ovat.telemetry.sinks import LiveBufferSink
-from ovat.telemetry.sources import (IntelHardwareSource, ProcessMemorySource,
+from ovat.telemetry.sources import (IntelHardwareSource, NPUSource,
+                                    OVMSLogSource, ProcessMemorySource,
                                     SystemSource)
 
 # How often the page redraws. 2/second is enough to look live without making
@@ -47,6 +48,13 @@ REFRESH_HZ = 2.0
 # RAM in those slots instead of three boxes reading "---" forever. A fixed
 # list was the reason the page looked broken rather than merely limited.
 _PREFERRED = [
+    # npu.* comes from the driver's own busy counter and is a real percentage;
+    # intel.* comes from UT and is richer but currently silent. Preferring the
+    # driver means the NPU card shows a number where one exists.
+    ("npu.utilization", "NPU", "%"),
+    # The cache figure earns a headline slot because it is the one number that
+    # predicts the undecoded-tool-call failure before it happens.
+    ("ovms.kv_cache_pct", "KV CACHE", "%"),
     ("intel.npu_utilization", "NPU", "%"),
     ("intel.gpu_utilization", "GPU", "%"),
     ("intel.power_w", "POWER", "W"),
@@ -57,6 +65,10 @@ _PREFERRED = [
     ("system.threads", "THREADS", ""),
 ]
 MAX_CARDS = 5
+
+#: The figure columns, in order. "now" first because it is the one being read;
+#: the rest give it a scale, which is the job the sparkline used to do badly.
+_COLUMNS = ("now", "min", "max", "mean")
 
 _SOURCES_HELP = """
 [b]What each source is[/b]
@@ -74,29 +86,53 @@ one of them is worth doing anything about.
 """
 
 _INTEL_HELP = """
-[b]Intel Unified Telemetry[/b]
+[b]Where the NPU number on the Live tab comes from[/b]
 
-The Intel-native layer: host API calls, GPU and NPU kernel timelines, package
-power, thermals. This is where the proposal's stretch-goal number comes from,
-NPU power draw beside agent token counts, which nothing else in the OpenVINO
-ecosystem puts on one screen.
+Two different things can report an NPU, and only one of them currently gives
+this page a figure. Read this tab as "which one am I getting, and why".
 
-[b]Setup[/b]
-  1. Unzip the ut-tool release (it extracts to a versioned folder)
-  2. Set [cyan]OVAT_UT[/cyan] to that folder, or drop it in [cyan]~/ut[/cyan]
-     and OVAT finds it
-  3. Windows or Linux only; the tool has no macOS build
+  [cyan]npu.*[/cyan]     the DRIVER's own counter. A real live percentage.
+             Linux only today. This is what the NPU card shows.
+  [cyan]intel.*[/cyan]   Intel Unified Telemetry. Much richer -- power,
+             per-engine timelines, thermals -- but see the limit below.
 
-[b]Is this tab live?[/b]
-Not yet, for the reason below. The Live tab is where numbers appear once a
-source can produce them.
+[b]1. The driver counter (Linux, no install)[/b]
+The intel_vpu kernel module publishes a running total of microseconds the NPU
+spent executing jobs:
 
-[b]Known limit, measured on the AI PC[/b]
-Continuous mode does not stream numbers. It writes binary traces
-(ut_default_output.l0_gpu.bin, .l0_npu.bin) which need [cyan]bin2perfetto[/cyan]
-to decode, so the Sources tab reports it running and this page shows nothing
-from it yet. Decoding those traces is the next step, and saying so beats a
-graph that pretends to be live.
+  [cyan]/sys/bus/pci/drivers/intel_vpu/<dev>/npu_busy_time_us[/cyan]
+
+OVAT reads it twice and divides to get a duty cycle -- the same arithmetic
+btop's NPU meter uses. Nothing to install; if the row is missing, check the
+module is loaded with [cyan]lsmod | grep intel_vpu[/cyan].
+
+[b]2. On Windows there is no verified equivalent yet[/b]
+Task Manager shows NPU usage, but it reads it through DXCore rather than a
+documented performance counter, so there is no path OVAT can rely on. Before
+assuming, check whether YOUR build exposes one:
+
+  [cyan]Get-Counter -ListSet *NPU*[/cyan]
+  [cyan]Get-Counter "\\GPU Engine(*)\\Utilization Percentage" -MaxSamples 1[/cyan]
+
+The second is documented and does work, so a GPU figure is reachable on
+Windows even where the NPU one is not. If the first prints a counter set,
+that is worth reporting -- it is the missing piece.
+
+[b]3. Intel Unified Telemetry (optional, richer)[/b]
+  1. Download the ut-tool release and unzip it; it extracts to a versioned
+     folder
+  2. Windows: open Command Prompt AS ADMINISTRATOR, cd to that folder, run
+     [cyan]ut-vars.cmd[/cyan] to set the environment
+  3. Point OVAT at it: set [cyan]OVAT_UT[/cyan] to that folder, or drop it in
+     [cyan]~/ut[/cyan] and OVAT finds it
+  4. Windows and Linux only; there is no macOS build
+
+[b]Why the intel.* rows are still empty[/b]
+MEASURED on the AI PC, not assumed: continuous mode does not stream numbers.
+It writes binary traces (ut_default_output.l0_gpu.bin, .l0_npu.bin) that need
+[cyan]bin2perfetto[/cyan] to decode, so the Sources tab honestly reports it
+running while this page gets nothing from it. Decoding those traces is the
+next step. Saying so beats a graph that pretends to be live.
 """
 
 _PLANO_HELP = """
@@ -112,23 +148,33 @@ equivalent. Every request becomes an OTEL span with per-call latency and
 token counts, and OVAT gains no OTEL dependency of its own.
 
 [b]Platform, and read this first[/b]
-plano ships binaries for linux-amd64, linux-arm64 and darwin-arm64 ONLY.
-There is no Windows build, so on the AI PC `planoai up` exits with
-"Unsupported platform windows/amd64" before it reads any config. Two ways
-round it, and neither is a workaround for a bug, just how plano ships:
+plano's own docs list its supported platforms as Linux (x86_64, aarch64) and
+macOS (Apple Silicon). There is NO Windows build, so on the AI PC
+`planoai up` exits with "Unsupported platform windows/amd64" before it reads
+any config. Three ways round it, none of them a workaround for a bug:
 
-  [cyan]planoai up --docker <config>[/cyan]   plano in a Linux container
-  or run plano under WSL2, or on another machine pointing at the AI PC's
-  OVMS over the network (base_url takes any host, not just 127.0.0.1)
+  [cyan]planoai up <config> --docker[/cyan]   plano in a Linux container
+  or run plano under WSL2
+  or run it on another machine pointing at the AI PC's OVMS over the network
+  (base_url takes any host, not just 127.0.0.1)
 
-[b]Run it[/b]
-  [cyan]uv tool install planoai==0.4.27[/cyan]
-  [cyan]ovat serve examples/plano/workflow.yml[/cyan]       OVMS on :8000
-  [cyan]python examples/plano/ovms_id_bridge.py[/cyan]      bridge on :8001
-  [cyan]planoai up examples/plano/plano-config.yaml[/cyan]  plano on :12000
-  [cyan]ovat run examples/plano/workflow.yml --input "hello"[/cyan]
-  [cyan]planoai obs[/cyan]      live aggregate view
-  [cyan]planoai trace[/cyan]    one request in depth
+[b]Run it, in this order[/b]
+  [b]1.[/b] [cyan]uv tool install planoai==0.4.27[/cyan]
+     Pinned because that is the version this integration was verified
+     against. 0.4.33 is current; treat an upgrade as a retest, since the
+     config schema is what the two walls below are about.
+  [b]2.[/b] [cyan]ovat serve examples/plano/workflow.yml[/cyan]
+     OVMS on :8000. Wait for it to report ready.
+  [b]3.[/b] [cyan]python examples/plano/ovms_id_bridge.py[/cyan]
+     The bridge on :8001. Leave it running.
+  [b]4.[/b] [cyan]planoai up examples/plano/plano-config.yaml[/cyan]
+     plano on :12000. Add [cyan]--docker[/cyan] on Windows.
+  [b]5.[/b] [cyan]ovat run examples/plano/workflow.yml --input "hello"[/cyan]
+     The request now goes OVAT -> plano -> bridge -> OVMS.
+  [b]6.[/b] [cyan]planoai obs[/cyan]            live aggregate view
+     [cyan]planoai trace listen[/cyan]   stream traces as they arrive
+     [cyan]planoai trace --list[/cyan]   what has been captured
+     [cyan]planoai trace <id>[/cyan]     one request in depth
 
 [b]The spike question, answered[/b]
 plano defaults to calling upstreams at /v1; OVMS serves its OpenAI API under
@@ -198,10 +244,7 @@ class TelemetryScreen(Screen):
     .tel-card.-dead Digits { color: $text-muted; }
     .tel-card ProgressBar { width: 100%; }
     .tel-card Bar > .bar--bar { color: $success; }
-    #tel-graphs { height: 1fr; margin: 1 2 0 2; }
-    #tel-graphs Sparkline { height: 3; margin: 0 0 1 0; }
-    #tel-graphs > .sparkline--max-color { color: $success; }
-    #tel-graphs > .sparkline--min-color { color: $primary; }
+    #tel-live-table { height: 1fr; border: round $primary; margin: 1 2 0 2; }
     #tel-table { height: 12; border: round $primary; margin: 0 2 1 2; }
     #tel-sources-help, #tel-intel-help, #tel-plano-help {
         padding: 1 2;
@@ -227,6 +270,14 @@ class TelemetryScreen(Screen):
         self.collector = Collector(
             [SystemSource(),
              ProcessMemorySource(),
+             # The driver's busy counter, which is an actual live percentage.
+             # UT stays alongside it for power and per-engine detail; the two
+             # answer different questions and neither replaces the other.
+             NPUSource(),
+             # KV cache usage, read from the log OVMS writes. The only
+             # interface that carries it: OVMS documents that text-generation
+             # metrics are not on its /metrics endpoint.
+             OVMSLogSource(),
              IntelHardwareSource(ut_binary)],
             self.live, interval_s=1.0 / REFRESH_HZ)
 
@@ -243,8 +294,16 @@ class TelemetryScreen(Screen):
                 # empty row now beats five boxes reading "---" forever.
                 yield Horizontal(id="tel-numbers")
                 yield Rule(id="tel-rule")
-                with VerticalScroll(id="tel-graphs"):
-                    pass
+                # A TABLE OF NUMBERS, not a wall of sparklines. Every core and
+                # every device gets a row with its current value beside the
+                # min, max and mean over the buffer. A sparkline shows that
+                # something moved; it cannot answer "is core 6 pinned right
+                # now, and how hard" -- which is the actual question when a run
+                # feels slow, and the reason per-core sampling exists at all.
+                table = DataTable(id="tel-live-table", cursor_type="row",
+                                  zebra_stripes=True)
+                table.border_title = "live numbers"
+                yield table
             with TabPane("Sources", id="tab-sources"):
                 table = DataTable(id="tel-table", cursor_type="row",
                                   zebra_stripes=True)
@@ -259,6 +318,12 @@ class TelemetryScreen(Screen):
 
     def on_mount(self) -> None:
         self._cards: dict = {}
+        self._rows: set = set()
+        numbers = self.query_one("#tel-live-table", DataTable)
+        numbers.add_column("Source", key="source")
+        numbers.add_column("Metric", key="metric")
+        for column in _COLUMNS:
+            numbers.add_column(column, key=column)
         self._fill_sources_table()
         self.collector.start()
         # set_interval, not a worker loop: the sampling already happens on
@@ -312,7 +377,7 @@ class TelemetryScreen(Screen):
                           else f"{value:.1f}")
             if bar is not None:
                 bar.update(progress=max(0.0, min(100.0, float(value))))
-        self._redraw_graphs()
+        self._redraw_numbers()
 
     def _sync_cards(self) -> None:
         """Mount headline cards for the preferred metrics that have data.
@@ -343,28 +408,36 @@ class TelemetryScreen(Screen):
                 card.mount(bar)
             self._cards[metric] = (metric, digits, bar)
 
-    def _redraw_graphs(self) -> None:
-        """A sparkline per metric, grouped under its source.
+    def _redraw_numbers(self) -> None:
+        """One row of figures per metric: now, min, max, mean.
 
         Built from what the buffer HAS rather than a fixed list, so a source
         added later draws itself with no change here, and a machine missing a
         source simply has fewer rows instead of empty ones.
+
+        Rows are added once and then UPDATED in place. Clearing and refilling
+        twice a second would work, but it resets the cursor and the scroll
+        position on every tick, so the table could not be read on a machine
+        with sixteen cores -- which is precisely the machine it is for.
         """
-        graphs = self.query_one("#tel-graphs", VerticalScroll)
+        from rich.text import Text
+
+        table = self.query_one("#tel-live-table", DataTable)
         for metric in self.live.metrics():
             data = self.live.series(metric)
-            if len(data) < 2:
-                continue                      # a line needs two points
-            spark_id = _spark_id(metric)
-            existing = graphs.query(f"#{spark_id}")
-            if existing:
-                existing.first(Sparkline).data = data
+            if not data:
+                continue
+            row_key = _row_id(metric)
+            cells = (_fmt(data[-1]), _fmt(min(data)), _fmt(max(data)),
+                     _fmt(sum(data) / len(data)))
+            if row_key in self._rows:
+                for column, value in zip(_COLUMNS, cells):
+                    table.update_cell(row_key, column, value)
                 continue
             source, _, short = metric.partition(".")
-            latest = data[-1]
-            graphs.mount(Label(f"[dim]{source}[/dim]  {short}",
-                               classes="tel-metric", markup=True))
-            graphs.mount(Sparkline(data, id=spark_id))
+            table.add_row(Text(source, style=ui.DIM),
+                          Text(short, style=ui.CYAN), *cells, key=row_key)
+            self._rows.add(row_key)
 
     # ---- actions -----------------------------------------------------------
 
@@ -373,8 +446,11 @@ class TelemetryScreen(Screen):
 
     def action_clear(self) -> None:
         self.live.samples.clear()
-        for spark in list(self.query_one("#tel-graphs", VerticalScroll).children):
-            spark.remove()
+        # Rows are keyed by metric and updated in place, so the row bookkeeping
+        # has to be cleared alongside the buffer or the next tick tries to
+        # update cells in a table that no longer has them.
+        self.query_one("#tel-live-table", DataTable).clear()
+        self._rows.clear()
 
     def action_copy(self) -> None:
         import json
@@ -388,5 +464,21 @@ def _card_id(metric: str) -> str:
     return "card-" + metric.replace(".", "-").replace("_", "-")
 
 
-def _spark_id(metric: str) -> str:
-    return "spark-" + metric.replace(".", "-").replace("_", "-")
+def _row_id(metric: str) -> str:
+    """A stable DataTable row key. Not a widget id, so the metric name is
+    usable as-is; keeping the same shape as _card_id anyway avoids a reader
+    wondering whether the difference is meaningful."""
+    return "row-" + metric.replace(".", "-").replace("_", "-")
+
+
+def _fmt(value: float) -> str:
+    """A figure sized to what it is.
+
+    A CPU percentage wants one decimal; 4300 MB of RSS does not want ".0"
+    stapled to it, and a thread count is an integer that should look like one.
+    """
+    if abs(value) >= 100:
+        return f"{value:,.0f}"
+    if float(value).is_integer():
+        return f"{value:.0f}"
+    return f"{value:.1f}"
