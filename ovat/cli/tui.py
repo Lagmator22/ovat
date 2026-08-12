@@ -696,8 +696,26 @@ class OvatTUI(App):
         output.border_subtitle = "Ctrl-P palette · / shortcuts"
         yield output
         yield OptionList(id="palette")
+        # select_on_focus=False for two reasons, and the second was a bug.
+        #
+        # As behaviour: this is a command prompt. Textual selects the whole
+        # value when an Input takes focus, so clicking back into a half-typed
+        # command means the next keystroke replaces all of it. That is right
+        # for a form field being overwritten and wrong for a line being
+        # edited.
+        #
+        # As a fix: the selection is applied when the FOCUS EVENT is
+        # processed, not when focus() is called (widgets/_input.py, guarded by
+        # this flag), and `cursor_position` reports the end of the selection.
+        # So a template that focuses the input and then places the cursor in a
+        # gap -- `ovat run | --input ""` -- had its placement undone a moment
+        # later by a select-all it did not ask for, leaving the cursor at the
+        # end of the line. Locally the correction happened to be scheduled
+        # after that event and won; on a loaded Windows CI runner it did not,
+        # which is the entire content of that flake.
         yield PasteInput(placeholder="Run any command (e.g. ovat doctor)"
-                                     "  ·  type / for shortcuts", id="prompt")
+                                     "  ·  type / for shortcuts", id="prompt",
+                         select_on_focus=False)
         # Textual's Footer lists the active bindings, including ^p for the
         # command palette. Without it the palette existed but nothing on
         # screen ever said so.
@@ -801,11 +819,26 @@ class OvatTUI(App):
         inp.focus()
         # Land the cursor where the next keystrokes belong (e.g. the config
         # path gap in `ovat run | --input ""`), not blindly at the end.
-        # call_after_refresh because Input moves its own cursor to the end
-        # asynchronously after a programmatic value change; a synchronous
-        # assignment here would be overwritten a moment later.
+        #
+        # Assigning `value` moves the cursor to the end first. From textual
+        # 8.2.7, widgets/_input.py, in the value watcher:
+        #
+        #     if self._initial_value:
+        #         self.cursor_position = len(self.value)
+        #         self._initial_value = False
+        #
+        # The thing that used to undo this placement was the select-all the
+        # input performs when it takes focus; `cursor_position` reports the
+        # end of a selection, so the cursor read as the end of the line. That
+        # is switched off where the widget is built -- see compose() -- which
+        # is why a synchronous assignment is now enough.
         target = (template.cursor if template.cursor is not None
                   else len(template.insert))
+        inp.cursor_position = target
+        # Belt and braces for a future Textual that moves the cursor from
+        # somewhere this does not know about. It is no longer what makes the
+        # common case work, which is the point: the correct position must not
+        # depend on a refresh arriving.
         self.call_after_refresh(setattr, inp, "cursor_position", target)
 
     # Running commands
