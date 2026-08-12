@@ -76,11 +76,11 @@ class SystemSource(TelemetrySource):
 
     def __init__(self):
         self._proc = None
+        # Whether a CPU reading has yet covered a real interval. See sample().
+        self._cpu_primed = False
         try:
             import psutil
             self._proc = psutil.Process()
-            # First call always returns 0.0 and primes the delta; get it out
-            # of the way here so the first drawn frame is a real reading.
             psutil.cpu_percent(percpu=True)
             self._proc.cpu_percent()
         except Exception:
@@ -94,9 +94,23 @@ class SystemSource(TelemetrySource):
         out = {}
         try:
             cores = psutil.cpu_percent(percpu=True)
-            out["cpu_pct"] = round(sum(cores) / len(cores), 1) if cores else 0.0
-            for index, pct in enumerate(cores):
-                out[f"cpu{index}_pct"] = pct
+            # psutil's percentages are deltas since the PREVIOUS call, so the
+            # first one after construction covers microseconds and comes back
+            # 0.0 for every core. Priming in __init__ does not fix that: the
+            # collector's first tick follows almost immediately, so the window
+            # is still ~0.
+            #
+            # That zero is not a low reading, it is an absent one -- and it
+            # poisons the min column permanently, so a table that has been
+            # open for an hour still claims every core hit 0%. Same rule as
+            # the token counts and the NPU duty cycle: report nothing until
+            # there is something to report.
+            if not self._cpu_primed:
+                self._cpu_primed = True
+            elif cores:
+                out["cpu_pct"] = round(sum(cores) / len(cores), 1)
+                for index, pct in enumerate(cores):
+                    out[f"cpu{index}_pct"] = pct
         except Exception:
             pass
         try:
@@ -607,3 +621,38 @@ class OVMSLogSource(TelemetrySource):
             return {}
         percent, gigabytes = reading
         return {"kv_cache_pct": percent, "kv_cache_gb": gigabytes}
+
+
+def cache_warning(percent: float, gigabytes: float) -> str | None:
+    """Whether this KV cache reading is worth saying something about first.
+
+    Called before an agent run, once, when a server log is readable. Returning
+    a string prints it as a warning; returning None stays quiet.
+
+    This is the difference between diagnosing the undecoded-tool-call failure
+    afterwards and predicting it: measured here, a server at 98-100% failed
+    4/4 tool-calling runs, and a fresh one succeeded 17/17.
+
+    THE THRESHOLD IS DELIBERATELY HIGH, at 95%. The evidence covers the two
+    ends and nothing in between: 98-100% failed, a fresh server did not. There
+    is no measurement at 70% or 85%, so warning there would be inventing a
+    number and teaching the reader to scroll past this line -- which costs
+    more than it saves, because the one time it fires it needs to be believed.
+    Raise or lower it when there is data, not before.
+
+    The wording says what to DO and does not predict the run will fail,
+    because that is still a correlation. Naming both remedies matters: a
+    restart clears the cache for one run, and a bigger cache is what stops it
+    coming back.
+    """
+    if percent < 95:
+        return None
+    # Size changes the advice, not the warning. A cache this small will refill
+    # almost immediately, so clearing it buys one run at most; a large one
+    # that is nonetheless full says the workload needs more than a restart.
+    remedy = ("restart OVMS to clear it"
+              if gigabytes >= 8 else
+              f"restart OVMS, and consider raising model.ovms_cache_size_gb "
+              f"above {gigabytes:g}")
+    return (f"KV cache is at {percent:g}% of {gigabytes:g} GB. Tool calls have "
+            f"failed to decode on a cache this full -- {remedy}.")

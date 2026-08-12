@@ -201,7 +201,9 @@ def test_the_system_source_reports_many_metrics_not_one():
     become the extra rather than the only content."""
     from ovat.telemetry.sources import SystemSource
 
-    sample = SystemSource().sample()
+    source = SystemSource()
+    source.sample()                  # first CPU reading is a priming artefact
+    sample = source.sample()
     assert len(sample) > 5, f"only got {sorted(sample)}"
     assert "cpu_pct" in sample
     assert "ram_used_pct" in sample
@@ -213,7 +215,9 @@ def test_per_core_cpu_is_reported_individually():
     when a run feels slow."""
     from ovat.telemetry.sources import SystemSource
 
-    sample = SystemSource().sample()
+    source = SystemSource()
+    source.sample()                  # see the priming test below
+    sample = source.sample()
     assert any(k.startswith("cpu0") for k in sample)
 
 
@@ -754,3 +758,82 @@ def test_a_running_server_with_no_cache_line_yet_says_so(tmp_path):
     assert source.unavailable is None            # it IS running
     assert "no KV cache line yet" in source.note
     assert source.sample() == {}
+
+
+# --- the pre-run cache warning ---------------------------------------------
+
+def test_a_healthy_cache_says_nothing():
+    """A warning that fires routinely is a warning nobody reads."""
+    from ovat.telemetry.sources import cache_warning
+
+    assert cache_warning(12.0, 3.6) is None
+    assert cache_warning(80.0, 3.6) is None
+
+
+def test_no_warning_in_the_range_where_there_is_no_evidence():
+    """94% is not measured. Warning there would be inventing a number."""
+    from ovat.telemetry.sources import cache_warning
+
+    assert cache_warning(94.9, 3.6) is None
+
+
+def test_a_full_cache_warns_and_names_the_remedy():
+    """The measured failure range. It must say what to DO."""
+    from ovat.telemetry.sources import cache_warning
+
+    warning = cache_warning(99.0, 3.6)
+    assert warning is not None
+    assert "99% of 3.6 GB" in warning
+    assert "restart OVMS" in warning
+    assert "ovms_cache_size_gb" in warning
+
+
+def test_a_large_full_cache_does_not_suggest_making_it_larger():
+    """Advice that scales with the reading. Telling someone with 16 GB already
+    full to raise the number is not the useful half of the answer."""
+    from ovat.telemetry.sources import cache_warning
+
+    warning = cache_warning(99.0, 16.0)
+    assert "restart OVMS" in warning
+    assert "ovms_cache_size_gb" not in warning
+
+
+def test_the_warning_does_not_claim_the_run_will_fail():
+    """The link is still a correlation. Overstating it is how a hypothesis
+    turns into folklore."""
+    from ovat.telemetry.sources import cache_warning
+
+    warning = cache_warning(100.0, 3.6).lower()
+    assert "will fail" not in warning
+
+
+def test_the_first_cpu_reading_is_skipped_rather_than_reported_as_zero():
+    """psutil's percentages are deltas since the previous call, so the first
+    one covers ~0 seconds and returns 0.0 for every core.
+
+    Reporting it puts a zero in the buffer that pins the `min` column at 0
+    forever: a table open for an hour still claims every core hit 0%. Same
+    rule as the token counts -- absent is not zero.
+
+    Back the guard out and the first sample carries cpu keys, which is the
+    failure.
+    """
+    from ovat.telemetry.sources import SystemSource
+
+    source = SystemSource()
+    first = source.sample()
+    assert not [key for key in first if key.startswith("cpu")
+                and key.endswith("_pct")], (
+        "the first CPU reading is a priming artefact, not a measurement")
+
+    second = source.sample()
+    assert "cpu_pct" in second
+    assert any(key.startswith("cpu0") for key in second)
+
+
+def test_memory_is_still_reported_on_the_very_first_sample():
+    """Only the CPU deltas need priming. RAM is an absolute reading, so
+    skipping it would lose a second of data for no reason."""
+    from ovat.telemetry.sources import SystemSource
+
+    assert "ram_used_pct" in SystemSource().sample()

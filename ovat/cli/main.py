@@ -303,6 +303,21 @@ def run(
     # conditional expression any more.
     rprint(f"[dim]engine:[/dim] [bold]{esc(_engine_label(cfg.agent.type))}[/bold]")
 
+    # If a server log is readable, say something about the KV cache BEFORE the
+    # run rather than explaining it afterwards. A full cache is the leading
+    # suspect for a tool call that arrives undecoded, and the loop can only
+    # report that once it has already happened.
+    from ovat.telemetry.sources import OVMSLogSource, cache_warning
+
+    cache_source = OVMSLogSource()
+    if cache_source.unavailable is None:
+        reading = cache_source.sample()
+        if "kv_cache_pct" in reading:
+            warning = cache_warning(reading["kv_cache_pct"],
+                                    reading["kv_cache_gb"])
+            if warning:
+                rprint(f"[yellow]{esc(warning)}[/yellow]")
+
     # Step 3: actually run. This needs a live OVMS server to answer.
     # The memory sampler runs for the whole call: see _write_trace for why a
     # single reading afterwards is not a peak.
