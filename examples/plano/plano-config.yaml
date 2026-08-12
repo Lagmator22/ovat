@@ -90,7 +90,6 @@ model_providers:
 # OpenTelemetry for three lines. This is the W9-W10 telemetry item obtained by
 # CONFIGURATION rather than code: every request through plano becomes an OTEL
 # span with latency and token counts, and OVAT adds no OTEL dependency.
-# NeMo spends ~3,900 lines on the equivalent.
 #   planoai obs     live aggregate view
 #   planoai trace   one request in depth
 # The endpoint must match what `planoai obs` listens on, which it prints at

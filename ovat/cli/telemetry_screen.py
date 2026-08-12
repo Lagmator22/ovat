@@ -143,8 +143,7 @@ plano forwards it on and adds a trace to every request.
 
 [b]Why it is here[/b]
 [cyan]OpenTelemetry for three lines of config[/cyan], rather than an exporter
-written by hand. NVIDIA's NeMo toolkit spends about 3,900 lines on the
-equivalent. Every request becomes an OTEL span with per-call latency and
+written by hand. Every request becomes an OTEL span with per-call latency and
 token counts, and OVAT gains no OTEL dependency of its own.
 
 [b]Platform, and read this first[/b]

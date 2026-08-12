@@ -4,8 +4,8 @@ OVAT = OpenVINO Agentic Toolkit. GSoC 2026 project #18 (Intel/OpenVINO,
 mentors Freddy Chiu & Ravi Panchumarthy). Owner: Gurman (GitHub Lagmator22).
 Mission: "one YAML + one command." Turn tool-calling agent boilerplate into
 `ovat run workflow.yml --input "..."`, backed by OVMS on Intel AI PCs, with a
-local no-server path for dev machines. Think "NeMo Agent Toolkit, but for
-OpenVINO", plus an optional Claude-Code-style TUI.
+local no-server path for dev machines. An agent toolkit for OpenVINO, plus an
+optional Claude-Code-style TUI.
 
 ## The one flow to keep in your head
 
@@ -142,6 +142,30 @@ workflow.yml ──load_workflow()──> WorkflowConfig (pydantic, STRICT)
 8. The owner is a strong C++ dev but a Python beginner: explain changes in
    plain language (C++ analogies land well). Default is that HE writes the
    code with guidance; only write code for him when he explicitly asks.
+9. **Verify against the primary source before you claim or build.** Read the
+   official documentation or the project's own repository -- OVMS, OpenVINO,
+   Textual, huggingface_hub, plano -- BEFORE writing a claim into a doc or
+   writing code against someone else's behaviour. Not memory, not inference
+   from a related page, and not a plausible-sounding default.
+
+   Every one of these shipped because that step was skipped:
+   - `tool_parser: auto` was assumed to pick a parser. It picks none.
+   - "NPU cannot do tool calling" had no measurement behind it, was corrected
+     to "OVMS does not start on NPU", and that was wrong too. OVMS documents
+     NPU serving WITH tool calling, on this project's own silicon.
+   - "agents are 90% plumbing" was a headline number with no source.
+   - `ovms_cache_size_gb` was typed float, so it rendered "1.0" and OVMS's
+     uint64 parser refused every value the setting ever had. One line of
+     OVMS's option reference would have caught it.
+   - a cursor bug was diagnosed twice from reasoning about Textual's source
+     and was wrong both times; printing what the widget actually held found it
+     in one line.
+
+   When a fact cannot be sourced, say "not verified" in the text. That is a
+   finding, not a gap to smooth over -- and a measurement whose INTERPRETATION
+   is a guess must say which half is which. Prefer the upstream repo over a
+   docs site when the two might differ: the docs describe a release, the
+   source describes what runs.
 
 ## Landmines: each of these cost a whole session once
 
@@ -392,14 +416,20 @@ and a fake HOME, or they describe the developer's machine instead of the code.
 - Verified for 1.0.0: Ubuntu 22.04.5 / SQLite 3.37.2 as uid 1000 (580 passed,
   live RAG citation, 4/4 engines), Windows 11 / Arc 140V GPU + NPU (setup,
   serve, run, bench, stop), macOS as dev only.
-- Still open: stress tests, OVMS Docker integration
-  tests, an API reference, GPU/NPU verification on LINUX (WSL2 exposes no
-  /dev/dri), and the mentor ask to strip/audit NVIDIA's NeMo Agent Toolkit
-  (Ravi: critical). The plano ask is DONE: `examples/plano/` points it at
-  OVMS, with the /v1-vs-/v3 path, the provider prefix and the missing-`id`
-  bridge all solved and tested. Layer 7 (OpenTelemetry) shipped, so it is off
-  this list; a Windows NPU utilisation READER is the telemetry gap that
-  remains, and the counter to build it on is named in the landmine below.
+- Still open: stress tests, an API reference, and GPU/NPU verification on
+  LINUX. That last one is hardware-blocked rather than unstarted: WSL2 exposes
+  no /dev/dri, and CI cannot close it either, because GitHub-hosted runners
+  have neither an Arc GPU nor an NPU. It needs a Linux box with real devices
+  or a self-hosted runner, and until then it stays marked untested in the
+  README rather than assumed.
+  The plano ask is DONE: `examples/plano/` points it at OVMS, with the
+  /v1-vs-/v3 path, the provider prefix and the missing-`id` bridge all solved
+  and tested. Layer 7 (OpenTelemetry) shipped, so it is off this list;
+  a Windows NPU utilisation READER is the telemetry gap that remains, and the
+  counter to build it on is named in the landmine below.
+- Scoped OUT by the owner, so do not re-propose them: A2A orchestration
+  (Layer 6, always a stretch goal), OVMS Docker integration tests, and any
+  audit of or comparison against another vendor's agent toolkit.
 
 - **NPU serving: the export, and the counter that looks right and is not.**
   Verified 2026-08-12 on LunarLake, OVMS 2026.2.1.
