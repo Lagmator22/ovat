@@ -41,7 +41,13 @@ dependencies = [
   # exists. `ovms --pull` covers the AI PC, but OVMS does not run on macOS,
   # where `ovat chat` still needs a model on disk -- and the README had no
   # working answer for how to get one there. Pure Python, no build step.
-  "huggingface-hub",
+  # Floor is not decoration: the `hf` command was introduced in 0.34, and the
+  # old `huggingface-cli` it replaced was REMOVED in 1.0. An unpinned install
+  # that resolved to anything older gave a user a README full of `hf download`
+  # and no `hf` on PATH -- the same species of bug as documenting a command
+  # that did not ship, which is what made this project uninstallable once
+  # already.
+  "huggingface-hub>=0.34",
 ]
 
 # Extras keep the base install light AND encode the isolation contract:
