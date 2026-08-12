@@ -463,9 +463,19 @@ def test_a_source_that_is_live_but_silent_is_reported():
 # well as on hardware. A test that needs a real NPU is a test that never runs,
 # and this reader's arithmetic is exactly where a mistake would hide.
 
+# The real device directory is a PCI address, `0000:00:0b.0`. Colons are
+# illegal in Windows filenames, so a fixture spelled that way cannot even be
+# created on one of the two OSes these tests exist to cover -- it raises
+# WinError 123 before reaching an assertion. The reader never parses the name:
+# `_device_dirs` lists the root and keeps whichever entries contain a
+# `npu_busy_time_us` file. A portable stand-in therefore exercises exactly the
+# same code path.
+_NPU_DEVICE = "0000-00-0b.0"
+
+
 def _fake_npu(tmp_path, busy_us, memory_kb=None):
     """A directory shaped like /sys/bus/pci/drivers/intel_vpu."""
-    device = tmp_path / "0000:00:0b.0"
+    device = tmp_path / _NPU_DEVICE
     device.mkdir(parents=True, exist_ok=True)
     (device / "npu_busy_time_us").write_text(str(busy_us))
     if memory_kb is not None:
@@ -503,7 +513,7 @@ def test_npu_utilization_is_the_duty_cycle_between_two_readings(tmp_path,
     source.sample()                                    # primes the delta
 
     clock[0] = 101.0                                   # one second later
-    (tmp_path / "0000:00:0b.0" / "npu_busy_time_us").write_text("1500000")
+    (tmp_path / _NPU_DEVICE / "npu_busy_time_us").write_text("1500000")
     assert source.sample()["utilization"] == 50.0
 
 
@@ -520,7 +530,7 @@ def test_a_counter_that_went_backwards_is_not_reported_as_negative(tmp_path,
     source = NPUSource(sysfs_root=root)
     source.sample()
     clock[0] = 11.0
-    (tmp_path / "0000:00:0b.0" / "npu_busy_time_us").write_text("12000")
+    (tmp_path / _NPU_DEVICE / "npu_busy_time_us").write_text("12000")
     assert "utilization" not in source.sample()
 
 
