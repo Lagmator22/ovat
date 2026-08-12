@@ -1,0 +1,69 @@
+# Sample Agent 1, on the NPU.
+#
+# Same agent as document-qa.yml, same tools, same question. The only thing
+# that changes is where the model runs -- and one thing about the NPU that
+# the agent loop has to survive. See "WHY finish_reason IS A LIE HERE".
+#
+# The model is NOT interchangeable with the GPU one. OVMS compiles an LLM for
+# NPU only from a CHANNEL-WISE symmetric INT4 export (`--sym --ratio 1.0
+# --group-size -1`, published as the `-int4-cw-ov` family). A stock
+# `-int4-ov` is group quantised and fails to compile before generating a
+# token. Pull this one the way OVMS's own NPU demo does:
+#
+#   ovms --pull --source_model OpenVINO/Qwen3-8B-int4-cw-ov \
+#        --model_repository_path models --target_device NPU \
+#        --task text_generation --tool_parser hermes3 \
+#        --cache_dir .ov_cache --enable_prefix_caching true \
+#        --max_prompt_len 2000
+#   ovms --add_to_config --config_path models\config-npu8b.json \
+#        --model_name OpenVINO/Qwen3-8B-int4-cw-ov \
+#        --model_path OpenVINO\Qwen3-8B-int4-cw-ov
+#   ovms --rest_port 8000 --config_path models\config-npu8b.json
+#
+# https://github.com/openvinotoolkit/model_server/blob/main/demos/llm_npu/README.md
+#
+# WHY finish_reason IS A LIE HERE. On NPU, OVMS returns finish_reason "stop"
+# even on the turn that carries a tool call. An agent loop that decides
+# "is this a tool call?" by reading that label sees "stop", treats the call
+# as the final answer, and replies fluently having run no tool. OVAT
+# dispatches on the payload instead: ovat/agent/loop.py, pinned by
+# tests/test_loop.py::
+#   test_a_decoded_tool_call_runs_even_when_finish_reason_says_stop
+
+model:
+  name: OpenVINO/Qwen3-8B-int4-cw-ov
+  device: NPU
+  ovms_url: http://localhost:8000/v3
+  # hermes3, not qwen3coder: this is Qwen3, which emits Hermes-style JSON
+  # tool calls, and it is what the OVMS NPU demo pulls the model with.
+  tool_parser: hermes3
+  source_model: OpenVINO/Qwen3-8B-int4-cw-ov
+  model_repository_path: models
+  request_timeout: 1200
+
+tools:
+  - name: search_docs
+    type: builtin
+
+agent:
+  type: native
+  max_iterations: 10
+  system_prompt: >-
+    You answer questions about the user's own documents. Always call
+    the "search_docs" tool before answering a question about their files, and
+    cite the source path you used. If the documents do not contain the answer,
+    say so plainly rather than guessing from general knowledge. Never attempt
+    to use a tool named "search" - you must explicitly call "search_docs".
+
+rag:
+  embeddings:
+    provider: genai
+    model: models/bge-small-en-v1.5
+    device: CPU
+    dim: 384
+  retriever:
+    provider: sqlite-vec
+    db_path: document_qa.db
+  chunk:
+    size: 512
+    overlap: 64

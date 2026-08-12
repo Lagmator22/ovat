@@ -558,11 +558,31 @@ The real constraint is the **export format**, and it is strict:
 | INT4 exported `--sym --ratio 1.0 --group-size -1` (channel-wise, symmetric) | the stock `-int4-ov` models are group quantised and will not compile; use the [`-int4-cw-ov` family](https://huggingface.co/collections/OpenVINO/llms-optimized-for-npu) |
 | Prompt capped at 1024 tokens by default | raise it with `--max_prompt_len`; an agent turn grows every round, so this is the setting that matters most |
 | No request batching, no beam search, no `log_probs` | requests are processed sequentially |
-| `finish_reason` is **always** `"stop"` | a decoded tool call arrives labelled as if the model had stopped |
+| `cache_size`, `enable_prefix_caching`, `dynamic_split_fuse`, `max_num_batched_tokens` are **ignored** | NPU deployments are Stateful servables ([reference](https://github.com/openvinotoolkit/model_server/blob/main/docs/llm/reference.md)). `--enable_prefix_caching` is not dropped, though: OVMS translates it into the NPU-specific `NPUW_LLM_ENABLE_PREFIX_CACHING` plugin option |
+| `finish_reason` is **always** `"stop"` (OVMS's [NPU demo](https://github.com/openvinotoolkit/model_server/blob/main/demos/llm_npu/README.md) states this) | a decoded tool call would arrive labelled as if the model had stopped |
 
-That last row is load-bearing for OVAT. The native loop dispatches on **whether the reply carries tool calls**, never on `finish_reason`, precisely so an NPU-served call is not read as prose. See `agent/loop.py`.
+That last row is why the native loop dispatches on **whether the reply carries tool calls**, never on `finish_reason`. See `agent/loop.py`. Note the measurement below: the documented behaviour did *not* occur on this build, so that defence is correct-by-the-docs but was not exercised here.
 
-> **Measured, 2026-08-13:** Qwen3.5-4B and Qwen3.5-0.8B (both stock `-int4-ov`) fail identically on NPU at compilation -- `[NPU_VCL] Compilation failed (0x78000004)` -- before any token is generated. That is the expected answer to a group-quantised export, not a device limit. Serving a `-int4-cw-ov` model on NPU is **not yet verified here**; the requirements above are from OVMS's documentation, not from a run on this hardware.
+### Measured on this hardware, 2026-08-12
+
+LunarLake (Arc 140V GPU + Intel AI Boost NPU), OVMS 2026.2.1.1122f03bf.
+
+**Tool calling on NPU works.** `OpenVINO/Qwen3-8B-int4-cw-ov` compiled for NPU in 36 s and reached `AVAILABLE`; `ovat run examples/document-qa-npu.yml` returned `tool_calls: 1`, `undecoded_tool_call: false`, `failed: false` over 2 turns in 63.8 s. This retires the earlier "the NPU cannot do tool calling" claim with a run, not an argument.
+
+**`finish_reason` was *not* always `"stop"`.** Both through OVAT and through a raw `curl`, the tool-calling turn came back `finish_reason: "tool_calls"` with the call in `message.tool_calls`. The quirk OVMS documents did not reproduce on this version.
+
+**The stock export fails, but not for the stated reason.** `Qwen3.5-0.8B-int4-ov` on NPU fails with `vclAllocatedExecutableCreate3 result: 0x78000004 - [NPU_VCL]`, matching the code recorded earlier. The compiler's own diagnostic, however, is `StopLocationVerifierPass Pass failed : Found 8 duplicated names after full verification` -- a graph-naming complaint, not a quantisation-grouping one. OVMS also logged it as a *"Visual Language Model Legacy servable"* where the working 8B logged *"Language Model Legacy servable"*. **Channel-wise quantisation being the cause is therefore unverified**; what is verified is that the cw export compiles and the stock one does not.
+
+**There is a hard static sequence cap, and OVMS labels it `"unknown"`.** The NPU pipeline is compiled to fixed shapes from `MAX_PROMPT_LEN` and `MIN_RESPONSE_LEN` ([OpenVINO GenAI on NPU](https://docs.openvino.ai/2026/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html)). Pulled with `--max_prompt_len 2000`, this deployment stops at **exactly 2129 total tokens**, however the split falls:
+
+| prompt | completion | total | `finish_reason` |
+| --- | --- | --- | --- |
+| 28 | 2101 | 2129 | `"unknown"` |
+| 1529 | 600 | 2129 | `"unknown"` |
+
+The reply is cut mid-sentence and the reason is `"unknown"` -- not `"length"`, which this server does return correctly when `max_tokens` is the binding limit. (Exceeding `MAX_PROMPT_LEN` on the prompt alone is a clean HTTP 400, `"Input length exceeds the maximum allowed length"`.) The exact arithmetic is not derived here: the documented `MIN_RESPONSE_LEN` default is 150, and 2000 + 150 is 2150, not 2129.
+
+**This is a truncation mechanism for a fragmentary tool call.** A `<tool_call>` block still being emitted when the cap lands is cut in half, and the parser is handed a fragment -- the `undecoded_tool_call` symptom, arriving with a `finish_reason` that names no cause. It is unrelated to the KV cache, which NPU ignores entirely (row 3 above). Compare upstream [openvino.genai#3255](https://github.com/openvinotoolkit/openvino.genai/issues/3255), "NPU LLM Pipeline produces garbled output instead of error when prompt exceeds practical context limits". For an agent, whose prompt grows every round, `--max_prompt_len` is the setting that matters most.
 
 ---
 
