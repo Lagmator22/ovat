@@ -344,9 +344,17 @@ Each folder has its own README with the exact commands.
 | | `max_iterations` | safety cap on tool-calling turns |
 | | `system_prompt` | the agent's persona |
 | `rag` | `embeddings` / `retriever` / `chunk` | vector search for `search_docs` |
+| | `retriever.provider` | `sqlite-vec` (default, persists to `db_path`) or `memory` |
+| | `retriever.db_path` | where `sqlite-vec` keeps the index; ignored by `memory` |
 
 `rag` is optional. Without it `search_docs` answers in a documented stub mode, so
 every quickstart command works on a fresh install with nothing downloaded.
+
+The `memory` retriever keeps no file, so nothing survives the process: `ovat
+index` followed by a separate `ovat run` retrieves nothing. Use it when indexing
+and querying happen in one run, or when you want a demo that leaves no
+`ovat_index.db` behind. `sqlite-vec` is the default because that separation is
+the normal way RAG gets used here.
 
 ---
 

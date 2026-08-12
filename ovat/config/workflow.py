@@ -232,10 +232,18 @@ class EmbeddingsConfig(StrictModel):
 class RetrieverConfig(StrictModel):
     """Which vector store holds the chunks and answers nearest-neighbour search."""
 
-    # sqlite-vec is the only backend wired today. usearch/hnsw can slot in later
-    # behind the same RetrieverProvider socket without touching the factory call.
+    # Two backends, both behind the same RetrieverProvider socket:
+    #   sqlite-vec  persists to db_path, so an index survives between
+    #               `ovat index` and a later `ovat run`. The default, because
+    #               that separation is the normal way RAG is used here.
+    #   memory      holds everything in the process and keeps no file. Nothing
+    #               survives the run, so indexing and querying have to happen
+    #               in the SAME process -- good for a demo, a test, or a
+    #               machine where SQLite itself is the problem.
+    # usearch/hnsw can slot in later without touching the factory call.
     provider: str = "sqlite-vec"
-    # A real file path makes the index survive between `ovat index` and `ovat run`.
+    # Where sqlite-vec keeps the index. Ignored by the memory backend, which
+    # has nowhere to put it.
     db_path: str = "ovat_index.db"
 
 

@@ -141,8 +141,18 @@ def build_retriever(config: WorkflowConfig,
             dim=config.rag.embeddings.dim,
             db_path=ret.db_path,
         )
+    if ret.provider in ("memory", "in-memory", "in_memory"):
+        from ovat.providers.retriever_memory import InMemoryRetrieverProvider
+        # db_path is deliberately ignored rather than rejected: a config that
+        # switches backend to try something out should not also have to delete
+        # a line that now means nothing.
+        return InMemoryRetrieverProvider(
+            embedder=embedder,
+            dim=config.rag.embeddings.dim,
+        )
     raise ValueError(
-        f"Unknown retriever provider '{ret.provider}'. Supported: sqlite-vec."
+        f"Unknown retriever provider '{ret.provider}'. "
+        f"Supported: sqlite-vec, memory."
     )
 
 

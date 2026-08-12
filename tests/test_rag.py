@@ -403,3 +403,119 @@ def test_a_byte_order_mark_never_reaches_the_chunk(tmp_path):
 
     index_folder(str(folder), Collect())
     assert seen and not seen[0].startswith("﻿"), repr(seen[:1])
+
+
+# --- the in-memory backend --------------------------------------------------
+#
+# The second implementation of RetrieverProvider. Its value is partly that it
+# exists: an abstraction with one implementation is indirection you pay for and
+# get nothing back from, so these also check that the two backends AGREE where
+# the contract says they must.
+
+def _memory():
+    from ovat.providers.retriever_memory import InMemoryRetrieverProvider
+    return InMemoryRetrieverProvider(embedder=FakeEmbedder())
+
+
+def test_memory_retriever_finds_the_chunk_it_stored_with_its_source():
+    store = _memory()
+    store.add(["the cat sat on the mat", "quantum chromodynamics"],
+              sources=["a.md", "b.md"])
+
+    top = store.retrieve("the cat sat on the mat", top_k=1)[0]
+    assert top["text"] == "the cat sat on the mat"
+    assert top["source"] == "a.md"          # the citation the loop reports
+    assert top["distance"] < 1e-6           # exact match is distance ~0
+
+
+def test_memory_retriever_orders_by_closeness_like_the_other_backend():
+    """`distance` means the same thing in both: smaller is closer. search_docs
+    reads this field without knowing which backend produced it."""
+    store = _memory()
+    store.add(["alpha", "beta", "gamma"], sources=["x.md"] * 3)
+
+    results = store.retrieve("alpha", top_k=3)
+    assert results[0]["text"] == "alpha"
+    assert [r["distance"] for r in results] == sorted(
+        r["distance"] for r in results)
+
+
+def test_re_adding_a_source_replaces_it_rather_than_duplicating():
+    """Same idempotence rule as sqlite-vec, and for the same reason: appending
+    put one chunk in three times after three `ovat index` runs, and it then
+    crowded every other document out of top_k."""
+    store = _memory()
+    store.add(["first version"], sources=["note.md"])
+    store.add(["second version"], sources=["note.md"])
+
+    results = store.retrieve("version", top_k=10)
+    assert len(results) == 1
+    assert results[0]["text"] == "second version"
+
+
+def test_editing_a_file_drops_the_sentences_it_no_longer_contains():
+    store = _memory()
+    store.add(["kept sentence", "deleted sentence"], sources=["note.md"])
+    store.add(["kept sentence"], sources=["note.md"])
+
+    texts = [r["text"] for r in store.retrieve("sentence", top_k=10)]
+    assert texts == ["kept sentence"]
+
+
+def test_chunks_from_other_sources_survive_a_re_index():
+    """_forget_source rebuilds the parallel lists, so an off-by-one there would
+    pair a vector with another document's text -- a WRONG citation, which
+    nothing downstream can detect."""
+    store = _memory()
+    store.add(["from a"], sources=["a.md"])
+    store.add(["from b"], sources=["b.md"])
+    store.add(["from a, again"], sources=["a.md"])
+
+    found = {(r["source"], r["text"]) for r in store.retrieve("from", top_k=10)}
+    assert found == {("a.md", "from a, again"), ("b.md", "from b")}
+
+
+def test_asking_for_more_than_exists_returns_what_exists():
+    store = _memory()
+    store.add(["only one"], sources=["a.md"])
+    assert len(store.retrieve("anything", top_k=50)) == 1
+
+
+def test_retrieving_from_an_empty_store_is_empty_not_an_error():
+    assert _memory().retrieve("anything", top_k=5) == []
+
+
+def test_close_is_idempotent_and_stops_the_retriever_answering():
+    """A caller that closes and then retrieves has a bug. Serving stale results
+    hides it; the sqlite-vec backend raises here too."""
+    import pytest
+
+    store = _memory()
+    store.add(["something"], sources=["a.md"])
+    store.close()
+    store.close()                            # twice must be safe
+    with pytest.raises(RuntimeError):
+        store.retrieve("something")
+
+
+def test_the_factory_builds_the_memory_backend_from_config():
+    """The whole point of the socket: one line of config picks the backend."""
+    from ovat.agent.factory import build_retriever
+    from ovat.providers.retriever_memory import InMemoryRetrieverProvider
+
+    cfg = _rag_cfg(ret_provider="memory")
+    built = build_retriever(cfg, embedder=FakeEmbedder())
+    assert isinstance(built, InMemoryRetrieverProvider)
+
+
+def test_an_unknown_backend_names_the_ones_that_exist():
+    """The error a typo produces has to be actionable, not just correct."""
+    import pytest
+
+    from ovat.agent.factory import build_retriever
+
+    cfg = _rag_cfg(ret_provider="faiss")
+    with pytest.raises(ValueError) as caught:
+        build_retriever(cfg, embedder=FakeEmbedder())
+    assert "sqlite-vec" in str(caught.value)
+    assert "memory" in str(caught.value)

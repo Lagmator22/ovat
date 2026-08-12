@@ -760,7 +760,7 @@ the documented command was still broken.
 | 1 CLI / Config | ✅ complete | 10 commands, strict validation |
 | 2 Framework integration | ✅ complete | all four engines verified live on an AI PC |
 | 3 Agent core | ✅ complete | loop, session, three failure guards |
-| 4 Provider abstraction | ⚠️ partial | LLM + embeddings complete; retrievers are sqlite-vec only (FAISS, USearch not built) |
+| 4 Provider abstraction | ✅ complete | LLM, embeddings and retrievers each have two implementations behind one socket; sqlite-vec persists, `memory` does not. ANN backends (FAISS, USearch) would slot in without touching the factory |
 | 5 Tools / MCP | ✅ complete | three built-ins, MCP client and server |
 | 6 Orchestration (A2A) | ❌ not built | scoped as a stretch goal |
 | 7 Observability | ⚠️ near-complete | sources, sinks, JSONL, CLI + TUI pages. NPU utilisation reads on Linux only; the Windows counter is identified but not wired up |
