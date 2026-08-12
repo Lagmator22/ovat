@@ -763,9 +763,9 @@ the documented command was still broken.
 | 4 Provider abstraction | ⚠️ partial | LLM + embeddings complete; retrievers are sqlite-vec only (FAISS, USearch not built) |
 | 5 Tools / MCP | ✅ complete | three built-ins, MCP client and server |
 | 6 Orchestration (A2A) | ❌ not built | scoped as a stretch goal |
-| 7 Observability | ✅ complete | sources, sinks, JSONL, CLI + TUI pages |
-| 8 Deployment / serving | ✅ complete | locator, stall budget, pidfile, identity check |
-| 9 Runtime / hardware | ✅ complete | device routing, NPU constraints documented |
+| 7 Observability | ⚠️ near-complete | sources, sinks, JSONL, CLI + TUI pages. NPU utilisation reads on Linux only; the Windows counter is identified but not wired up |
+| 8 Deployment / serving | ✅ complete | locator, stall budget, pidfile, identity check. `ovms_cache_size_gb` verified working on hardware (it never was before) |
+| 9 Runtime / hardware | ✅ complete | device routing; **NPU tool-calling agent run on hardware**, and its static 2129-token cap measured, not just documented |
 
 CI runs the suite on every push across ubuntu-22.04/py3.10 (the oldest
 supported everything), ubuntu-24.04/py3.12, windows-latest/py3.12 and
@@ -773,8 +773,22 @@ macos-latest/py3.13, plus two jobs the suite itself cannot prove: that a BASE
 install pulls in no framework or TUI dependency, and that the built wheel
 installs and runs.
 
+NPU LLM serving is no longer outstanding: `examples/document-qa-npu.yml` runs
+a tool-calling agent against `Qwen3-8B-int4-cw-ov` on this machine's NPU, and
+the measurements are in "Measured on this hardware" above.
+
 Also outstanding: a VSCode extension (secondary scope), A2A orchestration
-(Layer 6, a declared stretch goal), and NPU LLM serving verified on hardware.
+(Layer 6, a declared stretch goal), a Windows NPU utilisation reader (the
+counter is identified in `telemetry/sources.py`; nothing reads it yet), and
+GPU/NPU verification on Linux, which WSL2 cannot give (no `/dev/dri`).
+
+One open question is deliberately left open rather than closed on a thin
+sample: whether a full **static** KV cache causes the undecoded-tool-call
+failure. Three runs per arm put the failure only in the 1 GB arm at 100% and
+none in the 8 GB arm, but the same 100% reading also passed, so it is not
+reproducible on demand. See AGENTS.md for the table. The ~10x latency cost of
+a full static cache did reproduce, and matches the preemption-and-recompute
+OVMS documents.
 
 ---
 
