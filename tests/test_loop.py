@@ -346,3 +346,52 @@ def test_an_undecoded_tool_call_names_the_cache_as_well_as_the_parser():
     assert "tool_parser" in answer
     assert "KV cache" in answer
     assert "ovms_cache_size_gb" in answer or "Restart OVMS" in answer
+
+
+def test_a_decoded_tool_call_runs_even_when_finish_reason_says_stop():
+    """The payload decides, not the label. This is the NPU case.
+
+    OVMS's own NPU serving demo states "finish reason is always set to stop"
+    as a platform limitation, and the SAME demo pulls the model with
+    --tool_parser hermes3. So on NPU a tool call is decoded correctly, arrives
+    in message.tool_calls, and is announced with finish_reason "stop".
+
+    The loop used to branch on finish_reason alone, so it read that decoded
+    call as prose and answered around it: no tool ran, no error, a fluent
+    reply. Indistinguishable from the wrong-parser failure, and caused by the
+    opposite thing.
+
+    Back the fix out and this fails: the loop returns "Let me look that up."
+    and `called` stays empty.
+    """
+    called = []
+    llm = FakeLLMProvider([
+        # Exactly what an NPU-served reply looks like: a real decoded call,
+        # labelled "stop".
+        reply("stop", content="Let me look that up.",
+              tool_calls=[make_tool_call("tc_1", "get_weather",
+                                         {"city": "Tokyo"})]),
+        reply("stop", content="It is sunny in Tokyo."),
+    ])
+    agent = AgentLoop(llm, tools=_weather_tool(called))
+    out = agent.run("weather in Tokyo?")
+
+    assert called == ["Tokyo"]                 # the tool actually ran
+    assert out == "It is sunny in Tokyo."
+    assert agent.last_trace["totals"]["tool_calls"] == 1
+    assert agent.last_trace["totals"]["failed"] is False
+
+
+def test_the_label_saying_tool_calls_with_an_empty_payload_still_reports_it():
+    """The malformed case must survive the change above.
+
+    finish_reason "tool_calls" with nothing attached is a broken reply, not an
+    answer. Re-asking with unchanged history would spin until max_iterations,
+    so it is surfaced on the first round.
+    """
+    llm = FakeLLMProvider([reply("tool_calls", content=None, tool_calls=[])])
+    agent = AgentLoop(llm, tools=_weather_tool(), max_iterations=3)
+    out = agent.run("weather in Tokyo?")
+
+    assert "reported tool_calls but sent none" in out
+    assert len(llm.calls) == 1                 # asked once, did not spin

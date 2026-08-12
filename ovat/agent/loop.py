@@ -8,12 +8,14 @@ and asks again, until the model is happy and answers in plain words.
 
 The four beats every turn:
   1. ASK    I send the whole history plus my tool menu to the model.
-  2. READ   I look at finish_reason in the reply.
+  2. READ   I look at whether the reply CARRIES tool calls.
   3. ACT    If it wants tools, I run those Python functions myself.
   4. REPORT I append each result as a tool message, then loop back to 1.
 
-Exit when finish_reason is "stop". A max_iterations guard makes sure I can
-never spin forever.
+Exit when a reply carries no tool calls. Deliberately not "when finish_reason
+is stop": OVMS documents that NPU serving always reports "stop" even when it
+has decoded a tool call, so the label is a description and the payload is the
+fact. A max_iterations guard makes sure I can never spin forever.
 """
 import json
 import time
@@ -196,10 +198,35 @@ class AgentLoop:
             }
             turns.append(turn)
 
-            # BEAT 2, READ. If the model did not ask for tools, it answered in
-            # words, so I record that answer and I am done. `or ""` because a
-            # server can send content=None; the CLI would print literal "None".
-            if reply["finish_reason"] != "tool_calls":
+            # BEAT 2, READ. The DECIDER is the payload, not the label.
+            #
+            # A server can decode a tool call perfectly and still report
+            # finish_reason "stop". OVMS documents exactly that for NPU
+            # serving -- "finish reason is always set to stop" -- in the same
+            # demo whose own pull command passes --tool_parser hermes3. So the
+            # call IS decoded and IS sitting in message.tool_calls while the
+            # label says the model stopped talking.
+            #
+            # Keying the decision on the label meant that call was read as
+            # prose and answered around: no tool ran, and it looked identical
+            # to the wrong-parser failure handled below while having the
+            # opposite cause. finish_reason is still recorded in the trace,
+            # and still used -- but only for the malformed case just below.
+            tool_calls = reply.get("tool_calls") or []
+
+            # The label says tools, the payload carries none. Re-asking with
+            # unchanged history would spin the same reply until
+            # max_iterations, so surface it immediately instead.
+            if not tool_calls and reply["finish_reason"] == "tool_calls":
+                self.session.add_assistant(content=reply["content"])
+                return _finish(reply["content"] or (
+                    "Error: the model reported tool_calls but sent none."
+                ))
+
+            # Nothing was asked for, so the model answered in words: record it
+            # and I am done. `or ""` because a server can send content=None;
+            # the CLI would print literal "None".
+            if not tool_calls:
                 self.session.add_assistant(content=reply["content"])
                 content = reply["content"] or ""
                 # A tool call the server could not decode arrives HERE, as
@@ -252,17 +279,7 @@ class AgentLoop:
                         "which can swallow the reply rather than pass it on.")
                 return _finish(content)
 
-            # The model wants one or more tools. Guard the malformed case
-            # first: finish_reason says tool_calls but the list is empty.
-            # Re-asking with unchanged history would just spin the same reply
-            # until max_iterations, surface it immediately instead.
-            tool_calls = reply.get("tool_calls") or []
-            if not tool_calls:
-                self.session.add_assistant(content=reply["content"])
-                return _finish(reply["content"] or (
-                    "Error: the model reported tool_calls but sent none."
-                ))
-
+            # The model wants one or more tools.
             # I record its request, serialized into plain dicts, so the
             # history stays valid.
             self.session.add_assistant(
