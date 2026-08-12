@@ -927,3 +927,47 @@ def test_every_kv_cache_sample_value_is_a_number(tmp_path):
     for key, value in sample.items():
         assert isinstance(value, (int, float)), f"{key} is {type(value)}"
         f"{value:f}"                       # what the page actually does
+
+
+def test_the_npu_device_name_is_legal_on_every_platform():
+    """Guard for the mistake this fixture already made once.
+
+    The real directory is a PCI address, "0000:00:0b.0". Using that literally
+    passed on macOS and Linux and failed the whole Windows CI job with
+    WinError 123, because a colon cannot appear in a Windows path. The suite
+    must describe the code, not the filesystem it happened to be written on.
+
+    Restore the colon and this fails before the OSError does, naming why.
+    """
+    illegal = set('<>:"/\\|?*')
+    assert not (set(_NPU_DEVICE) & illegal), (
+        f"{_NPU_DEVICE!r} cannot be a directory name on Windows")
+
+
+def test_the_cache_type_is_read_from_either_spelling_of_the_line(tmp_path):
+    """OVMS assembles this line from two places.
+
+    formatCacheInfo() returns "type: dynamic, cache usage: ...", and
+    printMetrics() logs it as "... Cache {};" -- so the line on disk reads
+    "Cache type: dynamic". Matching only the assembled spelling fails
+    SILENTLY if that prefix changes: no capture, cache_type None, and an
+    unknown type warns. The failure mode is therefore a false alarm on every
+    healthy dynamic cache, which is what this parse exists to prevent.
+
+    Narrow the pattern back to "cache type:" and the bare-fragment case here
+    returns None and starts warning again.
+    """
+    from ovat.telemetry.sources import OVMSLogSource, cache_warning
+
+    assembled = _ovms_log(
+        tmp_path, "All requests: 1; Scheduled requests: 1; "
+                  "Cache type: dynamic, cache usage: 99.4% of 4.9 GB;")
+    assert OVMSLogSource(assembled).cache_type == "dynamic"
+
+    bare = _ovms_log(tmp_path, "type: dynamic, cache usage: 99.4% of 4.9 GB")
+    source = OVMSLogSource(bare)
+    assert source.cache_type == "dynamic"
+    # and the reading still parses either way
+    assert source.sample()["kv_cache_pct"] == 99.4
+    # the point of all of it: a healthy dynamic cache stays quiet
+    assert cache_warning(99.4, 4.9, source.cache_type) is None
