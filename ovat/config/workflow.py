@@ -112,18 +112,42 @@ class ModelConfig(StrictModel):
     # server keeps its own default and this changes nothing for anyone who
     # does not set it.
     #
-    # Why it is worth having. Measured on an AI PC: a long-lived server whose
-    # KV cache was reported at 98-100% of 3.6 GB failed 4/4 agent runs with a
-    # tool call the parser could not decode, while a freshly started server on
-    # the same machine, same model and same parser, decoded 17/17. A full cache
-    # leaves no room to finish generating, the `<tool_call>` markup is cut off
-    # mid-block, and a parser cannot decode a fragment -- so it passes it
-    # through as prose and the agent answers having run no tool.
+    # SETTING THIS CHANGES THE KIND OF CACHE, not just its size. Unset, OVMS
+    # allocates dynamically and the cache GROWS -- measured here, 248.5 MB ->
+    # 5.6 GB across one session, sitting at or near 100% of whatever was
+    # allocated at the time for 61.6% of all readings. Set, the log says
+    # `Cache type: static` and the size stops moving (a flat 999.6 MB at
+    # --cache_size 1). Only in that second regime does "98-100%" mean the
+    # cache is actually full.
     #
-    # It looks like a parser bug and it is a capacity problem, which is why it
-    # cost a whole session to chase. Raise this if you run many turns or long
-    # answers in one session.
-    ovms_cache_size_gb: float | None = None
+    # Why it is worth having. A static cache that fills has a documented
+    # consequence: OVMS preempts requests and recomputes them, and "when
+    # preemption is not possible ... the request gets terminated when no more
+    # cache can be assigned to it, even before reaching stopping criteria"
+    # (docs/llm/reference.md). A generation cut there can halve a
+    # `<tool_call>` block, and a parser cannot decode a fragment -- it passes
+    # it through as prose and the agent answers having run no tool.
+    #
+    # The earlier note here claimed that mechanism as the measured cause of a
+    # 4/4-vs-17/17 result on a DYNAMIC cache. That inference does not hold:
+    # with three fifths of all dynamic readings above 95%, "it failed at
+    # 98-100%" is a base rate rather than a finding. The mechanism above is
+    # documented; that it caused those particular failures is not established.
+    #
+    # INT, NOT FLOAT, and that is not a detail. OVMS declares this option as
+    # `optional uint64 cache_size` (docs/llm/reference.md), and its parser
+    # rejects anything with a decimal point. A float field stringified even a
+    # whole number as "1.0", so EVERY value of this setting made the server
+    # refuse to start:
+    #
+    #     error parsing options: Argument '1.0' failed to parse
+    #
+    # which `ovat serve` surfaced only as "OVMS exited without becoming
+    # ready". The setting had therefore never worked once since it was added.
+    # Whole GB is also all OVMS can express, so an int is the honest type: a
+    # request for 1.5 GB is now a config error naming the constraint, rather
+    # than a server that silently will not boot.
+    ovms_cache_size_gb: int | None = Field(default=None, gt=0)
 
     # Which OVMS parser suits which model family. Data, not branching, so a
     # new family is one line. Longest prefix first: "qwen3.5" has to be tested

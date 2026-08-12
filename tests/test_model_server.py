@@ -77,6 +77,43 @@ def test_prefix_caching_is_a_knob_not_a_constant(monkeypatch, tmp_path):
     assert "--enable_prefix_caching" not in captured["cmd"]
 
 
+def test_cache_size_is_passed_as_an_integer_not_a_float(monkeypatch, tmp_path):
+    """OVMS declares cache_size as uint64 and rejects "1.0".
+
+    This is not cosmetic. With a float the server never started at all:
+
+        error parsing options: Argument '1.0' failed to parse
+
+    and because OVMS exits before opening its log, `ovat serve` could only
+    say "OVMS exited without becoming ready". Every value of
+    ovms_cache_size_gb was broken, so the one setting offered as the remedy
+    for a full KV cache could not be used.
+    """
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakePopen()
+
+    monkeypatch.setattr("ovat.core.model_server.subprocess.Popen", fake_popen)
+
+    server = ModelServer(model_name="m", cache_size_gb=1)
+    server.start(log_path=str(tmp_path / "c.log"),
+                 pid_path=str(tmp_path / "c.pid"))
+    cmd = captured["cmd"]
+    value = cmd[cmd.index("--cache_size") + 1]
+    assert value == "1", f"OVMS cannot parse {value!r}"
+    assert "." not in value
+
+    # A float reaching the constructor directly must not regrow the decimal
+    # point either: this path does not go through the config's int field.
+    loose = ModelServer(model_name="m", cache_size_gb=8.0)
+    loose.start(log_path=str(tmp_path / "d.log"),
+                pid_path=str(tmp_path / "d.pid"))
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--cache_size") + 1] == "8"
+
+
 def _never_ready(monkeypatch):
     """Make the health probe always refuse.
 

@@ -416,3 +416,27 @@ def test_an_omitted_tool_parser_is_derived_from_the_model_not_hardcoded():
     # An unknown family keeps the historical default rather than guessing.
     other = WorkflowConfig(model={"name": "some-new-model"})
     assert other.model.tool_parser == "hermes3"
+
+
+def test_a_fractional_cache_size_is_rejected_with_a_reason():
+    """OVMS's cache_size is uint64; half a gigabyte cannot be expressed.
+
+    Typing this float meant `ovms_cache_size_gb: 1` stringified as "1.0",
+    which OVMS's option parser refuses ("Argument '1.0' failed to parse"),
+    so the server exited before writing a log line. Failing in config -- at
+    the line the user actually wrote -- beats failing as "OVMS exited
+    without becoming ready".
+    """
+    import pytest
+    from pydantic import ValidationError
+
+    from ovat.config.workflow import ModelConfig
+
+    assert ModelConfig(name="m", ovms_cache_size_gb=8).ovms_cache_size_gb == 8
+    # A whole number written as a YAML float is still a whole number.
+    assert ModelConfig(name="m", ovms_cache_size_gb=8.0).ovms_cache_size_gb == 8
+
+    with pytest.raises(ValidationError):
+        ModelConfig(name="m", ovms_cache_size_gb=1.5)
+    with pytest.raises(ValidationError):
+        ModelConfig(name="m", ovms_cache_size_gb=0)

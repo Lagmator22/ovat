@@ -314,7 +314,8 @@ def run(
         reading = cache_source.sample()
         if "kv_cache_pct" in reading:
             warning = cache_warning(reading["kv_cache_pct"],
-                                    reading["kv_cache_gb"])
+                                    reading["kv_cache_gb"],
+                                    cache_source.cache_type)
             if warning:
                 rprint(f"[yellow]{esc(warning)}[/yellow]")
 

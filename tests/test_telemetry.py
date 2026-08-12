@@ -847,3 +847,83 @@ def test_memory_is_still_reported_on_the_very_first_sample():
     from ovat.telemetry.sources import SystemSource
 
     assert "ram_used_pct" in SystemSource().sample()
+
+
+# --- a dynamic cache is not a full one ---------------------------------------
+#
+# MEASURED on the AI PC, 2026-08-12. OVMS allocates the KV cache dynamically
+# unless --cache_size is passed, and a dynamic cache GROWS: one session's log
+# went 248.5 MB -> 5.6 GB while reading at or near 100% of whatever was
+# allocated at the time. 2449 of 3975 readings (61.6%) were >= 95%, so the
+# pre-run warning fired on most of an ordinary run and meant nothing.
+
+def _log_with(tmp_path, line):
+    path = tmp_path / "ovms.log"
+    path.write_text(line + "\n")
+    return str(path)
+
+
+def test_a_dynamic_cache_at_100_percent_does_not_warn(tmp_path):
+    """~100% of the current allocation is a dynamic cache's normal state."""
+    from ovat.telemetry.sources import OVMSLogSource, cache_warning
+
+    source = OVMSLogSource(log_path=_log_with(
+        tmp_path, "All requests: 1; Cache type: dynamic, "
+                  "cache usage: 100.0% of 5.6 GB;"))
+    reading = source.sample()
+    assert source.cache_type == "dynamic"
+    assert cache_warning(reading["kv_cache_pct"], reading["kv_cache_gb"],
+                         source.cache_type) is None
+
+
+def test_a_static_cache_at_100_percent_still_warns(tmp_path):
+    """With --cache_size the size stops moving, so the percentage is real.
+
+    OVMS documents the consequence: requests are preempted, and when
+    preemption is impossible "the request gets terminated ... even before
+    reaching stopping criteria" -- which is what can halve a <tool_call>.
+    """
+    from ovat.telemetry.sources import OVMSLogSource, cache_warning
+
+    source = OVMSLogSource(log_path=_log_with(
+        tmp_path, "All requests: 1; Cache type: static, "
+                  "cache usage: 99.8% of 999.6 MB;"))
+    reading = source.sample()
+    assert source.cache_type == "static"
+    warning = cache_warning(reading["kv_cache_pct"], reading["kv_cache_gb"],
+                            source.cache_type)
+    assert warning is not None and "99.8" in warning
+
+
+def test_a_log_without_a_cache_type_still_warns(tmp_path):
+    """An older OVMS omits the type; going quiet would lose the reading."""
+    from ovat.telemetry.sources import OVMSLogSource, cache_warning
+
+    source = OVMSLogSource(log_path=_log_with(
+        tmp_path, "All requests: 1; cache usage: 99.0% of 3.6 GB;"))
+    reading = source.sample()
+    assert source.cache_type is None
+    assert cache_warning(reading["kv_cache_pct"],
+                         reading["kv_cache_gb"], None) is not None
+
+
+def test_every_kv_cache_sample_value_is_a_number(tmp_path):
+    """The telemetry page formats every sample value as a number.
+
+    Putting the cache type ("static"/"dynamic") in sample() alongside the
+    figures took `ovat telemetry --once` down with
+
+        ValueError: Unknown format code 'f' for object of type 'str'
+
+    which is why the type is a property and not a metric.
+    """
+    from ovat.telemetry.sources import OVMSLogSource
+
+    source = OVMSLogSource(log_path=_log_with(
+        tmp_path, "All requests: 1; Cache type: static, "
+                  "cache usage: 42.0% of 1.0 GB;"))
+    sample = source.sample()
+    assert sample
+    for key, value in sample.items():
+        assert isinstance(value, (int, float)), f"{key} is {type(value)}"
+        f"{value:f}"                       # what the page actually does

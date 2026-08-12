@@ -558,7 +558,16 @@ class NPUSource(TelemetrySource):
 #: Parsed rather than invented. The percentage is the number that matters; the
 #: size is carried alongside so "98% of 1 GB" and "98% of 16 GB" are not
 #: reported as the same situation.
+# "Cache type" is captured, not skipped past, because it decides whether the
+# percentage means anything. Both forms appear verbatim in an OVMS log:
+#
+#   Cache type: dynamic, cache usage: 99.4% of 4.9 GB;
+#   Cache type: static,  cache usage: 13.9% of 999.6 MB;
+#
+# The type is optional in the pattern so an older OVMS that omits it still
+# yields a reading rather than none.
 _CACHE_USAGE = re.compile(
+    r"(?:cache type:\s*(\w+),\s*)?"
     r"cache usage:\s*([\d.]+)\s*%\s*of\s*([\d.]+)\s*([KMGT]?B)", re.IGNORECASE)
 
 _UNIT_GB = {"B": 1 / (1024 ** 3), "KB": 1 / (1024 ** 2), "MB": 1 / 1024,
@@ -616,8 +625,8 @@ class OVMSLogSource(TelemetrySource):
                     "appears once a generation request has been served")
         return None
 
-    def _last_reading(self) -> tuple[float, float] | None:
-        """(percent, gigabytes) from the most recent cache line, or None."""
+    def _last_reading(self) -> tuple[float, float, str | None] | None:
+        """(percent, gigabytes, cache_type) from the newest cache line."""
         try:
             size = os.path.getsize(self.log_path)
             with open(self.log_path, "r", encoding="utf-8",
@@ -632,43 +641,79 @@ class OVMSLogSource(TelemetrySource):
         found = _CACHE_USAGE.findall(text)
         if not found:
             return None
-        percent, amount, unit = found[-1]
+        cache_type, percent, amount, unit = found[-1]
         try:
             gigabytes = float(amount) * _UNIT_GB.get(unit.upper(), 1.0)
-            return float(percent), round(gigabytes, 2)
+            return (float(percent), round(gigabytes, 2),
+                    cache_type.lower() or None)
         except ValueError:
             return None
+
+    @property
+    def cache_type(self) -> str | None:
+        """"static", "dynamic", or None if this OVMS does not say.
+
+        NOT a metric, and deliberately not in sample(). Every value in a
+        sample is formatted as a number by the telemetry page, so returning
+        a string there took `ovat telemetry --once` down with
+        `Unknown format code 'f' for object of type 'str'`. The type is a
+        property OF the cache rather than a reading of it, so it is asked for
+        by name, by the one caller that needs it.
+        """
+        reading = self._last_reading()
+        return reading[2] if reading else None
 
     def sample(self) -> dict:
         reading = self._last_reading()
         if reading is None:
             return {}
-        percent, gigabytes = reading
+        percent, gigabytes, _ = reading
         return {"kv_cache_pct": percent, "kv_cache_gb": gigabytes}
 
 
-def cache_warning(percent: float, gigabytes: float) -> str | None:
+def cache_warning(percent: float, gigabytes: float,
+                  cache_type: str | None = None) -> str | None:
     """Whether this KV cache reading is worth saying something about first.
 
     Called before an agent run, once, when a server log is readable. Returning
     a string prints it as a warning; returning None stays quiet.
 
-    This is the difference between diagnosing the undecoded-tool-call failure
-    afterwards and predicting it: measured here, a server at 98-100% failed
-    4/4 tool-calling runs, and a fresh one succeeded 17/17.
+    ONLY A STATIC CACHE CAN BE "FULL". This is the correction that gutted the
+    original version of this function, and it is measured, not reasoned.
 
-    THE THRESHOLD IS DELIBERATELY HIGH, at 95%. The evidence covers the two
-    ends and nothing in between: 98-100% failed, a fresh server did not. There
-    is no measurement at 70% or 85%, so warning there would be inventing a
-    number and teaching the reader to scroll past this line -- which costs
-    more than it saves, because the one time it fires it needs to be believed.
-    Raise or lower it when there is data, not before.
+    OVMS allocates the KV cache dynamically unless --cache_size is passed
+    (`optional uint64 cache_size ... If not set or set to 0, cache is
+    allocated dynamically`, docs/llm/reference.md), and dynamic allocation
+    "reserves as much as required to prevent preemption" -- it GROWS. Over one
+    ordinary session on this hardware the log went 248.5 MB -> 5.6 GB while
+    sitting at or near 100% of whatever was currently allocated the whole
+    time: 2449 of 3975 readings, 61.6%, were >= 95%.
 
-    The wording says what to DO and does not predict the run will fail,
-    because that is still a correlation. Naming both remedies matters: a
-    restart clears the cache for one run, and a bigger cache is what stops it
-    coming back.
+    So on the default configuration this warning fired on the majority of all
+    moments, and the evidence behind it -- "4/4 failures happened at 98-100%"
+    -- says almost nothing, because roughly three fifths of all readings are
+    98-100% whether anything is wrong or not. That is a base rate, not a
+    signal, and printing it before every run taught the reader to scroll past
+    the one line that would matter.
+
+    With --cache_size the log says `Cache type: static` and the size stops
+    moving (measured: a flat 999.6 MB, climbing 13.9% -> 50%). There a
+    percentage is a real utilisation figure, and OVMS documents a real
+    consequence at the top of it: requests get preempted and recomputed, and
+    "when preemption is not possible ... the request gets terminated when no
+    more cache can be assigned to it, EVEN BEFORE REACHING STOPPING
+    CRITERIA". That is the mechanism that can halve a <tool_call> block.
+
+    An older OVMS that logs no cache type at all still warns: cache_type is
+    None there, and going quiet would lose a reading that used to be shown.
+
+    THE THRESHOLD IS DELIBERATELY HIGH, at 95%, and is still not backed by a
+    measurement between the ends. Raise or lower it when there is data.
     """
+    if cache_type == "dynamic":
+        # Not a full cache: a dynamic one reports ~100% of its current
+        # allocation as its normal working state, then allocates more.
+        return None
     if percent < 95:
         return None
     # Size changes the advice, not the warning. A cache this small will refill
