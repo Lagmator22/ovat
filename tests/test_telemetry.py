@@ -463,9 +463,18 @@ def test_a_source_that_is_live_but_silent_is_reported():
 # well as on hardware. A test that needs a real NPU is a test that never runs,
 # and this reader's arithmetic is exactly where a mistake would hide.
 
+#: The real device directory is a PCI address -- "0000:00:0b.0" -- and those
+#: colons cannot appear in a Windows path, so a fixture using the true name
+#: fails on Windows with WinError 123 while passing everywhere else. The
+#: source does not care what the directory is CALLED: it lists whatever is
+#: there and keeps the entries carrying npu_busy_time_us. So the fixture uses
+#: a portable stand-in and the reader is still exercised exactly as written.
+_FAKE_DEVICE = "0000_00_0b.0"
+
+
 def _fake_npu(tmp_path, busy_us, memory_kb=None):
     """A directory shaped like /sys/bus/pci/drivers/intel_vpu."""
-    device = tmp_path / "0000:00:0b.0"
+    device = tmp_path / _FAKE_DEVICE
     device.mkdir(parents=True, exist_ok=True)
     (device / "npu_busy_time_us").write_text(str(busy_us))
     if memory_kb is not None:
@@ -503,7 +512,7 @@ def test_npu_utilization_is_the_duty_cycle_between_two_readings(tmp_path,
     source.sample()                                    # primes the delta
 
     clock[0] = 101.0                                   # one second later
-    (tmp_path / "0000:00:0b.0" / "npu_busy_time_us").write_text("1500000")
+    (tmp_path / _FAKE_DEVICE / "npu_busy_time_us").write_text("1500000")
     assert source.sample()["utilization"] == 50.0
 
 
@@ -520,7 +529,7 @@ def test_a_counter_that_went_backwards_is_not_reported_as_negative(tmp_path,
     source = NPUSource(sysfs_root=root)
     source.sample()
     clock[0] = 11.0
-    (tmp_path / "0000:00:0b.0" / "npu_busy_time_us").write_text("12000")
+    (tmp_path / _FAKE_DEVICE / "npu_busy_time_us").write_text("12000")
     assert "utilization" not in source.sample()
 
 
@@ -837,3 +846,18 @@ def test_memory_is_still_reported_on_the_very_first_sample():
     from ovat.telemetry.sources import SystemSource
 
     assert "ram_used_pct" in SystemSource().sample()
+
+
+def test_the_fake_npu_device_name_is_legal_on_every_platform():
+    """Guard for the mistake this fixture already made once.
+
+    The real directory is a PCI address, "0000:00:0b.0". Using that literally
+    passed on macOS and Linux and failed the whole Windows CI job with
+    WinError 123, because a colon cannot appear in a Windows path. The suite
+    must describe the code, not the filesystem it happened to be written on.
+
+    Restore the colon and this fails before the OSError does, naming why.
+    """
+    illegal = set('<>:"/\\|?*')
+    assert not (set(_FAKE_DEVICE) & illegal), (
+        f"{_FAKE_DEVICE!r} cannot be a directory name on Windows")
