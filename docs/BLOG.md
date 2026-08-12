@@ -163,7 +163,7 @@ routes accordingly:
 | Anything, no accelerator | CPU | always works |
 
 One caveat worth knowing up front, because it is easy to lose an afternoon to:
-**prefer CPU or GPU for an agent, not the NPU.** No accelerator executes tools: the device generates text, and the agent loop parses the tool call out of it and runs the Python function itself. The NPU is a poor fit for a different reason -- its plugin favours static shapes and a bounded context, while an agent turn grows the prompt every round. It is excellent for embeddings and single-turn chat.
+**an agent defaults to GPU, and the NPU needs a model built for it.** No accelerator executes tools -- the device generates text, and the agent loop parses the tool call out of it and runs the Python function itself. The NPU serves LLMs perfectly well, including tool-calling ones. What it will not do is compile a *group-quantised* export: it needs channel-wise symmetric INT4, which is why OpenVINO publishes a separate [`-int4-cw-ov` family](https://huggingface.co/collections/OpenVINO/llms-optimized-for-npu). Point OVMS at a stock `-int4-ov` model with `--target_device NPU` and you get `[NPU_VCL] Compilation failed (0x78000004)` before a single token, which reads like a broken device and is really a mismatched file. GPU is the default because it is correct for every export.
 
 ---
 

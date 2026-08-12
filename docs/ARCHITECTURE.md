@@ -549,9 +549,20 @@ flowchart TD
 | Whisper (~80 MB) | CPU | small enough that CPU latency is fine |
 | Anything, no accelerator | CPU | always works; low-bit weights keep it in RAM |
 
-**Prefer `CPU` or `GPU` for agents, not `NPU`.** Not because the NPU "cannot tool call" -- no accelerator executes tools. The device runs the model; the agent loop parses the tool call out of the generated text and runs the Python function itself, so tool calling is a property of the model and the parser, not the hardware. The real constraint is shape: OpenVINO's NPU plugin favours static shapes and a bounded context, while an agent turn grows the prompt on every round as history and tool results accumulate. That is a poor fit, and it is why NPU is never the default for an agent. It is a good fit for embeddings and single-turn chat, where the shape is fixed.
+**`GPU` is the agent default; `NPU` works but needs a specific export.** Not because the NPU "cannot tool call" -- no accelerator executes tools. The device runs the model; the agent loop parses the tool call out of the generated text and runs the Python function itself, so tool calling is a property of the model and the parser, not the hardware. OVMS serves tool-calling LLMs on NPU and [documents the procedure](https://github.com/openvinotoolkit/model_server/blob/main/demos/llm_npu/README.md), tested on the same LunarLake silicon this project develops against.
 
-> This has NOT been measured on an AI PC. It follows from how the NPU plugin works, and it should be verified before it is stated as a hardware limit.
+The real constraint is the **export format**, and it is strict:
+
+| NPU requirement | Consequence |
+| --- | --- |
+| INT4 exported `--sym --ratio 1.0 --group-size -1` (channel-wise, symmetric) | the stock `-int4-ov` models are group quantised and will not compile; use the [`-int4-cw-ov` family](https://huggingface.co/collections/OpenVINO/llms-optimized-for-npu) |
+| Prompt capped at 1024 tokens by default | raise it with `--max_prompt_len`; an agent turn grows every round, so this is the setting that matters most |
+| No request batching, no beam search, no `log_probs` | requests are processed sequentially |
+| `finish_reason` is **always** `"stop"` | a decoded tool call arrives labelled as if the model had stopped |
+
+That last row is load-bearing for OVAT. The native loop dispatches on **whether the reply carries tool calls**, never on `finish_reason`, precisely so an NPU-served call is not read as prose. See `agent/loop.py`.
+
+> **Measured, 2026-08-13:** Qwen3.5-4B and Qwen3.5-0.8B (both stock `-int4-ov`) fail identically on NPU at compilation -- `[NPU_VCL] Compilation failed (0x78000004)` -- before any token is generated. That is the expected answer to a group-quantised export, not a device limit. Serving a `-int4-cw-ov` model on NPU is **not yet verified here**; the requirements above are from OVMS's documentation, not from a run on this hardware.
 
 ---
 
@@ -736,8 +747,14 @@ the documented command was still broken.
 | 8 Deployment / serving | ✅ complete | locator, stall budget, pidfile, identity check |
 | 9 Runtime / hardware | ✅ complete | device routing, NPU constraints documented |
 
-Also outstanding: **CI** for the test suite, and a VSCode extension (secondary
-scope).
+CI runs the suite on every push across ubuntu-22.04/py3.10 (the oldest
+supported everything), ubuntu-24.04/py3.12, windows-latest/py3.12 and
+macos-latest/py3.13, plus two jobs the suite itself cannot prove: that a BASE
+install pulls in no framework or TUI dependency, and that the built wheel
+installs and runs.
+
+Also outstanding: a VSCode extension (secondary scope), A2A orchestration
+(Layer 6, a declared stretch goal), and NPU LLM serving verified on hardware.
 
 ---
 

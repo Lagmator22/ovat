@@ -117,13 +117,30 @@ On Windows also install the
 [Visual C++ Redistributable](https://aka.ms/vs/17/release/VC_redist.x64.exe),
 which OVMS needs in order to start at all.
 
-> **Prefer `CPU` or `GPU` for agents, not `NPU`.** No accelerator executes
-> tools: the device runs the model, and the agent loop parses the tool call out
-> of the generated text and runs the Python function itself. Tool calling is a
-> property of the model and the parser, not the hardware. The NPU is a poor fit
-> for a different reason -- its plugin favours static shapes and a bounded
-> context, while an agent turn grows the prompt every round. It is a good fit
-> for embeddings and single-turn chat, where the shape is fixed.
+> **Agents default to `GPU`, and `NPU` needs a specific export.** No
+> accelerator executes tools: the device runs the model, the agent loop parses
+> the tool call out of the generated text and runs the Python function itself.
+> Tool calling is a property of the model and the parser, not the hardware --
+> OVMS serves tool-calling LLMs on NPU and documents how.
+>
+> What the NPU requires is a **channel-wise symmetric INT4** export
+> (`--sym --ratio 1.0 --group-size -1`). The stock `-int4-ov` models are group
+> quantised and fail to compile on it with `[NPU_VCL] Compilation failed
+> (0x78000004)` -- measured here on both Qwen3.5-4B and Qwen3.5-0.8B. Use the
+> [`-int4-cw-ov` family](https://huggingface.co/collections/OpenVINO/llms-optimized-for-npu)
+> instead:
+>
+> ```bash
+> ovms --pull --source_model OpenVINO/Qwen3-8B-int4-cw-ov \
+>   --model_repository_path models --target_device NPU \
+>   --task text_generation --tool_parser hermes3 --max_prompt_len 2000
+> ```
+>
+> NPU also gives up request batching, beam search and `log_probs`, always
+> reports `finish_reason: "stop"` (OVAT handles that: it dispatches on the tool
+> call itself, not on the label), and caps the prompt at 1024 tokens unless
+> `--max_prompt_len` raises it. `GPU` stays the default because it is correct
+> for any export. Embeddings route to NPU automatically.
 
 ---
 
@@ -412,7 +429,12 @@ model runs in-process.
 | `init` `doctor` `index` `setup` `telemetry` | ✅ | ✅ | ✅ |
 | `chat` (local model, no server) + TUI | ✅ | ✅ | ✅ |
 | `serve` `models` `run` `bench` | ❌ | ✅ | ✅ |
-| GPU / NPU | ❌ CPU only | ✅ | ✅ |
+| GPU / NPU | ❌ CPU only | ✅ verified | ⚠️ untested |
+
+✅ means run on that platform. Linux GPU/NPU is marked untested because the
+Linux verification was done in WSL2, which exposes no `/dev/dri` -- so the CPU
+path is proven there and the accelerator path is not. It is expected to work
+with current drivers; it has not been demonstrated here.
 
 OVMS is x86-64 with no macOS build. For day-to-day macOS work, `ovat chat` runs a
 local `openvino_genai` model and needs no server at all.
