@@ -410,3 +410,200 @@ class IntelHardwareSource(TelemetrySource):
             except OSError:
                 pass
             self._out_path = None
+
+
+#: Where the Linux NPU driver publishes its busy-time counter. The kernel
+#: module is `intel_vpu` (drivers/accel/ivpu), and it exposes one directory per
+#: PCI device, each carrying `npu_busy_time_us`.
+_NPU_SYSFS_ROOT = "/sys/bus/pci/drivers/intel_vpu"
+
+
+class NPUSource(TelemetrySource):
+    """NPU utilisation, from the driver rather than from a profiler.
+
+    WHY THIS EXISTS ALONGSIDE IntelHardwareSource. Intel UT is the rich
+    answer -- power, per-engine timelines, thermals -- but its continuous mode
+    writes binary traces that need bin2perfetto to decode, so it produces no
+    number this page can draw. A live utilisation percentage is the number
+    actually being asked for, and on Linux the driver publishes it directly.
+
+    THE MEASUREMENT. `npu_busy_time_us` is a monotonic counter of microseconds
+    the NPU spent executing jobs. A single reading is meaningless; two readings
+    give a duty cycle:
+
+        busy% = delta_busy_us / (delta_wall_s * 10_000)
+
+    which is the same arithmetic btop uses for its Intel NPU meter. The first
+    sample after start() therefore reports nothing -- there is no previous
+    reading to subtract -- rather than reporting 0, which would draw an idle
+    NPU during the one second an agent is most likely to be using it.
+
+    PLATFORM HONESTY. Windows exposes NPU utilisation to Task Manager through
+    DXCore, not through a documented performance-counter path, so there is no
+    verified way to read it from here yet and this source says so instead of
+    guessing. macOS has no Intel NPU at all.
+    """
+
+    name = "npu"
+
+    def __init__(self, sysfs_root: str = _NPU_SYSFS_ROOT):
+        # Injectable so the reader can be tested against a fake sysfs tree on
+        # any OS. A test that needs real NPU hardware is a test that never
+        # runs.
+        self.sysfs_root = sysfs_root
+        self._previous: tuple[float, int] | None = None
+
+    def _device_dirs(self) -> list[str]:
+        """Every intel_vpu device directory that publishes a busy counter."""
+        try:
+            entries = sorted(os.listdir(self.sysfs_root))
+        except OSError:
+            return []
+        found = []
+        for entry in entries:
+            path = os.path.join(self.sysfs_root, entry, "npu_busy_time_us")
+            if os.path.exists(path):
+                found.append(os.path.join(self.sysfs_root, entry))
+        return found
+
+    @property
+    def unavailable(self) -> str | None:
+        if sys.platform == "darwin":
+            return "no Intel NPU on macOS"
+        if sys.platform.startswith("win"):
+            return ("Windows exposes NPU usage through DXCore, not a "
+                    "documented perf counter. Check whether this build has "
+                    "one: Get-Counter -ListSet *NPU*")
+        if not self._device_dirs():
+            return (f"no NPU found under {self.sysfs_root}. The intel_vpu "
+                    f"driver provides it; check `lsmod | grep intel_vpu`")
+        return None
+
+    def sample(self) -> dict:
+        devices = self._device_dirs()
+        if not devices:
+            return {}
+        # One NPU per machine in practice; the first device is the NPU.
+        device = devices[0]
+        now = time.monotonic()
+        try:
+            with open(os.path.join(device, "npu_busy_time_us")) as handle:
+                busy_us = int(handle.read().strip())
+        except (OSError, ValueError):
+            return {}
+
+        out = {}
+        if self._previous is not None:
+            previous_time, previous_busy = self._previous
+            elapsed = now - previous_time
+            # A counter that went backwards means the driver reloaded; treat
+            # it as a fresh start rather than reporting a negative percentage.
+            if elapsed > 0 and busy_us >= previous_busy:
+                percent = (busy_us - previous_busy) / (elapsed * 10_000)
+                out["utilization"] = round(min(100.0, max(0.0, percent)), 1)
+        self._previous = (now, busy_us)
+
+        # Optional on some driver versions, so its absence is not an error.
+        try:
+            with open(os.path.join(device, "npu_memory_utilization")) as handle:
+                out["memory_mb"] = round(int(handle.read().strip()) / 1024, 1)
+        except (OSError, ValueError):
+            pass
+        return out
+
+
+#: OVMS's own log line for KV cache state, from its continuous-batching
+#: executor (src/llm/language_model/continuous_batching/llm_executor.hpp):
+#:
+#:     type: dynamic, cache usage: 98.5% of 3.60 GB
+#:
+#: Parsed rather than invented. The percentage is the number that matters; the
+#: size is carried alongside so "98% of 1 GB" and "98% of 16 GB" are not
+#: reported as the same situation.
+_CACHE_USAGE = re.compile(
+    r"cache usage:\s*([\d.]+)\s*%\s*of\s*([\d.]+)\s*([KMGT]?B)", re.IGNORECASE)
+
+_UNIT_GB = {"B": 1 / (1024 ** 3), "KB": 1 / (1024 ** 2), "MB": 1 / 1024,
+            "GB": 1.0, "TB": 1024.0}
+
+
+class OVMSLogSource(TelemetrySource):
+    """KV cache usage, read out of the OVMS log.
+
+    WHY A LOG AND NOT AN ENDPOINT. OVMS has a Prometheus `/metrics` endpoint,
+    but its own documentation states that "metrics related to text generation
+    are not exposed via metrics endpoint" -- KV cache usage is written to the
+    server log and nowhere else. So a log reader is not a shortcut here; it is
+    the only interface that carries this number.
+
+    WHY IT MATTERS. Tool calls stopped decoding on a long-lived server whose
+    cache was reported at 98-100%, and decoded cleanly on a fresh one. That
+    correlation is the whole basis of the KV-cache explanation, and until now
+    the figure behind it had to be read by hand out of a log file at the exact
+    moment of failure. Exposing it as a source means `ovat run --telemetry`
+    captures the cache state and the failing trace in the same recording,
+    which is what the explanation needs in order to stop being a hypothesis.
+
+    Only the LAST reading in the file is reported: the log accumulates one
+    line per scheduler tick, and the current state is the one being asked for.
+    """
+
+    name = "ovms"
+
+    #: Reading the whole log every tick would be O(file) forever, and this file
+    #: grows for as long as the server runs. The last lines are the current
+    #: state, so only the tail is read.
+    TAIL_BYTES = 65_536
+
+    def __init__(self, log_path: str = "ovms.log"):
+        self.log_path = log_path
+
+    @property
+    def unavailable(self) -> str | None:
+        if not os.path.exists(self.log_path):
+            return (f"no OVMS log at {self.log_path}. This source reads the "
+                    f"log `ovat serve` writes; start a server first")
+        return None
+
+    @property
+    def note(self) -> str | None:
+        """Live, but the log carries no cache line yet.
+
+        A server that has started but not yet served a generation request has
+        written no cache line at all. That is a different state from "no
+        server", and reporting it as an absent source would be wrong.
+        """
+        if self.unavailable is None and not self._last_reading():
+            return ("OVMS is running but has logged no KV cache line yet; it "
+                    "appears once a generation request has been served")
+        return None
+
+    def _last_reading(self) -> tuple[float, float] | None:
+        """(percent, gigabytes) from the most recent cache line, or None."""
+        try:
+            size = os.path.getsize(self.log_path)
+            with open(self.log_path, "r", encoding="utf-8",
+                      errors="replace") as handle:
+                if size > self.TAIL_BYTES:
+                    handle.seek(size - self.TAIL_BYTES)
+                    handle.readline()          # discard a partial first line
+                text = handle.read()
+        except OSError:
+            return None
+
+        found = _CACHE_USAGE.findall(text)
+        if not found:
+            return None
+        percent, amount, unit = found[-1]
+        try:
+            gigabytes = float(amount) * _UNIT_GB.get(unit.upper(), 1.0)
+            return float(percent), round(gigabytes, 2)
+        except ValueError:
+            return None
+
+    def sample(self) -> dict:
+        reading = self._last_reading()
+        if reading is None:
+            return {}
+        percent, gigabytes = reading
+        return {"kv_cache_pct": percent, "kv_cache_gb": gigabytes}

@@ -532,10 +532,17 @@ def _start_telemetry(path: str, agent):
     from ovat.telemetry.collector import Collector
     from ovat.telemetry.sinks import JSONFileSink
     from ovat.telemetry.sources import (AgentTraceSource, IntelHardwareSource,
+                                        NPUSource, OVMSLogSource,
                                         ProcessMemorySource)
 
     collector = Collector(
-        [ProcessMemorySource(), AgentTraceSource(agent),
+        [ProcessMemorySource(), AgentTraceSource(agent), NPUSource(),
+         # The reason this one is here rather than only on `ovat telemetry`:
+         # when a run fails with an undecoded tool call, the KV cache figure
+         # from the SAME window is the evidence that separates a parser fault
+         # from an exhausted cache. Captured by hand, it was never in the same
+         # file as the trace it explained.
+         OVMSLogSource(),
          IntelHardwareSource(getattr(agent, "ut_binary", None))],
         JSONFileSink(path), interval_s=0.5)
     # Say which sources are NOT running here. A file of process memory alone,
@@ -1307,12 +1314,20 @@ def telemetry(
 
     from ovat.telemetry.collector import Collector
     from ovat.telemetry.sinks import FanOutSink, JSONFileSink, LiveBufferSink
-    from ovat.telemetry.sources import (IntelHardwareSource,
-                                        ProcessMemorySource, SystemSource)
+    from ovat.telemetry.sources import (IntelHardwareSource, NPUSource,
+                                        OVMSLogSource, ProcessMemorySource,
+                                        SystemSource)
 
     live = LiveBufferSink()
     sink = FanOutSink(live, JSONFileSink(out)) if out else live
+    # NPUSource before IntelHardwareSource: it reads the driver's own busy
+    # counter and produces an actual percentage, where UT's continuous mode
+    # writes binary traces that decode to nothing readable here.
+    # OVMSLogSource carries the KV cache figure, which is the number the
+    # undecoded-tool-call explanation rests on and the only one that has to be
+    # captured in the same window as the failure it explains.
     collector = Collector([SystemSource(), ProcessMemorySource(),
+                           NPUSource(), OVMSLogSource(),
                            IntelHardwareSource(ut)], sink,
                           interval_s=interval)
 
