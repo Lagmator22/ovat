@@ -139,18 +139,29 @@ def test_run_template_puts_the_cursor_in_the_config_gap():
             inp = app.query_one("#prompt", Input)
             inp.value = "/run"
             await pilot.pause()
+            # Model what actually failed on Windows CI, rather than hoping
+            # to hit a timing window.
+            #
+            # Assigning `value` sends the cursor to the end -- Input does that
+            # in its value watcher, synchronously. The correction used to be
+            # scheduled with call_after_refresh, and a scheduled callback only
+            # runs once a refresh happens. On a loaded runner that refresh did
+            # not arrive while the test was looking, so the cursor was found
+            # still at the end of the line: 20, not 9. Pausing longer cannot
+            # fix work that has not been scheduled to run.
+            #
+            # Neutering call_after_refresh reproduces that exactly, and leaves
+            # the synchronous placement as the only thing that can pass it.
+            app.call_after_refresh = lambda *a, **kw: None
             await pilot.press("tab")
-            # call_after_refresh schedules the cursor move for the NEXT refresh
-            # cycle, so one pause is not always enough on a slow Windows runner.
+            await pilot.pause()
+
             expected = len("ovat run ")
-            for _ in range(30):
-                await pilot.pause()
-                if inp.cursor_position == expected:
-                    break
             assert inp.value == 'ovat run  --input ""'
             # The next keystrokes are the config path, so the cursor must sit
             # in the gap after "ovat run ", not at the end of the line.
-            assert inp.cursor_position == expected
+            assert inp.cursor_position == expected, (
+                "cursor placement depended on a refresh that never came")
     _run(scenario())
 
 

@@ -463,18 +463,19 @@ def test_a_source_that_is_live_but_silent_is_reported():
 # well as on hardware. A test that needs a real NPU is a test that never runs,
 # and this reader's arithmetic is exactly where a mistake would hide.
 
-#: The real device directory is a PCI address -- "0000:00:0b.0" -- and those
-#: colons cannot appear in a Windows path, so a fixture using the true name
-#: fails on Windows with WinError 123 while passing everywhere else. The
-#: source does not care what the directory is CALLED: it lists whatever is
-#: there and keeps the entries carrying npu_busy_time_us. So the fixture uses
-#: a portable stand-in and the reader is still exercised exactly as written.
-_FAKE_DEVICE = "0000_00_0b.0"
+# The real device directory is a PCI address, `0000:00:0b.0`. Colons are
+# illegal in Windows filenames, so a fixture spelled that way cannot even be
+# created on one of the two OSes these tests exist to cover -- it raises
+# WinError 123 before reaching an assertion. The reader never parses the name:
+# `_device_dirs` lists the root and keeps whichever entries contain a
+# `npu_busy_time_us` file. A portable stand-in therefore exercises exactly the
+# same code path.
+_NPU_DEVICE = "0000-00-0b.0"
 
 
 def _fake_npu(tmp_path, busy_us, memory_kb=None):
     """A directory shaped like /sys/bus/pci/drivers/intel_vpu."""
-    device = tmp_path / _FAKE_DEVICE
+    device = tmp_path / _NPU_DEVICE
     device.mkdir(parents=True, exist_ok=True)
     (device / "npu_busy_time_us").write_text(str(busy_us))
     if memory_kb is not None:
@@ -512,7 +513,7 @@ def test_npu_utilization_is_the_duty_cycle_between_two_readings(tmp_path,
     source.sample()                                    # primes the delta
 
     clock[0] = 101.0                                   # one second later
-    (tmp_path / _FAKE_DEVICE / "npu_busy_time_us").write_text("1500000")
+    (tmp_path / _NPU_DEVICE / "npu_busy_time_us").write_text("1500000")
     assert source.sample()["utilization"] == 50.0
 
 
@@ -529,7 +530,7 @@ def test_a_counter_that_went_backwards_is_not_reported_as_negative(tmp_path,
     source = NPUSource(sysfs_root=root)
     source.sample()
     clock[0] = 11.0
-    (tmp_path / _FAKE_DEVICE / "npu_busy_time_us").write_text("12000")
+    (tmp_path / _NPU_DEVICE / "npu_busy_time_us").write_text("12000")
     assert "utilization" not in source.sample()
 
 
@@ -550,7 +551,7 @@ def test_an_absent_npu_says_where_it_looked(tmp_path):
     # macOS and Windows answer with their own platform reason; Linux names
     # the path and the driver. All three are actionable, which is the point.
     assert ("nothing-here" in reason or "macOS" in reason
-            or "DXCore" in reason)
+            or "engtype_compute" in reason)
     assert source.sample() == {}
 
 
@@ -848,7 +849,87 @@ def test_memory_is_still_reported_on_the_very_first_sample():
     assert "ram_used_pct" in SystemSource().sample()
 
 
-def test_the_fake_npu_device_name_is_legal_on_every_platform():
+# --- a dynamic cache is not a full one ---------------------------------------
+#
+# MEASURED on the AI PC, 2026-08-12. OVMS allocates the KV cache dynamically
+# unless --cache_size is passed, and a dynamic cache GROWS: one session's log
+# went 248.5 MB -> 5.6 GB while reading at or near 100% of whatever was
+# allocated at the time. 2449 of 3975 readings (61.6%) were >= 95%, so the
+# pre-run warning fired on most of an ordinary run and meant nothing.
+
+def _log_with(tmp_path, line):
+    path = tmp_path / "ovms.log"
+    path.write_text(line + "\n")
+    return str(path)
+
+
+def test_a_dynamic_cache_at_100_percent_does_not_warn(tmp_path):
+    """~100% of the current allocation is a dynamic cache's normal state."""
+    from ovat.telemetry.sources import OVMSLogSource, cache_warning
+
+    source = OVMSLogSource(log_path=_log_with(
+        tmp_path, "All requests: 1; Cache type: dynamic, "
+                  "cache usage: 100.0% of 5.6 GB;"))
+    reading = source.sample()
+    assert source.cache_type == "dynamic"
+    assert cache_warning(reading["kv_cache_pct"], reading["kv_cache_gb"],
+                         source.cache_type) is None
+
+
+def test_a_static_cache_at_100_percent_still_warns(tmp_path):
+    """With --cache_size the size stops moving, so the percentage is real.
+
+    OVMS documents the consequence: requests are preempted, and when
+    preemption is impossible "the request gets terminated ... even before
+    reaching stopping criteria" -- which is what can halve a <tool_call>.
+    """
+    from ovat.telemetry.sources import OVMSLogSource, cache_warning
+
+    source = OVMSLogSource(log_path=_log_with(
+        tmp_path, "All requests: 1; Cache type: static, "
+                  "cache usage: 99.8% of 999.6 MB;"))
+    reading = source.sample()
+    assert source.cache_type == "static"
+    warning = cache_warning(reading["kv_cache_pct"], reading["kv_cache_gb"],
+                            source.cache_type)
+    assert warning is not None and "99.8" in warning
+
+
+def test_a_log_without_a_cache_type_still_warns(tmp_path):
+    """An older OVMS omits the type; going quiet would lose the reading."""
+    from ovat.telemetry.sources import OVMSLogSource, cache_warning
+
+    source = OVMSLogSource(log_path=_log_with(
+        tmp_path, "All requests: 1; cache usage: 99.0% of 3.6 GB;"))
+    reading = source.sample()
+    assert source.cache_type is None
+    assert cache_warning(reading["kv_cache_pct"],
+                         reading["kv_cache_gb"], None) is not None
+
+
+def test_every_kv_cache_sample_value_is_a_number(tmp_path):
+    """The telemetry page formats every sample value as a number.
+
+    Putting the cache type ("static"/"dynamic") in sample() alongside the
+    figures took `ovat telemetry --once` down with
+
+        ValueError: Unknown format code 'f' for object of type 'str'
+
+    which is why the type is a property and not a metric.
+    """
+    from ovat.telemetry.sources import OVMSLogSource
+
+    source = OVMSLogSource(log_path=_log_with(
+        tmp_path, "All requests: 1; Cache type: static, "
+                  "cache usage: 42.0% of 1.0 GB;"))
+    sample = source.sample()
+    assert sample
+    for key, value in sample.items():
+        assert isinstance(value, (int, float)), f"{key} is {type(value)}"
+        f"{value:f}"                       # what the page actually does
+
+
+def test_the_npu_device_name_is_legal_on_every_platform():
     """Guard for the mistake this fixture already made once.
 
     The real directory is a PCI address, "0000:00:0b.0". Using that literally
@@ -859,5 +940,34 @@ def test_the_fake_npu_device_name_is_legal_on_every_platform():
     Restore the colon and this fails before the OSError does, naming why.
     """
     illegal = set('<>:"/\\|?*')
-    assert not (set(_FAKE_DEVICE) & illegal), (
-        f"{_FAKE_DEVICE!r} cannot be a directory name on Windows")
+    assert not (set(_NPU_DEVICE) & illegal), (
+        f"{_NPU_DEVICE!r} cannot be a directory name on Windows")
+
+
+def test_the_cache_type_is_read_from_either_spelling_of_the_line(tmp_path):
+    """OVMS assembles this line from two places.
+
+    formatCacheInfo() returns "type: dynamic, cache usage: ...", and
+    printMetrics() logs it as "... Cache {};" -- so the line on disk reads
+    "Cache type: dynamic". Matching only the assembled spelling fails
+    SILENTLY if that prefix changes: no capture, cache_type None, and an
+    unknown type warns. The failure mode is therefore a false alarm on every
+    healthy dynamic cache, which is what this parse exists to prevent.
+
+    Narrow the pattern back to "cache type:" and the bare-fragment case here
+    returns None and starts warning again.
+    """
+    from ovat.telemetry.sources import OVMSLogSource, cache_warning
+
+    assembled = _ovms_log(
+        tmp_path, "All requests: 1; Scheduled requests: 1; "
+                  "Cache type: dynamic, cache usage: 99.4% of 4.9 GB;")
+    assert OVMSLogSource(assembled).cache_type == "dynamic"
+
+    bare = _ovms_log(tmp_path, "type: dynamic, cache usage: 99.4% of 4.9 GB")
+    source = OVMSLogSource(bare)
+    assert source.cache_type == "dynamic"
+    # and the reading still parses either way
+    assert source.sample()["kv_cache_pct"] == 99.4
+    # the point of all of it: a healthy dynamic cache stays quiet
+    assert cache_warning(99.4, 4.9, source.cache_type) is None

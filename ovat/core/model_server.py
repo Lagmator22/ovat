@@ -87,7 +87,7 @@ class ModelServer:
                  reasoning_parser: str | None = None,
                  task: str = "text_generation",
                  enable_prefix_caching: bool = True,
-                 cache_size_gb: float | None = None,
+                 cache_size_gb: int | None = None,
                  binary: str = "ovms"):
         self.model_name = model_name
         # Note to myself: source_model is the Hugging Face id OVMS downloads if
@@ -146,7 +146,13 @@ class ModelServer:
         if self.enable_prefix_caching:
             cmd += ["--enable_prefix_caching", "true"]
         if self.cache_size_gb:
-            cmd += ["--cache_size", str(self.cache_size_gb)]
+            # int(), because OVMS declares cache_size as uint64 and its option
+            # parser rejects "1.0" outright -- the server then exits before
+            # logging anything, and serve could only report that it "exited
+            # without becoming ready". Belt and braces with the config type:
+            # this is also reached by callers constructing ModelServer
+            # directly rather than through a WorkflowConfig.
+            cmd += ["--cache_size", str(int(self.cache_size_gb))]
         if self.reasoning_parser:
             cmd += ["--reasoning_parser", self.reasoning_parser]
         # I only add source_model when I have one. On the first run OVMS uses it

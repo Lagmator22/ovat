@@ -227,6 +227,33 @@ Do not "improve" any of these without reading the reason first.
   figures from `ovat telemetry` in the same window, because the trace alone
   cannot distinguish a parser fault from an exhausted cache.
 
+  **The "98-100%" in that account does not mean what it looks like, 2026-08-12.**
+  Unset, OVMS allocates the KV cache DYNAMICALLY and it grows: measured here,
+  248.5 MB -> 5.6 GB over one session, at or near 100% of the current
+  allocation for 61.6% of all readings (2449/3975). So "it failed at 98-100%"
+  is a base rate, not a finding, and the 4/4-vs-17/17 split is not evidence of
+  a cache cause. A percentage only means "full" when the log says
+  `Cache type: static`, which happens only when `--cache_size` is passed.
+
+  **The controlled version of that experiment, 2026-08-12.** Same prompt, same
+  model, `tests/test_ovms_live.py::test_ovms_react_calls_a_tool_through_langchain`,
+  three runs per arm:
+
+  | cache | result | latency |
+  | --- | --- | --- |
+  | static 1 GB, 13.9% | pass | 16 s |
+  | static 1 GB, 100% | **FAIL** (`tool_calls: 0`) | 151 s |
+  | static 1 GB, 100% | pass | 146 s |
+  | static 8 GB, 1.4-1.7% | pass, pass, pass | 15 s, 18 s, 13 s |
+
+  Read it honestly. The failure appeared only in the small-cache arm and only
+  at 100%, and a bigger cache removed it 3/3 -- but the SAME 100% reading also
+  passed, so a full cache does not deterministically break tool decoding. The
+  tool-decode failure stays UNREPRODUCIBLE ON DEMAND at n=3 per arm.
+  What IS reproducible is the cost: ~10x latency at 100% (146-151 s vs
+  13-18 s), which is exactly the preemption-and-recompute OVMS documents.
+  Do not upgrade this to "mechanism confirmed" without a bigger sample.
+
 ## Environment variables
 
 `OVAT_OVMS` (ovms binary/folder) · `OVAT_MODELS` (model discovery roots,
@@ -365,9 +392,42 @@ and a fake HOME, or they describe the developer's machine instead of the code.
 - Verified for 1.0.0: Ubuntu 22.04.5 / SQLite 3.37.2 as uid 1000 (580 passed,
   live RAG citation, 4/4 engines), Windows 11 / Arc 140V GPU + NPU (setup,
   serve, run, bench, stop), macOS as dev only.
-- Still open: OpenTelemetry proper, stress tests, OVMS Docker integration
+- Still open: stress tests, OVMS Docker integration
   tests, an API reference, GPU/NPU verification on LINUX (WSL2 exposes no
   /dev/dri), and the mentor ask to strip/audit NVIDIA's NeMo Agent Toolkit
   (Ravi: critical). The plano ask is DONE: `examples/plano/` points it at
   OVMS, with the /v1-vs-/v3 path, the provider prefix and the missing-`id`
-  bridge all solved and tested.
+  bridge all solved and tested. Layer 7 (OpenTelemetry) shipped, so it is off
+  this list; a Windows NPU utilisation READER is the telemetry gap that
+  remains, and the counter to build it on is named in the landmine below.
+
+- **NPU serving: the export, and the counter that looks right and is not.**
+  Verified 2026-08-12 on LunarLake, OVMS 2026.2.1.
+  - OVMS compiles an LLM for NPU only from a CHANNEL-WISE symmetric INT4
+    export (the `-int4-cw-ov` family). `OpenVINO/Qwen3-8B-int4-cw-ov` compiled
+    in 36 s and served a real tool call; stock `-int4-ov` dies with
+    `0x78000004 - [NPU_VCL]`. Do NOT repeat "the NPU cannot do tool calling":
+    it can, and `examples/document-qa-npu.yml` is the run that shows it.
+  - But the compiler's own reason for the stock failure is
+    `StopLocationVerifierPass ... Found 8 duplicated names`, not a
+    quantisation complaint, and OVMS loaded that model as a *Visual* Language
+    Model servable. Group quantisation as the CAUSE is unverified.
+  - OVMS's NPU demo says `finish_reason` is always `"stop"`. On this build it
+    was not: tool-calling turns returned `"tool_calls"`, via OVAT and via raw
+    curl. loop.py's dispatch-on-payload is right per the docs but was NOT
+    exercised on hardware here.
+  - NPU is a Stateful servable, so `cache_size`, `dynamic_split_fuse`,
+    `max_num_batched_tokens` and `enable_prefix_caching` are IGNORED. The KV
+    cache story cannot apply to NPU at all.
+  - Instead NPU has a STATIC total-sequence cap from
+    `MAX_PROMPT_LEN`/`MIN_RESPONSE_LEN`. Pulled with `--max_prompt_len 2000`,
+    generation stopped at exactly 2129 total tokens however the split fell
+    (28+2101, 1529+600), cut mid-sentence, `finish_reason: "unknown"` -- not
+    `"length"`, which this server does return correctly elsewhere. That is a
+    real way to hand the parser half a `<tool_call>`.
+  - Windows NPU utilisation: `Get-Counter -ListSet *NPU*` is a DEAD END. It
+    returns "User Input Delay per Process/Session", matching on the "npu"
+    inside "I-npu-t". Use `\GPU Engine(*)\Utilization Percentage` on the
+    Intel(R) AI Boost adapter (ComputeAccelerator, one `engtype_compute`
+    engine). The GPU's `engtype_neural` is NOT the NPU -- it read 99.8% while
+    OVMS generated on the GPU.
