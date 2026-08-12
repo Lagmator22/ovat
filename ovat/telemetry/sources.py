@@ -452,10 +452,10 @@ class NPUSource(TelemetrySource):
     reading to subtract -- rather than reporting 0, which would draw an idle
     NPU during the one second an agent is most likely to be using it.
 
-    PLATFORM HONESTY. Windows exposes NPU utilisation to Task Manager through
-    DXCore, not through a documented performance-counter path, so there is no
-    verified way to read it from here yet and this source says so instead of
-    guessing. macOS has no Intel NPU at all.
+    PLATFORM HONESTY. macOS has no Intel NPU at all. Windows does not publish
+    this sysfs counter, but it is NOT unreadable there -- see the note on the
+    Windows branch of unavailable() for the counter that was measured on this
+    hardware, and for the near-miss that must not be mistaken for it.
     """
 
     name = "npu"
@@ -485,9 +485,33 @@ class NPUSource(TelemetrySource):
         if sys.platform == "darwin":
             return "no Intel NPU on macOS"
         if sys.platform.startswith("win"):
-            return ("Windows exposes NPU usage through DXCore, not a "
-                    "documented perf counter. Check whether this build has "
-                    "one: Get-Counter -ListSet *NPU*")
+            # MEASURED on this LunarLake box, 2026-08-12. There is no NPU
+            # counter SET: `Get-Counter -ListSet *NPU*` returns only "User
+            # Input Delay per Process/Session", which match on the "npu"
+            # inside "I-npu-t" and have nothing to do with the NPU. The
+            # earlier advice to run that command was a dead end.
+            #
+            # The NPU is readable, through the GPU Engine set: Intel exposes
+            # AI Boost via MCDM, which is built on WDDM, so it enumerates as
+            # a WDDM adapter. It appears as a ComputeAccelerator-class device
+            # ("Intel(R) AI Boost") whose adapter carries exactly ONE engine:
+            #
+            #   \GPU Engine(pid_*_luid_*_phys_0_eng_0_engtype_compute)
+            #       \Utilization Percentage
+            #
+            # THE TRAP. The Arc 140V GPU on the same machine also publishes
+            # an `engtype_neural` engine, and it reads ~100% while an LLM
+            # generates ON THE GPU. It is the Xe matrix engine, not the NPU.
+            # Reading NPU utilisation off `engtype_neural` would report a
+            # busy NPU for a run that never touched it. Selecting the right
+            # adapter -- the one with a single compute engine and no 3d /
+            # videodecode engines -- is the whole difficulty, and the LUID is
+            # not stable across boots, so it cannot simply be hard-coded.
+            return ("no sysfs NPU counter on Windows. Readable via "
+                    "'\\GPU Engine(*engtype_compute)\\Utilization "
+                    "Percentage' on the Intel(R) AI Boost adapter; not "
+                    "wired up here yet. Note engtype_neural is the GPU's "
+                    "matrix engine, not the NPU.")
         if not self._device_dirs():
             return (f"no NPU found under {self.sysfs_root}. The intel_vpu "
                     f"driver provides it; check `lsmod | grep intel_vpu`")

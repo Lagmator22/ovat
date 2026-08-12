@@ -551,7 +551,7 @@ def test_an_absent_npu_says_where_it_looked(tmp_path):
     # macOS and Windows answer with their own platform reason; Linux names
     # the path and the driver. All three are actionable, which is the point.
     assert ("nothing-here" in reason or "macOS" in reason
-            or "DXCore" in reason)
+            or "engtype_compute" in reason)
     assert source.sample() == {}
 
 
