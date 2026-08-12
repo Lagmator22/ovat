@@ -566,8 +566,20 @@ class NPUSource(TelemetrySource):
 #
 # The type is optional in the pattern so an older OVMS that omits it still
 # yields a reading rather than none.
+#
+# "Cache" is OPTIONAL in front of "type:" because the two halves of that line
+# are written in different places. formatCacheInfo() returns the fragment
+#
+#     type: dynamic, cache usage: 99.4% of 4.9 GB
+#
+# and printMetrics() logs it as "... Cache {};", so the assembled line reads
+# "Cache type: dynamic". Matching only the assembled spelling works against
+# today's OVMS and fails SILENTLY if that prefix ever changes: the group
+# simply does not capture, cache_type comes back None, and an unknown type
+# warns -- so the failure mode is a false alarm on every healthy dynamic
+# cache, which is the exact thing this parse exists to prevent.
 _CACHE_USAGE = re.compile(
-    r"(?:cache type:\s*(\w+),\s*)?"
+    r"(?:(?:cache\s+)?type:\s*(\w+),\s*)?"
     r"cache usage:\s*([\d.]+)\s*%\s*of\s*([\d.]+)\s*([KMGT]?B)", re.IGNORECASE)
 
 _UNIT_GB = {"B": 1 / (1024 ** 3), "KB": 1 / (1024 ** 2), "MB": 1 / 1024,
