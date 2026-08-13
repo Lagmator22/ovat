@@ -736,8 +736,16 @@ class NPUSource(TelemetrySource):
 
     @property
     def unavailable(self) -> str | None:
-        if sys.platform == "darwin":
-            return "no Intel NPU on macOS"
+        # ORDER MATTERS, and the macOS check is deliberately NOT first.
+        #
+        # Both readers are injectable precisely so they can be tested off the
+        # hardware they read -- a test that needs an NPU is a test that never
+        # runs. Answering "no Intel NPU on macOS" before looking at what was
+        # injected made those tests pass on Windows and Linux and fail on the
+        # Mac, which is the same shape as the suite that could once only pass
+        # on Windows. The platform is the FALLBACK explanation, reached when
+        # nothing has been supplied, not a gate in front of the logic.
+        #
         # A real sysfs tree WINS. On Linux that is the whole story, and it
         # also means the fake-tree tests keep exercising the sysfs reader on
         # Windows instead of silently switching to the counter one -- the
@@ -747,10 +755,10 @@ class NPUSource(TelemetrySource):
         counter = self.counter
         if counter is not None:
             return counter.unavailable
-        if not self._device_dirs():
-            return (f"no NPU found under {self.sysfs_root}. The intel_vpu "
-                    f"driver provides it; check `lsmod | grep intel_vpu`")
-        return None
+        if sys.platform == "darwin":
+            return "no Intel NPU on macOS"
+        return (f"no NPU found under {self.sysfs_root}. The intel_vpu "
+                f"driver provides it; check `lsmod | grep intel_vpu`")
 
     def sample(self) -> dict:
         devices = self._device_dirs()
