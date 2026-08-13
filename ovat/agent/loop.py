@@ -172,6 +172,14 @@ class AgentLoop:
                 # removed. Distinct from undecoded_tool_call: there the markup
                 # survives, here the parser ate it.
                 "empty_answer": empty[0],
+                # True when any turn was CUT at model.max_tokens rather than
+                # ending on its own. It travels beside undecoded_tool_call
+                # because the two arrive together and mean different things:
+                # the markup is a fragment because the reply was truncated,
+                # not because the parser is wrong. Reading a trace without
+                # this, the only visible symptom is the parser one.
+                "truncated": any(t["finish_reason"] == "length"
+                                 for t in turns),
                 # The run did not produce a usable answer. Every "Error: ..."
                 # string this loop returns is delivered AS the answer, because
                 # the model has to be able to read it -- but `ovat run` then
@@ -241,22 +249,51 @@ class AgentLoop:
                 # wrong answer.
                 if looks_like_undecoded_tool_call(content):
                     undecoded[0] = True
+                    # A reply that hit the max_tokens ceiling was CUT, and a
+                    # cut tool call is a fragment for exactly that reason.
+                    # Blaming the parser or the KV cache here sends the reader
+                    # to check two things that are both fine -- measured: a
+                    # runaway generation stopped dead on completion_tokens ==
+                    # max_tokens and reported "usually a tool_parser that does
+                    # not match", with the parser correct and the cache at 15%.
+                    # finish_reason "length" is the server saying so outright.
+                    if reply["finish_reason"] == "length":
+                        return _finish(
+                            "Error: the reply hit the model.max_tokens "
+                            "ceiling mid-tool-call, so the markup was cut off "
+                            "and no tool ran. This is NOT a tool_parser or a "
+                            "KV cache problem.\n"
+                            "A model that generates this much before asking "
+                            "for a tool is usually stuck repeating itself; "
+                            "greedy decoding (temperature: 0.0) makes that "
+                            "likelier. Raising model.max_tokens lets it run "
+                            "longer, but the run that needs raising is "
+                            "normally the run that has gone wrong.")
                     return _finish(
                         "Error: the model asked for a tool but the server "
                         "could not decode the request, so no tool ran.\n"
-                        "Two causes, and the second is easy to mistake for "
-                        "the first:\n"
-                        "  1. the wrong tool_parser for this model family "
+                        "Three causes, commonest first:\n"
+                        "  1. the MODEL emitted malformed markup. Measured on "
+                        "an AI PC with Qwen3.5-4B and the correct "
+                        "qwen3coder parser, on a healthy server: it wrote "
+                        "<parameter=city> and then closed </function> without "
+                        "ever closing </parameter>. The block was complete "
+                        "and finish_reason was a clean \"stop\" -- nothing was "
+                        "cut off, the markup was simply wrong, and the parser "
+                        "was right to refuse it. Nothing on this machine can "
+                        "fix that; retry, or use a model that emits the "
+                        "format cleanly.\n"
+                        "  2. the wrong tool_parser for this model family "
                         "(Qwen3.5 needs qwen3coder, Qwen3 needs hermes3). "
                         "Check it once; if it is right, it is not this.\n"
-                        "  2. the server ran out of KV cache. A full cache "
-                        "leaves no room to finish generating, so the tool-call "
-                        "markup is cut off mid-block and a parser cannot "
-                        "decode a fragment. Measured on an AI PC: 4/4 runs "
-                        "failed this way on a server whose cache was at 98-100%, "
-                        "and 17/17 succeeded on a freshly started one -- same "
-                        "model, same parser. Restart OVMS, or raise "
-                        "model.ovms_cache_size_gb.\n"
+                        "  3. a full STATIC KV cache. OVMS terminates a "
+                        "request when no more cache can be assigned to it, "
+                        "'even before reaching stopping criteria', which cuts "
+                        "the markup mid-block. This applies only when "
+                        "model.ovms_cache_size_gb is set: an unset cache is "
+                        "dynamic, grows, and reads near 100% as its normal "
+                        "state. Check `ovat telemetry` for the cache TYPE "
+                        "before believing this one.\n"
                         "The raw reply is in the session history and the "
                         "trace; it is deliberately not repeated here, because "
                         "printing it is what made this look like an answer in "

@@ -13,22 +13,35 @@ from openai import OpenAI
 from ovat.providers.base import LLMProvider
 
 
+#: Default ceiling on one reply. Mirrored by ModelConfig.max_tokens, and a
+#: test asserts the two agree -- see tests/test_config.py.
+#:
+#: It lives HERE as well as in the config because the config is not the only
+#: door. Anything constructing this provider directly used to get an unbounded
+#: generation, and tests/test_ovms_live.py does exactly that: measured, the KV
+#: cache climbed monotonically to 13.6 GB over an hour on a single request
+#: that was never going to stop. A safe default belongs at the plug that talks
+#: to the server, not only at the config that usually configures it.
+DEFAULT_MAX_TOKENS = 4096
+
+
 class OVMSLLMProvider(LLMProvider):
     """Talks to OVMS /v3 using the OpenAI SDK (as OVMS is OpenAI-compatible)."""
 
     def __init__(self, base_url: str = "http://localhost:8000/v3",
                  model: str = "Qwen3-8B-int4-ov", timeout: float = 120.0,
-                 max_tokens: int | None = None, temperature: float = 0.0):
+                 max_tokens: int | None = DEFAULT_MAX_TOKENS,
+                 temperature: float = 0.0):
         # api_key is required by the SDK but ignored by OVMS, any string works.
         # timeout caps each request; the SDK default (~600s) would freeze the
         # CLI for ten minutes on a hung server before erroring.
         self.client = OpenAI(base_url=base_url, api_key="not-needed",
                              timeout=timeout)
         self.model = model
-        # None means "do not send the field", which is the historical
-        # behaviour and what `ovat run` still gets: the server decides. The
-        # TUI sets a real number so /tokens means the same thing on both
-        # engines. Read fresh on every call, so it can be retuned live.
+        # None still means "do not send the field, let the server decide",
+        # but it is no longer the DEFAULT: see DEFAULT_MAX_TOKENS above for
+        # what an unbounded default actually cost. Read fresh on every call,
+        # so the TUI can retune it live.
         self.max_tokens = max_tokens
         # Sent on every request. It comes from model.temperature so all four
         # engines sample identically; two of them used to hardcode 0 while

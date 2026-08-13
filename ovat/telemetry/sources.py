@@ -432,6 +432,243 @@ class IntelHardwareSource(TelemetrySource):
 _NPU_SYSFS_ROOT = "/sys/bus/pci/drivers/intel_vpu"
 
 
+#: A GPU Engine counter instance, e.g.
+#: pid_8684_luid_0x00000000_0x0000BB15_phys_0_eng_13_engtype_neural
+_GPU_ENGINE_INSTANCE = re.compile(
+    r"pid_(?P<pid>\d+)_luid_(?P<luid>0x[0-9a-fA-F]+_0x[0-9a-fA-F]+)"
+    r"_phys_(?P<phys>\d+)_eng_(?P<eng>\d+)_engtype_(?P<engtype>\w*)")
+
+#: Engine types only a GRAPHICS adapter has. An MCDM compute accelerator (an
+#: NPU) publishes none of these, and that asymmetry is the whole selection
+#: rule -- see _WindowsNPUCounter.
+_GRAPHICS_ENGINE_TYPES = frozenset(
+    {"3d", "videodecode", "videoprocessing", "videoencode", "gsc"})
+
+
+class _WindowsNPUCounter:
+    """Reads NPU utilisation on Windows out of the GPU Engine counter set.
+
+    WHY THIS COUNTER. There is no NPU counter object. On this LunarLake box
+    `Get-Counter -ListSet *NPU*` returns only "User Input Delay per
+    Process/Session", which match on the "npu" inside "I-npu-t"; 229 counter
+    sets exist and none is about the NPU. But Intel exposes AI Boost through
+    MCDM, which is built on WDDM, so the NPU enumerates as a WDDM adapter and
+    its engines appear in `GPU Engine` alongside the GPU's.
+
+    THE TRAP, and the reason adapter selection is the hard part. The Arc 140V
+    GPU publishes an engine of type `neural` -- its Xe matrix engine -- and it
+    reads ~100% while an LLM generates ON THE GPU. Measured here: with OVMS
+    generating on the GPU and the NPU idle, engtype_neural was 100.0% and the
+    NPU 0.0%. Reading NPU utilisation off engtype_neural would draw a busy NPU
+    for a run that never touched it.
+
+    HOW THE ADAPTER IS CHOSEN. Not by LUID, which is not stable across boots,
+    and not by name, which the counter does not carry. By SHAPE: a graphics
+    adapter always publishes 3d/videodecode/videoprocessing/gsc engines, and a
+    compute-only accelerator publishes just `compute`. Measured on this
+    machine, the three adapters separate cleanly:
+
+        0x...B75A  3d, compute, copy, gsc, neural, videodecode, ...  Arc GPU
+        0x...BAEA  3d                                                Basic Render
+        0x...BB15  compute                                           AI Boost
+
+    If that rule does not pick exactly ONE adapter, this reports unavailable
+    rather than guessing. A wrong NPU number is worse than no NPU number.
+
+    WHY PDH AND NOT POWERSHELL. The collector samples at 2 Hz, and spawning
+    powershell.exe twice a second is not acceptable -- process creation alone
+    would cost more than everything else on the page combined. PDH is the API
+    Get-Counter itself sits on: one query handle is opened once and reused,
+    and each sample is a single in-process call. Instance discovery uses
+    PdhEnumObjectItemsW, which needs no query at all, and the resolved adapter
+    is cached; it is only re-resolved if the counter stops returning data (a
+    driver restart changes the LUID).
+    """
+
+    #: PDH constants (pdh.h). PDH_MORE_DATA is returned by the sizing call.
+    _PDH_FMT_DOUBLE = 0x00000200
+    _PDH_MORE_DATA = 0x800007D2
+    _PERF_DETAIL_WIZARD = 400
+    _ERROR_SUCCESS = 0
+
+    def __init__(self, object_name: str = "GPU Engine"):
+        self.object_name = object_name
+        self._pdh = None
+        self._query = None
+        self._counter = None
+        self._luid: str | None = None
+        self._reason: str | None = None
+        self._load_failure: str | None = None
+        try:
+            self._bind()
+        except Exception as exc:                      # pragma: no cover
+            self._load_failure = f"{type(exc).__name__}: {exc}"
+
+    # -- ctypes plumbing ----------------------------------------------------
+
+    def _bind(self) -> None:
+        import ctypes
+        from ctypes import wintypes
+
+        self._ctypes = ctypes
+        self._pdh = ctypes.WinDLL("pdh.dll")
+        # PDH_STATUS is UNSIGNED. ctypes defaults restype to signed c_int, so
+        # PDH_MORE_DATA (0x800007D2) arrives negative and every status
+        # comparison silently fails -- which is exactly how this was first
+        # written, and it made a working sizing call look like an error.
+        for name in ("PdhEnumObjectItemsW", "PdhOpenQueryW",
+                     "PdhAddEnglishCounterW", "PdhCollectQueryData",
+                     "PdhGetFormattedCounterArrayW", "PdhCloseQuery"):
+            getattr(self._pdh, name).restype = ctypes.c_ulong
+
+        class PDH_FMT_COUNTERVALUE(ctypes.Structure):
+            _fields_ = [("CStatus", wintypes.DWORD),
+                        ("doubleValue", ctypes.c_double)]
+
+        class PDH_FMT_COUNTERVALUE_ITEM_W(ctypes.Structure):
+            _fields_ = [("szName", wintypes.LPWSTR),
+                        ("FmtValue", PDH_FMT_COUNTERVALUE)]
+
+        self._item_type = PDH_FMT_COUNTERVALUE_ITEM_W
+        self._wintypes = wintypes
+
+    def instances(self) -> list[str]:
+        """Every instance name of the GPU Engine object."""
+        ctypes = self._ctypes
+        counters_len = self._wintypes.DWORD(0)
+        instances_len = self._wintypes.DWORD(0)
+        status = self._pdh.PdhEnumObjectItemsW(
+            None, None, self.object_name, None, ctypes.byref(counters_len),
+            None, ctypes.byref(instances_len), self._PERF_DETAIL_WIZARD, 0)
+        if status != self._PDH_MORE_DATA:
+            return []
+        counters = ctypes.create_unicode_buffer(counters_len.value)
+        instances = ctypes.create_unicode_buffer(instances_len.value)
+        status = self._pdh.PdhEnumObjectItemsW(
+            None, None, self.object_name, counters,
+            ctypes.byref(counters_len), instances,
+            ctypes.byref(instances_len), self._PERF_DETAIL_WIZARD, 0)
+        if status != self._ERROR_SUCCESS:
+            return []
+        raw = instances[:instances_len.value]
+        return [part for part in raw.split("\x00") if part]
+
+    # -- adapter selection --------------------------------------------------
+
+    @staticmethod
+    def engines_by_adapter(instance_names) -> dict:
+        """{luid: {engine types}}. Static so a test can drive it with strings."""
+        found: dict[str, set] = {}
+        for name in instance_names:
+            match = _GPU_ENGINE_INSTANCE.match(name)
+            if match:
+                # The LUID keeps the case the counter uses. It is substituted
+                # back into a PDH wildcard path, and while PDH matching turns
+                # out to be case-insensitive, relying on that would be luck:
+                # upper-casing produced "0X0000BB15" for an instance actually
+                # named "0x0000bb15" and it only worked by accident.
+                found.setdefault(match.group("luid"), set()).add(
+                    match.group("engtype").lower())
+        return found
+
+    @classmethod
+    def choose_adapter(cls, instance_names) -> str | None:
+        """The compute-only adapter's LUID, or None if that is ambiguous."""
+        candidates = [
+            luid for luid, engines in cls.engines_by_adapter(
+                instance_names).items()
+            if engines
+            and not (engines & _GRAPHICS_ENGINE_TYPES)
+            and "compute" in engines
+        ]
+        return candidates[0] if len(candidates) == 1 else None
+
+    def _open(self) -> bool:
+        """Resolve the adapter and open a query. True if a counter is live."""
+        if self._counter is not None:
+            return True
+        if self._pdh is None:
+            return False
+        luid = self.choose_adapter(self.instances())
+        if luid is None:
+            self._reason = (
+                "no single compute-only adapter among the GPU Engine "
+                "counters, so the NPU cannot be told apart from the GPU here")
+            return False
+
+        ctypes = self._ctypes
+        query = self._wintypes.HANDLE()
+        if self._pdh.PdhOpenQueryW(
+                None, 0, ctypes.byref(query)) != self._ERROR_SUCCESS:
+            self._reason = "PdhOpenQueryW failed"
+            return False
+        counter = self._wintypes.HANDLE()
+        path = (f"\\{self.object_name}(*luid_{luid}*engtype_compute)"
+                f"\\Utilization Percentage")
+        if self._pdh.PdhAddEnglishCounterW(
+                query, path, 0, ctypes.byref(counter)) != self._ERROR_SUCCESS:
+            self._pdh.PdhCloseQuery(query)
+            self._reason = f"PdhAddEnglishCounterW failed for {path}"
+            return False
+        # A rate counter needs a first collection to measure the next one
+        # against, exactly like the Linux busy-time delta.
+        self._pdh.PdhCollectQueryData(query)
+        self._query, self._counter, self._luid = query, counter, luid
+        self._reason = None
+        return True
+
+    # -- the reading --------------------------------------------------------
+
+    def utilization(self) -> float | None:
+        """Summed utilisation across the NPU's engine instances, or None.
+
+        The counter is per-process, so the machine-wide figure is the sum over
+        every process with work on that engine.
+        """
+        if not self._open():
+            return None
+        ctypes = self._ctypes
+        if self._pdh.PdhCollectQueryData(self._query) != self._ERROR_SUCCESS:
+            return None
+        size = self._wintypes.DWORD(0)
+        count = self._wintypes.DWORD(0)
+        status = self._pdh.PdhGetFormattedCounterArrayW(
+            self._counter, self._PDH_FMT_DOUBLE, ctypes.byref(size),
+            ctypes.byref(count), None)
+        if status != self._PDH_MORE_DATA:
+            # The adapter went away (driver restart changes the LUID). Drop
+            # the handles so the next sample resolves it again.
+            self._close()
+            return None
+        buffer = ctypes.create_string_buffer(size.value)
+        status = self._pdh.PdhGetFormattedCounterArrayW(
+            self._counter, self._PDH_FMT_DOUBLE, ctypes.byref(size),
+            ctypes.byref(count), buffer)
+        if status != self._ERROR_SUCCESS or count.value == 0:
+            return None
+        items = ctypes.cast(
+            buffer,
+            ctypes.POINTER(self._item_type * count.value)).contents
+        total = sum(item.FmtValue.doubleValue for item in items)
+        return round(min(100.0, max(0.0, total)), 1)
+
+    def _close(self) -> None:
+        if self._query is not None:
+            try:
+                self._pdh.PdhCloseQuery(self._query)
+            except Exception:
+                pass
+        self._query = self._counter = self._luid = None
+
+    @property
+    def unavailable(self) -> str | None:
+        if self._load_failure:
+            return f"could not load pdh.dll ({self._load_failure})"
+        if self._open():
+            return None
+        return self._reason or "no NPU counter available"
+
+
 class NPUSource(TelemetrySource):
     """NPU utilisation, from the driver rather than from a profiler.
 
@@ -452,20 +689,37 @@ class NPUSource(TelemetrySource):
     reading to subtract -- rather than reporting 0, which would draw an idle
     NPU during the one second an agent is most likely to be using it.
 
-    PLATFORM HONESTY. macOS has no Intel NPU at all. Windows does not publish
-    this sysfs counter, but it is NOT unreadable there -- see the note on the
-    Windows branch of unavailable() for the counter that was measured on this
-    hardware, and for the near-miss that must not be mistaken for it.
+    PLATFORM HONESTY. macOS has no Intel NPU at all. Windows publishes no such
+    sysfs counter, so it takes a different route entirely -- the GPU Engine
+    performance counter, via _WindowsNPUCounter, whose docstring explains why
+    that is where an NPU lives and which neighbouring counter must not be
+    mistaken for it. Two readers, one source, because "how busy is the NPU" is
+    one question.
     """
 
     name = "npu"
 
-    def __init__(self, sysfs_root: str = _NPU_SYSFS_ROOT):
-        # Injectable so the reader can be tested against a fake sysfs tree on
-        # any OS. A test that needs real NPU hardware is a test that never
-        # runs.
+    def __init__(self, sysfs_root: str = _NPU_SYSFS_ROOT, counter=None):
+        # Both readers are injectable so this is testable on any OS. A test
+        # that needs real NPU hardware is a test that never runs.
+        #
+        # `counter` is the Windows one: any object with .utilization() ->
+        # float | None and .unavailable -> str | None. It is constructed
+        # lazily rather than here, so importing this module on Windows does
+        # not open a PDH query for a page nobody has asked for yet.
         self.sysfs_root = sysfs_root
+        self._counter = counter
+        self._counter_built = counter is not None
         self._previous: tuple[float, int] | None = None
+
+    @property
+    def counter(self):
+        """The Windows reader, built on first use. None off Windows."""
+        if not self._counter_built:
+            self._counter_built = True
+            if sys.platform.startswith("win"):
+                self._counter = _WindowsNPUCounter()
+        return self._counter
 
     def _device_dirs(self) -> list[str]:
         """Every intel_vpu device directory that publishes a busy counter."""
@@ -482,45 +736,41 @@ class NPUSource(TelemetrySource):
 
     @property
     def unavailable(self) -> str | None:
+        # ORDER MATTERS, and the macOS check is deliberately NOT first.
+        #
+        # Both readers are injectable precisely so they can be tested off the
+        # hardware they read -- a test that needs an NPU is a test that never
+        # runs. Answering "no Intel NPU on macOS" before looking at what was
+        # injected made those tests pass on Windows and Linux and fail on the
+        # Mac, which is the same shape as the suite that could once only pass
+        # on Windows. The platform is the FALLBACK explanation, reached when
+        # nothing has been supplied, not a gate in front of the logic.
+        #
+        # A real sysfs tree WINS. On Linux that is the whole story, and it
+        # also means the fake-tree tests keep exercising the sysfs reader on
+        # Windows instead of silently switching to the counter one -- the
+        # Windows default root never exists, so nothing is shadowed.
+        if self._device_dirs():
+            return None
+        counter = self.counter
+        if counter is not None:
+            return counter.unavailable
         if sys.platform == "darwin":
             return "no Intel NPU on macOS"
-        if sys.platform.startswith("win"):
-            # MEASURED on this LunarLake box, 2026-08-12. There is no NPU
-            # counter SET: `Get-Counter -ListSet *NPU*` returns only "User
-            # Input Delay per Process/Session", which match on the "npu"
-            # inside "I-npu-t" and have nothing to do with the NPU. The
-            # earlier advice to run that command was a dead end.
-            #
-            # The NPU is readable, through the GPU Engine set: Intel exposes
-            # AI Boost via MCDM, which is built on WDDM, so it enumerates as
-            # a WDDM adapter. It appears as a ComputeAccelerator-class device
-            # ("Intel(R) AI Boost") whose adapter carries exactly ONE engine:
-            #
-            #   \GPU Engine(pid_*_luid_*_phys_0_eng_0_engtype_compute)
-            #       \Utilization Percentage
-            #
-            # THE TRAP. The Arc 140V GPU on the same machine also publishes
-            # an `engtype_neural` engine, and it reads ~100% while an LLM
-            # generates ON THE GPU. It is the Xe matrix engine, not the NPU.
-            # Reading NPU utilisation off `engtype_neural` would report a
-            # busy NPU for a run that never touched it. Selecting the right
-            # adapter -- the one with a single compute engine and no 3d /
-            # videodecode engines -- is the whole difficulty, and the LUID is
-            # not stable across boots, so it cannot simply be hard-coded.
-            return ("no sysfs NPU counter on Windows. Readable via "
-                    "'\\GPU Engine(*engtype_compute)\\Utilization "
-                    "Percentage' on the Intel(R) AI Boost adapter; not "
-                    "wired up here yet. Note engtype_neural is the GPU's "
-                    "matrix engine, not the NPU.")
-        if not self._device_dirs():
-            return (f"no NPU found under {self.sysfs_root}. The intel_vpu "
-                    f"driver provides it; check `lsmod | grep intel_vpu`")
-        return None
+        return (f"no NPU found under {self.sysfs_root}. The intel_vpu "
+                f"driver provides it; check `lsmod | grep intel_vpu`")
 
     def sample(self) -> dict:
         devices = self._device_dirs()
         if not devices:
-            return {}
+            # No sysfs tree: on Windows the same figure comes from a
+            # performance counter, already a percentage over the interval
+            # between collections, so it needs no delta arithmetic here.
+            counter = self.counter
+            if counter is None:
+                return {}
+            percent = counter.utilization()
+            return {} if percent is None else {"utilization": percent}
         # One NPU per machine in practice; the first device is the NPU.
         device = devices[0]
         now = time.monotonic()

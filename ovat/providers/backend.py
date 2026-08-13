@@ -39,6 +39,10 @@ class LLMBackend:
     model: str
     temperature: float
     timeout: float
+    # The ceiling on ONE reply. Lives here, beside temperature, because all
+    # four engines read this description -- and an unbounded generation is not
+    # an engine's problem to solve four times.
+    max_tokens: int | None = None
     # OVMS ignores the key entirely, but every OpenAI-shaped SDK requires the
     # field to be present, so it is part of the description rather than a
     # literal repeated at four call sites.
@@ -49,4 +53,4 @@ class LLMBackend:
         """The one place the model: section becomes a connection."""
         m = config.model
         return cls(url=m.ovms_url, model=m.name, temperature=m.temperature,
-                   timeout=m.request_timeout)
+                   timeout=m.request_timeout, max_tokens=m.max_tokens)

@@ -134,3 +134,121 @@ def test_ovms_react_calls_a_tool_through_langchain():
     agent = build_agent(cfg)
     out = agent.run("Search my documents for the Q3 budget and summarise what you find.")
     assert isinstance(out, str) and len(out) > 0
+
+
+# The LlamaIndex and openai-agents paths. Same server, same two shapes as the
+# native and react tests above.
+#
+# WHY THESE ASSERT ON AN OBSERVED CALL, not on the answer text. Both engines
+# were proven by hand once, in July, and nothing has gated a regression since.
+# An answer that merely READS as though it searched is exactly the failure
+# these are here to catch -- an engine that silently degrades to plain chat
+# still returns fluent prose, and the react test above (which only checks the
+# answer is non-empty) would not notice. So the tool's own Python function is
+# wrapped and the call is recorded: it either ran in this process or it did
+# not.
+
+
+def _recording_tools(monkeypatch):
+    """Wrap every built tool so a real invocation is observable.
+
+    build_tools is looked up through the factory module's globals at call
+    time, so replacing it there reaches whichever engine build_agent picks.
+    """
+    from ovat.agent import factory
+
+    called = []
+    real_build_tools = factory.build_tools
+
+    def recording_build_tools(config, **kwargs):
+        tools = real_build_tools(config, **kwargs)
+        for name, spec in tools.items():
+            original = spec["function"]
+
+            def recorder(*args, _original=original, _name=name, **kw):
+                called.append(_name)
+                return _original(*args, **kw)
+
+            spec["function"] = recorder
+        return tools
+
+    monkeypatch.setattr(factory, "build_tools", recording_build_tools)
+    return called
+
+
+def _tool_config(engine):
+    from ovat.config.workflow import WorkflowConfig
+
+    return WorkflowConfig(
+        model={"name": OVMS_MODEL, "ovms_url": OVMS_URL},
+        tools=[{"name": "search_docs"}],
+        agent={"type": engine,
+               "system_prompt": "When asked about the user's files or notes, "
+                                "call the search_docs tool to answer."},
+    )
+
+
+@needs_ovms
+def test_ovms_llamaindex_plain_chat_answers():
+    """The LlamaIndex engine should answer a plain question against real OVMS."""
+    from ovat.agent.factory import build_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    cfg = WorkflowConfig(
+        model={"name": OVMS_MODEL, "ovms_url": OVMS_URL},
+        agent={"type": "llamaindex"},
+    )
+    out = build_agent(cfg).run("Say hello in exactly five words.")
+    assert isinstance(out, str) and len(out) > 0
+
+
+@needs_ovms
+def test_ovms_llamaindex_calls_a_tool(monkeypatch):
+    """FunctionAgent must actually execute search_docs, not describe it.
+
+    is_function_calling_model=False would make LlamaIndex decide the model
+    cannot call tools and quietly answer from general knowledge instead, which
+    looks identical to a working run in the transcript.
+    """
+    from ovat.agent.factory import build_agent
+
+    called = _recording_tools(monkeypatch)
+    agent = build_agent(_tool_config("llamaindex"))
+    out = agent.run("Search my documents for the Q3 budget and summarise "
+                    "what you find.")
+
+    assert "search_docs" in called, "the model never called search_docs"
+    assert isinstance(out, str) and len(out) > 0
+
+
+@needs_ovms
+def test_ovms_openai_agents_plain_chat_answers():
+    """The Agents SDK engine should answer a plain question against real OVMS."""
+    from ovat.agent.factory import build_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    cfg = WorkflowConfig(
+        model={"name": OVMS_MODEL, "ovms_url": OVMS_URL},
+        agent={"type": "openai-agents"},
+    )
+    out = build_agent(cfg).run("Say hello in exactly five words.")
+    assert isinstance(out, str) and len(out) > 0
+
+
+@needs_ovms
+def test_ovms_openai_agents_calls_a_tool(monkeypatch):
+    """The Agents SDK must run the tool through OVMS's chat-completions path.
+
+    This engine needs OpenAIChatCompletionsModel rather than the SDK default
+    Responses model; if that ever regresses the request does not reach OVMS in
+    a shape it serves, and no tool runs.
+    """
+    from ovat.agent.factory import build_agent
+
+    called = _recording_tools(monkeypatch)
+    agent = build_agent(_tool_config("openai-agents"))
+    out = agent.run("Search my documents for the Q3 budget and summarise "
+                    "what you find.")
+
+    assert "search_docs" in called, "the model never called search_docs"
+    assert isinstance(out, str) and len(out) > 0

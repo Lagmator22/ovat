@@ -141,6 +141,11 @@ def test_run_trace_records_turns_tokens_and_tool_calls():
                       # exact shape so a future key cannot be added silently.
                       "undecoded_tool_call": False,
                       "empty_answer": False,
+                      # False when every turn ended on its own. True means a
+                      # turn was cut at model.max_tokens, which is why a
+                      # tool call can arrive as a fragment without the parser
+                      # or the KV cache being at fault.
+                      "truncated": False,
                       # False on a healthy run. `ovat run` reads this to decide
                       # its exit code: the loop returns its failures AS the
                       # answer text, so without a flag a failed run exited 0
@@ -342,10 +347,14 @@ def test_an_undecoded_tool_call_names_the_cache_as_well_as_the_parser():
 
     assert agent.last_trace["totals"]["undecoded_tool_call"] is True
     assert agent.last_trace["totals"]["failed"] is True
-    # both causes, and what to do about the one that is not obvious
+    # All three causes are offered. The cache one is deliberately qualified
+    # as STATIC: an unset cache is dynamic, grows, and sits near 100% as its
+    # normal working state, so an unqualified "the cache is full" sent
+    # readers to restart a server that was fine.
     assert "tool_parser" in answer
     assert "KV cache" in answer
-    assert "ovms_cache_size_gb" in answer or "Restart OVMS" in answer
+    assert "ovms_cache_size_gb" in answer
+    assert "malformed" in answer
 
 
 def test_a_decoded_tool_call_runs_even_when_finish_reason_says_stop():
@@ -395,3 +404,64 @@ def test_the_label_saying_tool_calls_with_an_empty_payload_still_reports_it():
 
     assert "reported tool_calls but sent none" in out
     assert len(llm.calls) == 1                 # asked once, did not spin
+
+
+def test_a_reply_cut_at_max_tokens_blames_the_ceiling_not_the_parser():
+    """The same fragment, with finish_reason "length", has a DIFFERENT cause.
+
+    Measured on the AI PC: a runaway generation stopped dead on
+    completion_tokens == max_tokens (4096) and the loop reported "usually a
+    tool_parser that does not match this model" and "restart OVMS, or raise
+    ovms_cache_size_gb" -- with the parser correct and the cache at 15%. Both
+    remedies were wrong, and both cost a reader time.
+
+    The server already says which it is; "length" is not "stop".
+    """
+    class CutAtTheCeiling:
+        def chat(self, messages, tools=None):
+            return {"finish_reason": "length",
+                    "content": "<tool_call>\n<function=search_docs>\n<parameter=",
+                    "tool_calls": None,
+                    "usage": {"prompt_tokens": 531, "completion_tokens": 4096},
+                    "raw": None}
+
+    agent = AgentLoop(CutAtTheCeiling(), tools={}, max_iterations=2)
+    answer = agent.run("anything")
+    totals = agent.last_trace["totals"]
+
+    assert totals["undecoded_tool_call"] is True
+    assert totals["truncated"] is True
+    assert totals["failed"] is True
+    assert "max_tokens" in answer
+    # The two wrong remedies must NOT be recommended here.
+    assert "NOT a tool_parser" in answer
+    assert "ovms_cache_size_gb" not in answer
+
+
+def test_an_untruncated_fragment_blames_the_model_first():
+    """A complete but MALFORMED block is the commonest cause, and was missing.
+
+    Measured on the AI PC with Qwen3.5-4B, the correct qwen3coder parser and a
+    healthy dynamic cache at 18%: the model wrote <parameter=city>, then
+    closed </function> and </tool_call> without ever closing </parameter>.
+    78 completion tokens, finish_reason "stop" -- nothing was cut off. The
+    diagnosis offered only "wrong parser" and "full KV cache", so it sent the
+    reader to check two things that were both fine, six times in a row.
+    """
+    malformed = ("<tool_call>\n<function=get_weather>\n<parameter=city>\n"
+                 "Tokyo\n</function>\n</tool_call>\n")
+
+    class MalformedCall:
+        def chat(self, messages, tools=None):
+            return {"finish_reason": "stop", "content": malformed,
+                    "tool_calls": None, "usage": None, "raw": None}
+
+    agent = AgentLoop(MalformedCall(), tools={}, max_iterations=2)
+    answer = agent.run("anything")
+
+    assert agent.last_trace["totals"]["truncated"] is False
+    assert agent.last_trace["totals"]["undecoded_tool_call"] is True
+    # The model's own markup comes first, and the cache caveat is qualified.
+    assert "malformed" in answer
+    assert answer.index("malformed") < answer.index("tool_parser")
+    assert "STATIC" in answer

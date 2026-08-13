@@ -1365,6 +1365,16 @@ def telemetry(
         raise typer.Exit(code=1)
 
     if once:
+        # TWO samples, not one, and the first is thrown away. Every rate
+        # metric here is a delta between consecutive readings -- psutil's CPU
+        # percentages and the NPU duty cycle both are -- so a single sample
+        # has nothing to measure against and those metrics are correctly
+        # omitted. The result was a snapshot with no CPU rows at all: the
+        # system source appeared healthy, listed neither as unavailable nor
+        # as silent, and simply had its most useful numbers missing. That is
+        # the silent-empty-row failure this page exists to avoid.
+        collector.sample_once()
+        time.sleep(min(interval, 1.0))
         _print_telemetry(collector.sample_once())
         return
 

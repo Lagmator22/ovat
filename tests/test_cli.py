@@ -913,7 +913,13 @@ def test_telemetry_once_prints_a_snapshot():
     result = runner.invoke(app, ["telemetry", "--once"])
     assert result.exit_code == 0, result.output
     assert "Source" in result.output and "Metric" in result.output
-    assert "cpu" in result.output.lower()
+    # cpu_pct, not just "cpu". Every rate metric on this page is a delta
+    # between two readings, so a --once that sampled ONCE printed no CPU
+    # percentages at all -- while the system source reported itself neither
+    # unavailable nor silent. The old assertion passed anyway, because
+    # `cpu_mhz` contains "cpu".
+    assert "cpu_pct" in result.output
+    assert "cpu0_pct" in result.output
 
 
 def test_telemetry_names_the_sources_that_cannot_run_here():

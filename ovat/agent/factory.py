@@ -61,7 +61,8 @@ def build_llm(config: WorkflowConfig) -> LLMProvider:
     backend = LLMBackend.from_config(config)
     return OVMSLLMProvider(base_url=backend.url, model=backend.model,
                            timeout=backend.timeout,
-                           temperature=backend.temperature)
+                           temperature=backend.temperature,
+                           max_tokens=backend.max_tokens)
 
 
 def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:

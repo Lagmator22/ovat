@@ -99,6 +99,33 @@ class ModelConfig(StrictModel):
     # the most likely token, and a reproducible run is worth more here than a
     # varied one.
     temperature: float = 0.0
+    # Ceiling on ONE reply, sent to OVMS as max_tokens.
+    #
+    # WHY THERE IS A DEFAULT AT ALL. Nothing capped a generation before this,
+    # on any engine: OVMSLLMProvider defaulted max_tokens to None and omitted
+    # the key, and no config field existed to set one. A model that never
+    # emits a stop token therefore generates until the CLIENT gives up, which
+    # is 1200s (request_timeout) for `ovat run` and 600s for a bench worker.
+    #
+    # That is not hypothetical, and it is not one engine's bug. Measured on
+    # this machine: llamaindex ran 13 minutes on one request, and on a
+    # separate occasion the native loop ran past 600s -- different engines,
+    # different positions in the bench, same unbounded generation. Its
+    # signature in ovms.log is the KV cache climbing monotonically for the
+    # whole run (0.62 -> 3.6 GB in ~9 minutes, one scheduled request), because
+    # every new token needs more cache. The cache growth is the SYMPTOM; the
+    # runaway is the cause, which is the opposite of how it was first read.
+    #
+    # Greedy decoding makes it likelier, and this project asks for greedy
+    # decoding: temperature defaults to 0.0 just above, and degenerate
+    # repetition is a well-known failure mode of it.
+    #
+    # 4096 is chosen against measurement, not taste. The longest legitimate
+    # answers seen here are 458-929 completion tokens, so this is roughly 4x
+    # headroom over anything real, while turning a ten-minute hang into a
+    # bounded reply that `finish_reason: "length"` labels honestly. Set it to
+    # None to restore the old unbounded behaviour.
+    max_tokens: int | None = Field(default=4096, gt=0)
     # Prefix caching reuses KV-cache across turns that share a prefix (the
     # whole conversation history does): a big multi-turn speedup. A knob
     # because not every OVMS build/device supports it; was hardcoded before.
