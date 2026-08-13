@@ -1484,3 +1484,42 @@ def test_telemetry_says_a_static_cache_percentage_is_real(tmp_path, monkeypatch)
     assert result.exit_code == 0, result.output
     assert "STATIC" in result.output
     assert "real utilisation" in result.output
+
+
+def _serve_with_port_busy(tmp_path, monkeypatch, model_name, serving):
+    """Run `ovat serve` against a port that already answers with `serving`."""
+    from ovat.core import model_scout, model_server, ovms_locator
+
+    monkeypatch.setattr(model_server.ModelServer, "already_serving",
+                        lambda self: serving)
+    monkeypatch.setattr(model_scout, "identify_model", lambda *a: "llm")
+    monkeypatch.setattr(ovms_locator, "find_ovms",
+                        lambda *a: ("/path/to/ovms", "1.0"))
+    config = tmp_path / "w.yml"
+    config.write_text(f"model:\n  name: {model_name}\n  provider: ovms\n",
+                      encoding="utf-8")
+    return runner.invoke(app, ["serve", str(config)])
+
+
+def test_a_config_naming_a_prefix_of_the_running_model_is_not_the_same(
+        tmp_path, monkeypatch):
+    """`"Qwen3-8B" in "Qwen3-8B-int4-cw-ov"` is True, and must not count.
+
+    This is the wrong half of the port guard to get wrong. Told "that is the
+    model this config asks for", the user exits 0 and then talks to a server
+    running something else -- which is how a live suite once failed against a
+    server that was up and serving the wrong model.
+    """
+    result = _serve_with_port_busy(tmp_path, monkeypatch, "Qwen3-8B",
+                                   "Qwen3-8B-int4-cw-ov")
+    assert result.exit_code == 1, result.output
+    assert "NOT Qwen3-8B" in result.output
+
+
+def test_the_exact_model_already_serving_is_not_an_error(tmp_path, monkeypatch):
+    """The user asked for a served model and there is one."""
+    result = _serve_with_port_busy(tmp_path, monkeypatch,
+                                   "Qwen3-8B-int4-cw-ov",
+                                   "Qwen3-8B-int4-cw-ov")
+    assert result.exit_code == 0, result.output
+    assert "nothing to start" in result.output

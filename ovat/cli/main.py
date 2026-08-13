@@ -1202,7 +1202,13 @@ def serve(
     # the port. See ModelServer.already_serving for the measurement.
     serving = server.already_serving()
     if serving is not None:
-        same = cfg.model.name in serving
+        # Exact match per name, not a substring test. already_serving() joins
+        # the served ids with ", ", and `"Qwen3-8B" in "Qwen3-8B-int4-cw-ov"`
+        # is True -- so a config naming a prefix of the running model would be
+        # told "that is the model this config asks for" and exit 0, which is
+        # the wrong half of this guard to get wrong: the user then talks to a
+        # server running something else entirely.
+        same = cfg.model.name in [n.strip() for n in serving.split(",")]
         rprint(f"[yellow]An OVMS server is already answering on port "
                f"{cfg.model.ovms_port}[/yellow], serving: {esc(serving)}")
         if same:
