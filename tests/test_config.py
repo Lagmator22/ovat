@@ -440,3 +440,53 @@ def test_a_fractional_cache_size_is_rejected_with_a_reason():
         ModelConfig(name="m", ovms_cache_size_gb=1.5)
     with pytest.raises(ValidationError):
         ModelConfig(name="m", ovms_cache_size_gb=0)
+
+
+def test_every_engine_caps_the_reply_length():
+    """The same drift as the temperature bug, with a worse failure mode.
+
+    Nothing capped a generation on ANY engine: the provider defaulted
+    max_tokens to None and omitted the key, and no config field existed to
+    set one. A model that never emits a stop token then generates until the
+    client gives up -- measured here as a 13-minute llamaindex request and,
+    separately, a native-loop request past the bench's 600s cap.
+
+    An unbounded generation is not something four engines should each decide,
+    so the ceiling lives in LLMBackend beside temperature, and this asserts
+    all four actually carry it.
+    """
+    import pytest
+    from ovat.config.workflow import WorkflowConfig
+    from ovat.providers.backend import LLMBackend
+
+    cfg = WorkflowConfig(model={"name": "some-model", "max_tokens": 1234})
+    expected = LLMBackend.from_config(cfg)
+    assert expected.max_tokens == 1234
+
+    from ovat.agent.factory import build_llm
+    assert build_llm(cfg).max_tokens == 1234
+
+    from ovat.agent.langchain_agent import _build_chat_model
+    assert _build_chat_model(cfg).max_tokens == 1234
+
+    pytest.importorskip("llama_index.core")
+    from ovat.agent.llamaindex_agent import _build_llm
+    assert _build_llm(cfg).max_tokens == 1234
+
+    pytest.importorskip("agents")
+    from ovat.agent.openai_agents_agent import _model_settings
+    assert _model_settings(cfg).max_tokens == 1234
+
+
+def test_a_reply_is_capped_by_default_not_only_when_asked():
+    """The runaway happened on a config that set nothing, so the DEFAULT is
+    the thing that has to be safe. None stays available as an opt-out."""
+    import pytest
+    from pydantic import ValidationError
+
+    from ovat.config.workflow import ModelConfig
+
+    assert ModelConfig(name="m").max_tokens == 4096
+    assert ModelConfig(name="m", max_tokens=None).max_tokens is None
+    with pytest.raises(ValidationError):
+        ModelConfig(name="m", max_tokens=0)

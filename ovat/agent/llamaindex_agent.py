@@ -69,6 +69,7 @@ def _build_llm(config: WorkflowConfig):
         is_chat_model=True,
         is_function_calling_model=True,
         timeout=b.timeout,
+        max_tokens=b.max_tokens,
     )
 
 

@@ -141,6 +141,11 @@ def test_run_trace_records_turns_tokens_and_tool_calls():
                       # exact shape so a future key cannot be added silently.
                       "undecoded_tool_call": False,
                       "empty_answer": False,
+                      # False when every turn ended on its own. True means a
+                      # turn was cut at model.max_tokens, which is why a
+                      # tool call can arrive as a fragment without the parser
+                      # or the KV cache being at fault.
+                      "truncated": False,
                       # False on a healthy run. `ovat run` reads this to decide
                       # its exit code: the loop returns its failures AS the
                       # answer text, so without a flag a failed run exited 0
@@ -395,3 +400,50 @@ def test_the_label_saying_tool_calls_with_an_empty_payload_still_reports_it():
 
     assert "reported tool_calls but sent none" in out
     assert len(llm.calls) == 1                 # asked once, did not spin
+
+
+def test_a_reply_cut_at_max_tokens_blames_the_ceiling_not_the_parser():
+    """The same fragment, with finish_reason "length", has a DIFFERENT cause.
+
+    Measured on the AI PC: a runaway generation stopped dead on
+    completion_tokens == max_tokens (4096) and the loop reported "usually a
+    tool_parser that does not match this model" and "restart OVMS, or raise
+    ovms_cache_size_gb" -- with the parser correct and the cache at 15%. Both
+    remedies were wrong, and both cost a reader time.
+
+    The server already says which it is; "length" is not "stop".
+    """
+    class CutAtTheCeiling:
+        def chat(self, messages, tools=None):
+            return {"finish_reason": "length",
+                    "content": "<tool_call>\n<function=search_docs>\n<parameter=",
+                    "tool_calls": None,
+                    "usage": {"prompt_tokens": 531, "completion_tokens": 4096},
+                    "raw": None}
+
+    agent = AgentLoop(CutAtTheCeiling(), tools={}, max_iterations=2)
+    answer = agent.run("anything")
+    totals = agent.last_trace["totals"]
+
+    assert totals["undecoded_tool_call"] is True
+    assert totals["truncated"] is True
+    assert totals["failed"] is True
+    assert "max_tokens" in answer
+    # The two wrong remedies must NOT be recommended here.
+    assert "NOT a tool_parser" in answer
+    assert "ovms_cache_size_gb" not in answer
+
+
+def test_a_fragment_that_was_not_truncated_still_blames_the_usual_two():
+    """The original diagnosis must survive for the case it was written for."""
+    class CutOffMidCall:
+        def chat(self, messages, tools=None):
+            return {"finish_reason": "stop",
+                    "content": "<tool_call>\n<function=search_docs>\n<parameter=",
+                    "tool_calls": None, "usage": None, "raw": None}
+
+    agent = AgentLoop(CutOffMidCall(), tools={}, max_iterations=2)
+    answer = agent.run("anything")
+
+    assert agent.last_trace["totals"]["truncated"] is False
+    assert "tool_parser" in answer and "KV cache" in answer

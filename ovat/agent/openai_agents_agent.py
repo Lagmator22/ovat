@@ -102,7 +102,8 @@ def _model_settings(config: WorkflowConfig):
     """
     from agents import ModelSettings
 
-    return ModelSettings(temperature=LLMBackend.from_config(config).temperature)
+    b = LLMBackend.from_config(config)
+    return ModelSettings(temperature=b.temperature, max_tokens=b.max_tokens)
 
 
 class OpenAIAgentsAgent:
