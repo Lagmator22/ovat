@@ -763,7 +763,7 @@ the documented command was still broken.
 | 4 Provider abstraction | ⚠️ partial | LLM + embeddings complete; retrievers are sqlite-vec only (FAISS, USearch not built) |
 | 5 Tools / MCP | ✅ complete | three built-ins, MCP client and server |
 | 6 Orchestration (A2A) | ❌ not built | scoped as a stretch goal |
-| 7 Observability | ⚠️ near-complete | sources, sinks, JSONL, CLI + TUI pages. NPU utilisation reads on Linux only; the Windows counter is identified but not wired up |
+| 7 Observability | ✅ complete | sources, sinks, JSONL, CLI + TUI pages. NPU utilisation now reads on **Windows too** (PDH, `GPU Engine` on the AI Boost adapter) as well as Linux sysfs; macOS has no Intel NPU and says so |
 | 8 Deployment / serving | ✅ complete | locator, stall budget, pidfile, identity check. `ovms_cache_size_gb` verified working on hardware (it never was before) |
 | 9 Runtime / hardware | ✅ complete | device routing; **NPU tool-calling agent run on hardware**, and its static 2129-token cap measured, not just documented |
 
@@ -778,9 +778,11 @@ a tool-calling agent against `Qwen3-8B-int4-cw-ov` on this machine's NPU, and
 the measurements are in "Measured on this hardware" above.
 
 Also outstanding: a VSCode extension (secondary scope), A2A orchestration
-(Layer 6, a declared stretch goal), a Windows NPU utilisation reader (the
-counter is identified in `telemetry/sources.py`; nothing reads it yet), and
-GPU/NPU verification on Linux, which WSL2 cannot give (no `/dev/dri`).
+(Layer 6, a declared stretch goal), and GPU/NPU verification on Linux, which
+WSL2 cannot give (no `/dev/dri`). The Windows NPU reader is no longer on this
+list: `_WindowsNPUCounter` reads it through PDH, and both controls were
+measured -- 93.5% under an NPU load, and 0.0% while OVMS generated on the GPU
+and the GPU's own `engtype_neural` read 100.0%.
 
 One open question is deliberately left open rather than closed on a thin
 sample: whether a full **static** KV cache causes the undecoded-tool-call
@@ -789,6 +791,15 @@ none in the 8 GB arm, but the same 100% reading also passed, so it is not
 reproducible on demand. See AGENTS.md for the table. The ~10x latency cost of
 a full static cache did reproduce, and matches the preemption-and-recompute
 OVMS documents.
+
+A related reading has since been **corrected**. A KV cache growing without
+bound was taken as evidence that the cache was the problem; it is the other
+way round. Nothing capped a generation on any engine until 2026-08-12, so a
+model that never emitted a stop token generated until the client gave up, and
+the cache grew because every token needs more of it. One measured run climbed
+to 13.6 GB over an hour on a single request. `model.max_tokens` now defaults
+to 4096. The remaining honest statement about the cache is the latency one
+above; the growth was a symptom.
 
 ---
 
