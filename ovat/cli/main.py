@@ -1366,8 +1366,9 @@ def telemetry(
     # OVMSLogSource carries the KV cache figure, which is the number the
     # undecoded-tool-call explanation rests on and the only one that has to be
     # captured in the same window as the failure it explains.
+    cache_source = OVMSLogSource()
     collector = Collector([SystemSource(), ProcessMemorySource(),
-                           NPUSource(), OVMSLogSource(),
+                           NPUSource(), cache_source,
                            IntelHardwareSource(ut)], sink,
                           interval_s=interval)
 
@@ -1400,6 +1401,7 @@ def telemetry(
         collector.sample_once()
         time.sleep(min(interval, 1.0))
         _print_telemetry(collector.sample_once())
+        _print_cache_type(cache_source)
         return
 
     # rich.Live redraws ONE table in place instead of printing a new one every
@@ -1421,6 +1423,7 @@ def telemetry(
         pass
     finally:
         collector.stop()
+        _print_cache_type(cache_source)
         if out:
             sink.close()
             rprint(f"[dim]telemetry written to[/dim] {esc(out)}")
@@ -1430,6 +1433,38 @@ def _print_telemetry(sample: dict) -> None:
     """One snapshot, printed once. Used by --once."""
     if sample:
         console.print(_telemetry_table(sample))
+
+
+def _print_cache_type(cache_source) -> None:
+    """Say whether the KV cache figure means anything.
+
+    kv_cache_pct on its own is the single most misleading number this page
+    shows. Unset, OVMS allocates the cache DYNAMICALLY and it grows, so it
+    sits at or near 100% of whatever is currently allocated as its ordinary
+    working state -- measured over one session, 61.6% of all readings were
+    >=95% while the allocation went 248.5 MB to 5.6 GB. A reader who sees
+    "99.2" and no type concludes the server is about to fall over, and that
+    conclusion was drawn, in this project, across three sessions.
+
+    Only a STATIC cache (model.ovms_cache_size_gb set) makes the percentage a
+    real utilisation figure.
+
+    The type is a property rather than a metric, deliberately: every value in
+    a sample is formatted as a number, and returning a string there took
+    `--once` down with "Unknown format code 'f' for object of type 'str'".
+    So it is printed beside the table instead of inside it.
+    """
+    try:
+        cache_type = cache_source.cache_type
+    except Exception:
+        return
+    if cache_type == "dynamic":
+        rprint("[dim]ovms KV cache is DYNAMIC: it grows on demand, so a "
+               "reading near 100% of the current allocation is normal, not "
+               "full. Set model.ovms_cache_size_gb for a fixed one.[/dim]")
+    elif cache_type == "static":
+        rprint("[dim]ovms KV cache is STATIC (model.ovms_cache_size_gb is "
+               "set), so the percentage is a real utilisation figure.[/dim]")
 
 
 def _telemetry_table(sample: dict) -> Table:

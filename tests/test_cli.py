@@ -1446,3 +1446,41 @@ def test_a_successful_run_still_exits_zero(monkeypatch):
                         lambda cfg, skip_rag=False: Working())
     result = runner.invoke(app, ["run", "examples/workflow.yml", "-i", "hi"])
     assert result.exit_code == 0
+
+
+def _telemetry_in(tmp_path, monkeypatch, cache_line):
+    """Run `ovat telemetry --once` in a directory with a canned ovms.log."""
+    (tmp_path / "ovms.log").write_text(cache_line + "\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    return runner.invoke(app, ["telemetry", "--once"])
+
+
+def test_telemetry_says_a_dynamic_cache_is_not_full(tmp_path, monkeypatch):
+    """kv_cache_pct alone is the most misleading number on this page.
+
+    Unset, OVMS grows the cache on demand, so it sits at or near 100% of the
+    current allocation as its ordinary state -- 61.6% of one session's
+    readings were >=95% while the allocation went 248.5 MB to 5.6 GB. Shown
+    bare, "99.2" reads as a server about to fall over, and that conclusion
+    was actually drawn here across three sessions.
+
+    The type cannot go in the table: every sample value is formatted as a
+    number, and a string there took --once down outright. So it is printed
+    beside it.
+    """
+    result = _telemetry_in(
+        tmp_path, monkeypatch,
+        "All requests: 1; Cache type: dynamic, cache usage: 99.2% of 5.6 GB;")
+    assert result.exit_code == 0, result.output
+    assert "kv_cache_pct" in result.output
+    assert "DYNAMIC" in result.output
+    assert "not full" in result.output
+
+
+def test_telemetry_says_a_static_cache_percentage_is_real(tmp_path, monkeypatch):
+    result = _telemetry_in(
+        tmp_path, monkeypatch,
+        "All requests: 1; Cache type: static, cache usage: 99.8% of 1.0 GB;")
+    assert result.exit_code == 0, result.output
+    assert "STATIC" in result.output
+    assert "real utilisation" in result.output
