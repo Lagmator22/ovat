@@ -541,18 +541,61 @@ def test_npu_memory_is_reported_when_the_driver_publishes_it(tmp_path):
     assert NPUSource(sysfs_root=root).sample()["memory_mb"] == 200.0
 
 
+class _SilentCounter:
+    """A Windows counter reader that cannot read anything."""
+
+    def __init__(self, reason="no compute-only adapter"):
+        self._reason = reason
+
+    def utilization(self):
+        return None
+
+    @property
+    def unavailable(self):
+        return self._reason
+
+
 def test_an_absent_npu_says_where_it_looked(tmp_path):
-    """Same contract as every other source: a reason, not an empty table."""
+    """Same contract as every other source: a reason, not an empty table.
+
+    The counter reader is injected rather than left to the platform. On a
+    machine that HAS a working NPU counter -- this project's AI PC does --
+    "unavailable" is correctly None, so asserting a reason without pinning
+    the reader tests the machine instead of the code.
+    """
     from ovat.telemetry.sources import NPUSource
 
-    source = NPUSource(sysfs_root=str(tmp_path / "nothing-here"))
-    reason = source.unavailable
-    assert reason is not None
-    # macOS and Windows answer with their own platform reason; Linux names
-    # the path and the driver. All three are actionable, which is the point.
-    assert ("nothing-here" in reason or "macOS" in reason
-            or "engtype_compute" in reason)
+    source = NPUSource(sysfs_root=str(tmp_path / "nothing-here"),
+                       counter=_SilentCounter("no compute-only adapter"))
+    assert source.unavailable == "no compute-only adapter"
     assert source.sample() == {}
+
+
+def test_a_real_sysfs_tree_wins_over_the_windows_counter(tmp_path):
+    """Linux must keep reading the driver even if a counter is also supplied.
+
+    This is what stops the Windows reader shadowing the sysfs one -- including
+    in these very tests, which drive a fake tree while running ON Windows.
+    """
+    from ovat.telemetry.sources import NPUSource
+
+    root = _fake_npu(tmp_path, busy_us=1, memory_kb=204800)
+    source = NPUSource(sysfs_root=root, counter=_SilentCounter())
+    assert source.unavailable is None
+    assert source.sample()["memory_mb"] == 200.0
+
+
+def test_the_windows_counter_supplies_utilization_when_there_is_no_sysfs(tmp_path):
+    from ovat.telemetry.sources import NPUSource
+
+    class Busy:
+        utilization = staticmethod(lambda: 84.2)
+        unavailable = None
+
+    source = NPUSource(sysfs_root=str(tmp_path / "nothing-here"),
+                       counter=Busy())
+    assert source.unavailable is None
+    assert source.sample() == {"utilization": 84.2}
 
 
 # --- the live NUMBERS table ------------------------------------------------
@@ -971,3 +1014,83 @@ def test_the_cache_type_is_read_from_either_spelling_of_the_line(tmp_path):
     assert source.sample()["kv_cache_pct"] == 99.4
     # the point of all of it: a healthy dynamic cache stays quiet
     assert cache_warning(99.4, 4.9, source.cache_type) is None
+
+
+# --- Windows adapter selection ----------------------------------------------
+#
+# Pure string work, so it runs on every OS. This is the part that decides
+# whether a number is the NPU's or the GPU's, and getting it wrong reports a
+# busy NPU for a run that never touched one.
+
+# Taken verbatim from this machine: an Arc 140V GPU, the Microsoft Basic
+# Render Driver, and Intel(R) AI Boost.
+_REAL_INSTANCES = [
+    "pid_8684_luid_0x00000000_0x0000b75a_phys_0_eng_0_engtype_3d",
+    "pid_8684_luid_0x00000000_0x0000b75a_phys_0_eng_1_engtype_videodecode",
+    "pid_8684_luid_0x00000000_0x0000b75a_phys_0_eng_5_engtype_compute",
+    "pid_8684_luid_0x00000000_0x0000b75a_phys_0_eng_6_engtype_gsc",
+    "pid_8684_luid_0x00000000_0x0000b75a_phys_0_eng_13_engtype_neural",
+    "pid_4_luid_0x00000000_0x0000baea_phys_0_eng_0_engtype_3d",
+    "pid_4_luid_0x00000000_0x0000baea_phys_0_eng_1_engtype_3d",
+    "pid_6316_luid_0x00000000_0x0000bb15_phys_0_eng_0_engtype_compute",
+    "pid_4_luid_0x00000000_0x0000bb15_phys_0_eng_0_engtype_compute",
+]
+
+
+def test_the_npu_adapter_is_the_compute_only_one():
+    from ovat.telemetry.sources import _WindowsNPUCounter
+
+    assert _WindowsNPUCounter.choose_adapter(_REAL_INSTANCES) == \
+        "0x00000000_0x0000bb15"
+
+
+def test_the_gpus_neural_engine_is_not_mistaken_for_the_npu():
+    """THE trap. engtype_neural is the Arc GPU's matrix engine.
+
+    Measured on this box: while OVMS generated on the GPU with the NPU idle,
+    engtype_neural read 100.0% and the NPU read 0.0%. An adapter carrying a
+    neural engine alongside 3d/videodecode engines is a GPU, and picking it
+    would draw a busy NPU for a GPU run.
+    """
+    from ovat.telemetry.sources import _WindowsNPUCounter
+
+    chosen = _WindowsNPUCounter.choose_adapter(_REAL_INSTANCES)
+    engines = _WindowsNPUCounter.engines_by_adapter(_REAL_INSTANCES)[chosen]
+    assert "neural" not in engines
+    assert engines == {"compute"}
+
+
+def test_two_compute_only_adapters_are_refused_rather_than_guessed():
+    """A wrong NPU number is worse than no NPU number."""
+    from ovat.telemetry.sources import _WindowsNPUCounter
+
+    ambiguous = _REAL_INSTANCES + [
+        "pid_9_luid_0x00000000_0x0000cc01_phys_0_eng_0_engtype_compute"]
+    assert _WindowsNPUCounter.choose_adapter(ambiguous) is None
+
+
+def test_a_machine_with_no_npu_selects_nothing():
+    from ovat.telemetry.sources import _WindowsNPUCounter
+
+    gpu_only = [n for n in _REAL_INSTANCES if "bb15" not in n]
+    assert _WindowsNPUCounter.choose_adapter(gpu_only) is None
+
+
+def test_an_adapter_with_no_compute_engine_is_not_the_npu():
+    """The Basic Render Driver publishes only 3d engines."""
+    from ovat.telemetry.sources import _WindowsNPUCounter
+
+    render_only = [n for n in _REAL_INSTANCES if "baea" in n]
+    assert _WindowsNPUCounter.choose_adapter(render_only) is None
+
+
+def test_the_luid_keeps_the_case_the_counter_uses():
+    """It is substituted back into a PDH wildcard path.
+
+    Upper-casing produced "0X0000BB15" for an instance actually named
+    "0x0000bb15"; it matched only because PDH happens to be case-insensitive,
+    which is luck rather than a contract.
+    """
+    from ovat.telemetry.sources import _WindowsNPUCounter
+
+    assert "0x" in _WindowsNPUCounter.choose_adapter(_REAL_INSTANCES)
