@@ -501,3 +501,46 @@ def test_a_reply_is_capped_by_default_not_only_when_asked():
     assert ModelConfig(name="m", max_tokens=None).max_tokens is None
     with pytest.raises(ValidationError):
         ModelConfig(name="m", max_tokens=0)
+
+
+# --- the NPU prompt cap ------------------------------------------------------
+#
+# MEASURED on an AI PC serving Qwen3-8B-int4-cw-ov on NPU: the first chat
+# message failed with a Mediapipe graph error naming neither the cap nor the
+# flag that raises it. --max_prompt_len was documented in two comments and
+# passed by nothing.
+
+def test_npu_gets_a_workable_prompt_cap_by_default():
+    """OVMS caps an NPU prompt at 1024, which one agent turn exceeds.
+
+    Back the default out and this returns None, which is the shipped bug: the
+    server starts fine and every agent question 400s.
+    """
+    from ovat.cli.main import NPU_DEFAULT_MAX_PROMPT_LEN, _max_prompt_len_for
+    from ovat.config.workflow import ModelConfig
+
+    model = ModelConfig(name="m", device="NPU")
+    assert _max_prompt_len_for(model) == NPU_DEFAULT_MAX_PROMPT_LEN
+    assert NPU_DEFAULT_MAX_PROMPT_LEN > 1024
+
+
+def test_other_devices_are_left_alone():
+    """OVMS's default is generous off NPU; overriding it was never asked for."""
+    from ovat.cli.main import _max_prompt_len_for
+    from ovat.config.workflow import ModelConfig
+
+    assert _max_prompt_len_for(ModelConfig(name="m", device="GPU")) is None
+    assert _max_prompt_len_for(ModelConfig(name="m", device="CPU")) is None
+
+
+def test_an_explicit_cap_wins_on_every_device():
+    """It is a default, not a floor: NPU memory and compile time scale with it."""
+    from ovat.cli.main import _max_prompt_len_for
+    from ovat.config.workflow import ModelConfig
+
+    for device in ("NPU", "GPU", "CPU"):
+        model = ModelConfig(name="m", device=device, ovms_max_prompt_len=1500)
+        assert _max_prompt_len_for(model) == 1500
+
+
+

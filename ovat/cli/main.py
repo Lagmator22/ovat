@@ -456,6 +456,30 @@ ENGINE_LABELS = {
 }
 
 
+#: What an unset ovms_max_prompt_len becomes on NPU. OVMS's own default there
+#: is 1024, which one agent turn exceeds before the user has typed anything
+#: interesting -- the system prompt and the tool schemas alone get most of the
+#: way. 4096 is chosen to be plainly past that rather than to be optimal, and
+#: OVMS's NPU demo uses 2000 for plain chat with no tools at all. It costs
+#: compile time and NPU memory, so it is a default and not a floor: set the
+#: field to go lower.
+NPU_DEFAULT_MAX_PROMPT_LEN = 4096
+
+
+def _max_prompt_len_for(model) -> int | None:
+    """The --max_prompt_len OVMS should be started with, or None to omit it.
+
+    Explicit config always wins. Otherwise NPU gets a workable default and
+    every other device gets nothing, because OVMS's own default is generous
+    there and second-guessing it would be a change nobody asked for.
+    """
+    if model.ovms_max_prompt_len is not None:
+        return model.ovms_max_prompt_len
+    if str(model.device).upper() == "NPU":
+        return NPU_DEFAULT_MAX_PROMPT_LEN
+    return None
+
+
 def _engine_label(agent_type: str) -> str:
     """Human name for an engine, falling back to the configured name."""
     return ENGINE_LABELS.get(agent_type, agent_type)
@@ -1169,6 +1193,7 @@ def serve(
         reasoning_parser=cfg.model.reasoning_parser,
         enable_prefix_caching=cfg.model.enable_prefix_caching,
         cache_size_gb=cfg.model.ovms_cache_size_gb,
+        max_prompt_len=_max_prompt_len_for(cfg.model),
         binary=binary,
     )
     if stall_timeout is None:

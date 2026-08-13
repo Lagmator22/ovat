@@ -88,6 +88,7 @@ class ModelServer:
                  task: str = "text_generation",
                  enable_prefix_caching: bool = True,
                  cache_size_gb: int | None = None,
+                 max_prompt_len: int | None = None,
                  binary: str = "ovms"):
         self.model_name = model_name
         # Note to myself: source_model is the Hugging Face id OVMS downloads if
@@ -104,6 +105,7 @@ class ModelServer:
         self.task = task
         self.enable_prefix_caching = enable_prefix_caching
         self.cache_size_gb = cache_size_gb
+        self.max_prompt_len = max_prompt_len
         # The resolved executable ("ovms" if on PATH, or a full path found by
         # ovms_locator). Launching by full path means no setupvars.bat needed.
         self.binary = binary
@@ -153,6 +155,12 @@ class ModelServer:
             # this is also reached by callers constructing ModelServer
             # directly rather than through a WorkflowConfig.
             cmd += ["--cache_size", str(int(self.cache_size_gb))]
+        if self.max_prompt_len:
+            # Without this OVMS caps an NPU prompt at 1024 tokens and the
+            # first agent turn fails with a Mediapipe graph error that names
+            # neither the cap nor this flag. See ModelConfig for the measured
+            # failure.
+            cmd += ["--max_prompt_len", str(int(self.max_prompt_len))]
         if self.reasoning_parser:
             cmd += ["--reasoning_parser", self.reasoning_parser]
         # I only add source_model when I have one. On the first run OVMS uses it

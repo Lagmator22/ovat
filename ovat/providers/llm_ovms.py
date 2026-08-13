@@ -72,6 +72,30 @@ class OVMSLLMProvider(LLMProvider):
         plano, and the server is healthy while every request 400s.
         """
         text = str(exc)
+        # The NPU prompt cap, which arrives as a Mediapipe graph failure and
+        # names nothing a user can act on:
+        #
+        #   Mediapipe execution failed. MP status - INVALID_ARGUMENT:
+        #   CalculatorGraph::Run() failed: Calculator::Process() for node
+        #   "LLMExecutor" failed: Input length exceeds the maximum allowed
+        #   length
+        #
+        # OVMS caps an NPU prompt at 1024 tokens unless --max_prompt_len says
+        # otherwise, and an agent turn is a system prompt plus every tool
+        # schema plus the history, which passes 1024 almost immediately. The
+        # server is healthy and the model is fine; the cap is simply too low.
+        if "Input length exceeds the maximum allowed length" in text:
+            return RuntimeError(
+                "the prompt was longer than this server allows.\n"
+                "On NPU, OVMS caps the prompt at 1024 tokens unless it is "
+                "started with --max_prompt_len, and one agent turn -- system "
+                "prompt + every tool schema + the history -- passes that "
+                "almost immediately.\n"
+                "Fix: set model.ovms_max_prompt_len in the workflow (4096 is "
+                "a reasonable start) and restart the server. Nothing is wrong "
+                "with the model or the server; the cap is too low.\n"
+                "Shortening the question will not help much: the tool "
+                "schemas are most of the prompt.")
         if "Invalid request URL" not in text and "404" not in text:
             return exc
         url = str(getattr(self.client, "base_url", "")).rstrip("/")

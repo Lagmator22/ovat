@@ -176,6 +176,26 @@ class ModelConfig(StrictModel):
     # than a server that silently will not boot.
     ovms_cache_size_gb: int | None = Field(default=None, gt=0)
 
+    # Longest prompt OVMS will accept, sent as --max_prompt_len.
+    #
+    # THIS IS AN NPU BLOCKER, not a tuning knob. OVMS caps an NPU prompt at
+    # 1024 tokens unless this is passed, and one agent turn is a system prompt
+    # plus every tool schema plus the history -- which passes 1024 almost at
+    # once. MEASURED on an AI PC serving Qwen3-8B-int4-cw-ov on NPU: the very
+    # first chat message came back as
+    #
+    #   Mediapipe execution failed ... node "LLMExecutor" failed:
+    #   Input length exceeds the maximum allowed length
+    #
+    # which names neither the cap nor the flag that raises it. The flag was
+    # documented in two comments here and passed by nothing.
+    #
+    # Left as None on GPU and CPU, where OVMS's own default is generous and
+    # this should not be second-guessed. On NPU an unset value becomes
+    # NPU_DEFAULT_MAX_PROMPT_LEN below, because the alternative is a device
+    # that cannot answer a single agent question out of the box.
+    ovms_max_prompt_len: int | None = Field(default=None, gt=0)
+
     # Which OVMS parser suits which model family. Data, not branching, so a
     # new family is one line. Longest prefix first: "qwen3.5" has to be tested
     # before "qwen3", or every Qwen3.5 model matches the Qwen3 rule.
