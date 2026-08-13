@@ -347,3 +347,42 @@ def test_an_unrelated_failure_is_passed_through_untouched():
     provider = OVMSLLMProvider(base_url="http://localhost:8000/v3", model="m")
     original = Exception("Connection refused")
     assert provider._explain(original) is original
+
+
+def test_the_npu_prompt_cap_error_names_the_setting_that_fixes_it():
+    """OVMS reports it as a Mediapipe graph failure, which is unactionable.
+
+    Verbatim from an AI PC serving on NPU:
+
+        Error code: 400 - {'error': 'Mediapipe execution failed. MP status -
+        INVALID_ARGUMENT: CalculatorGraph::Run() failed: Calculator::Process()
+        for node "LLMExecutor" failed: Input length exceeds the maximum
+        allowed length'}
+
+    Nothing there says "prompt too long", let alone which knob raises the cap.
+    Errors are for users: the same fact, in a sentence, naming the fix.
+    """
+    from ovat.providers.llm_ovms import OVMSLLMProvider
+
+    provider = OVMSLLMProvider(base_url="http://localhost:8000/v3", model="m")
+    raw = Exception(
+        "Error code: 400 - {'error': 'Mediapipe execution failed. MP status - "
+        "INVALID_ARGUMENT: CalculatorGraph::Run() failed: \\nCalculator::"
+        "Process() for node \"LLMExecutor\" failed: Input length exceeds the "
+        "maximum allowed length'}")
+
+    explained = str(provider._explain(raw))
+    assert "ovms_max_prompt_len" in explained
+    assert "1024" in explained
+    # and it must not send the reader off shortening their question, which is
+    # the obvious wrong move: the tool schemas are most of the prompt
+    assert "tool schema" in explained
+
+
+def test_an_unrelated_error_is_passed_through_untouched():
+    """Only errors this can actually explain get rewritten."""
+    from ovat.providers.llm_ovms import OVMSLLMProvider
+
+    provider = OVMSLLMProvider(base_url="http://localhost:8000/v3", model="m")
+    original = Exception("connection reset by peer")
+    assert provider._explain(original) is original

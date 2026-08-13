@@ -732,3 +732,42 @@ def test_already_serving_says_something_when_the_reply_is_not_a_model_list(
     _fake_models_endpoint(monkeypatch, {"data": []})
     assert ModelServer(model_name="m").already_serving() == \
         "an unidentified server"
+def test_max_prompt_len_reaches_the_command_line(monkeypatch, tmp_path):
+    """Without it OVMS caps an NPU prompt at 1024 tokens.
+
+    MEASURED on an AI PC serving Qwen3-8B-int4-cw-ov on NPU: the first agent
+    message came back as a Mediapipe graph failure -- "Input length exceeds
+    the maximum allowed length" -- naming neither the cap nor the flag that
+    raises it. The flag was documented in two comments and passed by nothing,
+    so NPU serving could not answer a single agent question.
+    """
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakePopen()
+
+    monkeypatch.setattr("ovat.core.model_server.subprocess.Popen", fake_popen)
+
+    server = ModelServer(model_name="m", device="NPU", max_prompt_len=4096)
+    server.start(log_path=str(tmp_path / "n.log"),
+                 pid_path=str(tmp_path / "n.pid"))
+    cmd = captured["cmd"]
+    assert "--max_prompt_len" in cmd
+    assert cmd[cmd.index("--max_prompt_len") + 1] == "4096"
+
+
+def test_max_prompt_len_is_omitted_when_unset(monkeypatch, tmp_path):
+    """An absent flag leaves OVMS's own default in charge, which is right
+    everywhere except NPU."""
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakePopen()
+
+    monkeypatch.setattr("ovat.core.model_server.subprocess.Popen", fake_popen)
+
+    ModelServer(model_name="m").start(log_path=str(tmp_path / "o.log"),
+                                      pid_path=str(tmp_path / "o.pid"))
+    assert "--max_prompt_len" not in captured["cmd"]

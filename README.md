@@ -339,6 +339,7 @@ Each folder has its own README with the exact commands.
 | | `tool_parser` | how tool calls are decoded, **`qwen3coder`** for Qwen3.5, `hermes3` for Qwen3. Derived from the model name if omitted |
 | | `source_model` | HF id that `ovat serve` downloads |
 | | `request_timeout` | per-request cap, in seconds |
+| | `ovms_max_prompt_len` | longest prompt OVMS accepts. **Needed on NPU**, where OVMS caps it at 1024 and one agent turn exceeds that; defaults to 4096 on NPU and is left to OVMS elsewhere |
 | | `max_tokens` | ceiling on one reply (default `4096`). `null` restores the old unbounded behaviour, where a model that never emits a stop token generates until the client gives up |
 | `tools` | `name` / `type` | `builtin` (`search_docs`, `transcribe`, `describe_image`) or `mcp_stdio` |
 | `agent` | `type` | `native`, `react`, `llamaindex`, `openai-agents` |
