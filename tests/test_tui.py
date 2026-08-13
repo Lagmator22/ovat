@@ -917,3 +917,35 @@ def test_the_tui_boots_lists_its_commands_and_exits():
             app.exit()
         assert app.return_code in (0, None)
     _run(scenario())
+
+
+def test_the_app_boots_in_a_default_80x24_terminal():
+    """The masthead height is load-bearing, and nothing said so out loud.
+
+    #masthead is 17 rows because an 18-row one leaves the output pane no
+    space at 80x24 and the app HANGS on startup instead of laying out. 24
+    rows is a default terminal, so that is not an exotic case.
+
+    Every test in this file already runs at 80x24 -- Textual's run_test
+    defaults to size=(80, 24) -- so the constraint has in fact been covered
+    all along, by accident. This states it: if someone passes a larger size
+    here, or Textual changes that default, the guard silently disappears and
+    the next person to try 18 rows finds out from a hang rather than a test.
+
+    What it checks is the VALUE plus a successful layout, not the hang
+    itself: headless rendering does not reproduce the hang (set the height
+    to 18 and this fails on the assertion, not by hanging). Pinning the
+    measured-good number is the guard; the boot proves the pane still fits.
+    """
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            assert app.size.width == 80 and app.size.height == 24
+            masthead = app.query_one("#masthead", Horizontal)
+            assert masthead.styles.height.value == 17, (
+                "raising this to 18 hangs the app at 80x24")
+            # It laid out and the prompt is reachable, which is the thing a
+            # hang would prevent.
+            assert app.query_one("#prompt", Input).region.height > 0
+    _run(scenario())
