@@ -278,3 +278,36 @@ def test_the_mcp_server_stays_in_stub_mode_with_no_config():
     sd.configure(None)
     out = sd.search_docs_impl("hello", retriever=sd._retriever)
     assert "[stub]" in out[0]["text"]
+
+
+def test_a_language_the_model_already_wrapped_is_not_wrapped_twice():
+    """This argument comes from a MODEL, and one that has seen Whisper prompts
+    writes "<|en|>" rather than "en". Wrapping that again gives "<|<|en|>|>",
+    which the tokenizer cannot match -- so it transcribes as the wrong
+    language instead of failing."""
+    from ovat.tools.transcribe import transcribe_impl
+
+    seen = {}
+
+    class FakePipeline:
+        def generate(self, samples, language=None):
+            seen["language"] = language
+            return "text"
+
+    import os
+    import struct
+    import tempfile
+    import wave
+
+    with tempfile.TemporaryDirectory() as folder:
+        path = os.path.join(folder, "a.wav")
+        with wave.open(path, "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(16000)
+            handle.writeframes(struct.pack("<8h", *([0] * 8)))
+
+        for given in ("en", "<|en|>", " en ", "<|fr|>"):
+            transcribe_impl(path, language=given, pipeline=FakePipeline())
+            assert seen["language"].count("<|") == 1, seen["language"]
+            assert seen["language"].count("|>") == 1, seen["language"]

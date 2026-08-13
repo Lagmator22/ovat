@@ -544,3 +544,36 @@ def test_an_explicit_cap_wins_on_every_device():
 
 
 
+
+
+def test_a_workflow_that_is_a_list_fails_with_a_sentence(tmp_path):
+    """`- model: x` parses as a list, and WorkflowConfig(**list) raised
+
+        TypeError: argument after ** must be a mapping, not list
+
+    which _load_config did not catch -- it handles YAMLError and
+    ValidationError, and TypeError is neither -- so the user got a twelve-frame
+    traceback. Exactly the failure the `or {}` above it already fixed for the
+    None case, one shape along.
+    """
+    import pytest
+
+    from ovat.config.workflow import load_workflow
+
+    config = tmp_path / "listy.yml"
+    config.write_text("- model: Qwen3.5\n", encoding="utf-8")
+    with pytest.raises(ValueError) as caught:
+        load_workflow(str(config))
+    assert "mapping" in str(caught.value)
+    assert "list" in str(caught.value)
+
+
+def test_a_scalar_workflow_fails_the_same_way(tmp_path):
+    import pytest
+
+    from ovat.config.workflow import load_workflow
+
+    config = tmp_path / "scalar.yml"
+    config.write_text("just a sentence\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_workflow(str(config))

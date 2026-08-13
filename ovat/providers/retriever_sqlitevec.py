@@ -152,6 +152,12 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         appended. That is a deliberate limit of the contract, not an oversight.
         """
         self._check_open()
+        if not texts:
+            # Matches InMemoryRetrieverProvider, which already returns here.
+            # Harmless either way -- an empty commit is a no-op -- but the two
+            # backends behind one socket should not differ on when they touch
+            # the embedder at all.
+            return
         vectors = self.embedder.embed(texts)   # outside the lock: pure compute
         with self._write_lock:
             self._add_locked(texts, vectors, sources)

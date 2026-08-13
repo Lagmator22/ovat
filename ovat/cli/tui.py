@@ -93,6 +93,17 @@ class _StartupFrame:
     duration: float | None
 
 
+def _pixels(image):
+    """Every pixel of `image`, on any Pillow this project can resolve.
+
+    Pillow 12.1.0 added get_flattened_data() and deprecated getdata(). Since
+    pillow carries no floor here, both spellings have to work: the new name
+    when it exists (no DeprecationWarning), the old one otherwise.
+    """
+    reader = getattr(image, "get_flattened_data", None)
+    return reader() if reader is not None else image.getdata()
+
+
 class _StartupIntelAnimation(Widget):
     """A compact, one-shot three-phase Intel startup mark for the launcher.
 
@@ -237,7 +248,14 @@ class _StartupIntelAnimation(Widget):
         scaled = image.convert("RGB").resize(
             (self._columns * 2, rows * 4), Image.Resampling.LANCZOS
         )
-        pixels = list(scaled.get_flattened_data())
+        # get_flattened_data() arrived in Pillow 12.1.0 (January 2026)
+        # and getdata() is deprecated in favour of it. pillow is
+        # unpinned here, so calling the new name unconditionally raises
+        # AttributeError on any older resolve -- and on_mount only
+        # guards (OSError, UnidentifiedImageError), so it would escape
+        # as a crash at TUI launch rather than a missing animation.
+        # Preferring the new name keeps new Pillow warning-free.
+        pixels = list(_pixels(scaled))
 
         text = Text(no_wrap=True)
         for row in range(rows):
@@ -259,7 +277,14 @@ class _StartupIntelAnimation(Widget):
         scaled = image.convert("RGB").resize(
             (self._columns * 2, rows * 2), Image.Resampling.LANCZOS
         )
-        pixels = list(scaled.get_flattened_data())
+        # get_flattened_data() arrived in Pillow 12.1.0 (January 2026)
+        # and getdata() is deprecated in favour of it. pillow is
+        # unpinned here, so calling the new name unconditionally raises
+        # AttributeError on any older resolve -- and on_mount only
+        # guards (OSError, UnidentifiedImageError), so it would escape
+        # as a crash at TUI launch rather than a missing animation.
+        # Preferring the new name keeps new Pillow warning-free.
+        pixels = list(_pixels(scaled))
         glyphs = (" ", "▘", "▝", "▀", "▖", "▌", "▞", "▛",
                   "▗", "▚", "▐", "▜", "▄", "▙", "▟", "█")
         text = Text(no_wrap=True)

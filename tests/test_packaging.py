@@ -67,3 +67,42 @@ def test_dev_extra_includes_every_optional_agent_framework():
     dev_dependencies = set(extras["dev"])
     for framework_extra in ("langchain", "llamaindex", "openai-agents"):
         assert set(extras[framework_extra]) <= dev_dependencies
+
+
+def test_no_prose_is_trapped_inside_a_shell_code_fence():
+    """A copy button that pastes English into a terminal.
+
+    examples/plano/README.md had five lines of explanation inside a ```cmd
+    fence, so anyone clicking Copy pasted prose at their shell. Checked for
+    every doc rather than the one that had it, since the mistake is invisible
+    in a rendered preview.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    shell = {"cmd", "bash", "console", "bat", "sh", "powershell"}
+    offenders = []
+    for path in list(root.glob("*.md")) + list(root.glob("docs/*.md")) \
+            + list(root.glob("examples/**/*.md")):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        language, start = None, 0
+        for number, line in enumerate(lines, 1):
+            fence = re.match(r"^```(\w*)", line.strip())
+            if not fence:
+                continue
+            if language is None:
+                language, start = fence.group(1).lower(), number
+                continue
+            if language in shell:
+                for offset, body in enumerate(lines[start:number - 1], start + 1):
+                    text = body.strip()
+                    # A prose line: ends in a full stop and is not a comment
+                    # or a line continuation.
+                    if (text.endswith(".") and not text.startswith("#")
+                            and not text.startswith("::")
+                            and not text.endswith("\\")
+                            and " " in text and len(text.split()) > 4):
+                        offenders.append(f"{path.name}:{offset}: {text[:60]}")
+            language = None
+    assert not offenders, "prose inside a shell code fence:\n" + "\n".join(offenders)

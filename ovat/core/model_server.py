@@ -455,7 +455,12 @@ def stop_from_pidfile(pid_path: str = DEFAULT_PID_PATH, wait_seconds: float = 10
     if not os.path.exists(pid_path):
         return f"No pidfile at {pid_path}; nothing to stop (server not started here?)."
     try:
-        pid = int(open(pid_path, encoding="utf-8").read().strip())
+        # `with`, not a bare open(). CPython's refcounting happens to close
+        # the temporary before os.remove() runs below, so this is correctness
+        # by implementation detail rather than by contract -- and every other
+        # file in this project opens with a context manager.
+        with open(pid_path, encoding="utf-8") as handle:
+            pid = int(handle.read().strip())
     except ValueError:
         os.remove(pid_path)
         return f"Pidfile {pid_path} was corrupt; removed it."

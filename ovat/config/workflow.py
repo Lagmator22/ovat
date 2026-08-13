@@ -342,4 +342,20 @@ def load_workflow(path: str) -> WorkflowConfig:
         # internals message where the user needed "your workflow has no model
         # section". An empty mapping lets pydantic say that instead.
         data = yaml.safe_load(f) or {}
+    # The SAME failure the comment above describes, one shape along: a file
+    # that parses as a list or a scalar. `- model: x` gives a list, and
+    # WorkflowConfig(**[...]) raised
+    #
+    #   TypeError: argument after ** must be a mapping, not list
+    #
+    # which escaped _load_config entirely -- it catches YAMLError and
+    # ValidationError, and a TypeError is neither -- so the user got a
+    # twelve-frame traceback where they needed one sentence. Fixing the None
+    # case with `or {}` and leaving this one is the kind of near-miss that
+    # only shows up when someone's editor reformats a file.
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"a workflow must be a YAML mapping of key: value pairs, but "
+            f"{path} parses as a {type(data).__name__}. A leading '- ' makes "
+            f"a list; remove it, or check the indentation of the first line.")
     return WorkflowConfig(**data)

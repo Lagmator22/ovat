@@ -949,3 +949,45 @@ def test_the_app_boots_in_a_default_80x24_terminal():
             # hang would prevent.
             assert app.query_one("#prompt", Input).region.height > 0
     _run(scenario())
+
+
+def test_pixels_works_on_pillow_without_get_flattened_data():
+    """get_flattened_data() arrived in Pillow 12.1.0; pillow has no floor here.
+
+    Calling the new name unconditionally raises AttributeError on any older
+    resolve, and the loader only guards (OSError, UnidentifiedImageError) --
+    so it would escape as a crash at TUI launch rather than a missing
+    animation. Back the fallback out and this fails.
+    """
+    from ovat.cli.tui import _pixels
+
+    class OldPillowImage:
+        """Pillow < 12.1: getdata() only."""
+        def getdata(self):
+            return [(1, 2, 3), (4, 5, 6)]
+
+    assert list(_pixels(OldPillowImage())) == [(1, 2, 3), (4, 5, 6)]
+
+
+def test_pixels_prefers_the_new_name_when_it_exists():
+    """getdata() is deprecated in favour of it, so new Pillow must not warn."""
+    from ovat.cli.tui import _pixels
+
+    class NewPillowImage:
+        def get_flattened_data(self):
+            return [("new",)]
+
+        def getdata(self):
+            raise AssertionError("used the deprecated name")
+
+    assert list(_pixels(NewPillowImage())) == [("new",)]
+
+
+def test_a_real_pillow_image_still_reads():
+    """The shim must not break the path that actually runs today."""
+    from PIL import Image
+
+    from ovat.cli.tui import _pixels
+
+    image = Image.new("RGB", (2, 1), (10, 20, 30))
+    assert list(_pixels(image)) == [(10, 20, 30), (10, 20, 30)]

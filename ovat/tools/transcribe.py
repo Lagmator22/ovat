@@ -97,7 +97,14 @@ def transcribe_impl(file_path: str, language: str = "en", pipeline=None) -> str:
         except Exception as exc:
             return f"Error loading whisper model: {exc}"
     try:
-        return str(pipeline.generate(samples, language=f"<|{language}|>"))
+        # Strip any wrapper the caller already added. The SCHEMA asks for a
+        # bare code ("en"), but this argument comes from a MODEL, and a model
+        # that has seen Whisper prompts writes the full token "<|en|>" often
+        # enough to matter. Wrapping that again gives "<|<|en|>|>", which the
+        # tokenizer cannot match, so it silently transcribes as the wrong
+        # language instead of failing.
+        code = language.strip().strip("<|>") or "en"
+        return str(pipeline.generate(samples, language=f"<|{code}|>"))
     except Exception as exc:
         return f"Error transcribing audio: {exc}"
 

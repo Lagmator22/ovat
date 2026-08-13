@@ -89,13 +89,13 @@ In a second **Command Prompt (`cmd.exe`)** tab on Windows:
 ```cmd
 cd C:\Users\devcloud\ovat
 python examples\plano\ovms_id_bridge.py
+```
 
 The bridge binds `127.0.0.1` by default, so only this machine can reach it.
 Nothing in it checks credentials, so a wider bind is a door to your GPU. When
 plano runs in **WSL2 or Docker** it has to cross a network namespace and
 loopback will not do; pass `--host 0.0.0.0` for exactly that case, and firewall
 the port.
-```
 *(Leave this running. It prints `OVMS ID Bridge listening on http://0.0.0.0:8001...`)*
 
 ---

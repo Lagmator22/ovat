@@ -560,6 +560,15 @@ def _load_config(path: str):
                    "an error rather than a setting that silently does "
                    "nothing.[/dim]")
         raise typer.Exit(code=1)
+    except ValueError as exc:
+        # A workflow that parses as a list or a scalar rather than a mapping.
+        # AFTER ValidationError, not before: pydantic's ValidationError is a
+        # ValueError subclass, so putting this first would swallow every
+        # schema error and print them without their field names. The order of
+        # these two clauses is behaviour, not tidiness.
+        rprint(f"[red]{esc(path)} is not a usable workflow.[/red]")
+        rprint(f"  {esc(exc)}")
+        raise typer.Exit(code=1)
 
 
 def _start_telemetry(path: str, agent):
@@ -1004,9 +1013,20 @@ def _offer_ovms_install(assume_yes: bool) -> str | None:
     # Say so BEFORE the download, while the choice can still be
     # changed. Ubuntu 26.04 was silently handed the ubuntu24 archive,
     # which cannot start there at all.
+    # Printed whether or not consent is being asked for: with --yes there is
+    # no choice left to change, but "Intel does not build for this distro" is
+    # still worth knowing before 185 MB arrives.
     note = ovms_installer.linux_support_note()
     if note:
         rprint(f"  [yellow]note[/yellow]     : {esc(note)}")
+
+    # THE PROMPT MUST NOT DEPEND ON `note`. It used to be indented under
+    # `if note:`, and linux_support_note() returns None on every platform that
+    # is not Linux -- so on WINDOWS, the primary supported platform, consent
+    # was never asked for at all: the function fell straight through and
+    # downloaded 185 MB. The note is about which archive suits this distro;
+    # whether to download anything is a different question and belongs here.
+    if not assume_yes:
         rprint(f"  install  : [bold]{esc(ovms_installer.DEFAULT_ROOT)}[/bold]")
         # isatty() is necessary but NOT sufficient: measured on Windows, a
         # cmd /c invocation with no human attached still reports a tty, so the

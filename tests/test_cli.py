@@ -1523,3 +1523,69 @@ def test_the_exact_model_already_serving_is_not_an_error(tmp_path, monkeypatch):
                                    "Qwen3-8B-int4-cw-ov")
     assert result.exit_code == 0, result.output
     assert "nothing to start" in result.output
+
+
+def test_consent_is_asked_for_even_when_the_distro_note_is_empty(monkeypatch):
+    """The prompt must not depend on linux_support_note().
+
+    It was indented under `if note:`, and that returns None on every platform
+    that is not Linux -- so on WINDOWS, the primary supported platform, `ovat
+    serve` downloaded 185 MB without ever asking. Back the fix out and this
+    fails: _install_ovms runs and the prompt is never reached.
+    """
+    import ovat.cli.main as cli_main
+    from ovat.core import ovms_installer
+
+    asked = []
+    monkeypatch.setattr(ovms_installer, "asset_for_platform",
+                        lambda: ("ovms_windows.zip", "http://x/ovms.zip"))
+    monkeypatch.setattr(ovms_installer, "linux_support_note", lambda: None)
+    monkeypatch.setattr(cli_main.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cli_main.typer, "prompt",
+                        lambda *a, **k: asked.append(True) or "n")
+    monkeypatch.setattr(cli_main, "_install_ovms",
+                        lambda: (_ for _ in ()).throw(
+                            AssertionError("downloaded without consent")))
+
+    assert cli_main._offer_ovms_install(assume_yes=False) is None
+    assert asked, "the user was never asked"
+
+
+def test_yes_still_skips_the_prompt(monkeypatch):
+    """--yes is the documented way to allow an unattended download."""
+    import ovat.cli.main as cli_main
+    from ovat.core import ovms_installer
+
+    monkeypatch.setattr(ovms_installer, "asset_for_platform",
+                        lambda: ("ovms_windows.zip", "http://x/ovms.zip"))
+    monkeypatch.setattr(ovms_installer, "linux_support_note", lambda: None)
+    monkeypatch.setattr(cli_main.typer, "prompt",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError("prompted despite --yes")))
+    monkeypatch.setattr(cli_main, "_install_ovms", lambda: ("/path/ovms", "x"))
+
+    assert cli_main._offer_ovms_install(assume_yes=True) == "/path/ovms"
+
+
+def test_the_cli_turns_that_into_one_line_not_a_traceback(tmp_path):
+    """Errors are for users. Reproduced through the real command."""
+    config = tmp_path / "listy.yml"
+    config.write_text("- model: Qwen3.5\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["run", str(config), "--input", "hi"])
+    assert result.exit_code == 1
+    assert "not a usable workflow" in result.output
+    assert "mapping" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_a_schema_error_still_names_its_fields(tmp_path):
+    """The new ValueError clause sits AFTER ValidationError, which subclasses
+    ValueError. Put it first and every schema error loses its field names."""
+    config = tmp_path / "bad.yml"
+    config.write_text("model:\n  name: m\n  nonsense_key: 1\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["run", str(config), "--input", "hi"])
+    assert result.exit_code == 1
+    assert "does not match the workflow schema" in result.output
+    assert "nonsense_key" in result.output
