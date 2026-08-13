@@ -430,4 +430,38 @@ and a fake HOME, or they describe the developer's machine instead of the code.
     inside "I-npu-t". Use `\GPU Engine(*)\Utilization Percentage` on the
     Intel(R) AI Boost adapter (ComputeAccelerator, one `engtype_compute`
     engine). The GPU's `engtype_neural` is NOT the NPU -- it read 99.8% while
-    OVMS generated on the GPU.
+    OVMS generated on the GPU. **Implemented** as of 2026-08-12
+    (`_WindowsNPUCounter`, PDH via ctypes, adapter chosen by shape). Two
+    controls, both measured: NPU load -> 93.5%, and OVMS generating on the
+    GPU with the NPU idle -> 0.0% while `engtype_neural` read 100.0%.
+
+- **Nothing capped a generation, on any engine, until 2026-08-12.**
+  `OVMSLLMProvider` defaulted `max_tokens` to None and omitted the key, and
+  `ModelConfig` had no field for one, so a model that never emits a stop token
+  generated until the CLIENT gave up: 1200s for `ovat run`, 600s for a bench
+  worker. Greedy decoding makes it likelier and this project asks for greedy
+  decoding (`temperature: 0.0`).
+
+  Its signature in `ovms.log` is the KV cache climbing monotonically for the
+  whole run -- 0.62 -> 3.6 GB in ~9 minutes on ONE scheduled request, because
+  every token needs more cache. **The cache growth is the symptom, not the
+  cause.** An earlier session read that arrow backwards and blamed llamaindex
+  for "inheriting a full cache because it runs third"; the run that settled it
+  had `native` fail FIRST while llamaindex passed in 33s.
+
+  `model.max_tokens` now defaults to 4096 (real answers here are 458-929
+  completion tokens). Set it to None for the old behaviour.
+
+  And beware the second-order effect: a reply cut at the ceiling mid-markup is
+  a fragment, which looks exactly like the undecoded-tool-call failure. The
+  loop distinguishes them on `finish_reason: "length"` and reports `truncated`
+  in the trace. Do not let that error blame the tool_parser or the KV cache --
+  it did, with the parser correct and the cache at 15%.
+
+- **`ovms_cache_size_gb` never worked before 2026-08-12.** OVMS declares
+  `cache_size` as `uint64` and its option parser rejects `"1.0"`, so a float
+  config field made the server refuse to boot for EVERY value of the setting:
+  `error parsing options: Argument '1.0' failed to parse`. OVMS exits before
+  opening its log, so `ovat serve` could only say "OVMS exited without
+  becoming ready". It is an int now. If you touch that field, remember the
+  failure is invisible unless you read the OVMS stdout.

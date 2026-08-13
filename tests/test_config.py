@@ -480,12 +480,23 @@ def test_every_engine_caps_the_reply_length():
 
 def test_a_reply_is_capped_by_default_not_only_when_asked():
     """The runaway happened on a config that set nothing, so the DEFAULT is
-    the thing that has to be safe. None stays available as an opt-out."""
+    the thing that has to be safe. None stays available as an opt-out.
+
+    The provider carries the same default, because the config is not the only
+    door: constructing OVMSLLMProvider directly bypasses ModelConfig entirely,
+    and tests/test_ovms_live.py does exactly that. Measured with the provider
+    still defaulting to None, one such request grew the KV cache to 13.6 GB
+    over an hour without finishing. The two defaults are asserted equal so
+    they cannot drift apart.
+    """
     import pytest
     from pydantic import ValidationError
 
     from ovat.config.workflow import ModelConfig
+    from ovat.providers.llm_ovms import DEFAULT_MAX_TOKENS, OVMSLLMProvider
 
+    assert ModelConfig(name="m").max_tokens == DEFAULT_MAX_TOKENS
+    assert OVMSLLMProvider().max_tokens == DEFAULT_MAX_TOKENS
     assert ModelConfig(name="m").max_tokens == 4096
     assert ModelConfig(name="m", max_tokens=None).max_tokens is None
     with pytest.raises(ValidationError):
