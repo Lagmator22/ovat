@@ -1094,3 +1094,62 @@ def test_the_luid_keeps_the_case_the_counter_uses():
     from ovat.telemetry.sources import _WindowsNPUCounter
 
     assert "0x" in _WindowsNPUCounter.choose_adapter(_REAL_INSTANCES)
+
+
+def test_a_headline_card_is_built_before_it_is_mounted():
+    """One mount call per card, with the children already inside it.
+
+    Mounting the card and THEN mounting into it has a window: mount() is
+    asynchronous, so the card's parent may still be unset on the next line,
+    and Textual raises "Unable to find relative location ... because it has
+    no parent". Seen once on the AI PC as card-npu-utilization and never
+    reproduced, which is what a timing window looks like from outside.
+
+    Asserted on the source rather than by racing it, because a test that
+    tries to hit the window is a test that passes for the wrong reason.
+    Restore the mount-then-mount-into-child shape and this fails.
+    """
+    import inspect
+
+    from ovat.cli import telemetry_screen
+
+    body = inspect.getsource(telemetry_screen.TelemetryScreen._sync_cards)
+    assert "card.mount(" not in body, (
+        "children are mounted into the card after it is mounted; build the "
+        "card with its children instead")
+    assert "row.mount(Vertical(" in body
+
+
+def test_every_card_still_gets_its_widgets():
+    """The composition change must not quietly drop the bar or the digits."""
+    import asyncio
+
+    pytest.importorskip("textual")
+    from textual.app import App
+    from textual.widgets import Digits, ProgressBar
+
+    from ovat.cli.telemetry_screen import TelemetryScreen, _card_id
+
+    async def scenario():
+        class Harness(App):
+            def on_mount(self):
+                self.push_screen(TelemetryScreen())
+
+        app = Harness()
+        async with app.run_test() as pilot:
+            screen = app.screen
+            screen.collector.stop()
+            screen.live.samples.clear()
+            # a percentage (gets a bar) and a plain figure (does not)
+            screen.live.record({"system.cpu_pct": 40.0, "system.threads": 9})
+            screen._sync_cards()
+            await pilot.pause()
+
+            percent = screen.query_one(f"#{_card_id('system.cpu_pct')}")
+            assert percent.query(Digits)
+            assert percent.query(ProgressBar)
+
+            plain = screen.query_one(f"#{_card_id('system.threads')}")
+            assert plain.query(Digits)
+            assert not plain.query(ProgressBar)
+    asyncio.run(scenario())

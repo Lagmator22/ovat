@@ -393,18 +393,32 @@ class TelemetryScreen(Screen):
                 break
             if metric in self._cards or self.live.latest(metric) is None:
                 continue
-            card = Vertical(classes="tel-card", id=_card_id(metric))
-            row.mount(card)
-            card.mount(Label(f"{label}  [dim]{unit}[/dim]", markup=True))
+            # BUILT FIRST, MOUNTED ONCE. The obvious shape -- mount the card,
+            # then mount its children into it -- has a window in it: mount()
+            # is asynchronous, so `card.parent` may still be unset on the very
+            # next line, and Textual then raises
+            #
+            #   MountError: Unable to find relative location of Vertical(...)
+            #   because it has no parent
+            #
+            # Seen once on the AI PC as card-npu-utilization and never
+            # reproduced -- 10/10 isolated, 47/47 with a server up, clean in
+            # two full suites -- which is exactly what a timing window looks
+            # like from the outside. Passing the children to the constructor
+            # removes the window rather than narrowing it, and is the pattern
+            # Textual documents for building a widget before it is displayed.
             digits = Digits("---")
-            card.mount(digits)
+            children = [Label(f"{label}  [dim]{unit}[/dim]", markup=True),
+                        digits]
             bar = None
             if unit == "%":
                 # A percentage has a meaningful maximum; a bare number does
                 # not show how close to it you are.
                 bar = ProgressBar(total=100, show_eta=False,
                                   show_percentage=False)
-                card.mount(bar)
+                children.append(bar)
+            row.mount(Vertical(*children, classes="tel-card",
+                               id=_card_id(metric)))
             self._cards[metric] = (metric, digits, bar)
 
     def _redraw_numbers(self) -> None:
