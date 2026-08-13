@@ -129,3 +129,21 @@ def test_run_command_streams_a_real_progress_bar_without_flooding():
     assert code == 0
     assert lines[-1] == "final"      # the real line always arrives
     assert len(lines) <= 4           # never more frames than were sent
+
+
+def test_chat_advertises_the_arguments_it_accepts():
+    """`/chat [config] [model-path]` has always worked and was invisible.
+
+    Reported from the AI PC: a remembered config pointed at the plano
+    gateway's /v1 path, chat failed every message, and the menu offered no
+    hint that another config could be passed. .ovat/chat_prefs.json then hands
+    the same one back on every launch, so the default is sticky as well as
+    hidden.
+
+    A feature nobody can discover is not a feature, so the menu names it.
+    """
+    from ovat.cli.shell import TEMPLATES
+
+    chat = next(t for t in TEMPLATES if t.name == "/chat")
+    assert "config" in chat.description
+    assert "model-path" in chat.description or "model" in chat.description

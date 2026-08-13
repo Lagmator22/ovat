@@ -35,7 +35,15 @@ class SlashTemplate:
 # The slash menu. Each non-action entry inserts a real `ovat ...` command the
 # user can finish and run. /clear and /exit are handled by the TUI itself.
 TEMPLATES = [
-    SlashTemplate("/chat", None, "chat with your indexed docs (local model)"),
+    # The arguments are named in the description because they are otherwise
+    # undiscoverable. `/chat` accepts `[config] [model-path]` and has since it
+    # was written, but the menu said only "chat with your indexed docs" -- so a
+    # user whose remembered config was the wrong one had no way to see that
+    # another could be passed, and `.ovat/chat_prefs.json` keeps handing back
+    # the same one. Reported from the AI PC: stuck on a config pointing at the
+    # plano gateway's /v1 path with no visible way to choose another.
+    SlashTemplate("/chat", None,
+                  "chat with your docs  ·  /chat [config] [model-path]"),
     # insert=None makes this a UI ACTION: the TUI opens its own doctor screen,
     # which can re-run the checks in place. `/validate` below still inserts the
     # subprocess form for anyone who wants `ovat doctor <config>` in the log.
