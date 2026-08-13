@@ -1171,6 +1171,30 @@ def serve(
         cache_size_gb=cfg.model.ovms_cache_size_gb,
         binary=binary,
     )
+    # Refuse to start a SECOND server on a port that already has one. On
+    # Windows both binds succeed (Linux answers EADDRINUSE), the pidfile then
+    # records only the newer pid, and `--stop` orphans the older one holding
+    # the port. See ModelServer.already_serving for the measurement.
+    serving = server.already_serving()
+    if serving is not None:
+        same = cfg.model.name in serving
+        rprint(f"[yellow]An OVMS server is already answering on port "
+               f"{cfg.model.ovms_port}[/yellow], serving: {esc(serving)}")
+        if same:
+            rprint(f"That is the model this config asks for, so there is "
+                   f"nothing to start. Use it at "
+                   f"{esc(server.base_url)}.")
+        else:
+            rprint(f"[red]It is NOT {esc(cfg.model.name)}, which this config "
+                   f"asks for.[/red] Starting anyway would leave two servers "
+                   f"bound to the same port on Windows, with requests going "
+                   f"to whichever one Windows picks.")
+        rprint(f"[dim]Stop it first with:[/dim] ovat serve {esc(config)} "
+               f"--stop  [dim]or change model.ovms_port.[/dim]")
+        # Not an error when it is already the right model: the user asked for
+        # a served model and there is one.
+        raise typer.Exit(code=0 if same else 1)
+
     if stall_timeout is None:
         stall_timeout = ModelServer.DEFAULT_STALL_TIMEOUT
     rprint(f"[green]Starting OVMS[/green] for {esc(cfg.model.name)} on "
