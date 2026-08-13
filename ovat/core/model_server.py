@@ -10,6 +10,7 @@ continue even with a new model.
 Uses urllib (standard library) for health checks, so there's no extra
 dependency. Needs the `ovms` binary to actually start (Linux/Windows/Docker).
 """
+import json
 import os
 import signal
 import subprocess
@@ -118,6 +119,51 @@ class ModelServer:
     @property
     def health_url(self) -> str:
         return f"http://localhost:{self.port}/v2/health/ready"
+
+    @property
+    def models_url(self) -> str:
+        return f"http://localhost:{self.port}/v3/models"
+
+    def already_serving(self) -> str | None:
+        """Which model is already answering on this port, or None.
+
+        WHY THIS EXISTS, and why it is not paranoia. On Windows two sockets
+        can bind the SAME address and port unless one asks for
+        SO_EXCLUSIVEADDRUSE: "without setting any options it is possible for
+        two sockets to be bound to the same address and port"
+        (learn.microsoft.com/en-us/windows/win32/winsock/
+        using-so-reuseaddr-and-so-exclusiveaddruse). Linux answers EADDRINUSE
+        instead, so this cannot happen there and was never noticed.
+
+        Measured here: running `ovat serve` twice left TWO ovms.exe processes
+        both LISTENING on 0.0.0.0:8000. The pidfile records only the second,
+        so `ovat serve --stop` orphans the first permanently -- holding the
+        port and 4 GB of RSS. Requests then land on whichever socket Windows
+        picks, and the two servers need not be serving the same model: one
+        such orphan was still serving an NPU model from an earlier session,
+        which made a live test suite fail against a "running" server that was
+        the wrong one. That is precisely the kind of intermittent, inexplicable
+        failure this project keeps having to chase down.
+
+        Returns the model name when possible, because "something is already
+        there" and "the NPU model from this morning is already there" are
+        different problems.
+        """
+        try:
+            # Same proxy bypass as wait_until_ready: on a machine with
+            # HTTP_PROXY set, a plain urlopen for localhost is routed to the
+            # proxy and refused, which would report the port as free.
+            opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({}))
+            with opener.open(self.models_url, timeout=2) as response:
+                if response.status != 200:
+                    return "an unidentified server"
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, OSError, ValueError):
+            return None
+        names = [item.get("id") for item in payload.get("data", [])
+                 if item.get("id")]
+        return ", ".join(names) if names else "an unidentified server"
 
     def start(self, log_path: str = "ovms.log",
               pid_path: str = DEFAULT_PID_PATH) -> None:

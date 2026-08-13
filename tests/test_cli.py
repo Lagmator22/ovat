@@ -1294,6 +1294,8 @@ def test_serve_passes_ovms_port_to_modelserver(monkeypatch, tmp_path):
             pass
         def stop(self):
             pass
+        def already_serving(self):
+            return None                    # nothing on the port in this test
 
     from ovat.core import model_server
     monkeypatch.setattr(model_server, "ModelServer", FakeModelServer)
@@ -1304,6 +1306,75 @@ def test_serve_passes_ovms_port_to_modelserver(monkeypatch, tmp_path):
     result = runner.invoke(app, ["serve", str(cfg)])
     assert result.exit_code == 0, result.output
     assert captured_kwargs.get("port") == 8002
+
+
+def _serve_with_occupied_port(monkeypatch, tmp_path, serving, model="X"):
+    """Run `ovat serve` against a port that already has a server on it."""
+    from ovat.cli import main as cli_main
+    monkeypatch.setattr(cli_main.sys, "platform", "linux")
+    cfg = tmp_path / "w.yml"
+    cfg.write_text(f"model:\n  name: {model}\nagent:\n  type: native\n",
+                   encoding="utf-8")
+    started = []
+
+    class FakeModelServer:
+        DEFAULT_STALL_TIMEOUT = 120
+
+        def __init__(self, **kwargs):
+            self.port = kwargs.get("port") or 8000
+            self.base_url = f"http://localhost:{self.port}/v3"
+            self.log_path = ""
+            self.process = None
+
+        def already_serving(self):
+            return serving
+
+        def start(self, *args, **kwargs):
+            started.append(True)
+
+        def wait_until_ready(self, *args, **kwargs):
+            return True
+
+        def stop(self):
+            pass
+
+    from ovat.core import model_server, model_scout, ovms_locator
+    monkeypatch.setattr(model_server, "ModelServer", FakeModelServer)
+    monkeypatch.setattr(model_scout, "identify_model", lambda *args: "llm")
+    monkeypatch.setattr(ovms_locator, "find_ovms",
+                        lambda *args: ("/path/to/ovms", "1.0"))
+    result = runner.invoke(app, ["serve", str(cfg)])
+    return result, started
+
+
+def test_serve_refuses_to_start_a_second_server_for_a_different_model(
+        monkeypatch, tmp_path):
+    """Starting anyway leaves two servers on one port, on Windows.
+
+    Measured: two ovms.exe both LISTENING on 0.0.0.0:8000, the pidfile naming
+    only the newer, so --stop orphans the older one holding the port and 4 GB.
+    The orphan here was serving a DIFFERENT model, which is what made a live
+    suite fail against a server that was running and wrong.
+    """
+    result, started = _serve_with_occupied_port(
+        monkeypatch, tmp_path, serving="SomeOtherModel", model="X")
+
+    assert not started, "a second server was started on an occupied port"
+    assert result.exit_code == 1
+    assert "already answering" in result.output
+    assert "SomeOtherModel" in result.output
+    assert "--stop" in result.output
+
+
+def test_serve_is_content_when_the_right_model_is_already_served(
+        monkeypatch, tmp_path):
+    """Asking for a served model and finding it served is not an error."""
+    result, started = _serve_with_occupied_port(
+        monkeypatch, tmp_path, serving="X", model="X")
+
+    assert not started
+    assert result.exit_code == 0
+    assert "nothing to start" in result.output
 
 
 def test_serve_stop_is_reachable_through_the_cli(monkeypatch, tmp_path):
@@ -1375,3 +1446,41 @@ def test_a_successful_run_still_exits_zero(monkeypatch):
                         lambda cfg, skip_rag=False: Working())
     result = runner.invoke(app, ["run", "examples/workflow.yml", "-i", "hi"])
     assert result.exit_code == 0
+
+
+def _telemetry_in(tmp_path, monkeypatch, cache_line):
+    """Run `ovat telemetry --once` in a directory with a canned ovms.log."""
+    (tmp_path / "ovms.log").write_text(cache_line + "\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    return runner.invoke(app, ["telemetry", "--once"])
+
+
+def test_telemetry_says_a_dynamic_cache_is_not_full(tmp_path, monkeypatch):
+    """kv_cache_pct alone is the most misleading number on this page.
+
+    Unset, OVMS grows the cache on demand, so it sits at or near 100% of the
+    current allocation as its ordinary state -- 61.6% of one session's
+    readings were >=95% while the allocation went 248.5 MB to 5.6 GB. Shown
+    bare, "99.2" reads as a server about to fall over, and that conclusion
+    was actually drawn here across three sessions.
+
+    The type cannot go in the table: every sample value is formatted as a
+    number, and a string there took --once down outright. So it is printed
+    beside it.
+    """
+    result = _telemetry_in(
+        tmp_path, monkeypatch,
+        "All requests: 1; Cache type: dynamic, cache usage: 99.2% of 5.6 GB;")
+    assert result.exit_code == 0, result.output
+    assert "kv_cache_pct" in result.output
+    assert "DYNAMIC" in result.output
+    assert "not full" in result.output
+
+
+def test_telemetry_says_a_static_cache_percentage_is_real(tmp_path, monkeypatch):
+    result = _telemetry_in(
+        tmp_path, monkeypatch,
+        "All requests: 1; Cache type: static, cache usage: 99.8% of 1.0 GB;")
+    assert result.exit_code == 0, result.output
+    assert "STATIC" in result.output
+    assert "real utilisation" in result.output

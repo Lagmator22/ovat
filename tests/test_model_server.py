@@ -674,6 +674,64 @@ def test_ovms_env_leaves_a_layout_without_lib_alone(tmp_path, monkeypatch):
     assert "LD_LIBRARY_PATH" not in env
 
 
+# --- refusing to start a second server on an occupied port -------------------
+#
+# WINDOWS ONLY, and invisible everywhere else. Two sockets can bind the same
+# address and port on Windows unless one asks for SO_EXCLUSIVEADDRUSE --
+# "without setting any options it is possible for two sockets to be bound to
+# the same address and port" (learn.microsoft.com, Using SO_REUSEADDR and
+# SO_EXCLUSIVEADDRUSE). Linux answers EADDRINUSE, so nothing here ever showed.
+#
+# Measured: `ovat serve` twice left two ovms.exe both LISTENING on
+# 0.0.0.0:8000, with the pidfile naming only the second, so `--stop` orphaned
+# the first holding the port and 4 GB. One such orphan was serving a different
+# model from an earlier session, and a live test run then failed against a
+# "running" server that was the wrong one.
+
+def _fake_models_endpoint(monkeypatch, payload=None, status=200, boom=None):
+    """Point ModelServer's HTTP probe at a canned /v3/models response."""
+    import json as _json
+
+    class _Response:
+        status = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return _json.dumps(payload or {}).encode("utf-8")
+
+    class _Opener:
+        def open(self, *a, **k):
+            if boom is not None:
+                raise boom
+            response = _Response()
+            response.status = status
+            return response
+
+    monkeypatch.setattr("ovat.core.model_server.urllib.request.build_opener",
+                        lambda *a, **k: _Opener())
+
+
+def test_already_serving_names_the_model_on_the_port(monkeypatch):
+    _fake_models_endpoint(monkeypatch, {"data": [{"id": "Qwen3.5-4B-int4-ov"}]})
+    assert ModelServer(model_name="m").already_serving() == "Qwen3.5-4B-int4-ov"
+
+
+def test_already_serving_is_none_when_the_port_is_free(monkeypatch):
+    _fake_models_endpoint(monkeypatch, boom=OSError("nothing listening"))
+    assert ModelServer(model_name="m").already_serving() is None
+
+
+def test_already_serving_says_something_when_the_reply_is_not_a_model_list(
+        monkeypatch):
+    """A port answering with something else is still an occupied port."""
+    _fake_models_endpoint(monkeypatch, {"data": []})
+    assert ModelServer(model_name="m").already_serving() == \
+        "an unidentified server"
 def test_max_prompt_len_reaches_the_command_line(monkeypatch, tmp_path):
     """Without it OVMS caps an NPU prompt at 1024 tokens.
 

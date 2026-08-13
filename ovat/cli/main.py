@@ -1196,6 +1196,30 @@ def serve(
         max_prompt_len=_max_prompt_len_for(cfg.model),
         binary=binary,
     )
+    # Refuse to start a SECOND server on a port that already has one. On
+    # Windows both binds succeed (Linux answers EADDRINUSE), the pidfile then
+    # records only the newer pid, and `--stop` orphans the older one holding
+    # the port. See ModelServer.already_serving for the measurement.
+    serving = server.already_serving()
+    if serving is not None:
+        same = cfg.model.name in serving
+        rprint(f"[yellow]An OVMS server is already answering on port "
+               f"{cfg.model.ovms_port}[/yellow], serving: {esc(serving)}")
+        if same:
+            rprint(f"That is the model this config asks for, so there is "
+                   f"nothing to start. Use it at "
+                   f"{esc(server.base_url)}.")
+        else:
+            rprint(f"[red]It is NOT {esc(cfg.model.name)}, which this config "
+                   f"asks for.[/red] Starting anyway would leave two servers "
+                   f"bound to the same port on Windows, with requests going "
+                   f"to whichever one Windows picks.")
+        rprint(f"[dim]Stop it first with:[/dim] ovat serve {esc(config)} "
+               f"--stop  [dim]or change model.ovms_port.[/dim]")
+        # Not an error when it is already the right model: the user asked for
+        # a served model and there is one.
+        raise typer.Exit(code=0 if same else 1)
+
     if stall_timeout is None:
         stall_timeout = ModelServer.DEFAULT_STALL_TIMEOUT
     rprint(f"[green]Starting OVMS[/green] for {esc(cfg.model.name)} on "
@@ -1367,8 +1391,9 @@ def telemetry(
     # OVMSLogSource carries the KV cache figure, which is the number the
     # undecoded-tool-call explanation rests on and the only one that has to be
     # captured in the same window as the failure it explains.
+    cache_source = OVMSLogSource()
     collector = Collector([SystemSource(), ProcessMemorySource(),
-                           NPUSource(), OVMSLogSource(),
+                           NPUSource(), cache_source,
                            IntelHardwareSource(ut)], sink,
                           interval_s=interval)
 
@@ -1401,6 +1426,7 @@ def telemetry(
         collector.sample_once()
         time.sleep(min(interval, 1.0))
         _print_telemetry(collector.sample_once())
+        _print_cache_type(cache_source)
         return
 
     # rich.Live redraws ONE table in place instead of printing a new one every
@@ -1422,6 +1448,7 @@ def telemetry(
         pass
     finally:
         collector.stop()
+        _print_cache_type(cache_source)
         if out:
             sink.close()
             rprint(f"[dim]telemetry written to[/dim] {esc(out)}")
@@ -1431,6 +1458,38 @@ def _print_telemetry(sample: dict) -> None:
     """One snapshot, printed once. Used by --once."""
     if sample:
         console.print(_telemetry_table(sample))
+
+
+def _print_cache_type(cache_source) -> None:
+    """Say whether the KV cache figure means anything.
+
+    kv_cache_pct on its own is the single most misleading number this page
+    shows. Unset, OVMS allocates the cache DYNAMICALLY and it grows, so it
+    sits at or near 100% of whatever is currently allocated as its ordinary
+    working state -- measured over one session, 61.6% of all readings were
+    >=95% while the allocation went 248.5 MB to 5.6 GB. A reader who sees
+    "99.2" and no type concludes the server is about to fall over, and that
+    conclusion was drawn, in this project, across three sessions.
+
+    Only a STATIC cache (model.ovms_cache_size_gb set) makes the percentage a
+    real utilisation figure.
+
+    The type is a property rather than a metric, deliberately: every value in
+    a sample is formatted as a number, and returning a string there took
+    `--once` down with "Unknown format code 'f' for object of type 'str'".
+    So it is printed beside the table instead of inside it.
+    """
+    try:
+        cache_type = cache_source.cache_type
+    except Exception:
+        return
+    if cache_type == "dynamic":
+        rprint("[dim]ovms KV cache is DYNAMIC: it grows on demand, so a "
+               "reading near 100% of the current allocation is normal, not "
+               "full. Set model.ovms_cache_size_gb for a fixed one.[/dim]")
+    elif cache_type == "static":
+        rprint("[dim]ovms KV cache is STATIC (model.ovms_cache_size_gb is "
+               "set), so the percentage is a real utilisation figure.[/dim]")
 
 
 def _telemetry_table(sample: dict) -> Table:
