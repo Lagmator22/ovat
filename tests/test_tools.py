@@ -183,14 +183,14 @@ def test_transcribe_device_follows_the_router_by_default(monkeypatch):
     stretch goal becomes a setting instead of a code edit."""
     from ovat.tools import transcribe
 
-    monkeypatch.setattr(transcribe, "WHISPER_DEVICE", "")
+    monkeypatch.delenv("OVAT_WHISPER_DEVICE", raising=False)
     assert transcribe._resolve_device() == "CPU"     # what the router says here
 
 
 def test_an_env_var_overrides_the_router(monkeypatch):
     from ovat.tools import transcribe
 
-    monkeypatch.setattr(transcribe, "WHISPER_DEVICE", "NPU")
+    monkeypatch.setenv("OVAT_WHISPER_DEVICE", "NPU")
     assert transcribe._resolve_device() == "NPU"
 
 
@@ -198,7 +198,7 @@ def test_a_broken_openvino_falls_back_to_cpu(monkeypatch):
     """A tool that will not load at all is worse than one on a slower device."""
     from ovat.tools import transcribe
 
-    monkeypatch.setattr(transcribe, "WHISPER_DEVICE", "")
+    monkeypatch.delenv("OVAT_WHISPER_DEVICE", raising=False)
     import ovat.core.device_manager as dm
 
     def explode():
@@ -213,7 +213,7 @@ def test_describe_image_follows_the_llm_recommendation(monkeypatch):
     than whisper's CPU one."""
     from ovat.tools import describe_image
 
-    monkeypatch.setattr(describe_image, "VLM_DEVICE", "GPU")
+    monkeypatch.setenv("OVAT_VLM_DEVICE", "GPU")
     assert describe_image._resolve_device() == "GPU"
 
 

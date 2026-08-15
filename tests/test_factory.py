@@ -280,3 +280,106 @@ def test_a_missing_embeddings_model_is_a_sentence_not_a_cpp_assertion(tmp_path):
     assert missing in message                 # names the path it looked at
     assert "optimum-cli" in message           # and how to fix it
     assert "core.cpp" not in message          # not the C++ assertion
+
+
+# --- declarative tool config (Ravi's asks 3 and 4) --------------------------
+#
+# The model path used to come from OVAT_WHISPER_MODEL / OVAT_VLM_MODEL, set by
+# `export` before the run. That made workflow.yml an incomplete description of
+# the agent: hand the file to a colleague, a CI runner or a container and the
+# run fails with nothing in the file to say what is missing.
+
+def _cfg_with_tool(name, **fields):
+    from ovat.config.workflow import WorkflowConfig
+    return WorkflowConfig(**{
+        "model": {"name": "m", "provider": "ovms"},
+        "tools": [{"name": name, "type": "builtin", **fields}],
+        "agent": {"type": "native"},
+    })
+
+
+def test_a_transcribe_model_in_the_yaml_reaches_the_tool(monkeypatch):
+    """Back the binding out and the tool loads whatever the env says instead."""
+    from ovat.agent.factory import build_tools
+    from ovat.tools import transcribe as transcribe_tool
+
+    seen = {}
+    monkeypatch.setattr(
+        transcribe_tool, "transcribe_impl",
+        lambda file_path, language="en", **kw: seen.update(kw) or "ok")
+
+    cfg = _cfg_with_tool("transcribe", model="models/my-stt", device="NPU")
+    build_tools(cfg)["transcribe"]["function"]("a.wav")
+
+    assert seen["model"] == "models/my-stt"
+    assert seen["device"] == "NPU"
+
+
+def test_a_vlm_model_in_the_yaml_reaches_the_tool(monkeypatch):
+    from ovat.agent.factory import build_tools
+    from ovat.tools import describe_image as describe_tool
+
+    seen = {}
+    monkeypatch.setattr(
+        describe_tool, "describe_image_impl",
+        lambda image_path, prompt="x", **kw: seen.update(kw) or "ok")
+
+    cfg = _cfg_with_tool("describe_image", model="models/my-vlm", device="GPU")
+    build_tools(cfg)["describe_image"]["function"]("a.png")
+
+    assert seen["model"] == "models/my-vlm"
+    assert seen["device"] == "GPU"
+
+
+def test_the_config_wins_over_the_environment(monkeypatch):
+    """The env var stays as a FALLBACK, not the interface. A workflow that
+    names a model must not be overridden by whatever a shell happened to
+    export -- that is the configuration drift this change exists to remove."""
+    from ovat.tools.transcribe import _configured_model
+
+    monkeypatch.setenv("OVAT_WHISPER_MODEL", "models/from-the-shell")
+    assert _configured_model("models/from-the-yaml") == "models/from-the-yaml"
+    assert _configured_model(None) == "models/from-the-shell"
+
+
+def test_an_unconfigured_tool_still_works_exactly_as_before(monkeypatch):
+    """Nothing that works today may stop working: no model, no env var, and
+    the documented default is still what loads."""
+    from ovat.tools.describe_image import DEFAULT_MODEL_DIR, _configured_model
+    from ovat.tools.transcribe import DEFAULT_MODEL_DIR as STT_DEFAULT
+    from ovat.tools.transcribe import _configured_model as stt_model
+
+    monkeypatch.delenv("OVAT_WHISPER_MODEL", raising=False)
+    monkeypatch.delenv("OVAT_VLM_MODEL", raising=False)
+    assert stt_model(None) == STT_DEFAULT
+    assert _configured_model(None) == DEFAULT_MODEL_DIR
+
+
+def test_two_tools_with_different_models_do_not_share_a_pipeline(monkeypatch):
+    """The cache is keyed by (model, device).
+
+    It used to be one global slot, which was correct only while the model
+    could come from nowhere but a single env var. With a per-tool model, the
+    bench -- four engines in one process -- would have the second agent
+    transcribe with the first agent's model and report nothing wrong.
+    """
+    from ovat.tools import transcribe as transcribe_tool
+
+    built = []
+
+    class FakeGenAI:
+        @staticmethod
+        def WhisperPipeline(model, device):
+            built.append((model, device))
+            return object()
+
+    monkeypatch.setitem(__import__("sys").modules, "openvino_genai", FakeGenAI)
+    monkeypatch.setattr(transcribe_tool, "_pipelines", {})
+
+    first = transcribe_tool._load_pipeline("models/a", "CPU")
+    second = transcribe_tool._load_pipeline("models/b", "CPU")
+    again = transcribe_tool._load_pipeline("models/a", "CPU")
+
+    assert first is not second, "two models shared one pipeline"
+    assert again is first, "the same model rebuilt instead of being reused"
+    assert built == [("models/a", "CPU"), ("models/b", "CPU")]

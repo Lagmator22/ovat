@@ -14,18 +14,32 @@ import wave
 import numpy as np
 from fastmcp import FastMCP
 
-# I build the heavy Whisper pipeline lazily and cache it here, so importing
-# this module stays cheap and my tests do not need the model on disk.
-_pipeline = None
+# Heavy pipelines, built lazily and cached BY (model, device) rather than in
+# one slot. A single global was fine while the model could only come from an
+# env var, because then there was only ever one. Now that workflow.yml can name
+# a model per tool, two agents in one process -- the bench runs four engines
+# back to back -- would silently share whichever pipeline loaded first, and the
+# second would transcribe with a model its config never asked for.
+_pipelines: dict = {}
 
-# Where my converted Whisper model lives. I can override it with an env var.
-WHISPER_MODEL_DIR = os.environ.get("OVAT_WHISPER_MODEL", "models/whisper-base")
-# Which device it runs on. Read from the env, defaulting to DeviceManager's
-# recommendation rather than a literal "CPU". Today that recommendation IS
-# CPU, so nothing changes yet; the point is that the NPU/GPU stretch goal
-# becomes a setting instead of an edit, and the routing table stops being
-# advice that nothing follows.
-WHISPER_DEVICE = os.environ.get("OVAT_WHISPER_DEVICE", "")
+#: Fallback when nothing is configured. `models/whisper-base` is the path the
+#: docs tell people to export into.
+DEFAULT_MODEL_DIR = "models/whisper-base"
+
+
+def _configured_model(model: str | None = None) -> str:
+    """Where the speech-to-text model lives.
+
+    Order: what workflow.yml says, then the env var, then the default. The env
+    var stays as a fallback rather than the interface -- it is read HERE and
+    not at import time, so setting it late still works, and it is no longer
+    the only way to answer the question.
+
+    OVAT_WHISPER_MODEL is kept for the people already using it, but the tool is
+    `transcribe`, not `whisper`: any OpenVINO speech-to-text export works, and
+    the config field is the name that says so.
+    """
+    return model or os.environ.get("OVAT_WHISPER_MODEL") or DEFAULT_MODEL_DIR
 
 mcp = FastMCP("transcribe")
 
@@ -52,14 +66,15 @@ def _read_wav(file_path: str):
     return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
 
-def _resolve_device() -> str:
-    """The device to load on: the env var if set, else DeviceManager's advice.
+def _resolve_device(device: str | None = None) -> str:
+    """The device to load on: config, then env var, then DeviceManager.
 
     Falls back to CPU if openvino cannot be queried at all, because a tool
     that will not load is worse than a tool on a slower device.
     """
-    if WHISPER_DEVICE:
-        return WHISPER_DEVICE
+    chosen = device or os.environ.get("OVAT_WHISPER_DEVICE")
+    if chosen:
+        return chosen
     try:
         from ovat.core.device_manager import DeviceManager
         return DeviceManager().get_whisper_device()
@@ -67,19 +82,23 @@ def _resolve_device() -> str:
         return "CPU"
 
 
-def _load_pipeline():
-    """I build the Whisper pipeline once and reuse it after that."""
-    global _pipeline
-    if _pipeline is None:
-        # I import here, not at the top, so the module loads even on a machine
+def _load_pipeline(model: str | None = None, device: str | None = None):
+    """Build the speech-to-text pipeline once PER (model, device), then reuse.
+
+    Keyed rather than singleton: see _pipelines above for why one slot is not
+    enough once the model is configurable.
+    """
+    key = (_configured_model(model), _resolve_device(device))
+    if key not in _pipelines:
+        # Imported here, not at the top, so the module loads even on a machine
         # without the model. This is the real OpenVINO GenAI Whisper pipeline.
         import openvino_genai as ov_genai
-        _pipeline = ov_genai.WhisperPipeline(WHISPER_MODEL_DIR,
-                                             _resolve_device())
-    return _pipeline
+        _pipelines[key] = ov_genai.WhisperPipeline(*key)
+    return _pipelines[key]
 
 
-def transcribe_impl(file_path: str, language: str = "en", pipeline=None) -> str:
+def transcribe_impl(file_path: str, language: str = "en", pipeline=None,
+                    model: str | None = None, device: str | None = None) -> str:
     """The real logic, kept separate so my tests can pass a fake pipeline.
 
     Note to myself: I check the file exists first and return a clear error
@@ -93,9 +112,12 @@ def transcribe_impl(file_path: str, language: str = "en", pipeline=None) -> str:
         return (f"Error: {exc}. Convert it to 16 kHz, 16 bit, mono first.")
     if pipeline is None:
         try:
-            pipeline = _load_pipeline()
+            pipeline = _load_pipeline(model, device)
         except Exception as exc:
-            return f"Error loading whisper model: {exc}"
+            # Name the path that was tried. "Error loading model: ..." with no
+            # path left the reader guessing whether the config was read at all.
+            return (f"Error loading the transcribe model from "
+                    f"{_configured_model(model)!r}: {exc}")
     try:
         # Strip any wrapper the caller already added. The SCHEMA asks for a
         # bare code ("en"), but this argument comes from a MODEL, and a model
@@ -139,7 +161,7 @@ def transcribe(file_path: str, language: str = "en") -> str:
     Use me when the user gives a path to an audio recording and wants the
     words in it. I take a WAV file path and return the transcript as text.
     """
-    return transcribe_impl(file_path, language, _pipeline)
+    return transcribe_impl(file_path, language)
 
 
 if __name__ == "__main__":

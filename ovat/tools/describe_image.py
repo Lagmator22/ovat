@@ -14,20 +14,34 @@ from fastmcp import FastMCP
 
 # The VLM is heavy (a ~2 GB pipeline); build it once, on first use, and only
 # if this machine actually has the model. The env var mirrors transcribe's.
-_provider = None
-VLM_MODEL_DIR = os.environ.get("OVAT_VLM_MODEL", "models/Qwen2-VL-2B-Instruct-INT4")
-# Same reasoning as transcribe: a setting, not a literal, so the GPU/NPU
-# stretch goal does not need a code edit. A VLM is heavy, so it follows the
-# LLM recommendation (GPU when present) rather than whisper's CPU one.
-VLM_DEVICE = os.environ.get("OVAT_VLM_DEVICE", "")
+# Cached BY (model, device), not in one slot -- see transcribe.py for why a
+# singleton stops being correct the moment workflow.yml can name the model.
+_providers: dict = {}
+
+#: Fallback when nothing is configured.
+DEFAULT_MODEL_DIR = "models/Qwen2-VL-2B-Instruct-INT4"
+
+
+def _configured_model(model: str | None = None) -> str:
+    """Where the vision model lives: config, then env var, then the default.
+
+    Read here rather than at import, so a late env var still works and the
+    config can win over it.
+    """
+    return model or os.environ.get("OVAT_VLM_MODEL") or DEFAULT_MODEL_DIR
 
 mcp = FastMCP("describe_image")
 
 
-def _resolve_device() -> str:
-    """Env var if set, else DeviceManager's LLM recommendation, else CPU."""
-    if VLM_DEVICE:
-        return VLM_DEVICE
+def _resolve_device(device: str | None = None) -> str:
+    """Config, then env var, then DeviceManager's LLM advice, then CPU.
+
+    A VLM is heavy, so it follows the LLM recommendation (GPU when present)
+    rather than whisper's CPU one.
+    """
+    chosen = device or os.environ.get("OVAT_VLM_DEVICE")
+    if chosen:
+        return chosen
     try:
         from ovat.core.device_manager import DeviceManager
         return DeviceManager().get_llm_device()
@@ -35,18 +49,19 @@ def _resolve_device() -> str:
         return "CPU"
 
 
-def _load_provider():
-    global _provider
-    if _provider is None:
+def _load_provider(model: str | None = None, device: str | None = None):
+    key = (_configured_model(model), _resolve_device(device))
+    if key not in _providers:
         # Imported here so the module loads on machines without the model.
         from ovat.providers.vlm_genai import GenAIVLMProvider
-        _provider = GenAIVLMProvider(VLM_MODEL_DIR, _resolve_device())
-    return _provider
+        _providers[key] = GenAIVLMProvider(*key)
+    return _providers[key]
 
 
 def describe_image_impl(image_path: str,
                         prompt: str = "Describe this image in one paragraph.",
-                        provider=None) -> str:
+                        provider=None, model: str | None = None,
+                        device: str | None = None) -> str:
     """The real logic, separate from the MCP wrapper so tests can fake the VLM.
 
     Errors come back as readable strings, not exceptions; the agent loop
@@ -56,11 +71,12 @@ def describe_image_impl(image_path: str,
         return f"Error: I could not find an image file at: {image_path}"
     if provider is None:
         try:
-            provider = _load_provider()
+            provider = _load_provider(model, device)
         except Exception as exc:
             return (f"Error: could not load the vision model at "
-                    f"{VLM_MODEL_DIR}: {exc}. Set OVAT_VLM_MODEL to a local "
-                    f"OpenVINO VLM folder.")
+                    f"{_configured_model(model)}: {exc}. Set the tool's "
+                    f"`model:` in workflow.yml to a local OpenVINO VLM "
+                    f"folder.")
     try:
         return str(provider.generate(prompt, [image_path]))
     except Exception as exc:
@@ -100,7 +116,7 @@ def describe_image(image_path: str,
     in it. I take the file path (and optionally a specific question) and
     return the description as text.
     """
-    return describe_image_impl(image_path, prompt, _provider)
+    return describe_image_impl(image_path, prompt)
 
 
 if __name__ == "__main__":

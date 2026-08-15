@@ -25,14 +25,17 @@ model:
   request_timeout: 1200
 
 tools:
-  # Speech to text, via OpenVINO Whisper. Point OVAT_WHISPER_MODEL at the
-  # exported whisper folder (see README.md).
+  # Speech to text. `model` is any OpenVINO speech-to-text export, not just
+  # Whisper; `device` is optional and asks the device router when omitted.
   - name: transcribe
     type: builtin
-  # Image understanding, via the local VLM pipeline. Point OVAT_VLM_MODEL at
-  # a vision-capable export - the SAME Qwen3.5 folder works.
+    model: models/whisper-base-int8-ov
+    device: CPU
+  # Image understanding, via the local VLM pipeline. The SAME unified Qwen3.5
+  # folder that serves text also serves vision.
   - name: describe_image
     type: builtin
+    model: models/OpenVINO/Qwen3.5-4B-int4-ov
   # Kept so the agent has to pick between three tools rather than two.
   - name: search_docs
     type: builtin

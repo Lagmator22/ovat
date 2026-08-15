@@ -31,15 +31,28 @@ dedicated VLM in the OpenVINO org is larger than this entire example.
 # The ears. whisper-base is a good accuracy/size trade; whisper-tiny-int8-ov
 # (0.05 GB) is faster, whisper-small-int8-ov more accurate.
 hf download OpenVINO/whisper-base-int8-ov --local-dir models/whisper-base-int8-ov
-export OVAT_WHISPER_MODEL=models/whisper-base-int8-ov
 
 # The eyes: the SAME folder as the agent model.
 hf download OpenVINO/Qwen3.5-4B-int4-ov --local-dir models/OpenVINO/Qwen3.5-4B-int4-ov
-export OVAT_VLM_MODEL=models/OpenVINO/Qwen3.5-4B-int4-ov
 ```
 
-On Windows use `set OVAT_WHISPER_MODEL=...` (cmd) or
-`$env:OVAT_WHISPER_MODEL="..."` (PowerShell).
+**No environment variables.** `workflow.yml` names both models, so the file is
+the whole description of this agent:
+
+```yaml
+tools:
+  - name: transcribe
+    type: builtin
+    model: models/whisper-base-int8-ov
+    device: CPU                 # optional; omit to let the device router pick
+  - name: describe_image
+    type: builtin
+    model: models/OpenVINO/Qwen3.5-4B-int4-ov
+```
+
+Point `model` somewhere else to swap either one -- `whisper-tiny-int8-ov` for
+speed, any OpenVINO speech-to-text export, any vision-capable export. Nothing
+here is Whisper-specific.
 
 Get a sample audio file:
 
@@ -77,10 +90,14 @@ token counts where the server reports them.
 - **`transcribe` and `describe_image` are also standalone MCP servers.** Any
   MCP-aware agent can call them, not just OVAT:
   `python -m ovat.tools.transcribe`.
-- **Whisper runs on CPU** and is unaffected by the agent's `device:` setting.
+- **Each tool has its own `device:`**, separate from the agent's. Speech-to-text
+  defaults to CPU because it is small and CPU latency is fine; the vision model
+  follows the GPU recommendation. Set either explicitly to override.
 - **The vision model is loaded lazily**, only when `describe_image` is first
   called, so a text-only session never pays for it.
-- **Absolute paths are safest** for `OVAT_VLM_MODEL` and
-  `OVAT_WHISPER_MODEL`; a relative path is resolved from wherever you
+- **Absolute paths are safest** for a tool's `model:`; a relative path is
+  resolved from wherever you
   launched the command.
-- **Keep `device:` on `CPU` or `GPU`.** No accelerator executes tools; the NPU is a poor fit because its plugin favours static shapes while an agent prompt grows every round.
+- **`device:` here is about where the TOOL's model runs**, which is a different
+  question from the agent's device. No accelerator executes tools: the device
+  runs a model, and the loop runs the Python function.

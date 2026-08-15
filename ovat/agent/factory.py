@@ -181,10 +181,28 @@ def _make_search_docs(retriever: RetrieverProvider | None):
     )
 
 
-def _make_transcribe():
-    return lambda file_path, language="en": transcribe_tool.transcribe_impl(
-        file_path, language
-    )
+def _make_transcribe(tool_cfg=None):
+    """Bind this tool's configured model and device into the callable.
+
+    Default-arg binding, for the same reason _make_mcp_caller uses it: the
+    loop calls these with the MODEL's arguments only, so anything from the
+    config has to be captured here rather than looked up later.
+    """
+    model = getattr(tool_cfg, "model", None)
+    device = getattr(tool_cfg, "device", None)
+    return lambda file_path, language="en", _m=model, _d=device: (
+        transcribe_tool.transcribe_impl(file_path, language,
+                                        model=_m, device=_d))
+
+
+def _make_describe_image(tool_cfg=None):
+    """Same binding as _make_transcribe, for the vision model."""
+    model = getattr(tool_cfg, "model", None)
+    device = getattr(tool_cfg, "device", None)
+    return lambda image_path, prompt="Describe this image in one paragraph.", \
+        _m=model, _d=device: (
+            describe_image_tool.describe_image_impl(image_path, prompt,
+                                                    model=_m, device=_d))
 
 
 def _make_mcp_caller(server, tool_name: str):
@@ -233,10 +251,13 @@ def build_tools(config: WorkflowConfig,
     The loop consumes the same {schema, function} dict either way; it never
     learns which side of the wire a tool lives on.
     """
+    # Each builder takes the tool's OWN config, so `model:` and `device:` in
+    # workflow.yml reach the tool that declared them. search_docs ignores it;
+    # its model is the embedder in the rag: section.
     builders = {
-        "search_docs": lambda: _make_search_docs(retriever),
-        "transcribe": lambda: _make_transcribe(),
-        "describe_image": lambda: describe_image_tool.describe_image_impl,
+        "search_docs": lambda cfg: _make_search_docs(retriever),
+        "transcribe": _make_transcribe,
+        "describe_image": _make_describe_image,
     }
     tools = {}
     for tool_cfg in config.tools:
@@ -248,7 +269,7 @@ def build_tools(config: WorkflowConfig,
                 )
             tools[tool_cfg.name] = {
                 "schema": BUILTIN_TOOL_SCHEMAS[tool_cfg.name],
-                "function": builders[tool_cfg.name](),
+                "function": builders[tool_cfg.name](tool_cfg),
             }
         elif tool_cfg.type == "mcp_stdio":
             if not tool_cfg.command:

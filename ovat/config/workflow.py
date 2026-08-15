@@ -243,6 +243,25 @@ class ToolConfig(StrictModel):
     type: str = "builtin"
     command: list[str] | None = None  # the mcp_stdio server launch command
 
+    # Where this tool's own weights live, and what runs them. Only the tools
+    # that load a model read these: `transcribe` and `describe_image`.
+    #
+    # WHY THEY ARE HERE rather than in the environment. They used to be
+    # OVAT_WHISPER_MODEL and OVAT_VLM_MODEL, set by `export` before the run.
+    # That makes workflow.yml an incomplete description of the agent: hand the
+    # file to a colleague, a CI runner or a container and the run fails, with
+    # nothing in the file to say what is missing. A workflow should be the
+    # whole answer.
+    #
+    # Naming, deliberately: `model`, not `whisper_model`. The tool is
+    # `transcribe`, and any OpenVINO speech-to-text export can serve it -- the
+    # old env var named one family and implied the rest were unsupported.
+    #
+    # Unset means fall back to the env var, then to the tool's documented
+    # default, so nothing that works today stops working.
+    model: str | None = None
+    device: str | None = None       # CPU, GPU or NPU; unset asks DeviceManager
+
 
 class AgentConfig(StrictModel):
     """How the agent loop behaves."""

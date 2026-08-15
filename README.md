@@ -342,6 +342,8 @@ Each folder has its own README with the exact commands.
 | | `ovms_max_prompt_len` | longest prompt OVMS accepts. **Needed on NPU**, where OVMS caps it at 1024 and one agent turn exceeds that; defaults to 4096 on NPU and is left to OVMS elsewhere |
 | | `max_tokens` | ceiling on one reply (default `4096`). `null` restores the old unbounded behaviour, where a model that never emits a stop token generates until the client gives up |
 | `tools` | `name` / `type` | `builtin` (`search_docs`, `transcribe`, `describe_image`) or `mcp_stdio` |
+| | `model` | where that tool's weights live. `transcribe` and `describe_image` only |
+| | `device` | `CPU`, `GPU` or `NPU` for that tool; omit to let the device router choose |
 | `agent` | `type` | `native`, `react`, `llamaindex`, `openai-agents` |
 | | `max_iterations` | safety cap on tool-calling turns |
 | | `system_prompt` | the agent's persona |
@@ -388,8 +390,8 @@ engine is a **row, not a crash**, and an engine that answered nothing scores
 ## Tools
 
 - **`search_docs`**, semantic search over your documents, returning source paths
-- **`transcribe`**, speech-to-text via OpenVINO Whisper; set `OVAT_WHISPER_MODEL`
-- **`describe_image`**, caption or answer questions about an image; set `OVAT_VLM_MODEL`
+- **`transcribe`**, speech-to-text from any OpenVINO export; set the tool's `model:`
+- **`describe_image`**, caption or answer questions about an image; set the tool's `model:`
 
 All three are also standalone [MCP](https://modelcontextprotocol.io) servers, so
 any MCP-aware agent can call them. And OVAT is an MCP **client**, point it at
