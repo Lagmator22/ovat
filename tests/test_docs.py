@@ -116,7 +116,15 @@ def test_the_generator_is_not_shipped_in_the_wheel():
     landed inside the package would be importable by users for no reason and
     would drag its assumptions about repo layout with it.
     """
-    import tomllib
+    # tomllib is stdlib only from 3.11, and this project supports 3.10 --
+    # where the [dev] extra supplies tomli under its original name. Same
+    # shim as tests/test_packaging.py; a test that cannot run on a supported
+    # interpreter is worse than no test, and this one took the oldest CI cell
+    # down while passing on every newer one.
+    try:
+        import tomllib
+    except ModuleNotFoundError:                 # Python 3.10
+        import tomli as tomllib
 
     with open(os.path.join(ROOT, "pyproject.toml"), "rb") as handle:
         data = tomllib.load(handle)
