@@ -355,6 +355,10 @@ Each folder has its own README with the exact commands.
 `rag` is optional. Without it `search_docs` answers in a documented stub mode, so
 every quickstart command works on a fresh install with nothing downloaded.
 
+The table above is the tour. Every field, with its type, default and
+constraints, is in
+[`docs/workflow_yaml_reference.md`](docs/workflow_yaml_reference.md).
+
 The `memory` retriever keeps no file, so nothing survives the process: `ovat
 index` followed by a separate `ovat run` retrieves nothing. Use it when indexing
 and querying happen in one run, or when you want a demo that leaves no
@@ -473,6 +477,7 @@ local `openvino_genai` model and needs no server at all.
 
 | | |
 | --- | --- |
+| [`docs/workflow_yaml_reference.md`](docs/workflow_yaml_reference.md) | Every `workflow.yml` field: type, default, constraints and purpose. Generated from the schema |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The nine layers, all four engines, both serving paths, and the design decisions behind them |
 | [`docs/BLOG.md`](docs/BLOG.md) | A walkthrough: what OVAT is and how to use it |
 | [`examples/`](examples/) | Four runnable use cases |
