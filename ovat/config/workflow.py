@@ -345,6 +345,20 @@ class WorkflowConfig(StrictModel):
     # None means "no RAG configured" -> search_docs stays in stub mode.
     rag: RagConfig | None = None
 
+    # Extra folders to search for local OpenVINO model exports, searched
+    # BEFORE ./models and ~/models.
+    #
+    # Ravi's ask 5, and the same argument as the tool `model:` fields above:
+    # this was OVAT_MODELS, an env var, so a workflow that depended on models
+    # living somewhere unusual could not say so. `ovat chat` on a machine that
+    # keeps its exports on another drive needed a shell variable the config
+    # file never mentioned.
+    #
+    # A list, because a machine can reasonably have more than one: a fast
+    # local drive and a shared network folder. OVAT_MODELS still works and is
+    # appended after these, so nothing that works today stops working.
+    model_search_paths: list[str] = Field(default_factory=list)
+
 
 def load_workflow(path: str) -> WorkflowConfig:
     """I read a YAML file from disk and validate it into a WorkflowConfig.

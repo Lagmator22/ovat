@@ -138,12 +138,28 @@ def identify_model(path: str) -> tuple[str, str]:
                        f"{model_type or 'missing'})")
 
 
-def _roots() -> list[str]:
+def _roots(extra_roots: list[str] | None = None) -> list[str]:
+    """Where to look for local model exports, most specific first.
+
+    Order is config, then OVAT_MODELS, then the two conventional folders. The
+    config comes first for the same reason a tool's `model:` beats its env
+    var: a workflow that states where its models live should not be overruled
+    by whatever a shell happened to export.
+    """
+    roots = list(extra_roots or [])
     env = os.environ.get("OVAT_MODELS", "")
-    roots = [p for p in env.split(os.pathsep) if p.strip()]
+    roots += [p for p in env.split(os.pathsep) if p.strip()]
     roots += [os.path.join(os.getcwd(), "models"),
               os.path.expanduser("~/models")]
-    return [os.path.expanduser(r) for r in roots]
+    # Deduplicated, keeping first-seen order: a path named in BOTH the config
+    # and OVAT_MODELS would otherwise be scanned twice and report every model
+    # in it twice.
+    seen, unique = set(), []
+    for root in (os.path.expanduser(r) for r in roots):
+        if root not in seen:
+            seen.add(root)
+            unique.append(root)
+    return unique
 
 
 # How far below a discovery root a model folder may sit.
@@ -182,14 +198,15 @@ def _walk_candidates(root: str, depth: int = _MAX_DEPTH):
             yield from _walk_candidates(child, depth - 1)
 
 
-def find_models(kind: str | None = None) -> list[dict]:
+def find_models(kind: str | None = None,
+                extra_roots: list[str] | None = None) -> list[dict]:
     """Scan the discovery roots for model folders. Optionally filter by kind.
 
     Returns [{"name", "path", "kind", "why"}, ...], deduplicated, sorted by
     name so the output is stable between runs.
     """
     found: dict = {}
-    for root in _roots():
+    for root in _roots(extra_roots):
         if not os.path.isdir(root):
             continue
         # The root itself may BE a model folder (OVAT_MODELS=.../Llama-3B),
@@ -211,24 +228,24 @@ def find_models(kind: str | None = None) -> list[dict]:
     return models
 
 
-def searched_roots() -> list[str]:
+def searched_roots(extra_roots: list[str] | None = None) -> list[str]:
     """The folders find_models() actually looks in, for error messages.
 
     Naming the real paths beats naming the env var: "scanned OVAT_MODELS,
     ./models, ~/models" left the user with no idea WHICH folders that came
     out to, and on Windows the answer is rarely what they assumed.
     """
-    return list(_roots())
+    return list(_roots(extra_roots))
 
 
-def pick_chat_llm() -> tuple[dict | None, list[dict]]:
+def pick_chat_llm(extra_roots: list[str] | None = None) -> tuple[dict | None, list[dict]]:
     """Choose the best local text LLM for chat. Returns (choice, all_llms).
 
     Preference: an instruct/chat-tuned model over a base one (that is what a
     chat UI wants), otherwise simply the first found. The full list rides
     along so callers can show the alternatives.
     """
-    llms = find_models("llm")
+    llms = find_models("llm", extra_roots)
     if not llms:
         return None, []
     for model in llms:

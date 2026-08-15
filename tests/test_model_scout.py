@@ -330,3 +330,57 @@ def test_an_unreadable_folder_is_skipped_not_fatal(only_these_models, tmp_path, 
 
     monkeypatch.setattr(model_scout.os, "listdir", deny)
     assert model_scout.find_models() == []      # empty, but no exception
+
+
+# --- model_search_paths (Ravi's ask 5) --------------------------------------
+
+def test_config_search_paths_come_before_the_env_var(monkeypatch):
+    """A workflow that states where its models live should not be overruled by
+    whatever a shell happened to export -- same rule as a tool's `model:`."""
+    from ovat.core.model_scout import searched_roots
+
+    monkeypatch.setenv("OVAT_MODELS", os.path.join(os.sep, "from-the-shell"))
+    roots = searched_roots([os.path.join(os.sep, "from-the-yaml")])
+    assert roots[0] == os.path.join(os.sep, "from-the-yaml")
+    assert os.path.join(os.sep, "from-the-shell") in roots
+
+
+def test_a_path_in_both_places_is_scanned_once(monkeypatch):
+    """Otherwise every model in it is reported twice."""
+    from ovat.core.model_scout import searched_roots
+
+    shared = os.path.join(os.sep, "shared-models")
+    monkeypatch.setenv("OVAT_MODELS", shared)
+    assert searched_roots([shared]).count(shared) == 1
+
+
+def test_the_conventional_folders_are_still_searched(monkeypatch):
+    """Nothing that works today may stop working."""
+    from ovat.core.model_scout import searched_roots
+
+    monkeypatch.delenv("OVAT_MODELS", raising=False)
+    roots = searched_roots()
+    assert any(r.endswith("models") for r in roots)
+    assert len(roots) >= 2
+
+
+def test_models_under_a_configured_path_are_actually_found(tmp_path,
+                                                           monkeypatch):
+    """End to end: a folder named ONLY in the config is discovered.
+
+    Back the threading out and this returns nothing -- the config field would
+    parse and be silently ignored, which is worse than not having it.
+    """
+    from ovat.core.model_scout import find_models
+
+    monkeypatch.delenv("OVAT_MODELS", raising=False)
+    monkeypatch.chdir(tmp_path)
+    elsewhere = tmp_path / "drive-d" / "my-llm"
+    elsewhere.mkdir(parents=True)
+    (elsewhere / "openvino_model.xml").write_text("<net/>", encoding="utf-8")
+    (elsewhere / "openvino_model.bin").write_text("", encoding="utf-8")
+    (elsewhere / "config.json").write_text('{"model_type": "qwen3"}',
+                                           encoding="utf-8")
+
+    assert find_models("llm", [str(tmp_path / "drive-d")]), "config path ignored"
+    assert not find_models("llm"), "found without the config path?"

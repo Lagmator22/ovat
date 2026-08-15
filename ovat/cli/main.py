@@ -655,7 +655,8 @@ def _write_trace(path: str, cfg, agent, peak_rss_mb=None) -> None:
     rprint(f"[dim]trace written to[/dim] {esc(path)}")
 
 
-def resolve_chat_model(model_path: str | None) -> str:
+def resolve_chat_model(model_path: str | None,
+                       extra_roots: list[str] | None = None) -> str:
     """Pick and sanity-check the local text LLM `chat` should load.
 
     Two jobs, both learned from real users:
@@ -669,19 +670,19 @@ def resolve_chat_model(model_path: str | None) -> str:
     from ovat.core.model_scout import find_models, identify_model, pick_chat_llm
 
     if model_path is None:
-        choice, llms = pick_chat_llm()
+        choice, llms = pick_chat_llm(extra_roots)
         if choice is None:
-            rprint("[red]No local text LLM found.[/red] I scanned OVAT_MODELS, "
-                   "./models and ~/models.")
-            others = find_models()
+            rprint("[red]No local text LLM found.[/red] I scanned "
+                   "model_search_paths, OVAT_MODELS, ./models and ~/models.")
+            others = find_models(None, extra_roots)
             if others:
                 rprint("[dim]I did find these (wrong kind for chat):[/dim]")
                 for m in others:
                     rprint(f"  [ovat.dim]{esc(m['name'])}  "
                            f"({esc(m['kind'])})[/ovat.dim]")
-            rprint("Fix: pass [bold]--model-path <folder>[/bold], or set "
-                   "[bold]OVAT_MODELS[/bold] to the folder that holds your "
-                   "OpenVINO models.")
+            rprint("Fix: pass [bold]--model-path <folder>[/bold], or add the "
+                   "folder to [bold]model_search_paths[/bold] in the "
+                   "workflow.")
             raise typer.Exit(code=1)
         rprint(f"[dim]auto-detected local LLM:[/dim] "
                f"[bold]{esc(choice['name'])}[/bold]"
@@ -698,7 +699,7 @@ def resolve_chat_model(model_path: str | None) -> str:
         return model_path
     rprint(f"[red]{esc(os.path.basename(model_path.rstrip('/')))} is not a text "
            f"LLM[/red] [dim]({esc(why)})[/dim]; chat needs a text model.")
-    _, llms = pick_chat_llm()
+    _, llms = pick_chat_llm(extra_roots)
     if llms:
         rprint("[dim]Text LLMs found on this machine:[/dim]")
         for m in llms:
@@ -742,7 +743,8 @@ def chat(
 
     # Resolve + identify BEFORE any heavy loading, so a wrong model kind or a
     # missing model is a one-second answer, not a 30s load then a traceback.
-    model_path = resolve_chat_model(model_path)
+    model_path = resolve_chat_model(model_path,
+                                    cfg.model_search_paths)
 
     try:
         retriever = build_rag(cfg)

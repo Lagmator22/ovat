@@ -99,7 +99,8 @@ def test_chat_prints_an_answer_and_sources_containing_markup(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr(cli_main, "resolve_chat_model", lambda p: "fake-dir")
+    monkeypatch.setattr(cli_main, "resolve_chat_model",
+                        lambda p, roots=None: "fake-dir")
     monkeypatch.setattr(factory, "build_rag", lambda cfg: FakeRetriever())
     monkeypatch.setattr(llm_genai, "GenAILLMProvider", lambda *a, **k: object())
     monkeypatch.setattr(rag_chat_mod, "rag_chat",
@@ -347,7 +348,8 @@ def test_chat_max_tokens_zero_means_no_cap(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr(cli_main, "resolve_chat_model", lambda p: "fake-dir")
+    monkeypatch.setattr(cli_main, "resolve_chat_model",
+                        lambda p, roots=None: "fake-dir")
     monkeypatch.setattr(factory, "build_rag", lambda cfg: FakeRetriever())
     monkeypatch.setattr(rag_chat_mod, "rag_chat", lambda *a, **k: ("ok", []))
     monkeypatch.setattr(

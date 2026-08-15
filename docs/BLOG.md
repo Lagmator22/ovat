@@ -334,16 +334,16 @@ Agents are more useful when they are not text-only. Two more built-in tools:
 
 ```yaml
 tools:
-  - name: transcribe        # speech-to-text, OpenVINO Whisper
+  - name: transcribe        # speech-to-text
     type: builtin
+    model: models/whisper-base-int8-ov
   - name: describe_image    # captions and visual Q&A
     type: builtin
+    model: models/OpenVINO/Qwen3.5-4B-int4-ov   # the same model!
 ```
 
 ```bash
 hf download OpenVINO/whisper-base-int8-ov --local-dir models/whisper-base-int8-ov
-export OVAT_WHISPER_MODEL=models/whisper-base-int8-ov
-export OVAT_VLM_MODEL=models/OpenVINO/Qwen3.5-4B-int4-ov   # the same model!
 
 ovat run examples/audio-multimodal/workflow.yml \
     -i "What is said in examples/audio-multimodal/sample.wav?"
@@ -352,10 +352,13 @@ ovat run examples/audio-multimodal/workflow.yml \
 The agent decides to call `transcribe`, gets the text, and answers from it. Ask
 about an image instead and it calls `describe_image`.
 
-Note the third `export`: the vision model is the **same folder** as the agent's
-model. Qwen3.5 is a *unified* export, text generation and image understanding in
-one set of weights, so the whole example costs 3.5 GB plus 80 MB of Whisper,
-rather than adding a separate 5 GB vision model.
+Note the second `model:`: the vision model is the **same folder** as the
+agent's model. Qwen3.5 is a *unified* export, text generation and image
+understanding in one set of weights, so the whole example costs 3.5 GB plus
+80 MB of speech-to-text, rather than adding a separate 5 GB vision model.
+
+Nothing here is set outside the file. A workflow that names its models is a
+workflow someone else can run.
 
 Full walkthrough: [`examples/audio-multimodal/`](../examples/audio-multimodal/).
 

@@ -347,6 +347,7 @@ Each folder has its own README with the exact commands.
 | `agent` | `type` | `native`, `react`, `llamaindex`, `openai-agents` |
 | | `max_iterations` | safety cap on tool-calling turns |
 | | `system_prompt` | the agent's persona |
+| `model_search_paths` | *(list)* | extra folders to scan for local model exports, before `./models` and `~/models`. Replaces `OVAT_MODELS` |
 | `rag` | `embeddings` / `retriever` / `chunk` | vector search for `search_docs` |
 | | `retriever.provider` | `sqlite-vec` (default, persists to `db_path`) or `memory` |
 | | `retriever.db_path` | where `sqlite-vec` keeps the index; ignored by `memory` |
