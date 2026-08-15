@@ -123,3 +123,38 @@ def test_the_generator_is_not_shipped_in_the_wheel():
     include = data["tool"]["setuptools"]["packages"]["find"]["include"]
     assert include == ["ovat*"], include
     assert not os.path.exists(os.path.join(ROOT, "ovat", "scripts"))
+
+
+def test_every_local_image_in_the_docs_exists():
+    """A broken image on the repo's front page is the most visible bug there is.
+
+    GitHub renders a missing `src` as a grey placeholder box, and nothing in
+    the build says a word about it -- so the failure mode is that it looks
+    fine to whoever committed it and broken to everyone who visits.
+
+    Covers all markdown, not just the README, and ignores remote URLs (badges,
+    shields) which this cannot verify offline.
+    """
+    import glob
+    import re
+
+    offenders = []
+    patterns = [os.path.join(ROOT, "*.md"),
+                os.path.join(ROOT, "docs", "*.md"),
+                os.path.join(ROOT, "examples", "**", "*.md")]
+    for pattern in patterns:
+        for path in glob.glob(pattern, recursive=True):
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            # markdown ![alt](src) and html <img src="...">
+            sources = (re.findall(r"!\[[^\]]*\]\(([^)\s]+)", text)
+                       + re.findall(r'<img[^>]+src="([^"]+)"', text))
+            for src in sources:
+                if src.startswith(("http://", "https://", "data:")):
+                    continue
+                resolved = os.path.join(os.path.dirname(path), src)
+                if not os.path.exists(resolved):
+                    offenders.append(
+                        f"{os.path.relpath(path, ROOT)} -> {src}")
+    assert not offenders, (
+        "these images are referenced but missing:\n  " + "\n  ".join(offenders))

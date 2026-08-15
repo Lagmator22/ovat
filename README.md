@@ -1,10 +1,19 @@
-# OVAT: OpenVINO Agentic Toolkit
+<div align="center">
+<img src="docs/assets/ovat-logo.png" width="440px" alt="OpenVINO Agentic Toolkit for AIPC">
 
-**Build a tool-calling AI agent on an Intel AI PC from one YAML file and one command.**
+<h3 align="center">
+Build a tool-calling AI agent on an Intel AI PC from one YAML file and one command.
+</h3>
 
-[![PyPI](https://img.shields.io/pypi/v/ovat?v=1.0.1)](https://pypi.org/project/ovat/)
-[![Python](https://img.shields.io/pypi/pyversions/ovat?v=1.0.1)](https://pypi.org/project/ovat/)
-[![License](https://img.shields.io/pypi/l/ovat?v=1.0.1)](LICENSE)
+<p align="center">
+ <a href="#quickstart"><b>Quickstart</b></a> • <a href="examples/"><b>Examples</b></a> • <a href="docs/workflow_yaml_reference.md"><b>Reference</b></a> • <a href="docs/ARCHITECTURE.md"><b>Architecture</b></a> • <a href="docs/BLOG.md"><b>Walkthrough</b></a> • <a href="#platform-support"><b>Platforms</b></a>
+</p>
+
+[![PyPI](https://img.shields.io/pypi/v/ovat)](https://pypi.org/project/ovat/)
+[![Python](https://img.shields.io/pypi/pyversions/ovat)](https://pypi.org/project/ovat/)
+[![License](https://img.shields.io/pypi/l/ovat)](LICENSE)
+
+</div>
 
 ```bash
 pip install ovat
