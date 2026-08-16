@@ -352,6 +352,26 @@ def _maybe_abs(path: str, cwd: str) -> str:
     return os.path.normpath(os.path.join(cwd, path))
 
 
+def _search_paths(config_path: str) -> list[str]:
+    """The workflow's model_search_paths, or [] if it cannot be read.
+
+    /chat auto-detects a model BEFORE ChatScreen is built, so the discovery
+    roots have to be known here -- and since model_search_paths moved into the
+    workflow, that means opening the file this early just to read one field.
+
+    Deliberately silent on failure. A missing or invalid config is a real
+    error, but it is ChatScreen's to report, with the full sentence
+    _load_config produces; raising here would replace that with a worse
+    message from the wrong layer, and refusing to auto-detect at all would
+    make a typo in the config look like "no model on this machine".
+    """
+    try:
+        from ovat.config.workflow import load_workflow
+        return list(load_workflow(config_path).model_search_paths)
+    except Exception:
+        return []
+
+
 def _lerp_hex(a: tuple, b: tuple, t: float) -> str:
     """Blend two RGB colours by fraction t in 0..1 and return a hex string."""
     return "#{:02X}{:02X}{:02X}".format(
@@ -1010,7 +1030,8 @@ class OvatTUI(App):
             # Friendliest path last: AUTO-DETECT a local text LLM instead of
             # demanding a path a new user does not know.
             from ovat.core.model_scout import find_models, pick_chat_llm
-            choice, llms = pick_chat_llm()
+            extra_roots = _search_paths(_maybe_abs(config, self._cwd))
+            choice, llms = pick_chat_llm(extra_roots)
             if choice is not None:
                 model = choice["path"]
                 log.write(Text(f"auto-detected local LLM: {choice['name']}  "
@@ -1028,18 +1049,18 @@ class OvatTUI(App):
                 # OVAT_MODELS, ./models, ~/models" left the user with no way
                 # to tell which paths that came out to, and on Windows the
                 # answer is rarely the one they assumed.
-                for root in searched_roots():
+                for root in searched_roots(extra_roots):
                     mark = "" if os.path.isdir(root) else "  (does not exist)"
                     log.write(Text(f"  scanned: {root}{mark}", style=ui.DIM))
-                others = find_models()
+                others = find_models(None, extra_roots)
                 if others:
                     log.write(Text("Found, but wrong kind for chat: " +
                                    ", ".join(f"{m['name']} ({m['kind']})"
                                              for m in others), style=ui.DIM))
                 log.write(Text(
-                    "Fix: /chat [config] [model-path], or set OVAT_MODELS to "
-                    "your models folder. I remember your choice afterwards.",
-                    style=ui.DIM))
+                    "Fix: /chat [config] [model-path], or add the folder to "
+                    "model_search_paths in the workflow. I remember your "
+                    "choice afterwards.", style=ui.DIM))
                 return
 
         self.push_screen(ChatScreen(_maybe_abs(config, self._cwd),

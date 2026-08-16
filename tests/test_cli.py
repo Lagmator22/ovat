@@ -112,6 +112,22 @@ def test_chat_prints_an_answer_and_sources_containing_markup(monkeypatch):
     assert "notes[1].md" in result.output     # a source path with brackets
 
 
+def test_chat_help_lists_every_place_a_model_is_looked_for():
+    """--model-path's help is where a user learns what "omit to auto-detect"
+    actually scans, and it still listed only the three pre-config roots.
+
+    A stale list here is worse than none: it tells someone whose model lives
+    in model_search_paths that the flag is their only option, which is the
+    shell variable the setting was added to replace.
+    """
+    result = runner.invoke(app, ["chat", "--help"])
+    assert result.exit_code == 0
+    # Typer wraps help text, so compare on a whitespace-collapsed copy.
+    helptext = " ".join(result.output.split())
+    for root in ("model_search_paths", "OVAT_MODELS", "./models", "~/models"):
+        assert root in helptext, f"{root} missing from chat --help"
+
+
 def test_doctor_survives_markup_in_a_config(tmp_path):
     """Config values reach doctor's table, so they are data there too."""
     cfg = tmp_path / "w.yml"

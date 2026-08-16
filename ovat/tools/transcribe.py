@@ -90,6 +90,19 @@ def _load_pipeline(model: str | None = None, device: str | None = None):
     """
     key = (_configured_model(model), _resolve_device(device))
     if key not in _pipelines:
+        if not os.path.isdir(key[0]):
+            # Check the folder BEFORE openvino_genai sees it. A missing path
+            # comes back from there as a five-line C++ assertion out of
+            # core.cpp, which names an internal .xml the user never chose and
+            # says nothing about the setting that is actually wrong. The
+            # caller adds the path, so this only has to supply the fix.
+            # factory.build_embedder already guards its model this way.
+            raise FileNotFoundError(
+                "the folder does not exist. Set the transcribe tool's "
+                "`model:` in workflow.yml to a local OpenVINO speech-to-text "
+                "export, e.g.\n"
+                "  hf download OpenVINO/whisper-base-int8-ov "
+                "--local-dir models/whisper-base-int8-ov")
         # Imported here, not at the top, so the module loads even on a machine
         # without the model. This is the real OpenVINO GenAI Whisper pipeline.
         import openvino_genai as ov_genai

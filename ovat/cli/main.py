@@ -660,8 +660,8 @@ def resolve_chat_model(model_path: str | None,
     """Pick and sanity-check the local text LLM `chat` should load.
 
     Two jobs, both learned from real users:
-    1. No path given? Auto-discover: scan OVAT_MODELS / ./models / ~/models
-       and pick an instruct-tuned text LLM.
+    1. No path given? Auto-discover: scan model_search_paths / OVAT_MODELS /
+       ./models / ~/models and pick an instruct-tuned text LLM.
     2. Path given (or found)? IDENTIFY it before loading. Pointing chat at a
        vision model used to explode at generate time with a C++ traceback
        about tensor ports; now it is one plain sentence and a suggestion.
@@ -714,7 +714,8 @@ def chat(
     input: str = typer.Option(..., "--input", "-i", help="Your question."),
     model_path: str = typer.Option(None, "--model-path", "-m",
                                    help="Local OpenVINO text-LLM folder. Omit to "
-                                        "auto-detect (OVAT_MODELS, ./models, ~/models)."),
+                                        "auto-detect (model_search_paths, "
+                                        "OVAT_MODELS, ./models, ~/models)."),
     device: str = typer.Option("CPU", "--device", help="CPU, or GPU/NPU on the AI PC."),
     top_k: int = typer.Option(4, "--top-k", help="How many chunks to retrieve."),
     max_tokens: int = typer.Option(256, "--max-tokens",

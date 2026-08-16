@@ -483,6 +483,88 @@ def test_opening_a_screen_you_are_already_on_does_not_stack_it(monkeypatch):
     _run(scenario())
 
 
+def test_search_paths_reads_the_field_and_shrugs_off_a_bad_config(tmp_path):
+    """Auto-detection happens before ChatScreen exists, so /chat has to open
+    the workflow itself just to learn where models may live.
+
+    A config that will not load must come back empty rather than raise: that
+    error is ChatScreen's to report properly, and turning it into "no model on
+    this machine" would send the user hunting for the wrong thing.
+    """
+    from ovat.cli.tui import _search_paths
+
+    good = tmp_path / "good.yml"
+    good.write_text("model:\n  name: m\nmodel_search_paths:\n"
+                    "  - /somewhere/odd\n", encoding="utf-8")
+    assert _search_paths(str(good)) == ["/somewhere/odd"]
+
+    bare = tmp_path / "bare.yml"
+    bare.write_text("model:\n  name: m\n", encoding="utf-8")
+    assert _search_paths(str(bare)) == []
+
+    broken = tmp_path / "broken.yml"
+    broken.write_text("model:\n  name: m\n  nonsense_key: 1\n", encoding="utf-8")
+    assert _search_paths(str(broken)) == []
+    assert _search_paths(str(tmp_path / "does-not-exist.yml")) == []
+
+
+def test_tui_chat_autodetect_honours_model_search_paths(tmp_path, monkeypatch):
+    """The TUI ignored the setting the whole feature was about.
+
+    `model_search_paths` moved OVAT_MODELS into workflow.yml, and `ovat chat`
+    passes cfg.model_search_paths into pick_chat_llm. /chat called
+    pick_chat_llm() with no arguments, so a model that lived ONLY in a
+    configured folder was found by the CLI and reported as
+    "No local text LLM found" by the TUI, against the same config.
+
+    Its fix line then sent the user to OVAT_MODELS -- the variable the config
+    was introduced to replace.
+    """
+    from ovat.cli import chat_screen
+    from ovat.core import model_scout
+
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\nmodel_search_paths:\n"
+                      "  - /odd/models/root\n", encoding="utf-8")
+
+    # No remembered model path: a real .ovat/chat_prefs.json in the developer's
+    # cwd would satisfy `if not model` and skip auto-detection entirely, so
+    # this would describe that machine rather than the code.
+    monkeypatch.setattr(chat_screen, "load_prefs", lambda cwd: {})
+
+    seen = {}
+
+    def fake_pick(extra_roots=None):
+        seen["pick"] = extra_roots
+        return None, []                      # force the not-found branch
+
+    def fake_searched(extra_roots=None):
+        seen["searched"] = extra_roots
+        return list(extra_roots or []) + ["/conventional/models"]
+
+    monkeypatch.setattr(model_scout, "pick_chat_llm", fake_pick)
+    monkeypatch.setattr(model_scout, "searched_roots", fake_searched)
+    monkeypatch.setattr(model_scout, "find_models",
+                        lambda kind=None, extra_roots=None: [])
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            app._open_chat(str(config))
+            await pilot.pause()
+            log_text = "\n".join(str(ln) for ln
+                                 in app.query_one("#output", RichLog).lines)
+
+        # The configured root reached BOTH the search and the "scanned" list.
+        assert seen["pick"] == ["/odd/models/root"]
+        assert seen["searched"] == ["/odd/models/root"]
+        assert "/odd/models/root" in log_text
+        # and the fix names the setting, not the variable it replaced.
+        assert "model_search_paths" in log_text
+        assert "OVAT_MODELS" not in log_text
+    _run(scenario())
+
+
 def test_the_launcher_recalls_commands_with_up_and_down():
     """It is a shell front-end, so Up/Down must do what the shell does."""
     async def scenario():

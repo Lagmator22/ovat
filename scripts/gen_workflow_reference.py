@@ -65,9 +65,11 @@ PURPOSE = {
     ("model", "ovms_cache_size_gb"): "KV cache size in GB. Setting it also "
                                      "makes the cache **static** rather than "
                                      "dynamic. Whole numbers only.",
-    ("model", "ovms_max_prompt_len"): "Longest prompt OVMS accepts. **Needed "
-                                      "on NPU**, where the default 1024 is "
-                                      "smaller than one agent turn.",
+    ("model", "ovms_max_prompt_len"): "Longest prompt OVMS accepts. On `NPU` "
+                                      "an unset value becomes **4096**, "
+                                      "because OVMS's own NPU cap of 1024 is "
+                                      "smaller than one agent turn; set it to "
+                                      "go lower. Left to OVMS on CPU and GPU.",
 
     ("tools", "name"): "`search_docs`, `transcribe`, `describe_image`, or any "
                        "tool an MCP server advertises.",
@@ -80,8 +82,10 @@ PURPOSE = {
     ("tools", "device"): "Device for this tool's model, separate from the "
                          "agent's. Omit to let the device router choose.",
 
-    ("agent", "type"): "Which engine runs the tool loop. Each non-native one "
-                       "needs its matching extra installed.",
+    ("agent", "type"): "Which engine runs the tool loop: `native` (built in), "
+                       "`react` (LangChain), `llamaindex`, or "
+                       "`openai-agents`. Each non-native one needs its "
+                       "matching extra, e.g. `pip install 'ovat[langchain]'`.",
     ("agent", "max_iterations"): "Safety cap on tool-calling rounds before "
                                  "the loop gives up.",
     ("agent", "system_prompt"): "The agent's persona and standing "
@@ -112,8 +116,11 @@ PURPOSE = {
     ("(top level)", "rag"): "Vector search for `search_docs`. Omit and the "
                             "tool answers in a documented stub mode.",
     ("(top level)", "model_search_paths"): "Extra folders to scan for local "
-                                           "model exports, before `./models` "
-                                           "and `~/models`.",
+                                           "model exports. Searched first, "
+                                           "ahead of `OVAT_MODELS`, "
+                                           "`./models` and `~/models`, so a "
+                                           "workflow that says where its "
+                                           "models live wins over the shell.",
 }
 
 SECTIONS = [
@@ -229,13 +236,28 @@ def render() -> str:
               "agent:",
               "  type: native",
               "  max_iterations: 10",
+              # Directive, and it has to be. "Answer from the user's documents"
+              # never tells the model to CALL anything, and with an audio tool
+              # also on the menu this example ran away: measured on the AI PC,
+              # 0 tool calls, 4096 completion tokens of repetition, 135s, on a
+              # freshly restarted server -- while examples/rag/workflow.yml,
+              # same model and question, answered with a citation in 9.9s. The
+              # wording below is that example's, extended to say which tool is
+              # for audio, and is 4/4 clean on the same box.
               "  system_prompt: >-",
-              "    Answer from the user's documents and cite the source path.",
+              "    Always call search_docs before answering a question about",
+              "    the user's files, and cite the source path you used. Call",
+              "    transcribe only for audio files. If the documents do not",
+              "    contain the answer, say so plainly rather than guessing.",
               "",
               "rag:",
               "  embeddings:",
               "    provider: genai",
-              "    model: models/bge-small-en-v1.5-ov",
+              # The path the README's optimum-cli command actually exports to,
+              # and the field's own default two tables above. The "-ov" suffix
+              # here matched neither, so the example could not run: `ovat
+              # index` stopped at "embeddings model not found".
+              "    model: models/bge-small-en-v1.5",
               "    dim: 384",
               "  retriever:",
               "    provider: sqlite-vec",
