@@ -23,7 +23,7 @@ The four sections, plus one setting.
 | `tools` | list[section] | empty | - | Tools the agent may call. Omit for a tool-less agent. |
 | `agent` | section | defaults | - | How the loop behaves. |
 | `rag` | section \| null | `null` | - | Vector search for `search_docs`. Omit and the tool answers in a documented stub mode. |
-| `model_search_paths` | list[string] | empty | - | Extra folders to scan for local model exports, before `./models` and `~/models`. |
+| `model_search_paths` | list[string] | empty | - | Extra folders to scan for local model exports. Searched first, ahead of `OVAT_MODELS`, `./models` and `~/models`, so a workflow that says where its models live wins over the shell. |
 
 ## `model`
 
@@ -46,7 +46,7 @@ Which model to run, where, and how to reach it.
 | `enable_prefix_caching` | boolean | `true` | - | Reuse KV cache across turns sharing a prefix. A large multi-turn win. |
 | `ovms_binary` | string \| null | `null` | - | Where the `ovms` executable is. Rarely needed: `ovat setup` installs somewhere OVAT finds. |
 | `ovms_cache_size_gb` | integer \| null | `null` | > 0 | KV cache size in GB. Setting it also makes the cache **static** rather than dynamic. Whole numbers only. |
-| `ovms_max_prompt_len` | integer \| null | `null` | > 0 | Longest prompt OVMS accepts. **Needed on NPU**, where the default 1024 is smaller than one agent turn. |
+| `ovms_max_prompt_len` | integer \| null | `null` | > 0 | Longest prompt OVMS accepts. On `NPU` an unset value becomes **4096**, because OVMS's own NPU cap of 1024 is smaller than one agent turn; set it to go lower. Left to OVMS on CPU and GPU. |
 
 ## `tools`
 
@@ -66,7 +66,7 @@ Which engine drives the tool loop.
 
 | Field | Type | Default | Constraints | Purpose |
 | --- | --- | --- | --- | --- |
-| `type` | string | `native` | - | Which engine runs the tool loop. Each non-native one needs its matching extra installed. |
+| `type` | string | `native` | - | Which engine runs the tool loop: `native` (built in), `react` (LangChain), `llamaindex`, or `openai-agents`. Each non-native one needs its matching extra, e.g. `pip install 'ovat[langchain]'`. |
 | `max_iterations` | integer | `10` | - | Safety cap on tool-calling rounds before the loop gives up. |
 | `system_prompt` | string \| null | `null` | - | The agent's persona and standing instructions. |
 
@@ -122,12 +122,15 @@ agent:
   type: native
   max_iterations: 10
   system_prompt: >-
-    Answer from the user's documents and cite the source path.
+    Always call search_docs before answering a question about
+    the user's files, and cite the source path you used. Call
+    transcribe only for audio files. If the documents do not
+    contain the answer, say so plainly rather than guessing.
 
 rag:
   embeddings:
     provider: genai
-    model: models/bge-small-en-v1.5-ov
+    model: models/bge-small-en-v1.5
     dim: 384
   retriever:
     provider: sqlite-vec

@@ -109,6 +109,41 @@ def test_the_example_in_the_reference_actually_validates(tmp_path):
         WorkflowConfig(**data)          # raises if the example is wrong
 
 
+def test_the_example_names_model_paths_the_docs_tell_you_to_create():
+    """Validating is not the same as running, and the gap let a real bug ship.
+
+    The example pointed rag.embeddings.model at models/bge-small-en-v1.5-ov.
+    That is a perfectly valid string, so the schema check above passed --
+    but no instruction anywhere creates that folder. Every optimum-cli line in
+    the README, examples/rag/README.md and BLOG.md exports to
+    models/bge-small-en-v1.5, and so does the field's own default in the table
+    one section above the example. Run verbatim on the AI PC, `ovat index`
+    stopped at "embeddings model not found at 'models/bge-small-en-v1.5-ov'".
+
+    Pinning to the schema default keeps the example and the documented export
+    path in step without this test having to know about optimum-cli.
+    """
+    import re
+
+    import yaml
+
+    from ovat.config.workflow import EmbeddingsConfig
+
+    with open(DOC, encoding="utf-8") as handle:
+        blocks = re.findall(r"```yaml\n(.*?)```", handle.read(), re.S)
+
+    documented = EmbeddingsConfig.model_fields["model"].default
+    for block in blocks:
+        rag = (yaml.safe_load(block) or {}).get("rag") or {}
+        configured = (rag.get("embeddings") or {}).get("model")
+        if configured is not None:
+            assert configured == documented, (
+                f"the example embeds from {configured!r}, but the documented "
+                f"export path -- and this field's own default -- is "
+                f"{documented!r}. Nothing creates the former, so the example "
+                f"cannot run.")
+
+
 def test_the_generator_is_not_shipped_in_the_wheel():
     """scripts/ is a development tool, not part of the package.
 
