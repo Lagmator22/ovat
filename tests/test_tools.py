@@ -217,6 +217,60 @@ def test_describe_image_follows_the_llm_recommendation(monkeypatch):
     assert describe_image._resolve_device() == "GPU"
 
 
+# A tool's model: is now the interface, so pointing it somewhere wrong is a
+# user error and has to read like one.
+
+def test_a_wrong_transcribe_model_path_says_what_to_fix(tmp_path, monkeypatch):
+    """Measured on the AI PC, 2026-08-16: a `model:` naming a folder that does
+    not exist returned five lines of C++ out of core.cpp, ending in
+    'Could not open the file: "...\\openvino_encoder_model.xml"' -- an internal
+    filename the user never chose, and not one word about the setting that was
+    actually wrong. describe_image already appended the fix; transcribe did not.
+    """
+    from ovat.tools import transcribe
+
+    monkeypatch.delenv("OVAT_WHISPER_MODEL", raising=False)
+    monkeypatch.setattr(transcribe, "_pipelines", {})
+    wav = tmp_path / "clip.wav"
+    _write_wav(wav, channels=1, rate=16000)
+
+    out = transcribe.transcribe_impl(str(wav), model=str(tmp_path / "nope"),
+                                     device="CPU")
+
+    assert out.startswith("Error loading the transcribe model from")
+    assert "nope" in out                      # names the path it tried
+    assert "`model:`" in out                  # names the setting to change
+    assert "workflow.yml" in out              # and where that setting lives
+    # The C++ assertion is what this replaced; it must not come back.
+    assert "core.cpp" not in out
+    assert "openvino_encoder_model.xml" not in out
+    # OVAT_WHISPER_MODEL is still a fallback, but it is no longer the
+    # interface, so the error must not send the reader to it.
+    assert "OVAT_WHISPER_MODEL" not in out
+
+
+def test_a_wrong_describe_image_model_path_says_what_to_fix(tmp_path, monkeypatch):
+    """Same guard on the vision half. Its closing sentence was already right;
+    what buried it was the C++ wall openvino_genai raised first."""
+    from ovat.tools import describe_image
+
+    monkeypatch.delenv("OVAT_VLM_MODEL", raising=False)
+    monkeypatch.setattr(describe_image, "_providers", {})
+    image = tmp_path / "shot.png"
+    image.write_bytes(b"not really a png, nothing gets that far")
+
+    out = describe_image.describe_image_impl(str(image),
+                                             model=str(tmp_path / "nope"))
+
+    assert out.startswith("Error: could not load the vision model at")
+    assert "nope" in out
+    assert "`model:`" in out
+    assert "workflow.yml" in out
+    assert "core.cpp" not in out
+    assert "openvino_language_model.xml" not in out
+    assert "OVAT_VLM_MODEL" not in out
+
+
 def test_the_mcp_server_can_build_its_own_retriever_from_a_config(tmp_path, monkeypatch):
     """An MCP-served search_docs was PERMANENTLY stuck in stub mode.
 

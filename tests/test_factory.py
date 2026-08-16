@@ -355,16 +355,26 @@ def test_an_unconfigured_tool_still_works_exactly_as_before(monkeypatch):
     assert _configured_model(None) == DEFAULT_MODEL_DIR
 
 
-def test_two_tools_with_different_models_do_not_share_a_pipeline(monkeypatch):
+def test_two_tools_with_different_models_do_not_share_a_pipeline(tmp_path,
+                                                                 monkeypatch):
     """The cache is keyed by (model, device).
 
     It used to be one global slot, which was correct only while the model
     could come from nowhere but a single env var. With a per-tool model, the
     bench -- four engines in one process -- would have the second agent
     transcribe with the first agent's model and report nothing wrong.
+
+    The two folders are real and empty: _load_pipeline now checks the path
+    exists before handing it to openvino_genai, so that a wrong `model:` reads
+    as one sentence instead of a C++ assertion. Only the check is real here --
+    the pipeline behind it is still fake.
     """
     from ovat.tools import transcribe as transcribe_tool
 
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
     built = []
 
     class FakeGenAI:
@@ -376,10 +386,10 @@ def test_two_tools_with_different_models_do_not_share_a_pipeline(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "openvino_genai", FakeGenAI)
     monkeypatch.setattr(transcribe_tool, "_pipelines", {})
 
-    first = transcribe_tool._load_pipeline("models/a", "CPU")
-    second = transcribe_tool._load_pipeline("models/b", "CPU")
-    again = transcribe_tool._load_pipeline("models/a", "CPU")
+    first = transcribe_tool._load_pipeline(str(a), "CPU")
+    second = transcribe_tool._load_pipeline(str(b), "CPU")
+    again = transcribe_tool._load_pipeline(str(a), "CPU")
 
     assert first is not second, "two models shared one pipeline"
     assert again is first, "the same model rebuilt instead of being reused"
-    assert built == [("models/a", "CPU"), ("models/b", "CPU")]
+    assert built == [(str(a), "CPU"), (str(b), "CPU")]

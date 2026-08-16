@@ -52,6 +52,12 @@ def _resolve_device(device: str | None = None) -> str:
 def _load_provider(model: str | None = None, device: str | None = None):
     key = (_configured_model(model), _resolve_device(device))
     if key not in _providers:
+        if not os.path.isdir(key[0]):
+            # Same guard, and the same reason, as transcribe._load_pipeline:
+            # openvino_genai answers a missing folder with a C++ assertion
+            # naming openvino_language_model.xml, which buries the one
+            # sentence the caller already appends about setting `model:`.
+            raise FileNotFoundError("the folder does not exist")
         # Imported here so the module loads on machines without the model.
         from ovat.providers.vlm_genai import GenAIVLMProvider
         _providers[key] = GenAIVLMProvider(*key)
