@@ -183,8 +183,10 @@ def test_load_failure_reports_and_offers_the_way_back(monkeypatch, tmp_path):
 def test_chat_with_no_model_and_none_found_explains_the_fix(monkeypatch, tmp_path):
     import ovat.core.model_scout as scout
     monkeypatch.chdir(tmp_path)                     # no prefs saved here yet
-    monkeypatch.setattr(scout, "pick_chat_llm", lambda: (None, []))
-    monkeypatch.setattr(scout, "find_models", lambda kind=None: [
+    monkeypatch.setattr(scout, "pick_chat_llm",
+                        lambda roots=None: (None, []))
+    monkeypatch.setattr(scout, "find_models",
+                        lambda kind=None, roots=None: [
         {"name": "Qwen2-VL-2B", "path": "/x", "kind": "vlm", "why": ""}])
 
     async def scenario():
@@ -198,7 +200,10 @@ def test_chat_with_no_model_and_none_found_explains_the_fix(monkeypatch, tmp_pat
             text = "\n".join(str(line) for line in log.lines)
             assert "No local text LLM found" in text
             assert "Qwen2-VL-2B (vlm)" in text       # names what it DID find
-            assert "OVAT_MODELS" in text             # and the fix
+            # The fix names the CONFIG field now, not the env var:
+            # model_search_paths moved into workflow.yml, and a reader
+            # can act on a field in the file they are already editing.
+            assert "model_search_paths" in text      # and the fix
     _run(scenario())
 
 
@@ -208,7 +213,8 @@ def test_chat_with_no_model_auto_detects_one(monkeypatch, tmp_path):
     monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
     llama = {"name": "Llama-3B-Instruct", "path": str(tmp_path / "llama"),
              "kind": "llm", "why": ""}
-    monkeypatch.setattr(scout, "pick_chat_llm", lambda: (llama, [llama]))
+    monkeypatch.setattr(scout, "pick_chat_llm",
+                        lambda roots=None: (llama, [llama]))
 
     async def scenario():
         app = OvatTUI()
