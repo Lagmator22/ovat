@@ -22,9 +22,11 @@ OpenVINO/Qwen3.5-0.8B-int4-ov: a text-only prompt answers in 1.3s. The
 layout check alone called it "vlm", so `ovat chat` refused the very model
 Intel's guidance recommends. A unified model answers to BOTH kind filters.
 
-Discovery roots for find_models(): the OVAT_MODELS env var (os.pathsep-
-separated folders) first, then ./models and ~/models. One level deep: model
-folders live inside a models/ dir, not nested labyrinths.
+Discovery roots for find_models(), most specific first: the workflow's
+model_search_paths, then the OVAT_MODELS env var (os.pathsep-separated
+folders), then ./models and ~/models. TWO levels deep, not one -- see
+_MAX_DEPTH, where a one-level scan is what hid every `ovms --pull` model,
+because that lays them out by org as models/OpenVINO/<name>.
 """
 import json
 import os
