@@ -190,8 +190,8 @@ def _make_transcribe(tool_cfg=None):
     """
     model = getattr(tool_cfg, "model", None)
     device = getattr(tool_cfg, "device", None)
-    return lambda file_path, language="en", _m=model, _d=device: (
-        transcribe_tool.transcribe_impl(file_path, language,
+    return lambda path, language="en", _m=model, _d=device: (
+        transcribe_tool.transcribe_impl(path, language,
                                         model=_m, device=_d))
 
 

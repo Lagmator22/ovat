@@ -44,7 +44,7 @@ def _configured_model(model: str | None = None) -> str:
 mcp = FastMCP("transcribe")
 
 
-def _read_wav(file_path: str):
+def _read_wav(path: str):
     """I read a 16 bit mono 16 kHz WAV into float samples the pipeline expects.
 
     Whisper expects 16 kHz, 16 bit, mono audio. I check those up front and raise
@@ -52,7 +52,7 @@ def _read_wav(file_path: str):
     which would parse without error but transcribe as garbled or sped-up speech.
     Dividing by 32768 maps the integer samples into minus one to one.
     """
-    with wave.open(file_path, "rb") as wav:
+    with wave.open(path, "rb") as wav:
         channels = wav.getnchannels()
         sample_width = wav.getsampwidth()
         frame_rate = wav.getframerate()
@@ -110,17 +110,17 @@ def _load_pipeline(model: str | None = None, device: str | None = None):
     return _pipelines[key]
 
 
-def transcribe_impl(file_path: str, language: str = "en", pipeline=None,
+def transcribe_impl(path: str, language: str = "en", pipeline=None,
                     model: str | None = None, device: str | None = None) -> str:
     """The real logic, kept separate so my tests can pass a fake pipeline.
 
     Note to myself: I check the file exists first and return a clear error
     string instead of letting a missing path blow up the whole agent.
     """
-    if not os.path.isfile(file_path):
-        return f"Error: I could not find an audio file at: {file_path}"
+    if not os.path.isfile(path):
+        return f"Error: I could not find an audio file at: {path}"
     try:
-        samples = _read_wav(file_path)
+        samples = _read_wav(path)
     except Exception as exc:
         return (f"Error: {exc}. Convert it to 16 kHz, 16 bit, mono first.")
     if pipeline is None:
@@ -155,26 +155,26 @@ SCHEMA = {
         "parameters": {
             "type": "object",
             "properties": {
-                "file_path": {"type": "string", "description": "path to a WAV audio file"},
+                "path": {"type": "string", "description": "path to a WAV audio file"},
                 # "default" keeps this schema the complete contract; the
                 # LangChain argument model is derived from it.
                 "language": {"type": "string", "description": "language code, e.g. en",
                              "default": "en"},
             },
-            "required": ["file_path"],
+            "required": ["path"],
         },
     },
 }
 
 
 @mcp.tool
-def transcribe(file_path: str, language: str = "en") -> str:
+def transcribe(path: str, language: str = "en") -> str:
     """Transcribe a spoken audio file into text.
 
     Use me when the user gives a path to an audio recording and wants the
     words in it. I take a WAV file path and return the transcript as text.
     """
-    return transcribe_impl(file_path, language)
+    return transcribe_impl(path, language)
 
 
 if __name__ == "__main__":

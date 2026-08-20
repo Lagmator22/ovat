@@ -11,7 +11,7 @@ path; this document is for contributors and for anyone evaluating the design.
 **Orientation**
 - [1. What OVAT is, in one screen](#1-what-ovat-is-in-one-screen)
 - [2. The whole system, one diagram](#2-the-whole-system-one-diagram)
-- [3. Layering rules that must not be broken](#3-layering-rules-that-must-not-be-broken)
+- [3. Four design rules, and what each protects](#3-four-design-rules-and-what-each-protects)
 
 **The nine layers**
 - [Layer 1: CLI and configuration](#layer-1-cli-and-configuration)
@@ -27,7 +27,7 @@ path; this document is for contributors and for anyone evaluating the design.
 **Cross-cutting**
 - [Model selection, and why "unified" is its own kind](#model-selection-and-why-unified-is-its-own-kind)
 - [Tool-parser selection](#tool-parser-selection)
-- [Failure design: three ways a tool call goes wrong](#failure-design-three-ways-a-tool-call-goes-wrong)
+- [Failure design: four ways a tool call goes wrong](#failure-design-four-ways-a-tool-call-goes-wrong)
 - [Concurrency and process boundaries](#concurrency-and-process-boundaries)
 - [The plano gateway](#the-plano-gateway)
 - [Testing strategy](#testing-strategy)
@@ -296,7 +296,7 @@ Layer 4 changes: the agent loop and all four engines only ever see the
 interface.
 
 The factory returns `LLMProvider`, never a concrete class. That is deliberate
-and worth copying if you extend it — a factory whose return type names one
+and worth copying if you extend it -- a factory whose return type names one
 implementation can only ever produce that implementation, however many others
 satisfy the contract.
 
@@ -450,6 +450,54 @@ begins: OVMS ships mode `0o555`, and reopening such a file for write fails for
 anyone without `CAP_DAC_OVERRIDE`. That made install fail for every non-root
 Linux user while passing in Docker, in CI and in a maintainer's container - all
 of which run as root.
+
+### Installing it by hand (air-gapped machines, or a build you already have)
+
+`ovat setup` is the supported path. When it cannot be used, these are the steps
+it performs, and the one judgement call it exists to remove.
+
+> **Take the `python_on` build.** The `python_off` (C++ only) package **cannot
+> do tool calling** -- Intel's own docs state that its limited chat-template
+> support means using tools is not possible. The wrong archive gives an agent
+> that answers normally and silently never calls a tool, which is the hardest
+> failure in this project to notice.
+
+**Windows 11**, from the folder you want OVMS in:
+
+```bat
+curl -L https://github.com/openvinotoolkit/model_server/releases/download/v2026.2.1/ovms_windows_2026.2.1_python_on.zip -o ovms.zip
+tar -xf ovms.zip
+```
+
+**Ubuntu 24.04** (swap `ubuntu22` or `redhat` as needed):
+
+```bash
+wget https://github.com/openvinotoolkit/model_server/releases/download/v2026.2.1/ovms_ubuntu24_2026.2.1_python_on.tar.gz
+tar -xzvf ovms_ubuntu24_2026.2.1_python_on.tar.gz
+sudo apt update && sudo apt install -y libxml2 curl
+```
+
+`ovat serve` sets the library paths itself, through `model_server.ovms_env()`.
+If you launch `ovms` **yourself** on Linux it needs them exported first, or it
+cannot load its own `.so` files:
+
+```bash
+export LD_LIBRARY_PATH=${PWD}/ovms/lib
+export PYTHONPATH=${PWD}/ovms/lib/python
+```
+
+That Linux branch is worth naming: it had never executed once before 1.0.0,
+because every machine it was written on was Windows. It is a testable function
+now, proved by an A/B run rather than by inspection.
+
+**Where the locator looks**, in order: the config's `ovms_binary`, then
+`OVAT_OVMS`, then `PATH`, then `./ovms`, `~/.ovat/ovms`, `~/ovms_windows`,
+`~/ovms`, `C:\ovms`. Windows installs are never on `PATH`, which is the whole
+reason `serve` works anyway. If yours lives somewhere else:
+
+```bash
+export OVAT_OVMS=/path/to/ovms        # or set model.ovms_binary in the YAML
+```
 
 ### Starting it: `ovat serve`
 
@@ -644,14 +692,16 @@ recognise. An explicit value always wins.
 
 ---
 
-## Failure design: three ways a tool call goes wrong
+## Failure design: four ways a tool call goes wrong
 
-All three end with the agent answering fluently while having called nothing, which
+All four end with the agent answering fluently while having called nothing, which
 is the hardest kind of broken to notice. Each is now detected and named.
 
 ```mermaid
 flowchart TD
-    Reply["reply, finish_reason: stop"] --> Q1{"markup still in it?"}
+    Reply["a reply with no tool_calls"] --> Q0{"finish_reason?"}
+    Q0 -->|"length"| T["truncated<br/>cut at max_tokens; the markup is a FRAGMENT"]
+    Q0 -->|"stop"| Q1{"markup still in it?"}
     Q1 -->|"yes"| A["undecoded_tool_call<br/>parser did not match; markup survived"]
     Q1 -->|"no"| Q2{"anything left after reasoning?"}
     Q2 -->|"no"| B["empty_answer<br/>parser SWALLOWED the reply"]
@@ -663,6 +713,7 @@ flowchart TD
 | No parser selected | raw `<tool_call>` markup becomes the answer | `looks_like_undecoded_tool_call` |
 | Wrong parser | reply is reasoning and nothing else | `says_nothing` |
 | Malformed by the model | `<parameter=name>` where `<function=name>` belongs | the same markup check |
+| Cut at the token ceiling | a fragment, indistinguishable from row 1 by eye | `finish_reason: length` -> `truncated` |
 
 Both set a flag in the trace totals, so `--trace` cannot show a clean
 `tool_calls: 0` that reads as "the model chose not to use a tool". `bench` reads

@@ -3,6 +3,10 @@
 *OVAT, the OpenVINO Agentic Toolkit, turns the boilerplate of a tool-calling
 agent into a config file, and runs the whole thing on your own hardware.*
 
+<div align="center">
+<img src="assets/ovat-logo.png" width="380px" alt="OpenVINO Agentic Toolkit for AIPC">
+</div>
+
 ---
 
 ## Contents
@@ -14,11 +18,12 @@ agent into a config file, and runs the whole thing on your own hardware.*
 5. [Example 1: Ask your own documents (RAG)](#5-example-1-ask-your-own-documents-rag)
 6. [Example 2: Swap the agent framework in one word](#6-example-2-swap-the-agent-framework-in-one-word)
 7. [Example 3: Listen and look (audio + vision)](#7-example-3-listen-and-look-audio--vision)
-8. [Choosing a model for your machine](#8-choosing-a-model-for-your-machine)
-9. [Where the time and memory actually go](#9-where-the-time-and-memory-actually-go)
-10. [Extending OVAT with your own tools](#10-extending-ovat-with-your-own-tools)
-11. [What it is not](#11-what-it-is-not)
-12. [Try it](#12-try-it)
+8. [A terminal UI, if you want one](#8-a-terminal-ui-if-you-want-one)
+9. [System requirements](#9-system-requirements)
+10. [Where the time and memory actually go](#10-where-the-time-and-memory-actually-go)
+11. [Extending OVAT with your own tools](#11-extending-ovat-with-your-own-tools)
+12. [What it is not](#12-what-it-is-not)
+13. [Try it](#13-try-it)
 
 ---
 
@@ -28,7 +33,7 @@ An "AI agent" is a simple idea: a model that can call your functions. Ask it
 about a file, and instead of guessing, it calls `search_docs` and reads the
 answer back to you.
 
-**The thing worth changing is not how much code that takes — it is that it
+**The thing worth changing is not how much code that takes -- it is that it
 takes code at all.** Building an agent should be a matter of stating what you
 want: this model, on this device, with these tools and this system prompt.
 Instead it means picking an orchestration framework, learning its API, wiring a
@@ -36,7 +41,7 @@ model server to it, and rewriting the same loop each time you change your mind
 about any of those.
 
 OVAT makes those choices **configuration**. The framework is one word in a YAML
-file, and swapping it changes nothing else — not your tools, not your prompt,
+file, and swapping it changes nothing else -- not your tools, not your prompt,
 not a line of Python. That is the difference: you spend your attention on the
 tools, the prompt and the model, and none of it on the machinery underneath.
 
@@ -206,13 +211,14 @@ ovat doctor workflow.yml     # confirm Python, devices, drivers, OVMS, config
 `doctor` is worth running before anything else. It is a table, not a wall of
 text, and it tells you the specific thing that is wrong:
 
-```
-│ Python            │ ✓ ok   │ 3.12.4 (3.10+ required)                       │
-│ OpenVINO devices  │ ✓ ok   │ CPU, GPU, NPU                                 │
-│ Device routing    │ ✓ ok   │ best here: LLM→GPU emb→NPU whisper→CPU        │
-│ OVMS serving      │ ✓ ok   │ ovms via known location (C:\Users\me\ovms)    │
-│ Workflow config   │ ✓ ok   │ Qwen3.5-4B-int4-ov on GPU                     │
-```
+<div align="center">
+<img src="assets/ovat-doctor.svg" width="780px" alt="ovat doctor output: a table of checks with ok and warn statuses, each warning explaining what to do">
+</div>
+
+That is a real capture, on a Mac, which is why the OVMS row is a warning rather
+than an error: there is no macOS build, and the row says so and points at what
+to use instead. On an AI PC the same command adds `OpenVINO devices: CPU, GPU,
+NPU` and a `Device routing` row.
 
 Then a real run:
 
@@ -308,8 +314,14 @@ easy to claim and easy to get wrong, OVAT ships the thing that checks:
 ovat bench examples/react/workflow.yml -i "What can you do?" --out report.json
 ```
 
-One question, every engine, one server, side by side, build time, answer time,
-peak memory, token and tool-call counts. Two deliberate behaviours in that table:
+One question, every engine, one server, side by side:
+
+<div align="center">
+<img src="assets/ovat-bench-four-engines.gif" width="820px" alt="ovat bench running four engines against one OVMS server and printing a comparison table">
+</div>
+
+Build time, answer time, peak memory, token and tool-call counts. Two deliberate
+behaviours in that table:
 
 - **A failing engine is a row, not a crash.** A missing extra should not destroy
   the comparison you were running.
@@ -364,7 +376,36 @@ Full walkthrough: [`examples/audio-multimodal/`](../examples/audio-multimodal/).
 
 ---
 
-## 8. System requirements
+## 8. A terminal UI, if you want one
+
+Everything above is the CLI, and the CLI is the product. But there is also a
+full-screen terminal app: `pip install "ovat[tui]"`, then run `ovat` with no
+arguments.
+
+<div align="center">
+<img src="assets/ovat-tui-chat.gif" width="820px" alt="The OVAT terminal UI: a question, a streamed answer, and a foldable reasoning block">
+</div>
+
+Streaming answers with foldable reasoning, multi-line input with real paste and
+Up/Down history, sessions saved to `.ovat/sessions/`, an in-app `doctor` and
+indexing progress, and `/engine` to swap between the local `openvino_genai`
+model and OVMS-with-tools without leaving the conversation.
+
+The constraint that shaped it is worth stating, because it is a constraint
+rather than a feature: **the CLI must work with no TUI installed.** `textual`
+and `pyfiglet` live in the `[tui]` extra only, module-level `import textual` is
+permitted in exactly six files, and a test reads the source and fails the build
+if a seventh appears. The same rule keeps LangChain, LlamaIndex and the Agents
+SDK out of a plain CLI import.
+
+That is easy to say and easy to break -- one top-level import in the wrong module
+and a base install crashes on startup. And the dev test suite cannot catch it,
+because the dev extra installs everything, so CI has a separate job that does a
+bare install and asserts that importing the CLI pulls in none of them.
+
+---
+
+## 9. System requirements
 
 Start from what your machine has, then pick the model that fits it.
 
@@ -411,7 +452,7 @@ warns loudly if a tool call comes back undecoded.
 
 ---
 
-## 9. Where the time and memory actually go
+## 10. Where the time and memory actually go
 
 Every run can report what it cost:
 
@@ -454,7 +495,7 @@ See [`examples/plano/`](../examples/plano/).
 
 ---
 
-## 10. Extending OVAT with your own tools
+## 11. Extending OVAT with your own tools
 
 The three built-ins are a starting point, not the limit. OVAT speaks
 [MCP](https://modelcontextprotocol.io) as a **client**, so any MCP server becomes
@@ -478,7 +519,7 @@ The door swings both ways: OVAT's own tools are MCP servers too, so
 
 ---
 
-## 11. What it is not
+## 12. What it is not
 
 Worth being straight about, so you know whether this fits:
 
@@ -492,7 +533,7 @@ Worth being straight about, so you know whether this fits:
 
 ---
 
-## 12. Try it
+## 13. Try it
 
 ```bash
 pip install ovat
