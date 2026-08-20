@@ -48,6 +48,7 @@ agent:
     needed before answering. Use search_docs for questions about the user's
     files, and transcribe for questions about an audio file. Answer directly
     from your own knowledge when no tool applies, and say which tool you used.
+    Never attempt to use a tool named "search" - you must explicitly call "search_docs".
 
 # No rag: block, deliberately - search_docs runs in its documented stub mode,
 # so this example needs no embedder and no indexing to demonstrate the engine

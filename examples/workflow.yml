@@ -21,7 +21,9 @@ tools:
 agent:
   type: native                    # native = my own loop.py; react = LangChain
   max_iterations: 10
-  system_prompt: "You are a helpful assistant that uses tools when needed."
+  system_prompt: >-
+    You are a helpful assistant that uses tools when needed.
+    Never attempt to use a tool named "search" - you must explicitly call "search_docs".
 
 # RAG powers the search_docs tool. Swap any line below to change a backend; the
 # code does not change, only this YAML does. First run `ovat index <folder>

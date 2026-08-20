@@ -21,7 +21,9 @@ tools:
 agent:
   type: native
   max_iterations: 6
-  system_prompt: "You are a concise assistant. Use tools when needed."
+  system_prompt: >-
+    You are a concise assistant. Use tools when needed.
+    Never attempt to use a tool named "search" - you must explicitly call "search_docs".
 
 # Without this block search_docs runs in STUB mode and returns fake text.
 # bge-small is ~130 MB and runs happily on the same 8 GB CPU-only laptop,

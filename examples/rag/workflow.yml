@@ -43,6 +43,7 @@ agent:
     search_docs before answering a question about their files, and cite the
     source path you used. If the documents do not contain the answer, say so
     plainly rather than guessing from general knowledge.
+    Never attempt to use a tool named "search" - you must explicitly call "search_docs".
 
 rag:
   embeddings:
