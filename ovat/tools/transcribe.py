@@ -117,6 +117,8 @@ def transcribe_impl(path: str, language: str = "en", pipeline=None,
     Note to myself: I check the file exists first and return a clear error
     string instead of letting a missing path blow up the whole agent.
     """
+    from ovat.tools.fuzzy import resolve_path
+    path = resolve_path(path)
     if not os.path.isfile(path):
         return f"Error: I could not find an audio file at: {path}"
     try:

@@ -73,6 +73,8 @@ def describe_image_impl(image_path: str,
     Errors come back as readable strings, not exceptions; the agent loop
     hands them to the model, which can correct its call on the next turn.
     """
+    from ovat.tools.fuzzy import resolve_path
+    image_path = resolve_path(image_path)
     if not os.path.isfile(image_path):
         return f"Error: I could not find an image file at: {image_path}"
     if provider is None:
