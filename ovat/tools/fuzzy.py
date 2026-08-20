@@ -12,7 +12,7 @@ def resolve_path(hallucinated_path: str) -> str:
         return hallucinated_path
         
     best_match = hallucinated_path
-    best_ratio = 0.5  # Need at least 50% similarity
+    best_ratio = 0.70  # Need at least 70% similarity (0.66 is file.wav vs sample.wav)
     
     # Search current directory tree
     for root, _, files in os.walk("."):
