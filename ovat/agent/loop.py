@@ -122,7 +122,13 @@ class AgentLoop:
         recover on the next turn.
         """
         if name not in self.tools:
-            return f"Error: tool '{name}' is not available."
+            import difflib
+            matches = difflib.get_close_matches(name, self.tools.keys(), n=1, cutoff=0.6)
+            if matches:
+                name = matches[0]
+            else:
+                available = ", ".join(self.tools.keys())
+                return f"Error: tool '{name}' is not available. Available tools: {available}"
         try:
             result = self.tools[name]["function"](**args)
         except Exception as exc:
