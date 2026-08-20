@@ -306,7 +306,7 @@ def test_a_transcribe_model_in_the_yaml_reaches_the_tool(monkeypatch):
     seen = {}
     monkeypatch.setattr(
         transcribe_tool, "transcribe_impl",
-        lambda file_path, language="en", **kw: seen.update(kw) or "ok")
+        lambda path, language="en", **kw: seen.update(kw) or "ok")
 
     cfg = _cfg_with_tool("transcribe", model="models/my-stt", device="NPU")
     build_tools(cfg)["transcribe"]["function"]("a.wav")

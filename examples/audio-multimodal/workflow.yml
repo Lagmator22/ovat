@@ -46,6 +46,8 @@ agent:
   system_prompt: >-
     You can read documents, listen to audio and look at images. When the user
     asks about an audio file, call transcribe first and answer from the
-    transcript. When the user asks about an image, call describe_image. Always
-    say which file you used. Never guess at the contents of a file you have
-    not opened with a tool.
+    transcript. When the user asks about an image, call describe_image.
+    Always call the "search_docs" tool before answering a question about their files.
+    Never attempt to use a tool named "search" - you must explicitly call "search_docs".
+    Always say which file you used. Never guess at the contents of a file you have
+    not opened with a tool. Be extremely careful to copy file paths exactly as provided.
