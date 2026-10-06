@@ -465,3 +465,38 @@ def test_an_untruncated_fragment_blames_the_model_first():
     assert "malformed" in answer
     assert answer.index("malformed") < answer.index("tool_parser")
     assert "STATIC" in answer
+
+
+def test_a_failed_call_never_inherits_the_previous_calls_sources():
+    """The trace's per-call `sources` is what `ovat run` prints as citations.
+
+    _last_sources was set only on the success and exception paths, so a call
+    to a tool that does not exist, or a call with broken JSON, reported the
+    sources of whichever call ran BEFORE it -- and the CLI printed those as
+    citations for an answer they had nothing to do with.
+    """
+    from types import SimpleNamespace
+
+    def search(query, top_k=5):
+        return [{"text": "t", "source": "secret/plan.md", "distance": 0.1}]
+
+    tools = {"search_docs": {
+        "schema": {"type": "function", "function": {"name": "search_docs"}},
+        "function": search}}
+    broken = SimpleNamespace(id="tc_3", type="function",
+                             function=SimpleNamespace(name="search_docs",
+                                                      arguments="{bad json"))
+    llm = FakeLLMProvider([
+        reply("tool_calls", tool_calls=[
+            make_tool_call("tc_1", "search_docs", {"query": "q"})]),
+        reply("tool_calls", tool_calls=[
+            make_tool_call("tc_2", "zzz_unknown_tool", {}), broken]),
+        reply("stop", content="done"),
+    ])
+    agent = AgentLoop(llm, tools=tools)
+    agent.run("q")
+
+    first, second = agent.last_trace["turns"][:2]
+    assert first["tool_calls"][0]["sources"] == ["secret/plan.md"]
+    assert [c["sources"] for c in second["tool_calls"]] == [[], []], (
+        "a call that never ran reported another call's citations")

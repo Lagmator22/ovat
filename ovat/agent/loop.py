@@ -337,6 +337,12 @@ class AgentLoop:
                 name = call.function.name
                 args = _parse_args(call.function.arguments)
                 tool_started = time.monotonic()
+                # Cleared per CALL. _execute only sets it on paths where a
+                # tool actually ran, so a call that never did -- broken JSON,
+                # or a tool that does not exist -- otherwise reported the
+                # PREVIOUS call's sources, and `ovat run` printed those as the
+                # citations for this answer.
+                self._last_sources = []
                 if args is None:
                     # Broken JSON from the model: report it AS the tool result
                     # so the model reads its own mistake and can retry.
@@ -351,7 +357,7 @@ class AgentLoop:
                     "result_chars": len(result),
                     # So a caller can cite sources without relying on the
                     # model to have repeated them in its prose.
-                    "sources": getattr(self, "_last_sources", []),
+                    "sources": self._last_sources,
                 })
                 self.session.add_tool_result(call.id, result)
 
