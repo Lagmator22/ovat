@@ -500,3 +500,40 @@ def test_a_failed_call_never_inherits_the_previous_calls_sources():
     assert first["tool_calls"][0]["sources"] == ["secret/plan.md"]
     assert [c["sources"] for c in second["tool_calls"]] == [[], []], (
         "a call that never ran reported another call's citations")
+
+
+def test_a_fuzzy_matched_call_is_traced_under_the_tool_that_ran():
+    """979e8f8 lets a near-miss name ("search") run the closest real tool
+    ("search_docs"). The trace kept the name the model INVENTED, so --trace
+    and bench reported a call to a tool that does not exist while a
+    different one did the work. Record both: what ran, and what was asked."""
+    ran = []
+    tools = {"search_docs": {
+        "schema": {"type": "function", "function": {"name": "search_docs"}},
+        "function": lambda query, top_k=5: ran.append(query) or "hit"}}
+    llm = FakeLLMProvider([
+        reply("tool_calls", tool_calls=[
+            make_tool_call("tc_1", "search", {"query": "budget"})]),
+        reply("stop", content="done"),
+    ])
+    agent = AgentLoop(llm, tools=tools)
+    agent.run("q")
+
+    (call,) = agent.last_trace["turns"][0]["tool_calls"]
+    assert ran == ["budget"]                  # the near-miss really ran
+    assert call["name"] == "search_docs", "traced under a tool that does not exist"
+    assert call["requested"] == "search"      # and the slip is still visible
+
+
+def test_an_exact_name_carries_no_requested_field():
+    """Only a substitution is worth a second field; the normal case stays
+    the shape it always was."""
+    llm = FakeLLMProvider([
+        reply("tool_calls", tool_calls=[
+            make_tool_call("tc_1", "get_weather", {"city": "Oslo"})]),
+        reply("stop", content="done"),
+    ])
+    agent = AgentLoop(llm, tools=_weather_tool())
+    agent.run("q")
+    (call,) = agent.last_trace["turns"][0]["tool_calls"]
+    assert call["name"] == "get_weather" and "requested" not in call

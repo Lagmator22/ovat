@@ -126,6 +126,9 @@ class AgentLoop:
             matches = difflib.get_close_matches(name, self.tools.keys(), n=1, cutoff=0.6)
             if matches:
                 name = matches[0]
+                # So the trace can name the tool that RAN, not the near-miss
+                # the model wrote. See the trace entry in run().
+                self._last_ran = name
             else:
                 available = ", ".join(self.tools.keys())
                 return f"Error: tool '{name}' is not available. Available tools: {available}"
@@ -343,6 +346,7 @@ class AgentLoop:
                 # PREVIOUS call's sources, and `ovat run` printed those as the
                 # citations for this answer.
                 self._last_sources = []
+                self._last_ran = name
                 if args is None:
                     # Broken JSON from the model: report it AS the tool result
                     # so the model reads its own mistake and can retry.
@@ -350,15 +354,21 @@ class AgentLoop:
                               f"valid JSON: {call.function.arguments!r}")
                 else:
                     result = self._execute(name, args)
-                turn["tool_calls"].append({
-                    "name": name,
+                entry = {
+                    # The tool that actually ran. A fuzzy-matched near-miss
+                    # ("search" -> "search_docs") used to be traced under the
+                    # name the model invented, which no tool has.
+                    "name": self._last_ran,
                     "arguments": args,
                     "duration_s": round(time.monotonic() - tool_started, 3),
                     "result_chars": len(result),
                     # So a caller can cite sources without relying on the
                     # model to have repeated them in its prose.
                     "sources": self._last_sources,
-                })
+                }
+                if self._last_ran != name:
+                    entry["requested"] = name     # the slip stays visible
+                turn["tool_calls"].append(entry)
                 self.session.add_tool_result(call.id, result)
 
         # If I fall out of the loop I hit my safety cap without a final answer.
