@@ -1153,3 +1153,62 @@ def test_every_card_still_gets_its_widgets():
             assert plain.query(Digits)
             assert not plain.query(ProgressBar)
     asyncio.run(scenario())
+
+
+# A silent UT must not freeze the collector
+
+def _started_ut(monkeypatch, child_code):
+    """An IntelHardwareSource whose 'ut' is a real child running child_code."""
+    import subprocess
+    import sys
+
+    from ovat.telemetry import sources
+
+    real_popen = subprocess.Popen
+
+    def fake_popen(cmd, **kwargs):
+        return real_popen([sys.executable, "-c", child_code], **kwargs)
+
+    monkeypatch.setattr("ovat.telemetry.sources.subprocess.Popen", fake_popen)
+    source = sources.IntelHardwareSource()
+    source.binary = "ut"
+    monkeypatch.setattr("ovat.telemetry.sources.sys.platform", "win32")
+    source.start()
+    return source
+
+
+def test_a_silent_ut_does_not_block_sampling(monkeypatch):
+    """Continuous UT writes binary trace files and nothing on stdout -- the
+    source's own docstring says so. sample() called stdout.readline(), which
+    blocks until a line arrives, i.e. forever. Collector samples sources one
+    after another on ONE thread, so CPU, NPU and the KV cache all stopped
+    updating after the first tick on any machine with UT installed."""
+    import threading
+
+    source = _started_ut(monkeypatch, "import time; time.sleep(30)")
+    try:
+        finished = threading.Event()
+        threading.Thread(target=lambda: (source.sample(), finished.set()),
+                         daemon=True).start()
+        assert finished.wait(2), "sample() blocked on a silent profiler"
+    finally:
+        source.stop()
+
+
+def test_lines_ut_does_print_are_still_read(monkeypatch):
+    """Not blocking must not mean not reading."""
+    import time
+
+    source = _started_ut(
+        monkeypatch,
+        "import sys, time; print('NPU Utilization: 42.5'); "
+        "sys.stdout.flush(); time.sleep(30)")
+    try:
+        got = {}
+        deadline = time.monotonic() + 5
+        while not got and time.monotonic() < deadline:
+            got = source.sample()
+            time.sleep(0.05)
+        assert got == {"npu_utilization": 42.5}
+    finally:
+        source.stop()

@@ -6,11 +6,13 @@ takes down the run it is measuring has inverted its own purpose.
 """
 import json
 import os
+import queue
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 from ovat.telemetry.base import TelemetrySource
@@ -286,6 +288,8 @@ class IntelHardwareSource(TelemetrySource):
         self.collectors = collectors
         self._proc = None
         self._out_path = None
+        # Lines UT has printed, filled by a reader thread; see start().
+        self._lines: queue.Queue = queue.Queue()
 
     @property
     def unavailable(self) -> str | None:
@@ -319,6 +323,23 @@ class IntelHardwareSource(TelemetrySource):
         except Exception:
             # A profiler that cannot start must not stop the agent running.
             self._proc = None
+            return
+        # Read stdout on its OWN thread. sample() used to call readline()
+        # directly, and continuous UT prints nothing (it writes binary
+        # traces), so that call blocked forever -- and since the Collector
+        # samples every source in turn on one thread, CPU, NPU and the KV
+        # cache all froze after the first tick. Draining continuously also
+        # keeps a chatty UT from filling the pipe and stalling itself.
+        if self._proc.stdout is not None:
+            threading.Thread(target=self._pump, args=(self._proc.stdout,),
+                             daemon=True, name="ovat-ut-reader").start()
+
+    def _pump(self, stream) -> None:
+        try:
+            for line in stream:
+                self._lines.put(line)
+        except (OSError, ValueError):
+            pass                  # the pipe closed under us: stop() ran
 
     def sample(self) -> dict:
         """One snapshot of whatever UT has emitted since the last read.
@@ -334,19 +355,25 @@ class IntelHardwareSource(TelemetrySource):
         is skipped rather than raised, because a malformed frame is a missing
         reading and not a reason to lose the run.
         """
-        if self._proc is None or self._proc.stdout is None:
+        if self._proc is None:
             return {}
-        line = self._proc.stdout.readline()
-        if not line:
-            return {}
-        line = line.strip()
-        if line and not line.startswith("{"):
-            return self._parse_text_line(line)
-        try:
-            frame = json.loads(line)
-        except ValueError:
-            return {}
-        return self._normalise(frame)
+        # Everything printed since the last tick, without waiting for more.
+        # Later lines win, so a metric reported twice shows its newest value.
+        out = {}
+        while True:
+            try:
+                line = self._lines.get_nowait().strip()
+            except queue.Empty:
+                return out
+            if not line:
+                continue
+            if not line.startswith("{"):
+                out.update(self._parse_text_line(line))
+                continue
+            try:
+                out.update(self._normalise(json.loads(line)))
+            except ValueError:
+                continue
 
     @staticmethod
     def _parse_text_line(line: str) -> dict:
