@@ -252,3 +252,38 @@ def test_doctor_says_nothing_about_tools_that_are_not_declared(tmp_path):
     labels = {c.name for c in run_checks(str(config))}
     assert "describe_image model" not in labels
     assert "transcribe model" not in labels
+
+
+def test_doctor_reads_a_tools_model_field_not_only_the_env_var(tmp_path,
+                                                                monkeypatch):
+    """e01881a moved a tool's model into workflow.yml, and the tool reads it
+    from there first. doctor was never told: it consulted only the env vars,
+    so a correct workflow got "OVAT_WHISPER_MODEL is not set" -- a warning
+    about the setting the change existed to replace -- and a wrong `model:`
+    path got the same generic warning instead of naming the field."""
+    from ovat.cli.diagnostics import check_config
+
+    monkeypatch.delenv("OVAT_WHISPER_MODEL", raising=False)
+    monkeypatch.delenv("OVAT_VLM_MODEL", raising=False)
+    present = tmp_path / "whisper"
+    present.mkdir()
+    config = tmp_path / "w.yml"
+
+    config.write_text(
+        "model:\n  name: m\n"
+        f"tools:\n  - name: transcribe\n    model: {present}\n",
+        encoding="utf-8")
+    (row,) = [c for c in check_config(str(config)) if c.name == "transcribe model"]
+    assert row.status == "ok", row.detail
+    assert str(present) in row.detail
+    assert "OVAT_WHISPER_MODEL" not in row.detail
+
+    missing = tmp_path / "nope"
+    config.write_text(
+        "model:\n  name: m\n"
+        f"tools:\n  - name: describe_image\n    model: {missing}\n",
+        encoding="utf-8")
+    (row,) = [c for c in check_config(str(config))
+              if c.name == "describe_image model"]
+    assert row.status == "warn"
+    assert str(missing) in row.detail and "model:" in row.detail
