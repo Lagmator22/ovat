@@ -20,7 +20,7 @@ from rich.progress import (BarColumn, Progress, SpinnerColumn,
                            TaskProgressColumn, TextColumn,
                            TimeRemainingColumn)
 
-from ovat.agent.factory import build_agent
+from ovat.agent.factory import build_agent, close_agent
 from ovat.cli import ui
 from ovat.cli.ui import console, esc
 from ovat.config.workflow import load_workflow
@@ -359,6 +359,12 @@ def run(
             rprint("        [cyan]request_timeout: 900[/cyan]")
             rprint("  CPU-only machines need this; a GPU rarely does. Lowering "
                    "[bold]agent.max_iterations[/bold] also shortens the turn.")
+        # The failure path used to raise straight out, past the telemetry
+        # stop, the trace and close_agent. The run that broke is the one
+        # whose trace you need, and a UT profiler or an MCP subprocess must
+        # not outlive the command that started it.
+        _close_out_run(cfg, agent, collector, telemetry, trace,
+                       memory.peak_mb, error=f"{type(exc).__name__}: {exc}")
         raise typer.Exit(code=1)
     # Reasoning models narrate before answering. The TUI folds that away; the
     # CLI printed it raw, so every answer from a Qwen3-family model arrived
@@ -415,11 +421,7 @@ def run(
         rprint(f"\n[dim]sources:[/dim] {esc(', '.join(sources))}",
                soft_wrap=True)
 
-    if collector is not None:
-        collector.stop()
-        rprint(f"[dim]telemetry written to[/dim] {esc(telemetry)}")
-    if trace:
-        _write_trace(trace, cfg, agent, peak_rss_mb=memory.peak_mb)
+    _close_out_run(cfg, agent, collector, telemetry, trace, memory.peak_mb)
 
     # LAST, after the answer, the sources, the telemetry and the trace have all
     # been written. The exit code is the only part of this a script can read,
@@ -427,6 +429,22 @@ def run(
     # must not cost the human the diagnostic output that explains it.
     if failed:
         raise typer.Exit(code=1)
+
+
+def _close_out_run(cfg, agent, collector, telemetry_path, trace_path,
+                   peak_rss_mb, error: str | None = None) -> None:
+    """Everything a run owes on its way out, whether it answered or not.
+
+    One function so the success path and the failure path cannot drift: the
+    failure path once skipped all three of these.
+    """
+    if collector is not None:
+        collector.stop()
+        rprint(f"[dim]telemetry written to[/dim] {esc(telemetry_path)}")
+    if trace_path:
+        _write_trace(trace_path, cfg, agent, peak_rss_mb=peak_rss_mb,
+                     error=error)
+    close_agent(agent)
 
 
 def _exit_is_a_folder(path: str):
@@ -626,7 +644,8 @@ def _brief_error(message: str | None, limit: int = 34) -> str:
     return text if len(text) <= limit else text[:limit - 1] + "\u2026"
 
 
-def _write_trace(path: str, cfg, agent, peak_rss_mb=None) -> None:
+def _write_trace(path: str, cfg, agent, peak_rss_mb=None,
+                 error: str | None = None) -> None:
     """Dump the run trace (Layer 7) as JSON: what the run cost, measured.
 
     The native loop fills agent.last_trace as it works. The framework engines
@@ -655,6 +674,10 @@ def _write_trace(path: str, cfg, agent, peak_rss_mb=None) -> None:
     trace_data = dict(trace_data)                  # never mutate the agent's copy
     trace_data["model"] = cfg.model.name
     trace_data["peak_rss_mb"] = peak_rss_mb
+    if error is not None:
+        # The run raised. Whatever turns completed before it did are above;
+        # this says how it ended.
+        trace_data["error"] = error
     with open(path, "w", encoding="utf-8") as f:
         json.dump(trace_data, f, indent=2)
     rprint(f"[dim]trace written to[/dim] {esc(path)}")

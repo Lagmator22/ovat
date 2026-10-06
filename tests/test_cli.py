@@ -1628,3 +1628,90 @@ def test_a_schema_error_still_names_its_fields(tmp_path):
     assert result.exit_code == 1
     assert "does not match the workflow schema" in result.output
     assert "nonsense_key" in result.output
+
+
+# A run that FAILS must still clean up after itself, and still leave its trace
+
+class _Server:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+def _failing_run(tmp_path, monkeypatch, *extra):
+    from ovat.cli import main as cli_main
+
+    server = _Server()
+
+    class Exploding:
+        tools, max_iterations = {}, 5
+        last_trace = {"engine": "native", "turns": [{"tool_calls": []}],
+                      "totals": {}}
+        mcp_servers = [server]
+
+        def run(self, text):
+            raise RuntimeError("model went away mid-run")
+
+    stopped = []
+
+    class FakeCollector:
+        def stop(self):
+            stopped.append(True)
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Exploding())
+    monkeypatch.setattr(cli_main, "_start_telemetry",
+                        lambda path, agent: FakeCollector())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    result = runner.invoke(app, ["run", str(config), "-i", "hi", *extra])
+    return result, server, stopped
+
+
+def test_a_failed_run_still_writes_its_trace(tmp_path, monkeypatch):
+    """The trace was written only on success, so the one run you most need
+    to inspect -- the one that broke -- left nothing behind."""
+    import json
+
+    trace = tmp_path / "trace.json"
+    result, _, _ = _failing_run(tmp_path, monkeypatch, "--trace", str(trace))
+    assert result.exit_code == 1
+    assert trace.exists(), "a failed run wrote no trace"
+    data = json.loads(trace.read_text(encoding="utf-8"))
+    assert "model went away" in data["error"]
+    assert data["turns"], "the turns that DID happen were dropped"
+
+
+def test_a_failed_run_stops_its_telemetry(tmp_path, monkeypatch):
+    """The collector owns a thread and, on an AI PC, a UT subprocess. The
+    failure path raised straight past collector.stop(), so the profiler
+    outlived `ovat run`."""
+    result, _, stopped = _failing_run(tmp_path, monkeypatch,
+                                      "--telemetry", str(tmp_path / "t.jsonl"))
+    assert result.exit_code == 1
+    assert stopped == [True]
+
+
+def test_every_run_closes_the_agents_mcp_servers(tmp_path, monkeypatch):
+    """close_agent existed and `ovat run` never called it, on either path;
+    the subprocesses lived until the interpreter's atexit hook."""
+    from ovat.cli import main as cli_main
+
+    result, server, _ = _failing_run(tmp_path, monkeypatch)
+    assert result.exit_code == 1 and server.closed, "failure path leaked it"
+
+    ok_server = _Server()
+
+    class Fine:
+        tools, max_iterations = {}, 5
+        last_trace = {"totals": {"failed": False}}
+        mcp_servers = [ok_server]
+
+        def run(self, text):
+            return "fine"
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Fine())
+    config = tmp_path / "w.yml"
+    result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+    assert result.exit_code == 0 and ok_server.closed, "success path leaked it"
