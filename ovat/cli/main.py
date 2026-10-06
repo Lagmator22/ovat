@@ -283,9 +283,14 @@ def run(
     # arriving as one clean sentence there. Errors are for users, and being
     # rude in one command out of three reads as a crash rather than as a
     # misconfiguration.
+    #
+    # ValueError too: the factory raises it for every CONFIG mistake -- an
+    # unknown builtin tool, an unknown engine, provider: genai on a framework
+    # engine. Catching RuntimeError alone meant one mistyped tool name printed
+    # a full traceback. TimeoutError is an mcp_stdio server that never came up.
     try:
         agent = build_agent(cfg, skip_rag=dry_run)
-    except RuntimeError as exc:
+    except (RuntimeError, ValueError, TimeoutError) as exc:
         rprint(f"[red]Could not build the agent:[/red] {esc(exc)}")
         raise typer.Exit(code=1)
 

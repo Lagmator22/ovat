@@ -1171,6 +1171,27 @@ def test_run_reports_a_build_failure_instead_of_tracebacking(tmp_path, monkeypat
     assert "models/nope" in flat            # the cause still reaches the user
 
 
+def test_a_mistyped_tool_name_is_a_sentence_not_a_traceback(tmp_path):
+    """The factory reports config mistakes as ValueError; only RuntimeError
+    was caught, so `tools: - name: serach_docs` -- one transposed letter --
+    put a full rich traceback on screen. Same for provider: genai with a
+    framework engine. Driven through the REAL factory, not a stub, because a
+    stub that raises RuntimeError is exactly what hid this."""
+    for body, cause in (
+            ("tools:\n  - name: serach_docs\n", "serach_docs"),
+            ("  provider: genai\nagent:\n  type: react\n", "genai")):
+        config = tmp_path / "w.yml"
+        config.write_text("model:\n  name: m\n" + body, encoding="utf-8")
+        result = runner.invoke(app, ["run", str(config), "--dry-run"])
+        assert result.exit_code == 1, result.output
+        assert result.exception is None or isinstance(result.exception,
+                                                       SystemExit), \
+            f"{type(result.exception).__name__} escaped as a traceback"
+        flat = " ".join(result.output.split())
+        assert "Could not build the agent" in flat
+        assert cause in flat
+
+
 def test_dry_run_reports_a_build_failure_the_same_way(tmp_path, monkeypatch):
     """--dry-run builds too, so it needs the same courtesy."""
     from ovat.cli import main as cli_main
