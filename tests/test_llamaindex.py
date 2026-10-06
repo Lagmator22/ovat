@@ -81,7 +81,7 @@ def test_the_adapter_presents_the_same_face_as_the_native_loop():
     tools, _ = _tools()
 
     class FakeAgent:
-        async def run(self, message, chat_history=None):
+        async def run(self, message, chat_history=None, **kwargs):
             return f"answered: {message}"
 
     agent = LlamaIndexAgent(FakeAgent(), tools, max_iterations=7,
@@ -104,7 +104,7 @@ def test_a_response_object_is_reduced_to_its_text():
             return "Response(blocks=[...], tool_calls=[...])"
 
     class FakeAgent:
-        async def run(self, message, chat_history=None):
+        async def run(self, message, chat_history=None, **kwargs):
             return Response()
 
     agent = LlamaIndexAgent(FakeAgent(), tools, 5, None)
@@ -120,7 +120,7 @@ def test_running_inside_an_event_loop_is_refused_not_worked_around():
     tools, _ = _tools()
 
     class FakeAgent:
-        async def run(self, message, chat_history=None):
+        async def run(self, message, chat_history=None, **kwargs):
             return "never reached"
 
     agent = LlamaIndexAgent(FakeAgent(), tools, 5, None)
@@ -170,7 +170,7 @@ def test_the_role_prefix_is_stripped_from_the_answer():
         response = "assistant: the real answer"
 
     class FakeAgent:
-        async def run(self, message, chat_history=None):
+        async def run(self, message, chat_history=None, **kwargs):
             return Response()
 
     agent = LlamaIndexAgent(FakeAgent(), tools, 5, None)
@@ -185,7 +185,7 @@ def test_an_answer_that_merely_mentions_assistant_is_untouched():
         response = "The assistant: pattern is common in chat formats."
 
     class FakeAgent:
-        async def run(self, message, chat_history=None):
+        async def run(self, message, chat_history=None, **kwargs):
             return Response()
 
     agent = LlamaIndexAgent(FakeAgent(), tools, 5, None)
@@ -204,7 +204,7 @@ def test_the_llamaindex_engine_remembers_earlier_turns():
         response = "an answer"
 
     class SpyAgent:
-        async def run(self, message, chat_history=None):
+        async def run(self, message, chat_history=None, **kwargs):
             seen.append(len(chat_history or []))
             return Response()
 
@@ -224,7 +224,7 @@ def test_the_history_handed_over_is_a_copy():
         response = "answer"
 
     class GreedyAgent:
-        async def run(self, message, chat_history=None):
+        async def run(self, message, chat_history=None, **kwargs):
             chat_history.append("junk the workflow added")
             return Response()
 
@@ -237,7 +237,7 @@ def test_a_failed_llamaindex_run_does_not_poison_the_next():
     tools, _ = _tools()
 
     class Boom:
-        async def run(self, message, chat_history=None):
+        async def run(self, message, chat_history=None, **kwargs):
             raise RuntimeError("model died")
 
     agent = LlamaIndexAgent(Boom(), tools, 5, None)
@@ -246,3 +246,60 @@ def test_a_failed_llamaindex_run_does_not_poison_the_next():
     except RuntimeError:
         pass
     assert agent._history == []
+
+
+# The step cap: agent.max_iterations must reach LlamaIndex, and its overrun
+# must read like every other engine's
+
+def test_the_configured_step_cap_reaches_llamaindex():
+    """FunctionAgent.run takes max_iterations and defaults it to 20. OVAT
+    never passed it, so `agent.max_iterations: 3` was silently ignored on
+    this engine alone -- a runaway ran 20 rounds here and 3 everywhere else."""
+    tools, _ = _tools()
+    seen = {}
+
+    class Response:
+        response = "answer"
+
+    class SpyAgent:
+        async def run(self, message, chat_history=None, **kwargs):
+            seen.update(kwargs)
+            return Response()
+
+    LlamaIndexAgent(SpyAgent(), tools, max_iterations=3,
+                    system_prompt=None).run("q")
+    assert seen.get("max_iterations") == 3
+
+
+def test_hitting_the_llamaindex_cap_reads_like_the_native_loop():
+    """LlamaIndex raises WorkflowRuntimeError("Max iterations of N reached!
+    ...") at its cap. Uncaught, `ovat run` reported it as "Error talking to
+    OVMS" -- blaming a server that was fine."""
+    from llama_index.core.workflow.errors import WorkflowRuntimeError
+
+    tools, _ = _tools()
+
+    class Capped:
+        async def run(self, message, chat_history=None, **kwargs):
+            raise WorkflowRuntimeError(
+                f"Max iterations of {kwargs['max_iterations']} reached! "
+                "Either something went wrong, or you can increase it.")
+
+    agent = LlamaIndexAgent(Capped(), tools, max_iterations=3,
+                            system_prompt=None)
+    assert agent.run("q") == ("Error: I reached my max of 3 steps without a "
+                              "final answer.")
+    assert agent._history == []          # a failed run poisons nothing
+
+
+def test_an_unrelated_workflow_error_is_not_dressed_up_as_the_cap():
+    from llama_index.core.workflow.errors import WorkflowRuntimeError
+
+    tools, _ = _tools()
+
+    class Broken:
+        async def run(self, message, chat_history=None, **kwargs):
+            raise WorkflowRuntimeError("step exploded")
+
+    with pytest.raises(WorkflowRuntimeError, match="step exploded"):
+        LlamaIndexAgent(Broken(), tools, 3, None).run("q")
