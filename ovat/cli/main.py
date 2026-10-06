@@ -667,7 +667,8 @@ def resolve_chat_model(model_path: str | None,
        about tensor ports; now it is one plain sentence and a suggestion.
     Raises typer.Exit(1) after printing guidance when nothing usable exists.
     """
-    from ovat.core.model_scout import find_models, identify_model, pick_chat_llm
+    from ovat.core.model_scout import (CHAT_KINDS, find_models,
+                                       identify_model, pick_chat_llm)
 
     if model_path is None:
         choice, llms = pick_chat_llm(extra_roots)
@@ -695,7 +696,7 @@ def resolve_chat_model(model_path: str | None,
     kind, why = identify_model(model_path)
     # "unified" is a text LLM that also takes images (Qwen3.5); refusing it
     # would reject the model the quickstart itself recommends.
-    if kind in ("llm", "unified", "unknown"):   # unknown = benefit of the doubt
+    if kind in CHAT_KINDS:
         return model_path
     rprint(f"[red]{esc(os.path.basename(model_path.rstrip('/')))} is not a text "
            f"LLM[/red] [dim]({esc(why)})[/dim]; chat needs a text model.")

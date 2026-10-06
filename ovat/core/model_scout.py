@@ -48,6 +48,13 @@ _UNIFIED_TYPES = {"qwen3_5", "qwen3_5_text", "qwen3_6"}
 # models to do what one already does.
 _KIND_ALIASES = {"llm": {"llm", "unified"}, "vlm": {"vlm", "unified"}}
 
+# The kinds a text chat may load. ONE answer, read by both `ovat chat` and the
+# TUI's /chat. They each kept their own list once, and the TUI's never learned
+# about "unified", so it refused the very Qwen3.5 model it had auto-detected.
+# "unknown" gets the benefit of the doubt: an unclassifiable folder may well be
+# a text model, and refusing it would be a guess presented as a fact.
+CHAT_KINDS = ("llm", "unified", "unknown")
+
 
 def _is_unified_multimodal(model_type: str, architectures: list[str]) -> bool:
     """Is this vision-layout export ALSO usable as a plain text LLM?

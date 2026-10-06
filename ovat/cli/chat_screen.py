@@ -250,7 +250,7 @@ def _build_components(config_path: str, model_path: str,
     """
     from ovat.agent.factory import build_rag
     from ovat.config.workflow import load_workflow
-    from ovat.core.model_scout import identify_model, pick_chat_llm
+    from ovat.core.model_scout import CHAT_KINDS, identify_model, pick_chat_llm
     from ovat.providers.llm_genai import GenAILLMProvider
 
     cfg = load_workflow(config_path)
@@ -262,7 +262,7 @@ def _build_components(config_path: str, model_path: str,
     # used to load "fine" and then explode at generate time with a C++
     # traceback about tensor ports; now it is one readable sentence.
     kind, why = identify_model(model_path)
-    if kind not in ("llm", "unknown"):
+    if kind not in CHAT_KINDS:
         _, llms = pick_chat_llm()
         suggestion = (" Try: " + ", ".join(m["name"] for m in llms)
                       if llms else "")
