@@ -1187,7 +1187,19 @@ def setup(
         raise typer.Exit(code=1)
 
     rprint(f"[green]OVMS installed[/green] → {esc(binary)}")
-    rprint("[dim]No PATH change needed; OVAT looks here on its own.[/dim]")
+    # Only the DEFAULT root is one the locator searches. --dest used to get
+    # the same "looks here on its own" line, and the next `ovat serve` then
+    # reported OVMS as not installed.
+    if os.path.normcase(os.path.abspath(root)) == os.path.normcase(
+            os.path.abspath(ovms_installer.DEFAULT_ROOT)):
+        rprint("[dim]No PATH change needed; OVAT looks here on its own.[/dim]")
+    else:
+        setter = "set" if sys.platform == "win32" else "export"
+        rprint("[yellow]OVAT does not search this folder by itself.[/yellow] "
+               "Point it here with either:")
+        rprint(f"  workflow.yml →  [bold]model.ovms_binary: {esc(binary)}"
+               f"[/bold]")
+        rprint(f"  env var      →  [bold]{setter} OVAT_OVMS={esc(binary)}[/bold]")
     rprint("[dim]Check it with[/dim] [bold]ovat doctor[/bold]")
 
 

@@ -1715,3 +1715,25 @@ def test_every_run_closes_the_agents_mcp_servers(tmp_path, monkeypatch):
     config = tmp_path / "w.yml"
     result = runner.invoke(app, ["run", str(config), "-i", "hi"])
     assert result.exit_code == 0 and ok_server.closed, "success path leaked it"
+
+
+def test_setup_into_a_custom_folder_says_how_ovat_will_find_it(monkeypatch,
+                                                               tmp_path):
+    """`--dest` installs somewhere the locator never searches, and the command
+    still printed "No PATH change needed; OVAT looks here on its own" -- so
+    the very next `ovat serve` said OVMS was not installed."""
+    from ovat.core import ovms_installer
+
+    dest = tmp_path / "elsewhere"
+    monkeypatch.setattr(ovms_installer, "installed_binary", lambda root=None: None)
+    monkeypatch.setattr(ovms_installer, "install",
+                        lambda **kw: (str(dest / "ovms"), "installed"))
+    monkeypatch.setattr(ovms_installer, "asset_for_platform",
+                        lambda version=None: ("ovms_test.tar.gz", "file:///x"))
+    monkeypatch.setattr(ovms_installer, "linux_support_note", lambda: None)
+
+    result = runner.invoke(app, ["setup", "--yes", "--dest", str(dest)])
+    flat = " ".join(result.output.split())
+    assert result.exit_code == 0, result.output
+    assert "looks here on its own" not in flat
+    assert "OVAT_OVMS" in flat and "ovms_binary" in flat
