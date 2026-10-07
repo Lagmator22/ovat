@@ -432,6 +432,46 @@ def test_intel_ut_writes_into_a_scratch_folder_and_cleans_it_up(monkeypatch,
     assert not os.path.exists(out_dir), "the trace directory was left behind"
 
 
+def test_intel_ut_is_asked_to_collect_for_longer_than_one_second(monkeypatch,
+                                                                tmp_path):
+    """`--continuous` alone collects for UT's default duration, ONE second.
+
+    UT's own AGENTS.md: "-t <sec> ... Seconds to collect for system-wide
+    analysis when no -a is given (must be a positive integer)", default 1.
+    Measured on the AI PC: without -t, ut printed "UT EXAMPLE RUNNING FOR 1
+    SECOND(S)" and exited, so the hardware source died a second after start;
+    with -t 86400 it was still running and printing after 12 s.
+    """
+    from ovat.telemetry.sources import IntelHardwareSource
+
+    class FakeProc:
+        stdout = None
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            return 0
+
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakeProc()
+
+    monkeypatch.setattr("ovat.telemetry.sources.subprocess.Popen", fake_popen)
+    source = IntelHardwareSource()
+    source.binary = str(tmp_path / "ut")
+    monkeypatch.setattr("ovat.telemetry.sources.sys.platform", "win32")
+    source.start()
+    try:
+        cmd = captured["cmd"]
+        assert "-t" in cmd, "ut collects for one second without -t"
+        assert int(cmd[cmd.index("-t") + 1]) >= 3600
+    finally:
+        source.stop()
+
+
 def test_a_source_that_is_live_but_silent_is_reported():
     """Three states, not two: unavailable, live-and-producing, live-and-silent.
 

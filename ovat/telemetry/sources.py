@@ -192,6 +192,10 @@ _UT_KNOWN_DIRS = [
 ]
 
 
+#: How long ut is told to collect for (its -t); see IntelHardwareSource.start.
+UT_DURATION_S = 86400
+
+
 def find_ut(explicit: str | None = None) -> tuple:
     """Locate Intel UT. Returns (path or None, how it was found).
 
@@ -314,8 +318,16 @@ class IntelHardwareSource(TelemetrySource):
         # hardware source at startup on every run.
         self._out_path = tempfile.mkdtemp(prefix="ovat-ut-")
         try:
+            # -t, because --continuous alone collects for ut's DEFAULT
+            # duration: one second. UT's AGENTS.md documents -t as "Seconds to
+            # collect ... when no -a is given (must be a positive integer)",
+            # default 1. Measured on the AI PC: without it ut printed "UT
+            # EXAMPLE RUNNING FOR 1 SECOND(S)" and exited, so this source died
+            # a second after it started. One day is far longer than any run;
+            # stop() ends it sooner. No maximum is documented; 86400 is
+            # measured to work, nothing larger was tried.
             self._proc = subprocess.Popen(
-                [self.binary, "--continuous",
+                [self.binary, "--continuous", "-t", str(UT_DURATION_S),
                  "--enable", self.collectors,
                  "--sampling-interval", str(self.sampling_interval_ms)],
                 cwd=self._out_path,
