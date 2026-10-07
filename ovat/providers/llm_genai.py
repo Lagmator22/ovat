@@ -63,7 +63,20 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
         token; we forward the text and return False ("keep generating").
         The final return dict is identical either way.
         """
-        prompt = self._format(messages)
+        # A text LLM gets the conversation AS a conversation. LLMPipeline
+        # applies the model's chat template itself, so the old flattened
+        # "role: content" string was wrapped as ONE user message holding fake
+        # role labels -- verified by rendering it with a real tokenizer.
+        #
+        # A unified export still takes the flattened string inside
+        # start_chat(): that path is verified on the AI PC with Qwen3.5, and
+        # switching it is unverified until it is run there. Note the pipeline
+        # refuses to MIX the two input types on one instance ("Chat doesn't
+        # support switching between input types"), so each path keeps one.
+        prompt = (self._format(messages) if self.is_unified
+                  else ov_genai.ChatHistory(
+                      [{"role": m["role"], "content": str(m.get("content") or "")}
+                       for m in messages]))
         # Omitting the argument entirely is what "no cap" means to
         # openvino_genai; passing None would not be read as a number.
         limit = ({} if self.max_new_tokens is None
@@ -87,7 +100,7 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
             "raw": text,
         }
 
-    def _generate(self, prompt: str, **kwargs):
+    def _generate(self, prompt, **kwargs):
         """One generate call, with the chat session a unified model needs.
 
         VLMPipeline needs start_chat()/finish_chat() around generation so the
@@ -108,8 +121,9 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
     def _format(messages: list[dict]) -> str:
         """
         Flatten [{role, content}, ...] into one prompt string, then cue
-        the assistant to answer. (Simple for now; we can swap in 
-        the model's real chat template later and the chat() interface won't change.)
+        the assistant to answer. Used ONLY for unified exports now; a text
+        LLM gets a ChatHistory instead, so the model's own template sees the
+        real roles. See chat().
         """
         lines = [f"{m['role']}: {m['content']}" for m in messages] # make the string role: content, and collect them all into a list called lines.
         lines.append("assistant:") # add assistant prompt so the LLM knows to start generating a response.

@@ -386,3 +386,41 @@ def test_an_unrelated_error_is_passed_through_untouched():
     provider = OVMSLLMProvider(base_url="http://localhost:8000/v3", model="m")
     original = Exception("connection reset by peer")
     assert provider._explain(original) is original
+
+
+class _RecordingPipe(_FakePipe):
+    """Also records WHAT was asked, not only the generation kwargs."""
+
+    def __init__(self):
+        super().__init__()
+        self.inputs = []
+
+    def generate(self, inputs, **kwargs):
+        self.inputs.append(inputs)
+        return super().generate(inputs, **kwargs)
+
+
+def test_the_conversation_reaches_the_model_as_a_conversation(monkeypatch):
+    """_format flattened the messages into "role: content" lines and passed
+    ONE string, and LLMPipeline then applied the model's chat template on top.
+    Rendered with a real tokenizer (TinyLlama), the whole conversation --
+    system prompt included -- arrived as a single USER message full of fake
+    role labels, ending in a dangling "assistant:" inside that user turn.
+
+    A ChatHistory hands the pipeline the real roles, so the template it
+    applies is the one the model was trained on."""
+    pipe = _RecordingPipe()
+    monkeypatch.setattr(llm_genai.ov_genai, "LLMPipeline",
+                        lambda path, device: pipe)
+    provider = GenAILLMProvider("model-dir")
+    messages = [{"role": "system", "content": "be terse"},
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+                {"role": "user", "content": "again"}]
+    provider.chat(messages)
+
+    sent = pipe.inputs[-1]
+    assert isinstance(sent, llm_genai.ov_genai.ChatHistory), (
+        f"the model was sent a {type(sent).__name__}, not a conversation")
+    assert [(m["role"], m["content"]) for m in sent.get_messages()] == \
+        [(m["role"], m["content"]) for m in messages]
