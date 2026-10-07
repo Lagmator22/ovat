@@ -456,11 +456,26 @@ def _close_out_run(cfg, agent, collector, telemetry_path, trace_path,
     """
     if collector is not None:
         collector.stop()
-        rprint(f"[dim]telemetry written to[/dim] {esc(telemetry_path)}")
+        _report_telemetry_file(telemetry_path, collector.sink)
     if trace_path:
         _write_trace(trace_path, cfg, agent, peak_rss_mb=peak_rss_mb,
                      error=error)
     close_agent(agent)
+
+
+def _report_telemetry_file(path: str, sink) -> None:
+    """Say where telemetry went, or that it went nowhere.
+
+    The sink swallows write errors so a full disk cannot end a run, and both
+    telemetry commands then printed "written to" regardless: measured on the
+    AI PC, an --out into a missing folder wrote nothing and claimed success.
+    """
+    error = getattr(sink, "error", None)
+    if error:
+        rprint(f"[yellow]telemetry: could not write[/yellow] {esc(path)} "
+               f"[dim]({esc(error)})[/dim]")
+    else:
+        rprint(f"[dim]telemetry written to[/dim] {esc(path)}")
 
 
 def _exit_is_a_folder(path: str):
@@ -1470,7 +1485,8 @@ def telemetry(
                                         SystemSource)
 
     live = LiveBufferSink()
-    sink = FanOutSink(live, JSONFileSink(out)) if out else live
+    file_sink = JSONFileSink(out) if out else None
+    sink = FanOutSink(live, file_sink) if out else live
     # NPUSource before IntelHardwareSource: it reads the driver's own busy
     # counter and produces an actual percentage, where UT's continuous mode
     # writes binary traces that decode to nothing readable here.
@@ -1537,7 +1553,7 @@ def telemetry(
         _print_cache_type(cache_source)
         if out:
             sink.close()
-            rprint(f"[dim]telemetry written to[/dim] {esc(out)}")
+            _report_telemetry_file(out, file_sink)
 
 
 def _print_telemetry(sample: dict) -> None:

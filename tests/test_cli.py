@@ -1798,3 +1798,40 @@ def test_only_a_server_error_is_blamed_on_the_server(monkeypatch, tmp_path):
     result, flat = _run_raising(monkeypatch, tmp_path, refused)
     assert result.exit_code == 1
     assert "OVMS at http://localhost:8000/v3" in flat
+
+
+def test_telemetry_does_not_claim_a_file_it_could_not_write(tmp_path):
+    """Measured on the AI PC: --out into a folder that does not exist wrote
+    nothing and still printed "telemetry written to". JSONFileSink rightly
+    never raises mid-run, but the command must not then claim success."""
+    target = tmp_path / "missing" / "t.jsonl"
+    result = runner.invoke(app, ["telemetry", "--seconds", "0.3",
+                                 "--interval", "0.1", "--out", str(target)])
+    flat = " ".join(result.output.split())
+    assert not target.exists()
+    assert "telemetry written to" not in flat
+    assert "could not write" in flat
+
+
+def test_run_telemetry_does_not_claim_a_file_it_could_not_write(monkeypatch,
+                                                               tmp_path):
+    from ovat.cli import main as cli_main
+
+    class Agent:
+        tools, max_iterations = {}, 5
+        last_trace = {"totals": {"failed": False}}
+
+        def run(self, text):
+            import time
+            time.sleep(0.6)          # long enough for the collector to tick
+            return "ok"
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Agent())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    target = tmp_path / "missing" / "t.jsonl"
+    result = runner.invoke(app, ["run", str(config), "-i", "hi",
+                                 "--telemetry", str(target)])
+    flat = " ".join(result.output.split())
+    assert "telemetry written to" not in flat
+    assert "could not write" in flat
