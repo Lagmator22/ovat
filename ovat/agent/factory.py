@@ -125,16 +125,9 @@ def build_retriever(config: WorkflowConfig,
     embedder and exercise the whole store without loading a real model.
     """
     if config.rag is None:
-        # A real exception with a real message, not `assert`. An AssertionError
-        # carries no text -- str(AssertionError()) is "" -- and every caller
-        # wraps this in `except Exception`, so an assert here reaches the user
-        # as "Could not build the retriever: " with nothing after the colon.
-        # That is worse than the traceback it was meant to prevent: a blank
-        # error tells you neither what happened nor what to do. Asserts are
-        # also stripped by `python -O`, so the guarantee evaporates in exactly
-        # the build where you would want it most.
+        # A real exception, not `assert`, for the reason build_embedder gives.
         raise ValueError(
-            "this workflow has no rag: section, so there is no embedder to "
+            "this workflow has no rag: section, so there is no retriever to "
             "build. Add one, or call build_rag(), which returns None here "
             "rather than raising.")
     ret = config.rag.retriever

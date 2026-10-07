@@ -46,8 +46,9 @@ def rag_chat(retriever: RetrieverProvider, llm: LLMProvider, question: str,
 
     history: optional prior turns ([{role, content}, ...]) slotted between the
     system prompt and this question, so a chat UI gets real conversation
-    memory while retrieval stays per-question. Capped to the last 8 turns so
-    a long chat cannot blow the model's context window.
+    memory while retrieval stays per-question. Capped to the last 8 messages
+    (four question-and-answer turns) so a long chat cannot blow the model's
+    context window.
     on_token: optional streaming callback, forwarded to providers that
     support it (GenAILLMProvider); None keeps the old single-shot call.
     """
