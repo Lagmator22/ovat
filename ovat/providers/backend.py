@@ -53,6 +53,7 @@ class LLMBackend:
     min_p: float | None = None
     presence_penalty: float | None = None
     seed: int | None = None
+    enable_thinking: bool | None = None
 
     @classmethod
     def from_config(cls, config: WorkflowConfig) -> "LLMBackend":
@@ -61,7 +62,8 @@ class LLMBackend:
         return cls(url=m.ovms_url, model=m.name, temperature=m.temperature,
                    timeout=m.request_timeout, max_tokens=m.max_tokens,
                    top_p=m.top_p, top_k=m.top_k, min_p=m.min_p,
-                   presence_penalty=m.presence_penalty, seed=m.seed)
+                   presence_penalty=m.presence_penalty, seed=m.seed,
+                   enable_thinking=m.enable_thinking)
 
     def openai_kwargs(self) -> dict:
         """Settings the OpenAI chat-completions API names itself.
@@ -79,5 +81,10 @@ class LLMBackend:
         They travel in the request body beside the standard ones, which is
         what every OpenAI-shaped client's `extra_body` is for.
         """
-        return {k: v for k, v in (("top_k", self.top_k),
+        body = {k: v for k, v in (("top_k", self.top_k),
                                   ("min_p", self.min_p)) if v is not None}
+        if self.enable_thinking is not None:
+            # OVMS hands these to the chat template engine.
+            body["chat_template_kwargs"] = {
+                "enable_thinking": self.enable_thinking}
+        return body

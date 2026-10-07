@@ -424,3 +424,40 @@ def test_the_conversation_reaches_the_model_as_a_conversation(monkeypatch):
         f"the model was sent a {type(sent).__name__}, not a conversation")
     assert [(m["role"], m["content"]) for m in sent.get_messages()] == \
         [(m["role"], m["content"]) for m in messages]
+
+
+def test_the_thinking_switch_reaches_the_local_model(monkeypatch):
+    """The local engine is where the cap ran out: /chat on the AI PC."""
+    pipe = _RecordingPipe()
+    monkeypatch.setattr(llm_genai.ov_genai, "LLMPipeline",
+                        lambda path, device: pipe)
+    GenAILLMProvider("model-dir", enable_thinking=False).chat(
+        [{"role": "user", "content": "hi"}])
+    assert pipe.inputs[-1].get_extra_context() == {"enable_thinking": False}
+
+
+def test_a_unified_model_gets_the_switch_too(tmp_path, monkeypatch):
+    """Qwen3.5 is the model the switch is FOR. Setting it moves the unified
+    path onto a ChatHistory as well; leaving it unset keeps that path exactly
+    as verified on the AI PC."""
+    vlm_pipe = _FakeVLMPipe()
+    vlm_pipe.inputs = []
+    original = vlm_pipe.generate
+
+    def generate(inputs, **kwargs):
+        vlm_pipe.inputs.append(inputs)
+        return original(inputs, **kwargs)
+
+    vlm_pipe.generate = generate
+    monkeypatch.setattr(llm_genai.ov_genai, "VLMPipeline",
+                        lambda path, device: vlm_pipe)
+    folder = _unified_export(tmp_path)
+
+    GenAILLMProvider(folder, enable_thinking=False).chat(
+        [{"role": "user", "content": "hi"}])
+    sent = vlm_pipe.inputs[-1]
+    assert isinstance(sent, llm_genai.ov_genai.ChatHistory)
+    assert sent.get_extra_context() == {"enable_thinking": False}
+
+    GenAILLMProvider(folder).chat([{"role": "user", "content": "hi"}])
+    assert isinstance(vlm_pipe.inputs[-1], str), "the verified path changed"

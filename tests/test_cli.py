@@ -370,7 +370,7 @@ def test_chat_max_tokens_zero_means_no_cap(monkeypatch):
     monkeypatch.setattr(rag_chat_mod, "rag_chat", lambda *a, **k: ("ok", []))
     monkeypatch.setattr(
         llm_genai, "GenAILLMProvider",
-        lambda path, device=None, max_new_tokens=None:
+        lambda path, device=None, max_new_tokens=None, **kw:
             built.update(max_new_tokens=max_new_tokens) or object())
 
     runner.invoke(app, ["chat", "examples/workflow.yml", "-i", "hi",
@@ -1835,3 +1835,40 @@ def test_run_telemetry_does_not_claim_a_file_it_could_not_write(monkeypatch,
     flat = " ".join(result.output.split())
     assert "telemetry written to" not in flat
     assert "could not write" in flat
+
+
+def test_the_thinking_switch_reaches_the_local_chat_model(monkeypatch, tmp_path):
+    """`ovat chat` and the TUI build their own GenAILLMProvider; the config
+    switch has to reach both, or it exists only on the OVMS path."""
+    from ovat.agent import factory, rag_chat as rag_chat_mod
+    from ovat.cli import chat_screen
+    from ovat.cli import main as cli_main
+    from ovat.providers import llm_genai
+
+    seen = []
+
+    class FakeRetriever:
+        def retrieve(self, query, top_k=5):
+            return []
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(cli_main, "resolve_chat_model", lambda p, roots=None: "m")
+    monkeypatch.setattr(factory, "build_rag", lambda cfg: FakeRetriever())
+    monkeypatch.setattr(rag_chat_mod, "rag_chat", lambda *a, **k: ("ok", []))
+    monkeypatch.setattr(llm_genai, "GenAILLMProvider",
+                        lambda path, **kw: seen.append(kw.get("enable_thinking")))
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n  enable_thinking: false\n"
+                      "rag:\n  retriever:\n    db_path: ':memory:'\n",
+                      encoding="utf-8")
+    runner.invoke(app, ["chat", str(config), "-i", "hi"])
+
+    monkeypatch.setattr(chat_screen, "identify_model", lambda p: ("llm", ""),
+                        raising=False)
+    import ovat.core.model_scout as scout
+    monkeypatch.setattr(scout, "identify_model", lambda p: ("llm", ""))
+    chat_screen._build_components(str(config), "m")
+
+    assert seen == [False, False], seen

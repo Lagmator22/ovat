@@ -815,7 +815,8 @@ def chat(
     try:
         # 0 -> None: the provider reads None as "no cap".
         llm = GenAILLMProvider(model_path, device=device,
-                               max_new_tokens=max_tokens or None)
+                               max_new_tokens=max_tokens or None,
+                               enable_thinking=cfg.model.enable_thinking)
     except Exception as exc:
         rprint(f"[red]Could not load the local model at "
                f"{esc(model_path)}:[/red] {esc(exc)}")

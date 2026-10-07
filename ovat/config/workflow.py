@@ -64,6 +64,13 @@ class ModelConfig(StrictModel):
     # reasoning_parser is for thinking models like the Qwen3 30B variant. It
     # stays None for normal models, which is why I default it to None.
     reasoning_parser: str | None = None
+    # Turn a thinking model's reasoning on or off, through the chat template's
+    # own `enable_thinking` switch (what the Qwen3.5 card documents). None
+    # leaves the template's default. Sent to OVMS as chat_template_kwargs and
+    # to openvino_genai as ChatHistory extra context. Measured on the AI PC:
+    # with thinking on, Qwen3.5 spent the whole 1024-token /chat budget on
+    # reasoning and the answer never started.
+    enable_thinking: bool | None = None
     # These two only matter for `ovat serve`, which starts OVMS for me. They
     # tell OVMS where to find (or download) the model. Without them, serve points
     # OVMS at a relative "models" folder with nothing in it, so it cannot start.

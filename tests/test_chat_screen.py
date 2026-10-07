@@ -274,7 +274,7 @@ def test_build_components_accepts_a_unified_model(tmp_path, monkeypatch):
     monkeypatch.setattr("ovat.agent.factory.build_rag", lambda c: FakeRetriever())
     monkeypatch.setattr(
         "ovat.providers.llm_genai.GenAILLMProvider",
-        lambda path, device="CPU", max_new_tokens=None: loaded.setdefault(
+        lambda path, device="CPU", max_new_tokens=None, **kw: loaded.setdefault(
             "path", path))
 
     chat_screen._build_components(str(cfg), str(unified))

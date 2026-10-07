@@ -38,6 +38,7 @@ Which model to run, where, and how to reach it.
 | `ovms_port` | integer | `8000` | - | Port `ovat serve` binds OVMS to. |
 | `tool_parser` | string \| null | `null` | - | How OVMS decodes tool calls. `qwen3coder` for Qwen3.5, `hermes3` for Qwen3. Derived from `name` when omitted. |
 | `reasoning_parser` | string \| null | `null` | - | For thinking models that emit a separate reasoning channel. |
+| `enable_thinking` | boolean \| null | `null` | - | Turn a thinking model's reasoning on or off via its chat template. Unset leaves the template's default. |
 | `source_model` | string \| null | `null` | - | Hugging Face id `ovat serve` downloads on first run. |
 | `model_repository_path` | string | `models` | - | Folder OVMS keeps its models in. |
 | `request_timeout` | float | `1200.0` | - | Cap on one HTTP request, in seconds. A CPU agent turn can genuinely take minutes. |

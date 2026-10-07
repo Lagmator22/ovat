@@ -658,3 +658,35 @@ def test_sampling_values_are_range_checked():
         with pytest.raises(ValidationError):
             WorkflowConfig(model={"name": "m", **bad})
     assert WorkflowConfig(model={"name": "m", "top_k": -1}).model.top_k == -1
+
+
+# --- enable_thinking ----------------------------------------------------------
+#
+# Measured on the AI PC: Qwen3.5's reasoning spent the whole 1024-token /chat
+# budget, so the answer was cut off before it began. The model card's switch
+# is chat_template_kwargs {"enable_thinking": false}; OVMS forwards it to the
+# template (docs/model_server_rest_api_chat.md) and openvino_genai takes the
+# same value as ChatHistory extra context.
+
+def test_the_thinking_switch_reaches_every_ovms_engine():
+    import pytest
+
+    cfg = WorkflowConfig(model={"name": "m", "enable_thinking": False})
+    expected = {"chat_template_kwargs": {"enable_thinking": False}}
+
+    assert _native_request(cfg)["extra_body"] == expected
+
+    from ovat.agent.langchain_agent import _build_chat_model
+    assert _build_chat_model(cfg).extra_body == expected
+
+    pytest.importorskip("llama_index.core")
+    from ovat.agent.llamaindex_agent import _build_llm
+    assert _build_llm(cfg).additional_kwargs["extra_body"] == expected
+
+    pytest.importorskip("agents")
+    from ovat.agent.openai_agents_agent import _model_settings
+    assert _model_settings(cfg).extra_body == expected
+
+
+def test_thinking_left_unset_sends_no_template_kwargs():
+    assert "extra_body" not in _native_request(WorkflowConfig(model={"name": "m"}))

@@ -271,7 +271,8 @@ def _build_components(config_path: str, model_path: str,
             f"LLM ({why}); chat needs a text model.{suggestion}"
         )
     retriever = build_rag(cfg)
-    llm = GenAILLMProvider(model_path, device="CPU", max_new_tokens=max_tokens)
+    llm = GenAILLMProvider(model_path, device="CPU", max_new_tokens=max_tokens,
+                           enable_thinking=cfg.model.enable_thinking)
     return cfg, retriever, llm
 
 

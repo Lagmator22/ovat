@@ -48,6 +48,9 @@ PURPOSE = {
                               "`name` when omitted.",
     ("model", "reasoning_parser"): "For thinking models that emit a separate "
                                    "reasoning channel.",
+    ("model", "enable_thinking"): "Turn a thinking model's reasoning on or "
+                                  "off via its chat template. Unset leaves "
+                                  "the template's default.",
     ("model", "source_model"): "Hugging Face id `ovat serve` downloads on "
                                "first run.",
     ("model", "model_repository_path"): "Folder OVMS keeps its models in.",
