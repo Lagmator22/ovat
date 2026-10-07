@@ -1630,6 +1630,10 @@ def bench(
         help="Comma-separated engines to compare."),
     out: str = typer.Option(None, "--out",
                             help="Write the full report as JSON to this file."),
+    repeat: int = typer.Option(1, "--repeat", min=1,
+                               help="Run every engine this many times and "
+                                    "report how many runs succeeded. Medians "
+                                    "are shown; --out keeps every run."),
 ):
     """Run one question through several engines and compare what each costs.
 
@@ -1649,14 +1653,19 @@ def bench(
         raise typer.Exit(code=1)
 
     rprint(f"[green]Benchmarking[/green] {esc(cfg.model.name)} at "
-           f"{esc(cfg.model.ovms_url)}  [dim]({len(names)} engines)[/dim]")
-    report = benchmark(cfg, input, names, config_path=config)
+           f"{esc(cfg.model.ovms_url)}  [dim]({len(names)} engines"
+           + (f" x {repeat} runs" if repeat > 1 else "") + ")[/dim]")
+    report = benchmark(cfg, input, names, config_path=config, repeat=repeat)
 
     table = Table(header_style=f"bold {ui.BLUE}", border_style=ui.BLUE,
                   box=box.ROUNDED)
     for column in ("Engine", "Build s", "Answer s", "Peak MB", "Prompt tok",
                    "Reply tok", "Tools"):
         table.add_column(column, no_wrap=True)
+    if repeat > 1:
+        # k/N: the number every A/B needs. A single run is a coin flip on a
+        # model that fails some of the time.
+        table.add_column("OK", no_wrap=True)
     table.add_column("Result", no_wrap=True)
     for row in report["results"]:
         # A dash, never a zero: "unknown" and "none" are different claims, and
@@ -1677,10 +1686,14 @@ def bench(
             status = Text("ok", style=f"bold {ui.GREEN}")
         else:
             status = Text(_brief_error(row["error"]), style=ui.RED)
-        table.add_row(Text(row["engine"], style=ui.CYAN), cell("build_s"),
-                      cell("latency_s"), cell("peak_rss_mb"),
-                      cell("prompt_tokens"), cell("completion_tokens"),
-                      cell("tool_calls"), status)
+        cells = [Text(row["engine"], style=ui.CYAN), cell("build_s"),
+                 cell("latency_s"), cell("peak_rss_mb"),
+                 cell("prompt_tokens"), cell("completion_tokens"),
+                 cell("tool_calls")]
+        if repeat > 1:
+            rate = f"{row['ok_runs']}/{row['runs']}"
+            cells.append(Text(rate, style=ui.GREEN if row["ok"] else ui.YELLOW))
+        table.add_row(*cells, status)
     console.print(table)
 
     if any(not r["ok"] for r in report["results"]) and not out:
