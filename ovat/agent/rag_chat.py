@@ -35,6 +35,22 @@ def build_context(hits: list) -> str:
     return "\n\n".join(blocks)
 
 
+def retrieval_query(question: str, history: list | None) -> str:
+    """What to search the index with: the new question, plus the previous one.
+
+    A follow-up like "And how is that number measured?" has no topic of its
+    own; "that number" lives in the turn before. Searched alone, it ranked the
+    token-count chunk first and the memory-budget chunk third, and the model
+    answered about token counts (measured on the AI PC, Qwen3-8B). Searched
+    with the previous question in front, the subject is back in the query.
+    Only the ONE previous question, so an old topic cannot keep steering
+    retrieval after the conversation has moved on.
+    """
+    previous = next((m.get("content") for m in reversed(history or [])
+                     if m.get("role") == "user" and m.get("content")), None)
+    return f"{previous}\n{question}" if previous else question
+
+
 def rag_chat(retriever: RetrieverProvider, llm: LLMProvider, question: str,
              top_k: int = 4, system_prompt: str | None = None,
              history: list | None = None, on_token=None) -> tuple:
@@ -46,13 +62,14 @@ def rag_chat(retriever: RetrieverProvider, llm: LLMProvider, question: str,
 
     history: optional prior turns ([{role, content}, ...]) slotted between the
     system prompt and this question, so a chat UI gets real conversation
-    memory while retrieval stays per-question. Capped to the last 8 messages
+    memory, and the previous question joins the retrieval query (see
+    retrieval_query). Capped to the last 8 messages
     (four question-and-answer turns) so a long chat cannot blow the model's
     context window.
     on_token: optional streaming callback, forwarded to providers that
     support it (GenAILLMProvider); None keeps the old single-shot call.
     """
-    hits = retriever.retrieve(question, top_k=top_k)
+    hits = retriever.retrieve(retrieval_query(question, history), top_k=top_k)
     context = build_context(hits)
     messages = [
         {"role": "system", "content": system_prompt or _DEFAULT_SYSTEM},
