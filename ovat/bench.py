@@ -222,27 +222,85 @@ def _run_isolated(config_path: str, engine: str, question: str,
             "completion_tokens": None, "tool_calls": None}
 
 
+def _median(rows: list, key: str):
+    """Median of a field over the rows that report it; None if none do.
+
+    Absent stays absent here too: an engine that never reports tokens gets
+    None, not a median of zeros.
+    """
+    import statistics
+
+    values = [r[key] for r in rows if r.get(key) is not None]
+    return round(statistics.median(values), 3) if values else None
+
+
+def _aggregate(engine: str, attempts: list) -> dict:
+    """Fold N runs of one engine into one row, keeping every attempt.
+
+    `ok` is True only when EVERY run succeeded: an engine that answers 2 runs
+    in 3 is the unreliable engine this exists to expose, not a passing one.
+    Medians rather than means, so one 150-second outlier (a full KV cache,
+    say) does not stand for the typical run.
+    """
+    from collections import Counter
+
+    good = [a for a in attempts if a["ok"]]
+    errors = Counter(a["error"] for a in attempts if not a["ok"])
+    return {
+        "engine": engine,
+        "ok": len(good) == len(attempts),
+        "ok_runs": len(good),
+        "runs": len(attempts),
+        # The commonest failure, which is what the table has room for; every
+        # attempt's own error is still in "attempts".
+        "error": errors.most_common(1)[0][0] if errors else None,
+        "answer": (good or attempts)[-1]["answer"],
+        "latency_s": _median(attempts, "latency_s"),
+        "build_s": _median(attempts, "build_s"),
+        "peak_rss_mb": _median(attempts, "peak_rss_mb"),
+        "prompt_tokens": _median(good, "prompt_tokens"),
+        "completion_tokens": _median(good, "completion_tokens"),
+        "tool_calls": _median(good, "tool_calls"),
+        "attempts": attempts,
+    }
+
+
 def benchmark(config, question: str, engines, build_agent=None,
-              config_path: str | None = None) -> dict:
+              config_path: str | None = None, repeat: int = 1) -> dict:
     """Run the question through each engine and return a report dict.
 
     With `config_path`, each engine is measured in its own process, which is
     the only way Peak MB is comparable between rows. Without it the engines
     share this process, which tests want (they inject a fake build_agent) and
     which is why the CLI always passes the path.
+
+    repeat > 1 runs every engine that many times, each in a fresh process
+    when isolated, and reports a success RATE. Measured on the AI PC, the
+    same prompt at temperature 0.0 called its tool 1 run in 5 on one engine
+    and 5 in 5 on another; a single run cannot tell those apart.
     """
-    if config_path is not None and build_agent is None:
-        rows = [_run_isolated(config_path, engine, question)
-                for engine in engines]
-    else:
-        rows = [benchmark_engine(config, engine, question,
-                                 build_agent=build_agent)
-                for engine in engines]
+    if repeat < 1:
+        raise ValueError("repeat must be at least 1")
+    isolated = config_path is not None and build_agent is None
+
+    def one(engine):
+        if isolated:
+            return _run_isolated(config_path, engine, question)
+        return benchmark_engine(config, engine, question,
+                                build_agent=build_agent)
+
+    rows = []
+    for engine in engines:
+        attempts = [one(engine) for _ in range(repeat)]
+        # A single run keeps the row shape it always had.
+        rows.append(attempts[0] if repeat == 1
+                    else _aggregate(engine, attempts))
     return {
         "model": config.model.name,
         "ovms_url": config.model.ovms_url,
         "question": question,
-        "isolated": config_path is not None and build_agent is None,
+        "isolated": isolated,
+        "repeat": repeat,
         "results": rows,
     }
 

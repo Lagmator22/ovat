@@ -388,3 +388,79 @@ def test_a_framework_engine_that_failed_is_not_scored_ok():
                            build_agent=lambda cfg: CappedAdapter())
     assert row["ok"] is False, "a capped run was scored as a success"
     assert "max of 3 steps" in (row["error"] or "")
+
+
+# --repeat: a success RATE, not one roll of the dice
+#
+# Measured on the AI PC: the same prompt, on a fresh server at temperature
+# 0.0, called its tool in 1 run of 5 on one engine and 5 of 5 on another.
+# One run per engine cannot tell those apart, and every A/B planned next
+# (sampling presets, guided generation, the thinking switch) needs the rate.
+
+class _Flaky:
+    """Fails every other run, like the C1 engine did."""
+
+    calls = 0
+
+    def __init__(self):
+        type(self).calls += 1
+        self._ok = type(self).calls % 2 == 1
+
+    def run(self, question):
+        if self._ok:
+            return "an answer"
+        return "Error: I reached my max of 3 steps without a final answer."
+
+    @property
+    def last_failed(self):
+        return not self._ok
+
+
+def test_repeat_reports_how_many_runs_succeeded():
+    _Flaky.calls = 0
+    report = benchmark(_config(), "q", ["native"], repeat=3,
+                       build_agent=lambda cfg: _Flaky())
+    (row,) = report["results"]
+    assert (row["ok_runs"], row["runs"]) == (2, 3)
+    assert row["ok"] is False, "a 2-of-3 engine is not a passing engine"
+    assert row["latency_s"] is not None
+    assert len(row["attempts"]) == 3          # every run kept for --out
+    assert report["repeat"] == 3
+
+
+def test_repeat_runs_each_engine_in_its_own_process_every_time(monkeypatch,
+                                                              tmp_path):
+    import ovat.bench as bench_mod
+
+    spawned = []
+
+    def fake_isolated(config_path, engine, question, timeout=None):
+        spawned.append(engine)
+        return {"engine": engine, "ok": True, "error": None, "answer": "a",
+                "latency_s": 1.0, "build_s": 0.1, "peak_rss_mb": 100.0,
+                "prompt_tokens": None, "completion_tokens": None,
+                "tool_calls": 1}
+
+    monkeypatch.setattr(bench_mod, "_run_isolated", fake_isolated)
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    result = runner.invoke(app, ["bench", str(config), "-i", "q",
+                                 "--engines", "native,react", "--repeat", "2"])
+    assert result.exit_code == 0, result.output
+    assert spawned == ["native", "native", "react", "react"]
+    assert "2/2" in result.output
+
+
+def test_a_single_run_still_looks_exactly_as_before():
+    report = benchmark(_config(), "q", ["native"],
+                       build_agent=lambda cfg: _Agent())
+    (row,) = report["results"]
+    assert row["ok"] is True and "attempts" not in row
+
+
+def test_repeat_must_be_at_least_one(tmp_path):
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    result = runner.invoke(app, ["bench", str(config), "-i", "q",
+                                 "--repeat", "0"])
+    assert result.exit_code != 0
