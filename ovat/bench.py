@@ -148,6 +148,11 @@ def benchmark_engine(config, engine: str, question: str,
         failure = ("the model asked for a tool but the server could not decode "
                    "the request, so no tool ran. Usually a tool_parser that "
                    "does not match the model.")
+    elif getattr(agent, "last_failed", False):
+        # A framework adapter that hit its cap or met a model error. Its
+        # answer is the failure sentence, which is not empty, so the
+        # says_nothing() fallback below scored it ok.
+        failure = row["answer"] or "the engine reported a failure."
     elif says_nothing(row.get("answer") or ""):
         # Fallback for the three framework engines, which keep no trace at all:
         # there, an empty answer is the only evidence available.

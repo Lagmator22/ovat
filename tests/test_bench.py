@@ -372,3 +372,19 @@ def test_a_build_failure_is_a_row_not_a_crash():
     assert row["ok"] is False
     assert "models/nope" in (row["error"] or "")     # the cause survives
     assert row["engine"] == "native"                  # and it IS a row
+
+
+def test_a_framework_engine_that_failed_is_not_scored_ok():
+    """The framework adapters keep no trace, so bench's only fallback was
+    says_nothing() -- and a step-cap sentence is not empty. A capped
+    llamaindex row therefore scored ok next to engines that answered."""
+    class CappedAdapter:
+        last_failed = True
+
+        def run(self, question):
+            return "Error: I reached my max of 3 steps without a final answer."
+
+    row = benchmark_engine(_config(), "llamaindex", "q",
+                           build_agent=lambda cfg: CappedAdapter())
+    assert row["ok"] is False, "a capped run was scored as a success"
+    assert "max of 3 steps" in (row["error"] or "")
