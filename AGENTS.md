@@ -467,6 +467,25 @@ and a fake HOME, or they describe the developer's machine instead of the code.
     controls, both measured: NPU load -> 93.5%, and OVMS generating on the
     GPU with the NPU idle -> 0.0% while `engtype_neural` read 100.0%.
 
+- **Intel UT: two code comments were never measured, 2026-10-07.**
+  ut-tool-ext-v0.2.0-beta1.1 REJECTS `--continuous` with `--output` and exits
+  within a second, so the hardware source died at startup from dade76f on.
+  It now runs with its working directory set to a scratch folder instead.
+  And continuous mode DOES print text (`Metric: PKG-PWR | ... | Value: 1568.97
+  mJ`); the "prints nothing, writes binary traces" comments were inference.
+  Parsing that format needs one full captured line from the AI PC first.
+
+- **Knobs that exist and are NOT yet measured, 2026-10-07.** Researched from
+  OVMS's own docs and the Qwen3.5 model card, plumbed through, all OFF:
+  `model.ovms_tool_guided_generation` (OVMS `--enable_tool_guided_generation`,
+  XGrammar, in 2026.2.1), `model.enable_thinking`, and `top_p` / `top_k` /
+  `min_p` / `presence_penalty` / `seed`. The model card warns that greedy
+  decoding causes endless repetition, which is OVAT's `temperature: 0.0`
+  default. Decide defaults from `ovat bench --repeat N` on the AI PC, not from
+  the card. Also: OVMS auto parser detection landed in 2026.3.0 (PR #4312),
+  AFTER the "auto decodes nothing" measurement above; re-measure it on a
+  current OVMS before trusting either version of that claim.
+
 - **Nothing capped a generation, on any engine, until 2026-08-12.**
   `OVMSLLMProvider` defaulted `max_tokens` to None and omitted the key, and
   `ModelConfig` had no field for one, so a model that never emits a stop token
