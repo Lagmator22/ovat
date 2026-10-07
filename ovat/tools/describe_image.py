@@ -72,9 +72,16 @@ def describe_image_impl(image_path: str,
 
     Errors come back as readable strings, not exceptions; the agent loop
     hands them to the model, which can correct its call on the next turn.
+    A near-match substitution leads the result; see transcribe_impl.
     """
     from ovat.tools.fuzzy import resolve_path
-    image_path = resolve_path(image_path)
+    image_path, note = resolve_path(image_path)
+    result = _describe(image_path, prompt, provider, model, device)
+    return f"{note}\n{result}" if note else result
+
+
+def _describe(image_path: str, prompt: str, provider, model, device) -> str:
+    """describe_image_impl's body, once the path is settled."""
     if not os.path.isfile(image_path):
         return f"Error: I could not find an image file at: {image_path}"
     if provider is None:
