@@ -100,3 +100,76 @@ def test_unknown_tool_type_is_still_rejected():
                          tools=[{"name": "x", "type": "banana"}])
     with pytest.raises(ValueError, match="Unsupported tool type"):
         build_tools(cfg)
+
+
+# env: what an MCP server is allowed to see
+#
+# The mcp SDK starts a stdio server with only a short allowlist of the
+# parent's variables (HOME, LOGNAME, PATH, SHELL, TERM, USER on POSIX), on
+# purpose, so a third-party server does not inherit every secret in the
+# shell. OVAT's own servers read OVAT_WHISPER_MODEL, OVAT_VLM_MODEL and
+# friends, which therefore never arrived. The spec's answer is an explicit
+# per-server env, which is what tools[].env is.
+
+_ENV_SERVER = '''
+import os
+from fastmcp import FastMCP
+mcp = FastMCP("envprobe")
+
+@mcp.tool
+def getenv(name: str) -> str:
+    """Return one environment variable as this server sees it."""
+    return os.environ.get(name, "<unset>")
+
+mcp.run()
+'''
+
+
+def _env_tools(tmp_path, env=None):
+    script = tmp_path / "envprobe.py"
+    script.write_text(_ENV_SERVER, encoding="utf-8")
+    tool = {"name": "envprobe", "type": "mcp_stdio",
+            "command": [sys.executable, str(script)]}
+    if env is not None:
+        tool["env"] = env
+    servers = []
+    tools = build_tools(WorkflowConfig(model={"name": "m"}, tools=[tool]),
+                        servers=servers)
+    return tools["getenv"]["function"], servers
+
+
+def test_a_tool_env_reaches_the_mcp_server(tmp_path, monkeypatch):
+    monkeypatch.setenv("OVAT_TEST_SECRET", "from-the-shell")
+    getenv, servers = _env_tools(tmp_path, env={
+        "OVAT_WHISPER_MODEL": "models/whisper-base",
+        "EXPANDED": "${OVAT_TEST_SECRET}"})
+    try:
+        assert getenv(name="OVAT_WHISPER_MODEL") == "models/whisper-base"
+        # ${VAR} is expanded, so a secret can stay in the shell and out of
+        # the YAML file.
+        assert getenv(name="EXPANDED") == "from-the-shell"
+    finally:
+        for server in servers:
+            server.close()
+
+
+def test_without_env_the_parent_shell_still_does_not_leak(tmp_path,
+                                                         monkeypatch):
+    """The isolation is the point of the SDK's default; env opts in, it does
+    not switch the default off."""
+    monkeypatch.setenv("OVAT_TEST_SECRET", "from-the-shell")
+    getenv, servers = _env_tools(tmp_path)
+    try:
+        assert getenv(name="OVAT_TEST_SECRET") == "<unset>"
+    finally:
+        for server in servers:
+            server.close()
+
+
+def test_env_on_a_builtin_tool_is_a_config_error():
+    """A builtin runs in this process, so an env there would do nothing."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="mcp_stdio"):
+        WorkflowConfig(model={"name": "m"},
+                       tools=[{"name": "search_docs", "env": {"A": "b"}}])

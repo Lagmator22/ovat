@@ -282,7 +282,7 @@ def build_tools(config: WorkflowConfig,
                 )
             from ovat.tools.mcp_client import (MCPStdioServer,
                                                openai_schema_from_mcp_tool)
-            server = MCPStdioServer(tool_cfg.command)
+            server = MCPStdioServer(tool_cfg.command, env=tool_cfg.env)
             if servers is not None:
                 # Handed back so somebody owns the subprocess's lifetime.
                 servers.append(server)

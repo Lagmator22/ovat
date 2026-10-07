@@ -25,6 +25,7 @@ an event and the manager unwinds itself.
 """
 import asyncio
 import atexit
+import os
 import threading
 from contextlib import AsyncExitStack
 
@@ -32,11 +33,17 @@ from contextlib import AsyncExitStack
 class MCPStdioServer:
     """One MCP server subprocess + a live session, with a synchronous face."""
 
-    def __init__(self, command: list[str], connect_timeout: float = 30.0):
+    def __init__(self, command: list[str], connect_timeout: float = 30.0,
+                 env: dict | None = None):
         if not command:
             raise ValueError("mcp_stdio needs a command to launch, e.g. "
                              "[\"python\", \"-m\", \"ovat.tools.search_docs\"]")
         self.command = list(command)
+        # Added ON TOP of the SDK's safe allowlist, never instead of it: the
+        # SDK merges these over get_default_environment(). ${VAR} is expanded
+        # here so a secret can be named in the YAML without being written there.
+        self.env = ({k: os.path.expandvars(str(v)) for k, v in env.items()}
+                    if env else None)
         self.tools: list = []            # mcp Tool objects, filled on connect
         self._session = None
         self._error: BaseException | None = None
@@ -70,7 +77,8 @@ class MCPStdioServer:
         try:
             async with AsyncExitStack() as stack:
                 params = StdioServerParameters(command=self.command[0],
-                                               args=self.command[1:])
+                                               args=self.command[1:],
+                                               env=self.env)
                 read, write = await stack.enter_async_context(stdio_client(params))
                 session = await stack.enter_async_context(ClientSession(read, write))
                 await session.initialize()

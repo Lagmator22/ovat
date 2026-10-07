@@ -94,6 +94,9 @@ PURPOSE = {
                        "external MCP server.",
     ("tools", "command"): "Argv that launches the MCP server. Required when "
                           "`type: mcp_stdio`.",
+    ("tools", "env"): "Extra environment for an `mcp_stdio` server, which "
+                      "otherwise sees only HOME, PATH and a few more. "
+                      "`${VAR}` is expanded from your shell.",
     ("tools", "model"): "Where this tool's own weights live. `transcribe` and "
                         "`describe_image` only.",
     ("tools", "device"): "Device for this tool's model, separate from the "

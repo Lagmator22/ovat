@@ -64,6 +64,7 @@ One entry per tool. `tools:` is a LIST.
 | `name` | string | **required** | - | `search_docs`, `transcribe`, `describe_image`, or any tool an MCP server advertises. |
 | `type` | string | `builtin` | - | `builtin` runs in-process; `mcp_stdio` launches an external MCP server. |
 | `command` | list[string] \| null | `null` | - | Argv that launches the MCP server. Required when `type: mcp_stdio`. |
+| `env` | string \| string \| null | `null` | - | Extra environment for an `mcp_stdio` server, which otherwise sees only HOME, PATH and a few more. `${VAR}` is expanded from your shell. |
 | `model` | string \| null | `null` | - | Where this tool's own weights live. `transcribe` and `describe_image` only. |
 | `device` | string \| null | `null` | - | Device for this tool's model, separate from the agent's. Omit to let the device router choose. |
 
