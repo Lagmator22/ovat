@@ -103,7 +103,14 @@ def _model_settings(config: WorkflowConfig):
     from agents import ModelSettings
 
     b = LLMBackend.from_config(config)
-    return ModelSettings(temperature=b.temperature, max_tokens=b.max_tokens)
+    # ModelSettings has no `seed` field, so it travels in extra_body with the
+    # OVMS-only settings; OVMS reads it from the body either way.
+    kwargs = b.openai_kwargs()
+    extra = b.extra_body()
+    if "seed" in kwargs:
+        extra["seed"] = kwargs.pop("seed")
+    return ModelSettings(temperature=b.temperature, max_tokens=b.max_tokens,
+                         extra_body=extra or None, **kwargs)
 
 
 class OpenAIAgentsAgent:

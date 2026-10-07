@@ -43,6 +43,11 @@ Which model to run, where, and how to reach it.
 | `request_timeout` | float | `1200.0` | - | Cap on one HTTP request, in seconds. A CPU agent turn can genuinely take minutes. |
 | `temperature` | float | `0.0` | - | Sampling temperature, applied by every engine. `0.0` keeps tool calls well-formed. |
 | `max_tokens` | integer \| null | `4096` | > 0 | Ceiling on one reply. `null` is unbounded, which lets a model that never stops run until the client gives up. |
+| `top_p` | float \| null | `null` | > 0, <= 1 | Nucleus sampling cut-off. Unset sends nothing. The Qwen3.5 card suggests 0.8 without thinking. |
+| `top_k` | integer \| null | `null` | >= -1 | Sample from the k most likely tokens; `-1` for all. Unset sends nothing. |
+| `min_p` | float \| null | `null` | >= 0, <= 1 | Drop tokens below this fraction of the top token's probability. Unset sends nothing. |
+| `presence_penalty` | float \| null | `null` | >= -2, <= 2 | Discourages repetition. The Qwen3.5 card suggests 1.5 against endless loops. Unset sends nothing. |
+| `seed` | integer \| null | `null` | >= 0, <= 4294967295 | Fixed seed, so a sampled run repeats. Unset means a random seed. |
 | `enable_prefix_caching` | boolean | `true` | - | Reuse KV cache across turns sharing a prefix. A large multi-turn win. |
 | `ovms_binary` | string \| null | `null` | - | Where the `ovms` executable is. Rarely needed: `ovat setup` installs somewhere OVAT finds. |
 | `ovms_cache_size_gb` | integer \| null | `null` | > 0 | KV cache size in GB. Setting it also makes the cache **static** rather than dynamic. Whole numbers only. |

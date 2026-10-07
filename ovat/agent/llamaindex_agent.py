@@ -61,7 +61,13 @@ def _build_llm(config: WorkflowConfig):
     # One shared description of the connection, so this engine cannot drift
     # from the other three. See ovat/providers/backend.py.
     b = LLMBackend.from_config(config)
+    # additional_kwargs reach the OpenAI client's create() call unchanged,
+    # so the OVMS-only settings ride along as its extra_body.
+    additional = b.openai_kwargs()
+    if b.extra_body():
+        additional["extra_body"] = b.extra_body()
     return OpenAILike(
+        additional_kwargs=additional,
         model=b.model,
         api_base=b.url,
         api_key=b.api_key,

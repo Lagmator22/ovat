@@ -47,10 +47,37 @@ class LLMBackend:
     # field to be present, so it is part of the description rather than a
     # literal repeated at four call sites.
     api_key: str = "not-needed"
+    # Optional sampling settings; None means "do not send". See ModelConfig.
+    top_p: float | None = None
+    top_k: int | None = None
+    min_p: float | None = None
+    presence_penalty: float | None = None
+    seed: int | None = None
 
     @classmethod
     def from_config(cls, config: WorkflowConfig) -> "LLMBackend":
         """The one place the model: section becomes a connection."""
         m = config.model
         return cls(url=m.ovms_url, model=m.name, temperature=m.temperature,
-                   timeout=m.request_timeout, max_tokens=m.max_tokens)
+                   timeout=m.request_timeout, max_tokens=m.max_tokens,
+                   top_p=m.top_p, top_k=m.top_k, min_p=m.min_p,
+                   presence_penalty=m.presence_penalty, seed=m.seed)
+
+    def openai_kwargs(self) -> dict:
+        """Settings the OpenAI chat-completions API names itself.
+
+        Only the ones that are set: an unset value is left out entirely so
+        the server's default applies, rather than sent as null.
+        """
+        return {k: v for k, v in (("top_p", self.top_p),
+                                  ("presence_penalty", self.presence_penalty),
+                                  ("seed", self.seed)) if v is not None}
+
+    def extra_body(self) -> dict:
+        """Settings OVMS accepts that the OpenAI API does not name.
+
+        They travel in the request body beside the standard ones, which is
+        what every OpenAI-shaped client's `extra_body` is for.
+        """
+        return {k: v for k, v in (("top_k", self.top_k),
+                                  ("min_p", self.min_p)) if v is not None}

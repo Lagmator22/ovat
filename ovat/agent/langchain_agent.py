@@ -51,7 +51,8 @@ def _build_chat_model(config: WorkflowConfig):
     b = LLMBackend.from_config(config)
     return ChatOpenAI(base_url=b.url, api_key=b.api_key, model=b.model,
                       temperature=b.temperature, timeout=b.timeout,
-                      max_tokens=b.max_tokens)
+                      max_tokens=b.max_tokens, **b.openai_kwargs(),
+                      extra_body=b.extra_body() or None)
 
 
 class LangChainAgent:

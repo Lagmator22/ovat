@@ -126,6 +126,24 @@ class ModelConfig(StrictModel):
     # bounded reply that `finish_reason: "length"` labels honestly. Set it to
     # None to restore the old unbounded behaviour.
     max_tokens: int | None = Field(default=4096, gt=0)
+    # Sampling beyond temperature. Every one defaults to None, which means
+    # "do not send it", so OVMS's own defaults apply and no existing config
+    # changes behaviour.
+    #
+    # WHY THEY EXIST. The Qwen3.5 model card recommends presets built from
+    # these (non-thinking: temperature 0.7, top_p 0.8, top_k 20,
+    # presence_penalty 1.5) and warns that greedy decoding "can lead to
+    # performance degradation and endless repetitions" -- the runaway
+    # generations recorded in AGENTS.md. OVMS accepts all of them
+    # (docs/model_server_rest_api_chat.md). Which preset suits OVAT's agents
+    # is NOT yet measured, which is why nothing here is switched on.
+    #
+    # seed makes a sampled run repeatable, the job temperature 0.0 was doing.
+    top_p: float | None = Field(default=None, gt=0, le=1)
+    top_k: int | None = Field(default=None, ge=-1)     # -1 = all tokens
+    min_p: float | None = Field(default=None, ge=0, le=1)
+    presence_penalty: float | None = Field(default=None, ge=-2, le=2)
+    seed: int | None = Field(default=None, ge=0, le=4294967295)
     # Prefix caching reuses KV-cache across turns that share a prefix (the
     # whole conversation history does): a big multi-turn speedup. A knob
     # because not every OVMS build/device supports it; was hardcoded before.
@@ -204,6 +222,14 @@ class ModelConfig(StrictModel):
                          ("qwen3", "hermes3"),
                          ("qwen2", "hermes3"))
     _DEFAULT_TOOL_PARSER = "hermes3"
+
+    @model_validator(mode="after")
+    def _top_k_is_never_zero(self):
+        """OVMS reads -1 as "all tokens" and N >= 1 as a cut-off; 0 is
+        neither, and would silently mean whatever the server decides."""
+        if self.top_k == 0:
+            raise ValueError("top_k must be -1 (all tokens) or at least 1")
+        return self
 
     @model_validator(mode="after")
     def _derive_tool_parser(self):

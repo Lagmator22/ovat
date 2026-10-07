@@ -58,6 +58,17 @@ PURPOSE = {
     ("model", "max_tokens"): "Ceiling on one reply. `null` is unbounded, "
                              "which lets a model that never stops run until "
                              "the client gives up.",
+    ("model", "top_p"): "Nucleus sampling cut-off. Unset sends nothing. The "
+                        "Qwen3.5 card suggests 0.8 without thinking.",
+    ("model", "top_k"): "Sample from the k most likely tokens; `-1` for all. "
+                        "Unset sends nothing.",
+    ("model", "min_p"): "Drop tokens below this fraction of the top token's "
+                        "probability. Unset sends nothing.",
+    ("model", "presence_penalty"): "Discourages repetition. The Qwen3.5 card "
+                                   "suggests 1.5 against endless loops. Unset "
+                                   "sends nothing.",
+    ("model", "seed"): "Fixed seed, so a sampled run repeats. Unset means a "
+                       "random seed.",
     ("model", "enable_prefix_caching"): "Reuse KV cache across turns sharing "
                                         "a prefix. A large multi-turn win.",
     ("model", "ovms_binary"): "Where the `ovms` executable is. Rarely needed: "
