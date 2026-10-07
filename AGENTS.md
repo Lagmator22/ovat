@@ -1,11 +1,17 @@
 # AGENTS.md: read this before touching anything
 
 OVAT = OpenVINO Agentic Toolkit. GSoC 2026 project #18 (Intel/OpenVINO,
-mentors Freddy Chiu & Ravi Panchumarthy). Owner: Gurman (GitHub Lagmator22).
-Mission: "one YAML + one command." Turn tool-calling agent boilerplate into
-`ovat run workflow.yml --input "..."`, backed by OVMS on Intel AI PCs, with a
-local no-server path for dev machines. An agent toolkit for OpenVINO, plus an
+mentors Freddy Chiu and Ravi Panchumarthy). Owner: Gurman (GitHub
+Lagmator22). Mission: "one YAML + one command." Turn tool-calling agent
+boilerplate into `ovat run workflow.yml --input "..."`, backed by OVMS on
+Intel AI PCs, with a local no-server path for dev machines. Published on
+PyPI as `ovat` (pyproject says 1.0.9 at the time of writing), with an
 optional Claude-Code-style TUI.
+
+This file is the project's agent instructions for every coding agent.
+Claude Code (v2.1.277+) reads it directly, but ONLY while no `CLAUDE.md` or
+`CLAUDE.local.md` exists in the repo or above it. Do not create either one:
+the moment one exists, this file silently stops loading.
 
 ## The one flow to keep in your head
 
@@ -18,250 +24,279 @@ workflow.yml ──load_workflow()──> WorkflowConfig (pydantic, STRICT)
                    react          LangChain
                    llamaindex     LlamaIndex FunctionAgent
                    openai-agents  OpenAI Agents SDK
-                    └─> LLM says finish_reason: tool_calls ─> run tool ─> loop
-                        LLM says stop ─> answer (trace in agent.last_trace)
+                    └─> the reply carries tool_calls ─> run tool ─> loop
+                        the reply carries none ─> answer
+                        (trace in agent.last_trace; framework engines
+                         set agent.last_failed instead)
 ```
+
+The loop dispatches on the PAYLOAD (does the message carry tool calls), not
+on `finish_reason`, because OVMS's NPU path documents `finish_reason`
+as always `"stop"`.
 
 ## Map (each file, one line)
 
+### config, agent, providers
 - `ovat/config/workflow.py`: pydantic schema for workflow.yml. StrictModel
-  base: unknown keys are ERRORS. New fields need: schema + examples/ + README
-  table row + a test.
+  base: unknown keys are ERRORS. A new field needs: schema + a PURPOSE entry
+  in `scripts/gen_workflow_reference.py` + regenerate
+  `docs/workflow_yaml_reference.md` + examples/ if relevant + a test.
+  Also derives `tool_parser` from the model name (`_PARSER_BY_FAMILY`).
 - `ovat/agent/loop.py`: the native tool-calling loop + run trace (Layer 7).
-- `ovat/agent/factory.py`: config → wired agent. Tool registry lives here
-  (`BUILTIN_TOOL_SCHEMAS` + builders) and the `mcp_stdio` client hookup.
-- `ovat/agent/arg_models.py`: derives per-framework argument models from each
-  tool's SCHEMA. Pydantic only, no framework imports. EVERY engine derives
-  from here; a hand-kept second registry is how a tool ends up working on one
-  engine and crashing on another, which has happened once already.
-- `ovat/agent/langchain_agent.py`: same job via LangChain (`agent.type:
-  react`).
+  Flags `empty_answer`, `undecoded_tool_call`, `truncated` in the trace.
+- `ovat/agent/factory.py`: config -> wired agent. Tool registry
+  (`BUILTIN_TOOL_SCHEMAS` + builders), `mcp_stdio` hookup, `build_llm`,
+  `close_agent`.
+- `ovat/agent/arg_models.py`: derives per-framework argument models from
+  each tool's SCHEMA. Pydantic only, no framework imports. EVERY engine
+  derives from here; a hand-kept second registry is how a tool ended up
+  working on one engine and crashing on another.
+- `ovat/agent/langchain_agent.py`: `agent.type: react`.
 - `ovat/agent/llamaindex_agent.py`: `agent.type: llamaindex`. OpenAILike must
   have BOTH is_chat_model and is_function_calling_model set, or it calls an
-  endpoint OVMS does not serve / silently degrades to plain chat.
+  endpoint OVMS does not serve / silently degrades to plain chat. Passes
+  `max_iterations` to `run()` (LlamaIndex's own default is 20).
 - `ovat/agent/openai_agents_agent.py`: `agent.type: openai-agents`. Three
   things stop it phoning OpenAI instead of OVMS: an explicit AsyncOpenAI
   client on the /v3 base URL, OpenAIChatCompletionsModel (not the default
-  Responses model), and set_tracing_disabled(True). Do not remove any.
-- Both framework engines are async and own their event loop. They REFUSE to
-  run inside an existing one rather than nesting; do not "fix" that.
-- `ovat/agent/session.py`: conversation memory + JSON save/load (used by the
-  TUI chat screen's /save /load and autosave).
-- `ovat/agent/rag_chat.py`: local retrieve-then-answer (no tool calling);
-  supports `history` (last 8 turns) and `on_token` streaming (return True
-  from the callback to STOP generation, per openvino_genai's contract).
+  Responses model), and set_tracing_disabled(True). Do not remove any. A
+  made-up tool name (ModelBehaviorError) becomes a readable answer plus
+  `last_failed`, not a crash.
+- Both async framework engines own their event loop and REFUSE to run inside
+  an existing one rather than nesting; do not "fix" that.
+- `ovat/agent/session.py`: conversation memory + JSON save/load (TUI /save,
+  /load, autosave).
+- `ovat/agent/rag_chat.py`: local retrieve-then-answer, no tool calling;
+  `history` (last 8 messages) and `on_token` streaming (return True from the
+  callback to STOP, per openvino_genai's contract).
 - `ovat/providers/base.py`: the ABCs (LLM/Embeddings/Retriever/VLM).
-  Retriever has a default no-op `close()`.
-- `ovat/providers/llm_ovms.py`: OpenAI SDK → OVMS /v3; returns `usage`;
+- `ovat/providers/backend.py`: `LLMBackend`, ONE description of the OVMS
+  backend (url, model, timeout, sampling, `openai_kwargs()`, `extra_body()`)
+  that all four engines read. Four copies of the temperature drifted once;
+  new sampling knobs go here and nowhere else.
+- `ovat/providers/llm_ovms.py`: OpenAI SDK -> OVMS /v3; returns `usage`;
   bounded by `model.request_timeout` (NEVER remove the timeout).
-- `ovat/providers/llm_genai.py`: local openvino_genai LLM (no tool calls,
-  streams via `on_token`). `ovat chat` and the TUI chat screen use this.
-- `ovat/providers/embeddings_genai.py` / `embeddings_ovms.py`: text→vectors.
-- `ovat/providers/retriever_sqlitevec.py`: vector store; `check_same_thread=
-  False` (LangChain runs tools on a worker thread); close() is idempotent.
-- `ovat/providers/vlm_genai.py`: Qwen2-VL vision; reached via the
-  `describe_image` builtin tool.
-- `ovat/core/model_server.py`: OVMS lifecycle: start (logs to file, pidfile,
-  binary-dir prepended to child PATH), wait_until_ready, stop (terminate →
-  kill), `stop_from_pidfile` for `ovat serve --stop`.
-- `ovat/core/ovms_locator.py`: find the ovms binary: config `ovms_binary` →
-  `OVAT_OVMS` env → PATH → known unzip folders. Windows installs are NEVER
-  on PATH; this is why serve works anyway.
-- `ovat/core/model_scout.py`: find/identify local OpenVINO model folders
-  (llm/vlm/whisper/embeddings) from file layout + config.json. Powers chat
-  auto-detection and the "that's a vision model" refusals.
-- `ovat/core/device_manager.py`: CPU/GPU/NPU routing table; used by doctor
-  ("Device routing" row) and `ovat init` (writes the detected device).
+- `ovat/providers/llm_genai.py`: local openvino_genai LLM, no tool calls,
+  streams via `on_token`. Text models get an `ov_genai.ChatHistory`, so the
+  model's own chat template is applied; unified models keep the formatted
+  string unless `enable_thinking` is set. `ovat chat` and TUI `/chat`.
+- `ovat/providers/embeddings_genai.py` / `embeddings_ovms.py`: text->vectors.
+- `ovat/providers/retriever_sqlitevec.py`: the on-disk vector store;
+  `check_same_thread=False` (LangChain runs tools on a worker thread);
+  `k = ?` not `LIMIT ?` (see History, SQLite < 3.38); close() idempotent.
+- `ovat/providers/retriever_memory.py`: in-memory vector store, the second
+  Retriever implementation (proves the ABC is the right shape).
+- `ovat/providers/vlm_genai.py`: vision model, reached via `describe_image`.
+
+### core
+- `ovat/core/model_server.py`: OVMS lifecycle: build args, start (logs to
+  file, pidfile, `ovms_env()` for PATH / LD_LIBRARY_PATH), wait_until_ready
+  (a STALL budget, see Landmines), stop, `stop_from_pidfile`.
+- `ovat/core/ovms_locator.py`: find the ovms binary: config `ovms_binary` ->
+  `OVAT_OVMS` -> PATH -> known unzip folders. Windows installs are NEVER on
+  PATH; this is why serve works anyway.
+- `ovat/core/ovms_installer.py`: `ovat setup`. Picks and verifies the right
+  OVMS archive (never `python_off`, which cannot tool-call), extracts it
+  safely into a folder the locator searches. Pins `OVMS_VERSION = 2026.2.1`.
+- `ovat/core/model_scout.py`: find/identify local model folders (llm, vlm,
+  unified, whisper, embeddings) from file layout + config.json.
+  `CHAT_KINDS` is the one list of kinds a chat can use.
+- `ovat/core/device_manager.py`: CPU/GPU/NPU routing table (doctor, init).
 - `ovat/core/model_manager.py`: thin wrapper over `ovms --pull/--list_models`.
+
+### tools, rag, telemetry, top level
+- `ovat/tools/search_docs.py`, `transcribe.py`, `describe_image.py`: builtin
+  tools. Pattern: plain `*_impl()` (testable), co-located `SCHEMA` (THE
+  contract, carries defaults), FastMCP wrapper + `mcp.run()` under
+  `__main__` (standalone MCP server mode).
+- `ovat/tools/fuzzy.py`: a misspelt file path is swapped for the closest
+  existing file, BOUNDED (the named folder, or two levels under the cwd for
+  a bare name) and ANNOUNCED (a note leads the tool result).
+- `ovat/tools/mcp_client.py`: MCP stdio CLIENT (official `mcp` SDK). One
+  event-loop thread per server; connect/serve/unwind in ONE manager
+  coroutine (anyio cancel scopes must enter/exit in the same task). The SDK
+  passes the server only HOME/LOGNAME/PATH/SHELL/TERM/USER; `tools[].env`
+  adds more.
 - `ovat/rag/indexer.py`: chunk (+overlap) and index .txt/.md folders.
   `on_progress(done, total, path)` fires once per file, AFTER it is stored.
-- `ovat/bench.py`: `ovat bench` -- one question through several engines
-  against one server, side by side. Peak RSS is SAMPLED on a thread (a single
-  reading after the run misses the peak). A failing engine is a ROW, not a
+- `ovat/telemetry/base.py`: Layer 7 contracts, `TelemetrySource` (where a
+  number comes from) and `TelemetrySink` (where it goes). N+M, not N*M.
+- `ovat/telemetry/sources.py`: system, process memory, agent trace,
+  `NPUSource` (Linux sysfs / Windows PDH `_WindowsNPUCounter`),
+  `IntelHardwareSource` (Intel Unified Telemetry, `find_ut`), `OVMSLogSource`
+  (KV cache from ovms.log). None of them raises.
+- `ovat/telemetry/sinks.py`: `JSONFileSink` (keeps its first write `error`),
+  `LiveBufferSink`, `FanOutSink`. None of them raises.
+- `ovat/telemetry/collector.py`: ties sources to sinks on a clock; reports
+  `unavailable` and live-but-silent `notes` separately.
+- `ovat/bench.py`: `ovat bench`, one question through several engines, each
+  in a FRESH PROCESS (`python -m ovat.bench --worker`). `--repeat N` folds N
+  runs into a success rate with medians. A failing engine is a ROW, not a
   crash. `_PeakMemory` is reused by `ovat run --trace`.
-- `ovat/tools/search_docs.py`, `transcribe.py`, `describe_image.py`: builtin
-  tools. Pattern per tool: plain `*_impl()` (testable), co-located `SCHEMA`
-  (THE contract: carries defaults; LangChain derives from it), FastMCP
-  wrapper + `mcp.run()` under `__main__` (standalone MCP server mode).
-- `ovat/tools/mcp_client.py`: MCP stdio CLIENT (official `mcp` SDK). One
-  event-loop thread per server; connect/serve/unwind in ONE manager coroutine
-  (anyio cancel scopes must enter/exit in the same task; do not "fix" this
-  by closing from outside).
-- `ovat/cli/main.py`: every typer command. All printing via the ONE themed
-  console (`rprint = console.print`). `_load_config()` is the ONLY place
-  allowed to call `load_workflow`: it turns a missing file / bad YAML /
-  schema error into a sentence instead of a traceback. `_brief_error()`
-  keeps the ACTIONABLE fragment of a failure for the bench table.
+- `ovat/text.py`: reading model output (`strip_thinking`,
+  `looks_like_undecoded_tool_call`, `says_nothing`, `strip_code_fence`).
+  Top level because both agent/ and cli/ need it and neither may import the
+  other.
+
+### CLI and TUI
+- `ovat/cli/main.py`: all 11 typer commands: run, chat, index, init, models,
+  setup, serve, doctor, tui, telemetry, bench. All printing via the ONE
+  themed console (`rprint`). `_load_config()` is the ONLY place allowed to
+  call `load_workflow`. `_brief_error()` keeps the actionable fragment of a
+  failure for the bench table. "Error talking to OVMS" is printed only for
+  an `openai.APIError`.
 - `ovat/cli/ui.py`: PALETTE (single source of truth for ALL colors, CLI and
-  TUI), theme, `wordmark()` (FIGlet + gradient, graceful without pyfiglet).
-- `ovat/cli/diagnostics.py`: doctor's checks. Platform-aware: macOS gets
-  "OVMS does not run here", not "not on PATH".
-- TUI files (optional, installed via the `[tui]` extra): `ovat/cli/tui.py`
-  (launcher + masthead), `ovat/cli/shell.py` (subprocess exec layer + slash
-  TEMPLATES + \r progress sampling), `ovat/cli/chat_screen.py` (in-process
-  chat: streaming, history, sessions in `.ovat/sessions/`, `/engine` to swap
-  between the local genai model and OVMS-with-tools),
-  `ovat/cli/doctor_screen.py` (in-app doctor, DataTable),
-  `ovat/cli/widgets.py` (PasteInput, ChatInput, SelectableRichLog),
-  `ovat/cli/editing.py` (InputHistory + system clipboard read, no textual),
-  `ovat/cli/theme.py`, `ovat/cli/commands.py` (palette providers).
+  TUI), console theme, `wordmark()`.
+- `ovat/cli/diagnostics.py`: doctor's checks. Platform-aware (macOS gets
+  "OVMS does not run here", not "not on PATH").
+- TUI (the `[tui]` extra): `tui.py` (launcher + masthead), `shell.py`
+  (subprocess layer, slash TEMPLATES, \r progress sampling, process-tree
+  kill), `chat_screen.py` (in-process chat, streaming, sessions in
+  `.ovat/sessions/`, `/engine` local <-> OVMS), `doctor_screen.py`,
+  `telemetry_screen.py` (live numbers, Digits + TabbedContent),
+  `widgets.py` (PasteInput, ChatInput, SelectableRichLog), `editing.py`
+  (InputHistory + clipboard, no textual), `theme.py`, `commands.py`
+  (palette providers).
+
+### outside ovat/
+- `scripts/gen_workflow_reference.py`: generates
+  `docs/workflow_yaml_reference.md` from the schema. Never hand-edit the
+  generated file; a test fails when it is stale.
+- `docs/ARCHITECTURE.md` (layers 1-9, the design record the mentors asked
+  for), `docs/BLOG.md`, `examples/` (minimal, rag, react, audio-multimodal,
+  document-qa, document-qa-npu, plano).
+- `.github/workflows/tests.yml` (CI matrix, see History) and `publish.yml`
+  (PyPI, `workflow_dispatch` only).
 
 ## HARD RULES: breaking these is how you nuke the codebase
 
-1. **Branches**: everything lives on `main` now. The owner merged the TUI
-   via PR #4 on 2026-07-04, so main IS the full toolkit (CLI + TUI). The
-   old `week6-tui` branch is historical; do not develop on it. Never rebase
-   or force-push anything. The TUI's separability is enforced by rule 3
-   (the [tui] extra + isolation tests), not by branch topology anymore.
-2. **Never push.** The owner pushes via his own tooling. Commit locally only.
-3. **Isolation contract**: the CLI must fully work with NO TUI installed.
+1. **Git.** `main` is the trunk and the full toolkit (CLI + TUI). Work on a
+   feature branch, one branch per feature or fix group, and land it through
+   a PR. Never commit to or push `main` directly. Never rebase, never
+   force-push, never rewrite pushed history: a mistake in a pushed commit is
+   undone by a NEW commit. Stacked branches merge bottom-up with merge
+   commits (not squash), so the commits above keep their identity.
+2. **Push only when the owner asks**, and only feature branches. The AI PC
+   has no GitHub credential and no `gh`: commit there, report the hashes,
+   and the owner pushes.
+3. **Stage files by name.** Never `git add -A`, `git add .` or a whole
+   directory. The owner's tree holds untracked files of his own (scratch
+   scripts, downloaded samples, demo tooling); a broad add committed two of
+   them in Oct 2026. And remember git DELETES an untracked-on-target file
+   from disk when you check out a commit that no longer tracks it: back it
+   up first.
+4. **Isolation contract**: the CLI must fully work with NO TUI installed.
    `textual`/`pyfiglet` live in the `[tui]` extra only. Module-level
    `import textual` is allowed ONLY in: `tui.py`, `chat_screen.py`,
-   `doctor_screen.py`, `widgets.py`, `theme.py`, `commands.py`.
-   `tests/test_tui_isolation.py` enforces this: keep it passing.
-   The same applies to the framework engines: importing the CLI must pull in
-   none of langchain, llama_index, agents, textual, pyfiglet.
-4. **Single sources of truth**: colors → `ui.PALETTE` only; tool contracts →
-   the co-located `SCHEMA` dicts only (every engine derives via
-   `arg_models.py`); config validity → `workflow.py` (strict); config LOADING
-   → `main._load_config` only. Never create a parallel copy. Duplication is
-   how two copies drift: the chat header said "engine: local" after a switch
-   to OVMS for exactly this reason.
-5. **Tests gate everything.** Run `python -m pytest -q` with the venv's own
-   interpreter (`.venv/bin/python` on macOS, `.\.venv\Scripts\python.exe`
-   on the AI PC), never the system one. ~750 tests; must end green. Every fix
-   ships with a test, and that test must FAIL with the fix backed out: verify
-   it, do not assume. A test that passes against the broken code is worse
-   than none, and that has happened here more than once. One logical change
-   per commit, conventional message, body explains WHY.
-6. **Errors are for users**: tool/agent failures become readable strings the
-   model (or human) can act on, never bare tracebacks in the CLI/TUI path.
-7. Rollback tags exist: `v0.2.0-w5-6-midterm` (midterm), `pre-tui-repair`
-   (TUI before the big repair), `v0.2.0-w7-8-complete` (all four engines +
-   bench + sample agent). Cut a new tag before anything risky.
-8. The owner is a strong C++ dev but a Python beginner: explain changes in
-   plain language (C++ analogies land well). Default is that HE writes the
-   code with guidance; only write code for him when he explicitly asks.
+   `doctor_screen.py`, `telemetry_screen.py`, `widgets.py`, `theme.py`,
+   `commands.py`. `tests/test_tui_isolation.py` enforces this. The same
+   applies to the framework engines: importing the CLI must pull in none of
+   langchain, llama_index, agents, textual, pyfiglet.
+5. **Single sources of truth**: colors -> `ui.PALETTE`; tool contracts -> the
+   co-located `SCHEMA` dicts (every engine derives via `arg_models.py`);
+   backend settings -> `providers/backend.LLMBackend`; config validity ->
+   `workflow.py`; config LOADING -> `main._load_config`; model kinds a chat
+   accepts -> `model_scout.CHAT_KINDS`. Never create a parallel copy:
+   duplication is how the chat header said "engine: local" after a switch
+   to OVMS, and how /chat refused the Qwen3.5 model `ovat chat` accepted.
+6. **Tests gate everything.** Run `python -m pytest -q` with the venv's own
+   interpreter (`.venv/bin/python` on macOS, `.\.venv\Scripts\python.exe` on
+   the AI PC), never the system one. About 760 tests; must end green
+   (`-n auto` works, pytest-xdist is in `[dev]`). Every fix ships with a
+   test, and that test must FAIL with the fix backed out: verify it, do not
+   assume. A test that passes against the broken code is worse than none,
+   and that has happened here more than once. One logical change per
+   commit, conventional message, body explains WHY.
+7. **Errors are for users**: tool/agent failures become readable strings the
+   model (or human) can act on, never bare tracebacks in the CLI/TUI path. A
+   run that FAILED must still exit non-zero, write its trace, and clean up.
+8. **Public writing** (commits, PRs, docs, README) is under the owner's name:
+   no em dashes, no padded AI-voice paragraphs, and never a
+   `Co-Authored-By: Claude` trailer (it puts "claude" in GitHub's
+   Contributors panel and is near-impossible to remove).
 9. **Verify against the primary source before you claim or build.** Read the
-   official documentation or the project's own repository -- OVMS, OpenVINO,
-   Textual, huggingface_hub, plano -- BEFORE writing a claim into a doc or
-   writing code against someone else's behaviour. Not memory, not inference
-   from a related page, and not a plausible-sounding default.
-
-   Every one of these shipped because that step was skipped:
-   - `tool_parser: auto` was assumed to pick a parser. It picks none.
-   - "NPU cannot do tool calling" had no measurement behind it, was corrected
-     to "OVMS does not start on NPU", and that was wrong too. OVMS documents
-     NPU serving WITH tool calling, on this project's own silicon.
+   official docs or the project's own repository (OVMS, OpenVINO,
+   openvino_genai, Textual, the MCP SDK, the Agents SDK, plano) BEFORE
+   writing a claim into a doc or writing code against someone else's
+   behaviour. Not memory, not inference from a related page, not a
+   plausible-sounding default. Every one of these shipped because that step
+   was skipped:
+   - `tool_parser: auto` was assumed to pick a parser. On 2026.2.1 it picks
+     none.
+   - "NPU cannot do tool calling" was wrong twice. OVMS documents NPU
+     serving WITH tool calling, on this project's own silicon.
    - "agents are 90% plumbing" was a headline number with no source.
-   - `ovms_cache_size_gb` was typed float, so it rendered "1.0" and OVMS's
-     uint64 parser refused every value the setting ever had. One line of
-     OVMS's option reference would have caught it.
-   - a cursor bug was diagnosed twice from reasoning about Textual's source
-     and was wrong both times; printing what the widget actually held found it
-     in one line.
+   - `ovms_cache_size_gb` was typed float; OVMS's uint64 parser refused
+     every value. One line of OVMS's option reference would have caught it.
+   - "Intel UT continuous mode prints nothing" was inference. It prints
+     text; it was rejecting the flag combination OVAT passed.
+   - a cursor bug was diagnosed twice from reading Textual's source and was
+     wrong both times; printing what the widget held found it in one line.
 
-   When a fact cannot be sourced, say "not verified" in the text. That is a
-   finding, not a gap to smooth over -- and a measurement whose INTERPRETATION
-   is a guess must say which half is which. Prefer the upstream repo over a
-   docs site when the two might differ: the docs describe a release, the
-   source describes what runs.
+   When a fact cannot be sourced, write "not verified" in the text. A
+   measurement whose INTERPRETATION is a guess must say which half is which.
+   Prefer the upstream repo over a docs site when they might differ: the
+   docs describe a release, the source describes what runs.
+10. **Explain in plain language.** The owner is a strong C++ dev and a
+    Python beginner; C++ analogies land well. He decides who writes the
+    code: when he asks for fixes, write them; when he asks to learn, guide.
+11. **Rollback points**: tags `v0.2.0-w5-6-midterm`, `pre-tui-repair`,
+    `v0.2.0-w7-8-complete`, and the release tags `v1.0.0` to `v1.0.9`. Cut a
+    new tag before anything risky.
 
 ## Landmines: each of these cost a whole session once
 
-- **`tool_parser: auto` decodes NOTHING for Qwen3.5.** OVMS documents that it
-  picks a parser from the chat template when the flag is absent, so `auto`
-  looked like the safe default. Measured on live OVMS: it selected no parser
-  at all and returned the tool call as plain text, `finish_reason: "stop"`,
-  zero tool calls, the raw `<tool_call><function=...>` markup printed as the
-  answer. `qwen3coder` is the correct value for Qwen3.5, `hermes3` for Qwen3.
-  NAME one. The failure is silent -- the agent answers fluently and simply
-  never calls a tool -- so it survives every test that only checks for an
-  answer. Check for a CITATION, or a tool_calls count in the trace.
-- **A pipeline that CONSTRUCTS is not the right pipeline.** On a unified
-  Qwen3.5 export, `openvino_genai.LLMPipeline` builds fine, taking 24.6s, and
-  then dies on the first `generate()` with "Port for tensor name input_ids was
-  not found". `VLMPipeline` is the one that works. So never infer support from
-  a successful constructor; pick from the export's file layout instead (see
-  `model_scout.identify_model`).
-- **Never time-box a model download.** `wait_until_ready` had a fixed 120s cap
-  and could not survive a first run, which needs ~185s just to fetch
-  Qwen3.5-4B, and far longer on a slow link. Raising the number does not fix
-  the shape: download time is unbounded. It is a STALL budget now -- the clock
-  resets whenever the log or the model repository grows -- so a download that
-  keeps moving is never interrupted while a wedged server still fails fast.
-- **`ovat run --trace` peak RSS measures the CLIENT, not the model.** With
-  OVMS serving, the weights live in `ovms.exe`; the trace reports ~0.45 GB and
-  says nothing about the model. Measured truth for Qwen3.5-4B: 4.3 GB steady,
-  6.5 GB peak, read from the OVMS process. The trace IS the right number on
-  the local `ovat chat` path, where the model runs in-process.
-
 Do not "improve" any of these without reading the reason first.
 
-- **`#masthead` height stays 17.** At 18 the TUI HANGS at 80x24, a default
-  terminal size. Measured. The brand stack is exactly 15 rows and the round
-  border eats two, so it is an exact fit on purpose.
-- **`#brand-panel` is a COLUMN COUNT (42), never a percentage.** It holds
-  fixed-width FIGlet art. A mark wider than the panel does not clip, it WRAPS,
-  which shears the glyphs.
-- **No Tooltips anywhere.** Textual renders one as an unstyled block floating
-  over content, anchored to the pointer, wrapping mid-phrase. On a
-  full-screen app it covers the thing the user is reading. Tried, removed,
-  and the tests now assert none exist.
-- **No `priority=True` bindings on scrolling keys.** PageUp/PageDown/Home/End
-  with priority stole keys from the slash menu and modals and broke the chat
-  window. Scrolling already works.
-- **Never mix `stream.write()` and `response.update()` on one Markdown
-  widget.** MarkdownStream keeps its OWN record of what it wrote; update()
-  does not tell it, so the next write appends to a stale buffer and the
-  answer renders over itself with a broken border. Once the text reshapes,
-  retire the stream for that turn. Tags arrive SPLIT ACROSS TOKENS (`<th` then
-  `ink>`), so this fires near the start of most thinking-model answers.
-- **The trace's engine name comes from the config**, never a literal. It was
-  hardcoded "react" and started lying the moment a third engine existed.
-- **Absent is not zero.** Token counts, peak RSS, anything unknown stays
-  `None` and renders as a dash. A zero reads as "used no tokens" and a
-  benchmark built on it is quietly wrong, which is the worst kind.
-- **Peak RSS must be SAMPLED during a run.** A single reading afterwards
-  misses the peak: Python has already freed the big allocations.
-- **`find_models` walks TWO levels.** `ovms --pull` lays models out by org
-  (`models/OpenVINO/Qwen3-8B-int4-ov`); a one-level scan reported "no local
-  text LLM found" while the model sat right there.
-- **Textual already binds `ctrl+c,super+c` to `screen.copy_text`.** The app's
-  own priority ctrl+c shadows it on every screen, so the copy branch in
-  `action_cancel_or_quit` is what makes Ctrl-C copy a selection. Do not
-  declare a second `ctrl+p` either: Textual provides one and the Footer
-  showed "^p Palette" at BOTH ends.
-- **RichLog cannot extract selected text.** It is a line-API widget, so
-  Textual's generic `get_selection` returns None and the clipboard comes back
-  empty. `SelectableRichLog` implements it; use that class, not `RichLog`.
-
-- **Tool calls that stop decoding on a LONG-LIVED OVMS, not a fresh one.**
-  Measured 2026-08-12: 4/4 agent runs failed with `undecoded_tool_call: true`
-  and `tool_calls: 0` on an OVMS instance that had already served a bench and
-  several long runs, with its KV cache reported at 98-100% of 3.6 GB (it later
-  reached 5.8 GB, `ovms.exe` 10.6 GB RSS). Against a FRESHLY started server on
-  the same machine, same model, same `tool_parser: qwen3coder`, the identical
-  prompt decoded 17/17 -- 8 repeats plus 8 varied prompts including a
-  multi-round transcribe-and-summarise. Nothing in the decode path changed
-  between the two sessions.
-  So this is UNREPRODUCED, not fixed, and the suspect is server/cache state
-  rather than the parser. Do not close it on a clean-server pass. Before a
-  demo, restart OVMS; if it ever recurs, capture `--trace` AND the KV-cache
-  figures from `ovat telemetry` in the same window, because the trace alone
-  cannot distinguish a parser fault from an exhausted cache.
-
-  **The "98-100%" in that account does not mean what it looks like, 2026-08-12.**
-  Unset, OVMS allocates the KV cache DYNAMICALLY and it grows: measured here,
-  248.5 MB -> 5.6 GB over one session, at or near 100% of the current
-  allocation for 61.6% of all readings (2449/3975). So "it failed at 98-100%"
-  is a base rate, not a finding, and the 4/4-vs-17/17 split is not evidence of
-  a cache cause. A percentage only means "full" when the log says
-  `Cache type: static`, which happens only when `--cache_size` is passed.
-
-  **The controlled version of that experiment, 2026-08-12.** Same prompt, same
-  model, `tests/test_ovms_live.py::test_ovms_react_calls_a_tool_through_langchain`,
-  three runs per arm:
+### OVMS and models
+- **`tool_parser: auto` decoded NOTHING for Qwen3.5 on OVMS 2026.2.1.**
+  OVMS documents picking a parser from the chat template when the flag is
+  absent. Measured on live OVMS: it picked none and returned the call as
+  plain text, `finish_reason: "stop"`, zero tool calls, the raw
+  `<tool_call><function=...>` markup printed as the answer. `qwen3coder`
+  for Qwen3.5/3.6/Qwen3-Coder, `hermes3` for Qwen3; the other families in
+  `_PARSER_BY_FAMILY` are sourced from OVMS's own demos, not measured. NAME
+  one. The failure is silent: the agent answers fluently and never calls a
+  tool, so check for a CITATION or a tool_calls count in the trace. OVMS's
+  automatic detection was rewritten in 2026.3.0 (PR #4312), AFTER this
+  measurement: re-measure on a current OVMS before trusting either claim.
+- **A pipeline that CONSTRUCTS is not the right pipeline.** On a unified
+  Qwen3.5 export `openvino_genai.LLMPipeline` builds (24.6 s) and dies on
+  the first `generate()` with "Port for tensor name input_ids was not
+  found". `VLMPipeline` works. Pick from the export's file layout
+  (`model_scout.identify_model`), never from a successful constructor.
+- **One genai pipeline, one input type.** openvino_genai refuses to switch a
+  pipeline between a string and a ChatHistory ("Chat doesn't support
+  switching between input types"). Pick one per pipeline.
+- **Never time-box a model download.** A first run needs ~185 s just to
+  fetch Qwen3.5-4B, unbounded on a slow link. `wait_until_ready` uses a
+  STALL budget: the clock resets whenever the log or the model repository
+  grows.
+- **Nothing capped a generation until 2026-08-12.** A model that never
+  emits a stop token generated until the CLIENT gave up (1200 s for run,
+  600 s for a bench worker). Greedy decoding makes it likelier. Its
+  signature in `ovms.log`: the KV cache climbing for the whole run, 0.62 ->
+  3.6 GB in ~9 minutes on ONE request.
+  `model.max_tokens` defaults to 4096 now (real answers: 458-929 completion
+  tokens). The KV cache climbing monotonically through one request is the
+  SYMPTOM, not the cause. An earlier session read that arrow backwards and
+  blamed llamaindex for "inheriting a full cache because it runs third"; the
+  run that settled it had native fail FIRST while llamaindex passed in 33 s. A
+  reply cut at the ceiling mid-markup looks exactly like an undecoded tool
+  call: the loop tells them apart on `finish_reason: "length"` and reports
+  `truncated`. Do not let that error blame the parser or the cache.
+- **`ovms_cache_size_gb` is an int.** OVMS's `cache_size` is uint64 and its
+  parser rejects "1.0"; it exits before opening its log, so `serve` can
+  only say "exited without becoming ready". Read OVMS's stdout.
+- **Tool calls that stop decoding on a LONG-LIVED OVMS: UNREPRODUCED.**
+  2026-08-12: 4/4 runs failed `undecoded_tool_call` on a server that had
+  served a bench and long runs (KV cache later 5.8 GB, `ovms.exe` 10.6 GB
+  RSS); 17/17 passed on a fresh one, same model and parser. A percentage of the KV cache only means "full" when the log says
+  `Cache type: static` (only with `--cache_size`): unset, OVMS grows the
+  cache dynamically (measured 248.5 MB -> 5.6 GB over one session) and sat
+  at or near 100% of the current allocation for 61.6% of readings
+  (2449/3975), so "it failed at 98-100%" is a base rate, not evidence.
+  Controlled version, `test_ovms_react_calls_a_tool_through_langchain`:
 
   | cache | result | latency |
   | --- | --- | --- |
@@ -270,44 +305,117 @@ Do not "improve" any of these without reading the reason first.
   | static 1 GB, 100% | pass | 146 s |
   | static 8 GB, 1.4-1.7% | pass, pass, pass | 15 s, 18 s, 13 s |
 
-  Read it honestly. The failure appeared only in the small-cache arm and only
-  at 100%, and a bigger cache removed it 3/3 -- but the SAME 100% reading also
-  passed, so a full cache does not deterministically break tool decoding. The
-  tool-decode failure stays UNREPRODUCIBLE ON DEMAND at n=3 per arm.
-  What IS reproducible is the cost: ~10x latency at 100% (146-151 s vs
-  13-18 s), which is exactly the preemption-and-recompute OVMS documents.
-  Do not upgrade this to "mechanism confirmed" without a bigger sample.
+  So: a full cache costs ~10x latency reproducibly (OVMS's documented
+  preemption-and-recompute); breaking tool decoding is NOT shown at n=3. Restart OVMS before a
+  demo; if it recurs, capture `--trace` AND `ovat telemetry` KV figures in
+  the same window.
+- **Same prompt, temperature 0, different outcomes.** The AI PC measured a
+  qwen3coder engine calling its tool 1 run in 5 and another 5 in 5. One run
+  proves nothing: use `ovat bench --repeat N`. The Qwen3.5 model card warns
+  greedy decoding causes endless repetition, which is OVAT's default
+  `temperature: 0.0`.
+- **Knobs that exist and are NOT yet measured (2026-10-07).** All OFF by
+  default: `model.ovms_tool_guided_generation` (OVMS
+  `--enable_tool_guided_generation`, in 2026.2.1), `model.enable_thinking`
+  (OVMS `chat_template_kwargs`; genai `set_extra_context`), `top_p`,
+  `top_k`, `min_p`, `presence_penalty`, `seed`. Decide defaults from
+  `ovat bench --repeat N` on the AI PC, not from the model card.
+
+### NPU
+- **OVMS compiles an LLM for NPU only from a channel-wise symmetric INT4
+  export** (`-int4-cw-ov`). `OpenVINO/Qwen3-8B-int4-cw-ov` compiled in 36 s
+  and served a real tool call (`examples/document-qa-npu.yml`); stock
+  `-int4-ov` dies with `0x78000004 - [NPU_VCL]`. The compiler's own reason
+  was `StopLocationVerifierPass ... Found 8 duplicated names` and OVMS
+  loaded it as a VLM servable, so group quantisation as the CAUSE is
+  unverified.
+- `finish_reason` was `"tool_calls"` on NPU on this build, not the `"stop"`
+  OVMS's demo documents. Dispatching on the payload is right either way.
+- NPU is a Stateful servable: `cache_size`, `dynamic_split_fuse`,
+  `max_num_batched_tokens`, `enable_prefix_caching` are IGNORED. Instead a
+  STATIC total-sequence cap from `MAX_PROMPT_LEN`/`MIN_RESPONSE_LEN`: pulled
+  with `--max_prompt_len 2000`, generation stopped at exactly 2129 total
+  tokens, mid-sentence, `finish_reason: "unknown"`. A real way to hand the
+  parser half a `<tool_call>`.
+- **Windows NPU utilisation**: `Get-Counter -ListSet *NPU*` is a dead end
+  (it matches "I-npu-t"). Use `\GPU Engine(*)\Utilization Percentage` on
+  the Intel(R) AI Boost adapter. The GPU's `engtype_neural` is NOT the NPU:
+  it read 99.8% with the NPU idle. Implemented as `_WindowsNPUCounter`,
+  verified with both controls (NPU load 93.5%; GPU load, NPU idle 0.0%).
+
+### Measurement
+- **Absent is not zero.** Tokens, peak RSS, anything unknown stays `None`
+  and renders as a dash. A zero reads as "used no tokens".
+- **Peak RSS must be SAMPLED during a run**; afterwards Python has freed it.
+- **`ovat run --trace` peak RSS measures the CLIENT.** With OVMS serving,
+  the weights live in `ovms.exe`; the trace says ~0.45 GB. Qwen3.5-4B
+  measured from the OVMS process: 4.3 GB steady, 6.5 GB peak. On the local
+  `ovat chat` path the trace IS the model.
+- **Bench engines run in separate processes.** In one process each engine
+  inherited its predecessors' memory: native read 465.8 MB first and
+  1155.6 MB last. A benchmark that changes its answer when you reorder the
+  inputs is not measuring the inputs.
+- **The trace's engine name comes from the config**, never a literal.
+- **Intel UT (ut-tool-ext-v0.2.0-beta1.1) rejects `--continuous` with
+  `--output`** and exits within a second; the hardware source was dead from
+  dade76f until Oct 2026. It now runs with its cwd set to a scratch folder.
+  Continuous mode PRINTS text (`Metric: PKG-PWR | ... | Value: 1568.97 mJ`)
+  that OVAT does not parse yet; a parser needs one full captured line from
+  the AI PC first.
+
+### TUI
+- **`#masthead` height stays 17.** At 18 the TUI HANGS at 80x24.
+- **`#brand-panel` is a COLUMN COUNT (42), never a percentage.** FIGlet art
+  wider than the panel WRAPS and shears.
+- **No Tooltips anywhere.** Tried, removed, tests assert none exist.
+- **No `priority=True` bindings on scrolling keys.** They stole keys from
+  the slash menu and modals.
+- **Never mix `stream.write()` and `response.update()` on one Markdown
+  widget.** MarkdownStream keeps its own record; once the text reshapes,
+  retire the stream for that turn. Tags arrive SPLIT ACROSS TOKENS (`<th`
+  then `ink>`).
+- **Textual already binds `ctrl+c,super+c` to `screen.copy_text`** and
+  provides `ctrl+p`; the app's copy branch in `action_cancel_or_quit` is
+  what makes Ctrl-C copy. Do not declare a second `ctrl+p`.
+- **RichLog cannot extract selected text.** It is a line-API widget, so
+  Textual's generic `get_selection` returns None. Use `SelectableRichLog`.
+- **Esc/Ctrl-C must end the whole process tree on Windows**, not just the
+  direct child (`shell.py`); otherwise OVMS children outlive the command.
+
+### Model discovery
+- **`find_models` walks TWO levels.** `ovms --pull` lays models out by org
+  (`models/OpenVINO/Qwen3-8B-int4-ov`).
+- **Unified models** (Qwen3.5: one export that is both LLM and VLM) are a
+  third kind answering both filters. On disk they look vision-only, so
+  config.json is read BEFORE the layout is judged.
 
 ## Environment variables
 
-`OVAT_OVMS` (ovms binary/folder) · `OVAT_MODELS` (model discovery roots,
-pathsep-separated) · `OVAT_VLM_MODEL` / `OVAT_WHISPER_MODEL` (tool model
-dirs) · `OVAT_TEST_MODELS_DIR` / `OVAT_TEST_IMAGE` (integration tests) ·
-`OVAT_TUI=1` (set by the TUI in children; makes bare `ovat` print a hint
-instead of recursing).
+Runtime: `OVAT_OVMS` (ovms binary/folder) · `OVAT_MODELS` (model discovery
+roots, pathsep-separated) · `OVAT_VLM_MODEL` / `OVAT_WHISPER_MODEL` (tool
+model dirs) · `OVAT_VLM_DEVICE` / `OVAT_WHISPER_DEVICE` (override the
+routing table) · `OVAT_UT` (Intel UT folder or binary) · `OVAT_TUI=1` (set
+by the TUI in children; bare `ovat` prints a hint instead of recursing).
+
+Tests: `OVAT_TEST_MODELS_DIR` / `OVAT_TEST_IMAGE` (integration) ·
+`OVAT_OVMS_URL` / `OVAT_OVMS_MODEL` (`test_ovms_live.py` target).
 
 ## Platform truth (answer users honestly)
 
 - **macOS**: dev + tests + `ovat chat` + TUI `/chat` + `index`/`doctor`/
-  `init` all work (openvino_genai runs natively, CPU). `ovat serve` has no
-  native macOS path: no `serve`, no `models`, no agentic `run` via the
-  binary. OVMS's official Docker image (amd64) DOES run under Rosetta on
-  Apple Silicon (verified 2026-07-11: booted, served a real bge-small model,
-  answered a REST inference request) - there is no arm64 image, so it is
-  x86 emulation, fine for small models but slow for an 8B-class LLM. Useful
-  for running the `live` OVMS tests on a Mac; the native genai pipeline
-  stays the default for local LLM dev.
-- **AI PC / Windows / Linux**: everything, including OVMS serving and
-  tool-calling `run`. OVMS is usually NOT on PATH; the locator handles it.
-  The owner's box: `C:\Users\devcloud\ovat`, OVMS at
-  `C:\Users\devcloud\ovms_windows`, models under
-  `C:\Users\devcloud\models\OpenVINO\`, reached over SSH from a Mac.
-  Verified there 2026-07-28/29: all four engines answer through live OVMS on
-  GPU, the native loop really calls tools (transcribe returned the JFK audio
-  text; search_docs cites source paths), and `ovat bench` produces the
-  four-engine comparison table.
-- OVMS is x86-only; no arm64 build. On Apple Silicon it only runs via Docker
-  under Rosetta emulation (see above), never bare metal.
+  `init` work (openvino_genai runs natively, CPU). No native OVMS, so no
+  `serve`, `setup`, `models` or agentic `run`. OVMS's official amd64 Docker
+  image runs under Rosetta (verified 2026-07-11, served bge-small): fine
+  for the `live` tests with small models, slow for 8B. There is no arm64
+  OVMS build.
+- **AI PC / Windows / Linux**: everything. The owner's box:
+  `C:\Users\devcloud\ovat`, OVMS at `C:\Users\devcloud\ovms_windows`,
+  models under `C:\Users\devcloud\models\OpenVINO\`, reached over SSH from
+  the Mac. Windows 11, Core Ultra (LunarLake), Arc 140V GPU + NPU.
+- Verified for 1.0.0: Ubuntu 22.04.5 / SQLite 3.37.2 as uid 1000, Windows
+  11 GPU + NPU, macOS as dev only. GPU/NPU on LINUX is untested
+  (hardware-blocked: WSL2 has no /dev/dri, CI runners have no Arc or NPU)
+  and stays marked untested in the README.
 
 ## Test suite conventions
 
@@ -315,204 +423,88 @@ instead of recursing).
 `py_command()` (cross-platform). Markers: `live` (needs running OVMS), `rag`
 (needs bge-small on disk); both auto-skip. Optional frameworks skip via
 `pytest.importorskip` ("textual", "llama_index.core", "agents").
+`test_docs.py` checks that docs and the generated reference do not drift.
 
-TUI tests use Textual's headless Pilot via `asyncio.run` (no pytest-asyncio).
-Mouse selection must be driven through `Screen._forward_event`, NOT
-`post_message`: selection lives in `_forward_event`, and a probe that posts
-events sees nothing and wrongly concludes the feature is broken.
+TUI tests use Textual's headless Pilot via `asyncio.run` (no
+pytest-asyncio). Mouse selection must be driven through
+`Screen._forward_event`, NOT `post_message`.
 
 Heavy seams for mocking: `chat_screen._build_components`,
-`chat_screen._build_engine`, `cli_main.build_agent`, `diagnostics.run_checks`,
-`model_server.subprocess.Popen`, `bench.benchmark_engine`. Use `monkeypatch`,
-never a bare attribute assignment: a bare one leaked into other tests once.
+`chat_screen._build_engine`, `cli_main.build_agent`,
+`diagnostics.run_checks`, `model_server.subprocess.Popen`,
+`bench.benchmark_engine`. Use `monkeypatch`, never a bare attribute
+assignment: one leaked into other tests once.
 
-Tests that scan the disk (`model_scout`) must isolate with `monkeypatch.chdir`
-and a fake HOME, or they describe the developer's machine instead of the code.
+Tests that scan the disk (`model_scout`, `fuzzy`) must isolate with
+`monkeypatch.chdir` (and a fake HOME), or they describe the developer's
+machine instead of the code.
+
+## Open work (2026-10-07)
+
+On the AI PC, measurement first:
+- `ovat bench --repeat 5` A/B for each unmeasured knob above, then decide
+  defaults.
+- Capture one full Intel UT `--continuous` line, then write the parser.
+- `enable_thinking: false` on a unified Qwen3.5 through local `/chat`.
+- Upgrade the pinned OVMS (2026.2.1 -> current, 2026.4.1 at the time of
+  writing) and re-measure `tool_parser: auto`.
+
+Code and docs:
+- Qwen2-VL produces "!!!!" through the local genai path (pre-existing,
+  unexplained).
+- GPU utilisation without Intel UT (Ravi's ask, 2026-08-21); the NPU
+  counter is the sibling to build it on.
+- A docs / codebase-navigation site and an API reference.
+- Stress tests. GPU/NPU on Linux (hardware-blocked, above).
+
+Scoped OUT by the owner, so do not re-propose: A2A orchestration (Layer 6),
+OVMS Docker integration tests, and any audit of or comparison against
+another vendor's agent toolkit. "Use every Textual widget" is not a goal:
+Sparkline, Tree and MODES were tried or rejected; Digits and TabbedContent
+earned their place on the telemetry page.
 
 ## History (why things are the way they are)
 
-- **Midterm (2026-07-01, tag v0.2.0-w5-6-midterm)**: core proven live on the
-  AI PC: native loop + RAG citations, transcribe, LangChain react, serving
-  Qwen3-8B on GPU.
-- **2026-07-03/04 repair mega-session** (both branches, ~30 commits): full
-  audit vs the proposal PDF, then: LICENSE/deps/version hygiene; sqlite
-  close(); request timeouts; serve pidfile + --stop; loop edge cases; strict
-  config; schema-derived LangChain args; one palette + themed console; TUI
-  recursion guard (OVAT_TUI + TTY check), busy-gate race fix, Esc/Ctrl-C
-  kill escalation, \r progress sampling, [tui] extra + isolation tests;
-  native chat screen (streaming/history/sessions); MCP stdio client
-  (`type: mcp_stdio` works, tested over a real wire); observability traces
-  (`ovat run --trace`, psutil RSS); DeviceManager wired into doctor/init;
-  describe_image tool; ovms locator; platform-aware doctor with the big
-  FIGlet sign; model scout + chat auto-detection.
-- **TUI finished 2026-07-28** and approved by the mentors. Message widgets,
-  streaming, foldable reasoning, multi-line input, system-clipboard paste,
-  Up/Down history, session picker, command palette, themes, DataTable doctor
-  with severity sort and per-row copy, check_action greying, turn separators,
-  indexing progress bar. Verified against live OVMS from the TUI itself
-  (`/engine ovms` -> real tool calls). Widgets deliberately NOT used, so they
-  are not re-proposed: Sparkline (tried on the telemetry page and replaced by
-  a numbers table), Tree, MODES. Digits and TabbedContent were adopted later
-  by the telemetry page, where they earn their place.
-  "Use every Textual widget" is not a goal; push back on it.
-- **W7-W8 complete 2026-07-29** (tag `v0.2.0-w7-8-complete`): LlamaIndex and
-  OpenAI Agents SDK engines, `ovat bench`, and `examples/document-qa.yml` as
-  the Document-Q&A sample. Benchmarked on the AI PC: all four engines ok.
-- **Telemetry audit 2026-07-29**: four defects fixed that made measurements
-  WRONG rather than missing (engine mislabelled, peak RSS not a peak, unknown
-  tokens reported as 0, bench hiding the install hint behind an exception
-  class). Plus: a bad workflow path printed a raw traceback from all five
-  commands that read one.
-- **Install repair 2026-08-01/03**, after Ravi could not install from the
-  README ("it only works on your laptop"). It was literally true. Six defects,
-  each reproduced before fixing: `pip install ovat` was documented while the
-  package was unpublished (PyPI 404); the quickstart never said `git clone`
-  yet step 1 was `pip install -e "."`; `doctor` ran BEFORE `init` created the
-  file it validates, so a new user's first command ended in red; `optimum-cli`
-  was instructed by both the README and `ovat init`'s own output while nothing
-  installed it; there were no OVMS install steps at all; and OVMS's `python_off`
-  build cannot tool-call, so the wrong archive gives an agent that answers
-  normally and silently never calls a tool. Delivered with it: a prerequisites
-  section (GPU/NPU drivers, VC++ redist), small models (4.88 GB -> 3.50 GB,
-  plus a 0.91 GB tier), `docs/ARCHITECTURE.md` linked from the README, three
-  worked examples (`examples/rag`, `react`, `audio-multimodal`), and
-  `docs/BLOG-OUTLINE.md`.
-- **Unified multimodal models**: Qwen3.5 is ONE export that is both a text LLM
-  and a VLM, so `model_scout` grew a third kind, `unified`, that answers to
-  both the `llm` and `vlm` filters. On disk it is indistinguishable from a
-  vision-only model, so config.json is read BEFORE the layout is judged.
-- **AI PC clean-room run 2026-08-03**: a fresh clone driven exactly as the
-  README says, with every OVAT_* variable cleared. Found five more, all
-  invisible on a machine that already worked: `tool_parser: auto` decoding
-  nothing, `serve` unable to survive a first-run download, the locator missing
-  the very folder the README says to unpack OVAT into, RAM figures measured on
-  the wrong process, and a stray `</think>` in every CLI answer. See Landmines.
-- Published to PyPI as `ovat`. `.github/workflows/publish.yml` handles
-  releases, triggered by `workflow_dispatch` rather than the release event:
-  0.9.11 and 0.9.12 were both published correctly and NEITHER fired the
-  workflow, so PyPI sat two versions behind main while the README told people
-  to run a command that did not exist in what they installed.
-- **Install repair, 0.9.14 to 1.0.0.** `ovat setup` installs OVMS in one
-  command, no PATH edit (`core/ovms_installer.py`). Then five bugs found by
-  running it somewhere else, all one species -- code correct only on the
-  machine that wrote it:
-    1. install failed for EVERY non-root Linux user (0o555 members reopened
-       for write; root has CAP_DAC_OVERRIDE, so Docker/CI/containers all
-       passed)
-    2. the Linux `LD_LIBRARY_PATH` branch had never been executed once; it is
-       now `model_server.ovms_env()`, testable, and proved by A/B
-    3. the suite could only pass on Windows (one assertion required a file to
-       both exist and not exist wherever `_EXE` is plain `ovms`)
-    4. `request_timeout: 120` cut off working CPU servers (an agent turn is
-       max_iterations rounds; first cold run measured 1056s)
-    5. RAG silently returned nothing on SQLite < 3.38 -- Ubuntu 22.04 --
-       because `LIMIT ?` only reaches a virtual table from 3.38. `k = ?` is
-       sqlite-vec's own form and needs no push-down. It did not error; it
-       answered confidently with no citation.
-- **CI exists now** (`.github/workflows/tests.yml`), and the matrix is chosen,
-  not arbitrary: ubuntu-22.04 + py3.10 is the oldest supported everything,
-  which is where the most dimensions differ at once and where 3 of the 5 bugs
-  above lived. Jobs also assert the runner is not root, that a BASE install
-  imports no framework or textual (rule 3, which the [dev] suite cannot
-  prove), and that the built WHEEL installs and runs.
-- Verified for 1.0.0: Ubuntu 22.04.5 / SQLite 3.37.2 as uid 1000 (580 passed,
-  live RAG citation, 4/4 engines), Windows 11 / Arc 140V GPU + NPU (setup,
-  serve, run, bench, stop), macOS as dev only.
-- Still open: stress tests, an API reference, and GPU/NPU verification on
-  LINUX. That last one is hardware-blocked rather than unstarted: WSL2 exposes
-  no /dev/dri, and CI cannot close it either, because GitHub-hosted runners
-  have neither an Arc GPU nor an NPU. It needs a Linux box with real devices
-  or a self-hosted runner, and until then it stays marked untested in the
-  README rather than assumed.
-  The plano ask is DONE: `examples/plano/` points it at OVMS, with the
-  /v1-vs-/v3 path, the provider prefix and the missing-`id` bridge all solved
-  and tested. Layer 7 (OpenTelemetry) shipped, so it is off this list;
-  a Windows NPU utilisation READER is the telemetry gap that remains, and the
-  counter to build it on is named in the landmine below.
-- Scoped OUT by the owner, so do not re-propose them: A2A orchestration
-  (Layer 6, always a stretch goal), OVMS Docker integration tests, and any
-  audit of or comparison against another vendor's agent toolkit.
-
-- **NPU serving: the export, and the counter that looks right and is not.**
-  Verified 2026-08-12 on LunarLake, OVMS 2026.2.1.
-  - OVMS compiles an LLM for NPU only from a CHANNEL-WISE symmetric INT4
-    export (the `-int4-cw-ov` family). `OpenVINO/Qwen3-8B-int4-cw-ov` compiled
-    in 36 s and served a real tool call; stock `-int4-ov` dies with
-    `0x78000004 - [NPU_VCL]`. Do NOT repeat "the NPU cannot do tool calling":
-    it can, and `examples/document-qa-npu.yml` is the run that shows it.
-  - But the compiler's own reason for the stock failure is
-    `StopLocationVerifierPass ... Found 8 duplicated names`, not a
-    quantisation complaint, and OVMS loaded that model as a *Visual* Language
-    Model servable. Group quantisation as the CAUSE is unverified.
-  - OVMS's NPU demo says `finish_reason` is always `"stop"`. On this build it
-    was not: tool-calling turns returned `"tool_calls"`, via OVAT and via raw
-    curl. loop.py's dispatch-on-payload is right per the docs but was NOT
-    exercised on hardware here.
-  - NPU is a Stateful servable, so `cache_size`, `dynamic_split_fuse`,
-    `max_num_batched_tokens` and `enable_prefix_caching` are IGNORED. The KV
-    cache story cannot apply to NPU at all.
-  - Instead NPU has a STATIC total-sequence cap from
-    `MAX_PROMPT_LEN`/`MIN_RESPONSE_LEN`. Pulled with `--max_prompt_len 2000`,
-    generation stopped at exactly 2129 total tokens however the split fell
-    (28+2101, 1529+600), cut mid-sentence, `finish_reason: "unknown"` -- not
-    `"length"`, which this server does return correctly elsewhere. That is a
-    real way to hand the parser half a `<tool_call>`.
-  - Windows NPU utilisation: `Get-Counter -ListSet *NPU*` is a DEAD END. It
-    returns "User Input Delay per Process/Session", matching on the "npu"
-    inside "I-npu-t". Use `\GPU Engine(*)\Utilization Percentage` on the
-    Intel(R) AI Boost adapter (ComputeAccelerator, one `engtype_compute`
-    engine). The GPU's `engtype_neural` is NOT the NPU -- it read 99.8% while
-    OVMS generated on the GPU. **Implemented** as of 2026-08-12
-    (`_WindowsNPUCounter`, PDH via ctypes, adapter chosen by shape). Two
-    controls, both measured: NPU load -> 93.5%, and OVMS generating on the
-    GPU with the NPU idle -> 0.0% while `engtype_neural` read 100.0%.
-
-- **Intel UT: two code comments were never measured, 2026-10-07.**
-  ut-tool-ext-v0.2.0-beta1.1 REJECTS `--continuous` with `--output` and exits
-  within a second, so the hardware source died at startup from dade76f on.
-  It now runs with its working directory set to a scratch folder instead.
-  And continuous mode DOES print text (`Metric: PKG-PWR | ... | Value: 1568.97
-  mJ`); the "prints nothing, writes binary traces" comments were inference.
-  Parsing that format needs one full captured line from the AI PC first.
-
-- **Knobs that exist and are NOT yet measured, 2026-10-07.** Researched from
-  OVMS's own docs and the Qwen3.5 model card, plumbed through, all OFF:
-  `model.ovms_tool_guided_generation` (OVMS `--enable_tool_guided_generation`,
-  XGrammar, in 2026.2.1), `model.enable_thinking`, and `top_p` / `top_k` /
-  `min_p` / `presence_penalty` / `seed`. The model card warns that greedy
-  decoding causes endless repetition, which is OVAT's `temperature: 0.0`
-  default. Decide defaults from `ovat bench --repeat N` on the AI PC, not from
-  the card. Also: OVMS auto parser detection landed in 2026.3.0 (PR #4312),
-  AFTER the "auto decodes nothing" measurement above; re-measure it on a
-  current OVMS before trusting either version of that claim.
-
-- **Nothing capped a generation, on any engine, until 2026-08-12.**
-  `OVMSLLMProvider` defaulted `max_tokens` to None and omitted the key, and
-  `ModelConfig` had no field for one, so a model that never emits a stop token
-  generated until the CLIENT gave up: 1200s for `ovat run`, 600s for a bench
-  worker. Greedy decoding makes it likelier and this project asks for greedy
-  decoding (`temperature: 0.0`).
-
-  Its signature in `ovms.log` is the KV cache climbing monotonically for the
-  whole run -- 0.62 -> 3.6 GB in ~9 minutes on ONE scheduled request, because
-  every token needs more cache. **The cache growth is the symptom, not the
-  cause.** An earlier session read that arrow backwards and blamed llamaindex
-  for "inheriting a full cache because it runs third"; the run that settled it
-  had `native` fail FIRST while llamaindex passed in 33s.
-
-  `model.max_tokens` now defaults to 4096 (real answers here are 458-929
-  completion tokens). Set it to None for the old behaviour.
-
-  And beware the second-order effect: a reply cut at the ceiling mid-markup is
-  a fragment, which looks exactly like the undecoded-tool-call failure. The
-  loop distinguishes them on `finish_reason: "length"` and reports `truncated`
-  in the trace. Do not let that error blame the tool_parser or the KV cache --
-  it did, with the parser correct and the cache at 15%.
-
-- **`ovms_cache_size_gb` never worked before 2026-08-12.** OVMS declares
-  `cache_size` as `uint64` and its option parser rejects `"1.0"`, so a float
-  config field made the server refuse to boot for EVERY value of the setting:
-  `error parsing options: Argument '1.0' failed to parse`. OVMS exits before
-  opening its log, so `ovat serve` could only say "OVMS exited without
-  becoming ready". It is an int now. If you touch that field, remember the
-  failure is invisible unless you read the OVMS stdout.
+- **Midterm (2026-07-01, `v0.2.0-w5-6-midterm`)**: core proven live on the
+  AI PC: native loop + RAG citations, transcribe, LangChain react, Qwen3-8B
+  on GPU.
+- **2026-07-03/04 repair**: strict config, request timeouts, serve pidfile
+  + `--stop`, schema-derived tool args, one palette, `[tui]` extra +
+  isolation tests, MCP stdio client, traces, DeviceManager, describe_image,
+  ovms locator, model scout.
+- **TUI finished 2026-07-28** and approved by the mentors; verified against
+  live OVMS from the TUI itself.
+- **W7-W8 (2026-07-29, `v0.2.0-w7-8-complete`)**: LlamaIndex and Agents SDK
+  engines, `ovat bench`, `examples/document-qa.yml`. Same day, a telemetry
+  audit fixed four defects that made numbers WRONG rather than missing.
+- **Install repair (2026-08-01/03)**, after Ravi could not install from the
+  README: unpublished package documented, missing `git clone`, doctor run
+  before init, `optimum-cli` never installed, no OVMS steps, and
+  `python_off` silently unable to tool-call. Also: small-model tiers (4.88
+  GB -> 3.50 GB, plus a 0.91 GB tier), ARCHITECTURE.md, three worked
+  examples.
+- **AI PC clean-room run (2026-08-03)**: `tool_parser: auto`, first-run
+  download timeout, locator missing the README's own folder, RAM measured
+  on the wrong process, a stray `</think>` in every CLI answer.
+- **1.0.0**: `ovat setup` installs OVMS in one command. Five bugs found by
+  running it elsewhere, all "correct only on the machine that wrote it":
+  non-root Linux extraction, an LD_LIBRARY_PATH branch never executed, a
+  suite that could only pass on Windows, a 120 s timeout cutting off CPU
+  servers (a cold run measured 1056 s), and RAG silently empty on SQLite <
+  3.38. CI exists since then: ubuntu-22.04 + py3.10 is the oldest
+  supported everything; jobs assert non-root, a framework-free BASE
+  install, and that the built WHEEL runs. Publishing is
+  `workflow_dispatch`: 0.9.11 and 0.9.12 never fired the release trigger.
+- **2026-08-12**: Layer 7 telemetry (sources/sinks/collector, TUI page,
+  `ovat telemetry`), the NPU serving work, `max_tokens`, the cache_size fix,
+  the KV-cache experiments.
+- **plano** (Ravi's ask, done): `examples/plano/` routes plano to OVMS (the
+  /v1 vs /v3 path, the provider prefix, the missing-`id` bridge). Ports:
+  plano 8000, bridge 8001, OVMS 8002.
+- **Oct 2026 review round (PRs #30-#35)**: a whole-codebase review plus an
+  AI PC verification pass. Framework engines now fail the run and the bench
+  row when they fail; Intel UT starts again; local chat applies the model's
+  chat template; sampling, thinking and tool-guided-generation knobs;
+  `bench --repeat`; MCP `tools[].env`; per-family tool parsers; Windows
+  process-tree kill; bounded, announced fuzzy paths; and a docs pass that
+  removed claims the code contradicted.
