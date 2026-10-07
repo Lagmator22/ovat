@@ -115,6 +115,53 @@ def spawn(cmd: str, cwd: str, env: dict | None = None) -> subprocess.Popen:
     )
 
 
+def terminate(proc: subprocess.Popen) -> None:
+    """Ask a spawn()ed command to stop. On Windows, end its whole tree.
+
+    On POSIX this is plain SIGTERM, a request the program can act on.
+    Windows has no such request for a console child, and with shell=True the
+    Popen is cmd.exe, not the program: proc.terminate() ended cmd.exe and
+    left the real program running (a venv python is two processes deep, a
+    launcher and the base interpreter). The orphan kept the output pipe open,
+    so the TUI never saw EOF and stayed busy until the program finished by
+    itself. Raises ProcessLookupError like Popen.terminate on POSIX.
+    """
+    if os.name != "nt":
+        proc.terminate()
+        return
+    _kill_tree(proc)
+
+
+def kill(proc: subprocess.Popen) -> None:
+    """Force a spawn()ed command to stop: SIGKILL, or its whole tree on Windows."""
+    if os.name != "nt":
+        proc.kill()
+        return
+    _kill_tree(proc)
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """Windows: kill cmd.exe and every process below it.
+
+    The descendants are listed BEFORE anything dies, because Windows does not
+    reparent orphans: once cmd.exe is gone, nothing links its children back to
+    the pid we hold. cmd.exe dies first so it cannot start the next command of
+    an `a & b` line while its current one is being killed.
+    """
+    import psutil
+
+    try:
+        descendants = psutil.Process(proc.pid).children(recursive=True)
+    except psutil.Error:
+        descendants = []                  # already gone, or not ours to list
+    proc.kill()
+    for child in descendants:
+        try:
+            child.kill()
+        except psutil.Error:
+            pass                          # exited on its own meanwhile
+
+
 def iter_display_lines(stream, progress_interval: float = 0.5,
                        _clock=time.monotonic):
     """Yield printable lines from a process stream, taming \\r progress bars.

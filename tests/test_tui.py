@@ -7,6 +7,8 @@ need pytest-asyncio. These prove the view is wired: the slash dropdown appears
 and fills the input, a real command streams into the log, and /exit quits.
 """
 import asyncio
+import sys
+import time
 
 import pytest
 
@@ -334,6 +336,59 @@ def test_escape_terminates_the_child_process():
             await pilot.pause()
             assert proc.poll() is not None        # the child is really dead
             assert app._busy is False             # and the gate reopened
+    _run(scenario())
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="cmd.exe process tree")
+def test_escape_ends_the_whole_process_tree_on_windows():
+    """Esc must kill the real program, not just the cmd.exe wrapping it.
+
+    spawn() uses shell=True, so on Windows the Popen IS cmd.exe and the
+    command runs as its grandchild (twice over for a venv python, whose
+    python.exe is a launcher for the base interpreter). terminate() ended
+    only cmd.exe: the program kept running and kept the output pipe open,
+    so the worker never saw EOF and the TUI stayed busy until the program
+    finished on its own. The test above still passed, because it checks
+    proc.poll(), which is cmd.exe, and its 30 s sleeper simply ran out.
+    """
+    import psutil
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = py_command("import time;time.sleep(120)")
+            await pilot.press("enter")
+            descendants = []
+            for _ in range(200):
+                if app._proc is not None:
+                    descendants = psutil.Process(app._proc.pid).children(
+                        recursive=True)
+                    if descendants:
+                        break
+                await pilot.pause(0.05)
+            assert descendants, "the shell never started its child"
+            try:
+                await pilot.press("escape")
+                # Poll with a deadline instead of wait_for_complete(): with the
+                # bug, the worker waits for the 120 s sleeper to finish.
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    alive = [p for p in descendants if p.is_running()]
+                    if not alive and not app._busy:
+                        break
+                    await pilot.pause(0.1)
+                alive = [(p.pid, p.name()) for p in descendants
+                         if p.is_running()]
+                assert alive == [], f"Esc left these running: {alive}"
+                assert app._busy is False         # and the gate reopened
+            finally:
+                for p in descendants:             # never leak a sleeper
+                    try:
+                        p.kill()
+                    except psutil.NoSuchProcess:
+                        pass
+                await app.workers.wait_for_complete()
     _run(scenario())
 
 

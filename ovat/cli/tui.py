@@ -1108,7 +1108,7 @@ class OvatTUI(App):
         self.query_one("#output", RichLog).write(
             Text("cancelling…", style=ui.YELLOW))
         try:
-            proc.terminate()                    # SIGTERM: a request
+            shell.terminate(proc)               # SIGTERM: a request
         except ProcessLookupError:
             return                              # already gone; worker cleans up
 
@@ -1116,7 +1116,7 @@ class OvatTUI(App):
             try:
                 proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                proc.kill()                     # SIGKILL: not a request
+                shell.kill(proc)                # SIGKILL: not a request
 
         threading.Thread(target=_force, daemon=True).start()
 
