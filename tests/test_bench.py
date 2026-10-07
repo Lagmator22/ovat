@@ -390,6 +390,24 @@ def test_a_framework_engine_that_failed_is_not_scored_ok():
     assert "max of 3 steps" in (row["error"] or "")
 
 
+def test_an_undecoded_tool_call_from_a_framework_engine_is_not_ok():
+    """A framework engine has no trace, so raw tool-call markup in its answer
+    is the only evidence that no tool ran. Measured on the AI PC: that is what
+    openai-agents returned, and the row would have scored ok."""
+    class Adapter:
+        last_failed = False
+
+        def run(self, question):
+            return ("<tool_call>\n<function=search_docs>\n<parameter=query>\n"
+                    "Q3 budget\n</parameter>\n<parameter=top_k>\n5\n"
+                    "</function>\n</tool_call>")
+
+    row = benchmark_engine(_config(), "openai-agents", "q",
+                           build_agent=lambda cfg: Adapter())
+    assert row["ok"] is False, "a tool call that never ran was scored ok"
+    assert "decode" in (row["error"] or "")
+
+
 # --repeat: a success RATE, not one roll of the dice
 #
 # Measured on the AI PC: the same prompt, on a fresh server at temperature

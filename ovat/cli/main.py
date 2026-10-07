@@ -406,6 +406,11 @@ def run(
     # case did not reproduce after a restart, which is exactly why it needs to
     # announce itself rather than wait to be noticed.
     if ui.looks_like_undecoded_tool_call(answer):
+        # A failure on every engine, not just a warning. The native loop
+        # already flags it in its trace, but the framework adapters keep none,
+        # so for them this text is the only evidence; measured on the AI PC,
+        # openai-agents returned the raw markup and the run exited 0.
+        failed = True
         rprint("[yellow]Warning: this answer still contains raw tool-call "
                "markup, so the tool was never run.[/yellow]")
         rprint(f"[dim]Usually the wrong[/dim] tool_parser [dim]for this model "
