@@ -1510,8 +1510,10 @@ def telemetry(
     # And the third state: started, but producing nothing. Without this the
     # table just has no Intel rows, which reads as idle hardware rather than
     # unreadable hardware -- the same "absent is not zero" rule the token
-    # counts follow.
-    for name, note in collector.notes.items():
+    # counts follow. Some sources know this before they start (ovms: no log
+    # line yet); the rest are asked again at the end, below.
+    shown = dict(collector.notes)
+    for name, note in shown.items():
         rprint(f"[yellow]{esc(name)}[/yellow] live but silent: "
                f"[dim]{esc(note)}[/dim]")
     if not collector.available:
@@ -1551,7 +1553,16 @@ def telemetry(
     except KeyboardInterrupt:
         pass
     finally:
+        # Asked again while every source is still RUNNING. The Intel source
+        # only has something to say once started (ut takes ~6.4 s to its
+        # first reading on the AI PC, or may have exited), so the line above,
+        # printed before start(), could never show it.
+        late = {name: note for name, note in collector.notes.items()
+                if shown.get(name) != note}
         collector.stop()
+        for name, note in late.items():
+            rprint(f"[yellow]{esc(name)}[/yellow] live but silent: "
+                   f"[dim]{esc(note)}[/dim]")
         _print_cache_type(cache_source)
         if out:
             sink.close()
