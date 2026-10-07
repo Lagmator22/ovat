@@ -142,7 +142,7 @@ class OpenAIAgentsAgent:
                 "event loop. Call it from a worker thread, or use "
                 "agent.type: native.")
 
-        from agents.exceptions import MaxTurnsExceeded
+        from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
 
         self.last_failed = False
         try:
@@ -161,6 +161,18 @@ class OpenAIAgentsAgent:
             self.last_failed = True
             return (f"Error: I reached my max of {self.max_iterations} steps "
                     f"without a final answer.")
+        except ModelBehaviorError as exc:
+            # The MODEL broke the contract, typically by calling a tool that
+            # does not exist ("search" for "search_docs"). The SDK ends the
+            # run there, and its maintainers declined in-SDK recovery
+            # (openai-agents-python#2957). Uncaught, `ovat run` called this
+            # "Error talking to OVMS" while the server was fine.
+            self.last_failed = True
+            available = ", ".join(self.tools) or "none"
+            return (f"Error: the model broke the tool-calling contract and "
+                    f"the run stopped: {exc}. Tools available: {available}. "
+                    f"Naming them in agent.system_prompt usually helps; the "
+                    f"native engine also recovers near-miss names itself.")
         self._input_items = result.to_input_list()
         return str(getattr(result, "final_output", result) or "").strip()
 

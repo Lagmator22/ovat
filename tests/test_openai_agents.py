@@ -282,3 +282,28 @@ def test_the_agents_adapter_flags_a_capped_run_as_failed(monkeypatch):
     agent = OpenAIAgentsAgent(object(), tools, 3, None)
     agent.run("q")
     assert agent.last_failed is True
+
+
+def test_a_made_up_tool_name_is_a_model_error_not_a_crash(monkeypatch):
+    """Measured on the AI PC, 3 runs of 3: the model called "search", the SDK
+    raised ModelBehaviorError("Tool search not found in agent ovat"), and
+    `ovat run` reported it as "Error talking to OVMS" -- blaming a server
+    that answered fine. The SDK's own maintainers rejected in-SDK recovery
+    (openai-agents-python#2957), so the adapter reports it as what it is."""
+    import agents
+    from agents.exceptions import ModelBehaviorError
+
+    tools, _ = _tools()
+
+    async def hallucinates(agent, input_items, max_turns=None):
+        raise ModelBehaviorError("Tool search not found in agent ovat")
+
+    monkeypatch.setattr(agents.Runner, "run", hallucinates)
+    agent = OpenAIAgentsAgent(object(), tools, 3, None)
+    answer = agent.run("q")
+
+    assert answer.startswith("Error:")
+    assert "search" in answer and "add_note" in answer   # what exists instead
+    assert "OVMS" not in answer
+    assert agent.last_failed is True
+    assert agent._input_items == []          # a failed run poisons nothing
