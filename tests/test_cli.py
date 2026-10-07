@@ -1760,3 +1760,41 @@ def test_a_framework_engine_that_failed_exits_non_zero(monkeypatch, tmp_path):
     result = runner.invoke(app, ["run", str(config), "-i", "hi"])
     assert result.exit_code == 1, result.output
     assert "max of 3 steps" in result.output        # and it still says why
+
+
+def _run_raising(monkeypatch, tmp_path, exc):
+    from ovat.cli import main as cli_main
+
+    class Raising:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            raise exc
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Raising())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n  ovms_url: http://localhost:8000/v3\n",
+                      encoding="utf-8")
+    result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+    return result, " ".join(result.output.split())
+
+
+def test_only_a_server_error_is_blamed_on_the_server(monkeypatch, tmp_path):
+    """Every exception from a run was printed as "Error talking to OVMS at
+    <url>", so a bug in a tool or a framework sent the reader to restart a
+    server that was fine. Only the OpenAI client's own errors -- which is how
+    every engine reaches OVMS -- earn that label."""
+    import httpx
+    import openai
+
+    result, flat = _run_raising(monkeypatch, tmp_path,
+                                ValueError("tool exploded"))
+    assert result.exit_code == 1
+    assert "talking to OVMS" not in flat
+    assert "tool exploded" in flat
+
+    refused = openai.APIConnectionError(
+        request=httpx.Request("POST", "http://localhost:8000/v3/chat/completions"))
+    result, flat = _run_raising(monkeypatch, tmp_path, refused)
+    assert result.exit_code == 1
+    assert "OVMS at http://localhost:8000/v3" in flat

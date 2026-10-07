@@ -337,8 +337,19 @@ def run(
         with memory:
             answer = agent.run(input)
     except Exception as exc:
-        rprint(f"[red]Error talking to OVMS at {esc(cfg.model.ovms_url)}[/red]: "
-               f"{esc(exc)}")
+        # Name the server only when the server is what failed. Every engine
+        # reaches OVMS through the OpenAI client, so its errors (connection,
+        # timeout, HTTP status) are the server's; anything else -- a tool, a
+        # framework, a model breaking the tool contract -- is not, and calling
+        # it "talking to OVMS" sent readers to restart a server that was fine.
+        import openai
+
+        if isinstance(exc, openai.APIError):
+            rprint(f"[red]Error talking to OVMS at "
+                   f"{esc(cfg.model.ovms_url)}[/red]: {esc(exc)}")
+        else:
+            rprint(f"[red]The run failed[/red] "
+                   f"({esc(type(exc).__name__)}): {esc(exc)}")
         # A timeout is the one failure here whose fix is a config value, and
         # the SDK's own words ("Request timed out.") name neither the setting
         # nor the file. Measured on a CPU-only Ubuntu box: the server answers a
