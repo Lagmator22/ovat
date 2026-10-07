@@ -221,6 +221,14 @@ class ModelConfig(StrictModel):
     # that cannot answer a single agent question out of the box.
     ovms_max_prompt_len: int | None = Field(default=None, gt=0)
 
+    # Make OVMS constrain each tool call to the request's tool schema while it
+    # generates (--enable_tool_guided_generation, XGrammar). In OVMS since
+    # July 2025 and in the 2026.2.1 parameter table; OVAT never passed it.
+    # Measured on the AI PC: Qwen3.5 wrote malformed <parameter> markup 4
+    # times in 5 on a fresh server, the drift Ollama #18563 also records.
+    # Whether this prevents that is NOT yet measured, so it is off.
+    ovms_tool_guided_generation: bool = False
+
     # Which OVMS parser suits which model family. Data, not branching, so a
     # new family is one line. Longest prefix first: "qwen3.5" has to be tested
     # before "qwen3", or every Qwen3.5 model matches the Qwen3 rule.

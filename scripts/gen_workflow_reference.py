@@ -79,6 +79,9 @@ PURPOSE = {
     ("model", "ovms_cache_size_gb"): "KV cache size in GB. Setting it also "
                                      "makes the cache **static** rather than "
                                      "dynamic. Whole numbers only.",
+    ("model", "ovms_tool_guided_generation"): "Make OVMS hold each tool "
+                                             "call to the tool's schema while "
+                                             "generating. Read by `ovat serve`.",
     ("model", "ovms_max_prompt_len"): "Longest prompt OVMS accepts. On `NPU` "
                                       "an unset value becomes **4096**, "
                                       "because OVMS's own NPU cap of 1024 is "

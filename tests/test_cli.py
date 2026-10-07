@@ -1872,3 +1872,39 @@ def test_the_thinking_switch_reaches_the_local_chat_model(monkeypatch, tmp_path)
     chat_screen._build_components(str(config), "m")
 
     assert seen == [False, False], seen
+
+
+def test_serve_passes_tool_guided_generation_from_the_config(monkeypatch,
+                                                             tmp_path):
+    from ovat.cli import main as cli_main
+    from ovat.core import model_server, ovms_locator
+
+    monkeypatch.setattr(cli_main.sys, "platform", "linux")
+    seen = {}
+
+    class FakeModelServer:
+        DEFAULT_STALL_TIMEOUT = 120
+
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+            self.port, self.log_path = 8000, ""
+            self.base_url = "http://localhost:8000/v3"
+            self.process = type("P", (), {"pid": 1, "poll": lambda s: None})()
+
+        def already_serving(self):
+            return None
+
+        def start(self, *a, **k):
+            pass
+
+        def wait_until_ready(self, *a, **k):
+            return True
+
+    monkeypatch.setattr(model_server, "ModelServer", FakeModelServer)
+    monkeypatch.setattr(ovms_locator, "find_ovms", lambda *a: ("/ovms", "x"))
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n  ovms_tool_guided_generation: true\n",
+                      encoding="utf-8")
+    result = runner.invoke(app, ["serve", str(config)])
+    assert result.exit_code == 0, result.output
+    assert seen.get("tool_guided_generation") is True

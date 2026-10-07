@@ -1290,6 +1290,7 @@ def serve(
         enable_prefix_caching=cfg.model.enable_prefix_caching,
         cache_size_gb=cfg.model.ovms_cache_size_gb,
         max_prompt_len=_max_prompt_len_for(cfg.model),
+        tool_guided_generation=cfg.model.ovms_tool_guided_generation,
         binary=binary,
     )
     # Refuse to start a SECOND server on a port that already has one. On

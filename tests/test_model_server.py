@@ -771,3 +771,27 @@ def test_max_prompt_len_is_omitted_when_unset(monkeypatch, tmp_path):
     ModelServer(model_name="m").start(log_path=str(tmp_path / "o.log"),
                                       pid_path=str(tmp_path / "o.pid"))
     assert "--max_prompt_len" not in captured["cmd"]
+
+
+def test_tool_guided_generation_reaches_the_command_line(monkeypatch, tmp_path):
+    """OVMS has had --enable_tool_guided_generation since July 2025 (it is in
+    the 2026.2.1 parameter table): it constrains generation to the request's
+    tool schema with XGrammar. OVAT never passed it, while the AI PC measured
+    Qwen3.5 writing malformed <parameter> markup 4 times in 5. Off unless
+    asked for: whether it fixes that is an A/B still to run."""
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakePopen()
+
+    monkeypatch.setattr("ovat.core.model_server.subprocess.Popen", fake_popen)
+
+    ModelServer(model_name="m").start(log_path=str(tmp_path / "a.log"),
+                                      pid_path=str(tmp_path / "a.pid"))
+    assert "--enable_tool_guided_generation" not in captured["cmd"]
+
+    ModelServer(model_name="m", tool_guided_generation=True).start(
+        log_path=str(tmp_path / "b.log"), pid_path=str(tmp_path / "b.pid"))
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--enable_tool_guided_generation") + 1] == "true"
