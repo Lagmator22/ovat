@@ -3,7 +3,7 @@
 
 Plano (planoai) strictly requires a top-level `"id"` field in chat.completion
 responses. OVMS omits this field. This bridge listens on port 8001, forwards
-requests to OVMS on port 8002, and injects `"id": "chatcmpl-ovms"` if missing.
+requests to OVMS on port 8002, and injects `"id": "chatcmpl-ovms-bridge"` if missing.
 """
 import json
 import urllib.request

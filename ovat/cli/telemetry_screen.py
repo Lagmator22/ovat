@@ -163,11 +163,12 @@ any config. Three ways round it, none of them a workaround for a bug:
      against. 0.4.33 is current; treat an upgrade as a retest, since the
      config schema is what the two walls below are about.
   [b]2.[/b] [cyan]ovat serve examples/plano/workflow.yml[/cyan]
-     OVMS on :8000. Wait for it to report ready.
+     OVMS on :8002 (model.ovms_port), so plano can take :8000. Wait
+     for it to report ready.
   [b]3.[/b] [cyan]python examples/plano/ovms_id_bridge.py[/cyan]
      The bridge on :8001. Leave it running.
   [b]4.[/b] [cyan]planoai up examples/plano/plano-config.yaml[/cyan]
-     plano on :12000. Add [cyan]--docker[/cyan] on Windows.
+     plano on :8000. Add [cyan]--docker[/cyan] on Windows.
   [b]5.[/b] [cyan]ovat run examples/plano/workflow.yml --input "hello"[/cyan]
      The request now goes OVAT -> plano -> bridge -> OVMS.
   [b]6.[/b] [cyan]planoai obs[/cyan]            live aggregate view
@@ -193,7 +194,7 @@ than guessed at:
   [b]2.[/b] plano's Envoy WASM filter requires a top-level [cyan]"id"[/cyan]
      string in the response. OVMS returns valid OpenAI JSON but omits it, so
      plano rejects every reply. [cyan]examples/plano/ovms_id_bridge.py[/cyan]
-     sits on :8001, forwards to OVMS on :8000, injects the field, and also
+     sits on :8001, forwards to OVMS on :8002, injects the field, and also
      handles the Transfer-Encoding: chunked bodies plano sends.
 
 So base_url points at the BRIDGE, not at OVMS directly. Still no fork and no

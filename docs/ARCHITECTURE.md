@@ -749,9 +749,9 @@ to OVAT**. It is observability as configuration.
 
 ```mermaid
 flowchart LR
-    OVAT["ovat run<br/>ovms_url → :12000"] --> Plano["plano (Envoy)<br/>:12000<br/>OTEL spans"]
-    Plano --> Bridge["ovms_id_bridge.py<br/>:8001 (127.0.0.1)"]
-    Bridge --> OVMS["OVMS :8000/v3"]
+    OVAT["ovat run<br/>ovms_url → :8000/v1"] --> Plano["plano (Envoy)<br/>:8000<br/>OTEL spans"]
+    Plano --> Bridge["ovms_id_bridge.py<br/>:8001"]
+    Bridge --> OVMS["OVMS :8002/v3<br/>(model.ovms_port)"]
     Plano -.-> Obs["planoai obs<br/>latency · TTFT · tokens"]
 ```
 

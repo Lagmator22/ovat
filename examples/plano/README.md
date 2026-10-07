@@ -62,7 +62,7 @@ Plano publishes binaries for Linux and macOS, but has no native Windows build (r
 
 ### 3. Response Schema Matching (`ovms_id_bridge.py`)
 Plano's Envoy WASM filter (`llm_gateway`) strictly requires a top-level `"id"` string field in JSON responses. OVMS returns valid OpenAI JSON but omits the top-level `"id"` string, and Plano sends chunked HTTP requests (`Transfer-Encoding: chunked`).
-- **Solution**: `examples/plano/ovms_id_bridge.py` is a 30-line Python bridge that handles chunked HTTP bodies from Plano, forwards to OVMS (`:8002`), injects `"id": "chatcmpl-ovms"`, and returns the clean JSON to Plano.
+- **Solution**: `examples/plano/ovms_id_bridge.py` is a small Python bridge that handles chunked HTTP bodies from Plano, forwards to OVMS (`:8002`), injects `"id": "chatcmpl-ovms-bridge"`, and returns the clean JSON to Plano.
 
 ---
 
@@ -88,14 +88,14 @@ In a second **Command Prompt (`cmd.exe`)** tab on Windows:
 
 ```cmd
 cd C:\Users\devcloud\ovat
-python examples\plano\ovms_id_bridge.py
+python examples\plano\ovms_id_bridge.py --host 0.0.0.0
 ```
 
 The bridge binds `127.0.0.1` by default, so only this machine can reach it.
 Nothing in it checks credentials, so a wider bind is a door to your GPU. When
 plano runs in **WSL2 or Docker** it has to cross a network namespace and
-loopback will not do; pass `--host 0.0.0.0` for exactly that case, and firewall
-the port.
+loopback will not do, which is why the command above passes `--host 0.0.0.0`.
+Firewall the port. With plano on the same machine as OVMS, drop the flag.
 *(Leave this running. It prints `OVMS ID Bridge listening on http://0.0.0.0:8001...`)*
 
 ---
@@ -133,5 +133,5 @@ Outputs live aggregate telemetry:
 | Choice | Reason |
 | :--- | :--- |
 | **`ovms_id_bridge.py`** | Decouples OVMS from Plano schema differences without patching binary WASM filters. |
-| **Zero-Code OTEL** | Eliminates 3,900+ lines of complex Python tracing code inside `ovat`. |
+| **Zero-Code OTEL** | plano emits the OpenTelemetry spans, so `ovat` carries no tracing code of its own. |
 | **`listeners: type: model`** | Configures Plano as a fast OpenAI proxy data plane while keeping OVAT's native agent loop in charge. |
