@@ -144,6 +144,56 @@ def test_genai_vlm_describes_image():
         "Describe this image in one sentence.", [DOG_IMG]
     )
     assert "dog" in out.lower()
+    # "dog" alone passed against broken output: on an ARM Mac the CPU's f16
+    # default turned the answer into "The image features a dog!!!!!!...",
+    # which still contains the word.
+    assert "!!!" not in out, out
+
+
+# f16 on an ARM CPU turns Qwen2-VL's answer into "!!!!": NaN logits, token 0.
+
+class _FakeCore:
+    def __init__(self, precision):
+        self.precision = precision
+
+    def get_property(self, device, name):
+        assert (device, name) == ("CPU", "INFERENCE_PRECISION_HINT")
+        return self.precision
+
+
+def test_an_f16_cpu_is_kept_in_f32_for_the_vision_model():
+    import openvino as ov
+
+    from ovat.providers.vlm_genai import _precision_properties
+
+    assert _precision_properties("CPU", _FakeCore(ov.Type.f16)) == {
+        "INFERENCE_PRECISION_HINT": "f32"}
+
+
+def test_a_cpu_that_is_not_f16_and_other_devices_keep_their_defaults():
+    import openvino as ov
+
+    from ovat.providers.vlm_genai import _precision_properties
+
+    assert _precision_properties("CPU", _FakeCore(ov.Type.f32)) == {}
+    assert _precision_properties("CPU", _FakeCore(ov.Type.bf16)) == {}
+    assert _precision_properties("GPU", _FakeCore(ov.Type.f16)) == {}
+
+
+def test_the_vision_pipeline_is_built_with_those_properties(monkeypatch):
+    from ovat.providers import vlm_genai
+
+    seen = {}
+
+    def fake_pipeline(path, device, **props):
+        seen.update(path=path, device=device, props=props)
+        return object()
+
+    monkeypatch.setattr(vlm_genai.ov_genai, "VLMPipeline", fake_pipeline)
+    monkeypatch.setattr(vlm_genai, "_precision_properties",
+                        lambda device: {"INFERENCE_PRECISION_HINT": "f32"})
+    vlm_genai.GenAIVLMProvider("some/model", "CPU")
+    assert seen["props"] == {"INFERENCE_PRECISION_HINT": "f32"}
 
 
 # The generation cap: a number caps the answer, None means "until EOS".
