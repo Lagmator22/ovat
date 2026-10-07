@@ -199,10 +199,22 @@ class ModelConfig(StrictModel):
     # Which OVMS parser suits which model family. Data, not branching, so a
     # new family is one line. Longest prefix first: "qwen3.5" has to be tested
     # before "qwen3", or every Qwen3.5 model matches the Qwen3 rule.
+    # Qwen3.5 is measured on live OVMS (see AGENTS.md). The rest are the pairs
+    # OVMS 2026.2.1's own demos start a model with (agentic_ai and
+    # code_local_assistant READMEs), matched no wider than the model named
+    # there: OVMS documents phi4 for Phi-4-mini, not for every Phi-4.
+    # mistral, lfm2 and gemma4 are parsers OVMS accepts but pairs with no
+    # model in its docs, so they are left to the fallback rather than guessed.
     _PARSER_BY_FAMILY = (("qwen3.5", "qwen3coder"),
                          ("qwen3_5", "qwen3coder"),
+                         ("qwen3.6", "qwen3coder"),
+                         ("qwen3-coder", "qwen3coder"),
                          ("qwen3", "hermes3"),
-                         ("qwen2", "hermes3"))
+                         ("qwen2", "hermes3"),
+                         ("phi-4-mini", "phi4"),
+                         ("gpt-oss", "gptoss"),
+                         ("llama-3.2", "llama3"),
+                         ("devstral", "devstral"))
     _DEFAULT_TOOL_PARSER = "hermes3"
 
     @model_validator(mode="after")

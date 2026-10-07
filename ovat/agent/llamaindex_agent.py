@@ -108,7 +108,19 @@ class LlamaIndexAgent:
                 "The llamaindex engine cannot be run from inside an async "
                 "event loop. Call it from a worker thread, or use "
                 "agent.type: native.")
-        return asyncio.run(self._arun(user_message))
+        from llama_index.core.workflow.errors import WorkflowRuntimeError
+
+        try:
+            return asyncio.run(self._arun(user_message))
+        except WorkflowRuntimeError as exc:
+            # LlamaIndex's own cap, reached. Only THAT error becomes the
+            # native loop's sentence; any other workflow failure is a real
+            # error and stays one. Uncaught, `ovat run` reported this as
+            # "Error talking to OVMS", blaming a server that was fine.
+            if not str(exc).startswith("Max iterations"):
+                raise
+            return (f"Error: I reached my max of {self.max_iterations} steps "
+                    f"without a final answer.")
 
     def _remember(self, user_message: str, answer: str) -> None:
         from llama_index.core.base.llms.types import ChatMessage, MessageRole
@@ -121,8 +133,12 @@ class LlamaIndexAgent:
     async def _arun(self, user_message: str) -> str:
         # list() hands the workflow a COPY: it may append to whatever list it
         # is given, and this adapter owns the canonical history.
+        #
+        # max_iterations is passed, not left to LlamaIndex's default of 20:
+        # agent.max_iterations was otherwise ignored on this engine alone.
         response = await self._agent.run(user_message,
-                                         chat_history=list(self._history))
+                                         chat_history=list(self._history),
+                                         max_iterations=self.max_iterations)
         # FunctionAgent returns a response object whose str() is the answer.
         # Reading .response first keeps the text clean when the object grows
         # extra repr detail, which it has done between releases.

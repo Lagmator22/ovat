@@ -1171,6 +1171,27 @@ def test_run_reports_a_build_failure_instead_of_tracebacking(tmp_path, monkeypat
     assert "models/nope" in flat            # the cause still reaches the user
 
 
+def test_a_mistyped_tool_name_is_a_sentence_not_a_traceback(tmp_path):
+    """The factory reports config mistakes as ValueError; only RuntimeError
+    was caught, so `tools: - name: serach_docs` -- one transposed letter --
+    put a full rich traceback on screen. Same for provider: genai with a
+    framework engine. Driven through the REAL factory, not a stub, because a
+    stub that raises RuntimeError is exactly what hid this."""
+    for body, cause in (
+            ("tools:\n  - name: serach_docs\n", "serach_docs"),
+            ("  provider: genai\nagent:\n  type: react\n", "genai")):
+        config = tmp_path / "w.yml"
+        config.write_text("model:\n  name: m\n" + body, encoding="utf-8")
+        result = runner.invoke(app, ["run", str(config), "--dry-run"])
+        assert result.exit_code == 1, result.output
+        assert result.exception is None or isinstance(result.exception,
+                                                       SystemExit), \
+            f"{type(result.exception).__name__} escaped as a traceback"
+        flat = " ".join(result.output.split())
+        assert "Could not build the agent" in flat
+        assert cause in flat
+
+
 def test_dry_run_reports_a_build_failure_the_same_way(tmp_path, monkeypatch):
     """--dry-run builds too, so it needs the same courtesy."""
     from ovat.cli import main as cli_main
@@ -1607,3 +1628,112 @@ def test_a_schema_error_still_names_its_fields(tmp_path):
     assert result.exit_code == 1
     assert "does not match the workflow schema" in result.output
     assert "nonsense_key" in result.output
+
+
+# A run that FAILS must still clean up after itself, and still leave its trace
+
+class _Server:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+def _failing_run(tmp_path, monkeypatch, *extra):
+    from ovat.cli import main as cli_main
+
+    server = _Server()
+
+    class Exploding:
+        tools, max_iterations = {}, 5
+        last_trace = {"engine": "native", "turns": [{"tool_calls": []}],
+                      "totals": {}}
+        mcp_servers = [server]
+
+        def run(self, text):
+            raise RuntimeError("model went away mid-run")
+
+    stopped = []
+
+    class FakeCollector:
+        def stop(self):
+            stopped.append(True)
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Exploding())
+    monkeypatch.setattr(cli_main, "_start_telemetry",
+                        lambda path, agent: FakeCollector())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    result = runner.invoke(app, ["run", str(config), "-i", "hi", *extra])
+    return result, server, stopped
+
+
+def test_a_failed_run_still_writes_its_trace(tmp_path, monkeypatch):
+    """The trace was written only on success, so the one run you most need
+    to inspect -- the one that broke -- left nothing behind."""
+    import json
+
+    trace = tmp_path / "trace.json"
+    result, _, _ = _failing_run(tmp_path, monkeypatch, "--trace", str(trace))
+    assert result.exit_code == 1
+    assert trace.exists(), "a failed run wrote no trace"
+    data = json.loads(trace.read_text(encoding="utf-8"))
+    assert "model went away" in data["error"]
+    assert data["turns"], "the turns that DID happen were dropped"
+
+
+def test_a_failed_run_stops_its_telemetry(tmp_path, monkeypatch):
+    """The collector owns a thread and, on an AI PC, a UT subprocess. The
+    failure path raised straight past collector.stop(), so the profiler
+    outlived `ovat run`."""
+    result, _, stopped = _failing_run(tmp_path, monkeypatch,
+                                      "--telemetry", str(tmp_path / "t.jsonl"))
+    assert result.exit_code == 1
+    assert stopped == [True]
+
+
+def test_every_run_closes_the_agents_mcp_servers(tmp_path, monkeypatch):
+    """close_agent existed and `ovat run` never called it, on either path;
+    the subprocesses lived until the interpreter's atexit hook."""
+    from ovat.cli import main as cli_main
+
+    result, server, _ = _failing_run(tmp_path, monkeypatch)
+    assert result.exit_code == 1 and server.closed, "failure path leaked it"
+
+    ok_server = _Server()
+
+    class Fine:
+        tools, max_iterations = {}, 5
+        last_trace = {"totals": {"failed": False}}
+        mcp_servers = [ok_server]
+
+        def run(self, text):
+            return "fine"
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Fine())
+    config = tmp_path / "w.yml"
+    result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+    assert result.exit_code == 0 and ok_server.closed, "success path leaked it"
+
+
+def test_setup_into_a_custom_folder_says_how_ovat_will_find_it(monkeypatch,
+                                                               tmp_path):
+    """`--dest` installs somewhere the locator never searches, and the command
+    still printed "No PATH change needed; OVAT looks here on its own" -- so
+    the very next `ovat serve` said OVMS was not installed."""
+    from ovat.core import ovms_installer
+
+    dest = tmp_path / "elsewhere"
+    monkeypatch.setattr(ovms_installer, "installed_binary", lambda root=None: None)
+    monkeypatch.setattr(ovms_installer, "install",
+                        lambda **kw: (str(dest / "ovms"), "installed"))
+    monkeypatch.setattr(ovms_installer, "asset_for_platform",
+                        lambda version=None: ("ovms_test.tar.gz", "file:///x"))
+    monkeypatch.setattr(ovms_installer, "linux_support_note", lambda: None)
+
+    result = runner.invoke(app, ["setup", "--yes", "--dest", str(dest)])
+    flat = " ".join(result.output.split())
+    assert result.exit_code == 0, result.output
+    assert "looks here on its own" not in flat
+    assert "OVAT_OVMS" in flat and "ovms_binary" in flat

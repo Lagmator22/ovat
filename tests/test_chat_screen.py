@@ -248,6 +248,52 @@ def test_build_components_refuses_a_vision_model_before_loading(tmp_path):
         chat_screen._build_components(str(cfg), str(vlm))
 
 
+def test_build_components_accepts_a_unified_model(tmp_path, monkeypatch):
+    """The TUI refused the model the README tells people to download.
+
+    Qwen3.5 is a UNIFIED export: a text LLM and a vision model in one. `ovat
+    chat` accepted it, and pick_chat_llm offered it, but this guard only
+    allowed ("llm", "unknown") -- so /chat auto-detected Qwen3.5, handed it
+    over, and was told it "is not a text LLM". Two copies of one decision,
+    and the copy that was not updated is the one a TUI user meets.
+    """
+    import json
+
+    unified = tmp_path / "Qwen3.5-0.8B-int4-ov"
+    unified.mkdir()
+    for name in ("openvino_language_model.xml",
+                 "openvino_vision_embeddings_model.xml"):
+        (unified / name).write_text("")
+    (unified / "config.json").write_text(json.dumps(
+        {"model_type": "qwen3_5",
+         "architectures": ["Qwen3_5ForConditionalGeneration"]}))
+    cfg = tmp_path / "w.yml"
+    cfg.write_text("model:\n  name: m\nrag:\n  retriever:\n    db_path: ':memory:'\n")
+
+    loaded = {}
+    monkeypatch.setattr("ovat.agent.factory.build_rag", lambda c: FakeRetriever())
+    monkeypatch.setattr(
+        "ovat.providers.llm_genai.GenAILLMProvider",
+        lambda path, device="CPU", max_new_tokens=None: loaded.setdefault(
+            "path", path))
+
+    chat_screen._build_components(str(cfg), str(unified))
+    assert loaded["path"] == str(unified)
+
+
+def test_the_cli_and_the_tui_agree_on_which_models_can_chat():
+    """One decision, one place. The CLI and the TUI each kept their own list
+    of chat-capable kinds, and the lists drifted."""
+    import inspect
+
+    from ovat.cli import main as cli_main
+    from ovat.core import model_scout
+
+    assert "unified" in model_scout.CHAT_KINDS
+    assert "CHAT_KINDS" in inspect.getsource(cli_main.resolve_chat_model)
+    assert "CHAT_KINDS" in inspect.getsource(chat_screen._build_components)
+
+
 def test_prefs_round_trip(tmp_path):
     assert load_prefs(str(tmp_path)) == {}
     save_prefs(str(tmp_path), "cfg.yml", "models/llm")

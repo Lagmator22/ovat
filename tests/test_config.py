@@ -418,6 +418,33 @@ def test_an_omitted_tool_parser_is_derived_from_the_model_not_hardcoded():
     assert other.model.tool_parser == "hermes3"
 
 
+@pytest.mark.parametrize("name, parser", [
+    # Each pair is a model OVMS's own docs start with that --tool_parser, at
+    # OVMS 2026.2.1 (commit 1122f03bf):
+    ("Qwen3.6-35B-A3B-int4-ov", "qwen3coder"),       # agentic_ai/README.md:132
+    ("Qwen3-Coder-30B-A3B-Instruct-int4-ov", "qwen3coder"),
+    #                                         code_local_assistant/README.md:19
+    ("Phi-4-mini-instruct-int4-ov", "phi4"),         # agentic_ai/README.md:96
+    ("gpt-oss-20b-int4-ov", "gptoss"),               # agentic_ai/README.md:152
+    ("Llama-3.2-3B-Instruct", "llama3"),             # agentic_ai/README.md:618
+    ("Devstral-Small-2507", "devstral"),     # code_local_assistant/README.md:127
+    # and the ones that were already right must stay right
+    ("Qwen3-8B-int4-ov", "hermes3"),                 # agentic_ai/README.md:572
+    ("Qwen3-VL-8B-Instruct-int4-ov", "hermes3"),     # agentic_ai/README.md:54
+])
+def test_a_derived_tool_parser_matches_what_ovms_documents(name, parser):
+    """Every family OVMS documents gets the parser OVMS uses for it.
+
+    The fallback was hermes3 for anything unrecognised, and "qwen3" matched
+    by substring, so Qwen3.6 and Qwen3-Coder were read as Qwen3. A wrong
+    parser does not error: the agent answers fluently and never calls a tool.
+    """
+    from ovat.config.workflow import WorkflowConfig
+
+    cfg = WorkflowConfig(model={"name": name})
+    assert cfg.model.tool_parser == parser
+
+
 def test_a_fractional_cache_size_is_rejected_with_a_reason():
     """OVMS's cache_size is uint64; half a gigabyte cannot be expressed.
 

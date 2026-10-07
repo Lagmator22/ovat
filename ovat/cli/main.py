@@ -20,7 +20,7 @@ from rich.progress import (BarColumn, Progress, SpinnerColumn,
                            TaskProgressColumn, TextColumn,
                            TimeRemainingColumn)
 
-from ovat.agent.factory import build_agent
+from ovat.agent.factory import build_agent, close_agent
 from ovat.cli import ui
 from ovat.cli.ui import console, esc
 from ovat.config.workflow import load_workflow
@@ -283,9 +283,14 @@ def run(
     # arriving as one clean sentence there. Errors are for users, and being
     # rude in one command out of three reads as a crash rather than as a
     # misconfiguration.
+    #
+    # ValueError too: the factory raises it for every CONFIG mistake -- an
+    # unknown builtin tool, an unknown engine, provider: genai on a framework
+    # engine. Catching RuntimeError alone meant one mistyped tool name printed
+    # a full traceback. TimeoutError is an mcp_stdio server that never came up.
     try:
         agent = build_agent(cfg, skip_rag=dry_run)
-    except RuntimeError as exc:
+    except (RuntimeError, ValueError, TimeoutError) as exc:
         rprint(f"[red]Could not build the agent:[/red] {esc(exc)}")
         raise typer.Exit(code=1)
 
@@ -354,6 +359,12 @@ def run(
             rprint("        [cyan]request_timeout: 900[/cyan]")
             rprint("  CPU-only machines need this; a GPU rarely does. Lowering "
                    "[bold]agent.max_iterations[/bold] also shortens the turn.")
+        # The failure path used to raise straight out, past the telemetry
+        # stop, the trace and close_agent. The run that broke is the one
+        # whose trace you need, and a UT profiler or an MCP subprocess must
+        # not outlive the command that started it.
+        _close_out_run(cfg, agent, collector, telemetry, trace,
+                       memory.peak_mb, error=f"{type(exc).__name__}: {exc}")
         raise typer.Exit(code=1)
     # Reasoning models narrate before answering. The TUI folds that away; the
     # CLI printed it raw, so every answer from a Qwen3-family model arrived
@@ -410,11 +421,7 @@ def run(
         rprint(f"\n[dim]sources:[/dim] {esc(', '.join(sources))}",
                soft_wrap=True)
 
-    if collector is not None:
-        collector.stop()
-        rprint(f"[dim]telemetry written to[/dim] {esc(telemetry)}")
-    if trace:
-        _write_trace(trace, cfg, agent, peak_rss_mb=memory.peak_mb)
+    _close_out_run(cfg, agent, collector, telemetry, trace, memory.peak_mb)
 
     # LAST, after the answer, the sources, the telemetry and the trace have all
     # been written. The exit code is the only part of this a script can read,
@@ -422,6 +429,22 @@ def run(
     # must not cost the human the diagnostic output that explains it.
     if failed:
         raise typer.Exit(code=1)
+
+
+def _close_out_run(cfg, agent, collector, telemetry_path, trace_path,
+                   peak_rss_mb, error: str | None = None) -> None:
+    """Everything a run owes on its way out, whether it answered or not.
+
+    One function so the success path and the failure path cannot drift: the
+    failure path once skipped all three of these.
+    """
+    if collector is not None:
+        collector.stop()
+        rprint(f"[dim]telemetry written to[/dim] {esc(telemetry_path)}")
+    if trace_path:
+        _write_trace(trace_path, cfg, agent, peak_rss_mb=peak_rss_mb,
+                     error=error)
+    close_agent(agent)
 
 
 def _exit_is_a_folder(path: str):
@@ -621,7 +644,8 @@ def _brief_error(message: str | None, limit: int = 34) -> str:
     return text if len(text) <= limit else text[:limit - 1] + "\u2026"
 
 
-def _write_trace(path: str, cfg, agent, peak_rss_mb=None) -> None:
+def _write_trace(path: str, cfg, agent, peak_rss_mb=None,
+                 error: str | None = None) -> None:
     """Dump the run trace (Layer 7) as JSON: what the run cost, measured.
 
     The native loop fills agent.last_trace as it works. The framework engines
@@ -650,6 +674,10 @@ def _write_trace(path: str, cfg, agent, peak_rss_mb=None) -> None:
     trace_data = dict(trace_data)                  # never mutate the agent's copy
     trace_data["model"] = cfg.model.name
     trace_data["peak_rss_mb"] = peak_rss_mb
+    if error is not None:
+        # The run raised. Whatever turns completed before it did are above;
+        # this says how it ended.
+        trace_data["error"] = error
     with open(path, "w", encoding="utf-8") as f:
         json.dump(trace_data, f, indent=2)
     rprint(f"[dim]trace written to[/dim] {esc(path)}")
@@ -667,7 +695,8 @@ def resolve_chat_model(model_path: str | None,
        about tensor ports; now it is one plain sentence and a suggestion.
     Raises typer.Exit(1) after printing guidance when nothing usable exists.
     """
-    from ovat.core.model_scout import find_models, identify_model, pick_chat_llm
+    from ovat.core.model_scout import (CHAT_KINDS, find_models,
+                                       identify_model, pick_chat_llm)
 
     if model_path is None:
         choice, llms = pick_chat_llm(extra_roots)
@@ -695,7 +724,7 @@ def resolve_chat_model(model_path: str | None,
     kind, why = identify_model(model_path)
     # "unified" is a text LLM that also takes images (Qwen3.5); refusing it
     # would reject the model the quickstart itself recommends.
-    if kind in ("llm", "unified", "unknown"):   # unknown = benefit of the doubt
+    if kind in CHAT_KINDS:
         return model_path
     rprint(f"[red]{esc(os.path.basename(model_path.rstrip('/')))} is not a text "
            f"LLM[/red] [dim]({esc(why)})[/dim]; chat needs a text model.")
@@ -1158,7 +1187,19 @@ def setup(
         raise typer.Exit(code=1)
 
     rprint(f"[green]OVMS installed[/green] → {esc(binary)}")
-    rprint("[dim]No PATH change needed; OVAT looks here on its own.[/dim]")
+    # Only the DEFAULT root is one the locator searches. --dest used to get
+    # the same "looks here on its own" line, and the next `ovat serve` then
+    # reported OVMS as not installed.
+    if os.path.normcase(os.path.abspath(root)) == os.path.normcase(
+            os.path.abspath(ovms_installer.DEFAULT_ROOT)):
+        rprint("[dim]No PATH change needed; OVAT looks here on its own.[/dim]")
+    else:
+        setter = "set" if sys.platform == "win32" else "export"
+        rprint("[yellow]OVAT does not search this folder by itself.[/yellow] "
+               "Point it here with either:")
+        rprint(f"  workflow.yml →  [bold]model.ovms_binary: {esc(binary)}"
+               f"[/bold]")
+        rprint(f"  env var      →  [bold]{setter} OVAT_OVMS={esc(binary)}[/bold]")
     rprint("[dim]Check it with[/dim] [bold]ovat doctor[/bold]")
 
 

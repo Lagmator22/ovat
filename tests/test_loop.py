@@ -465,3 +465,75 @@ def test_an_untruncated_fragment_blames_the_model_first():
     assert "malformed" in answer
     assert answer.index("malformed") < answer.index("tool_parser")
     assert "STATIC" in answer
+
+
+def test_a_failed_call_never_inherits_the_previous_calls_sources():
+    """The trace's per-call `sources` is what `ovat run` prints as citations.
+
+    _last_sources was set only on the success and exception paths, so a call
+    to a tool that does not exist, or a call with broken JSON, reported the
+    sources of whichever call ran BEFORE it -- and the CLI printed those as
+    citations for an answer they had nothing to do with.
+    """
+    from types import SimpleNamespace
+
+    def search(query, top_k=5):
+        return [{"text": "t", "source": "secret/plan.md", "distance": 0.1}]
+
+    tools = {"search_docs": {
+        "schema": {"type": "function", "function": {"name": "search_docs"}},
+        "function": search}}
+    broken = SimpleNamespace(id="tc_3", type="function",
+                             function=SimpleNamespace(name="search_docs",
+                                                      arguments="{bad json"))
+    llm = FakeLLMProvider([
+        reply("tool_calls", tool_calls=[
+            make_tool_call("tc_1", "search_docs", {"query": "q"})]),
+        reply("tool_calls", tool_calls=[
+            make_tool_call("tc_2", "zzz_unknown_tool", {}), broken]),
+        reply("stop", content="done"),
+    ])
+    agent = AgentLoop(llm, tools=tools)
+    agent.run("q")
+
+    first, second = agent.last_trace["turns"][:2]
+    assert first["tool_calls"][0]["sources"] == ["secret/plan.md"]
+    assert [c["sources"] for c in second["tool_calls"]] == [[], []], (
+        "a call that never ran reported another call's citations")
+
+
+def test_a_fuzzy_matched_call_is_traced_under_the_tool_that_ran():
+    """979e8f8 lets a near-miss name ("search") run the closest real tool
+    ("search_docs"). The trace kept the name the model INVENTED, so --trace
+    and bench reported a call to a tool that does not exist while a
+    different one did the work. Record both: what ran, and what was asked."""
+    ran = []
+    tools = {"search_docs": {
+        "schema": {"type": "function", "function": {"name": "search_docs"}},
+        "function": lambda query, top_k=5: ran.append(query) or "hit"}}
+    llm = FakeLLMProvider([
+        reply("tool_calls", tool_calls=[
+            make_tool_call("tc_1", "search", {"query": "budget"})]),
+        reply("stop", content="done"),
+    ])
+    agent = AgentLoop(llm, tools=tools)
+    agent.run("q")
+
+    (call,) = agent.last_trace["turns"][0]["tool_calls"]
+    assert ran == ["budget"]                  # the near-miss really ran
+    assert call["name"] == "search_docs", "traced under a tool that does not exist"
+    assert call["requested"] == "search"      # and the slip is still visible
+
+
+def test_an_exact_name_carries_no_requested_field():
+    """Only a substitution is worth a second field; the normal case stays
+    the shape it always was."""
+    llm = FakeLLMProvider([
+        reply("tool_calls", tool_calls=[
+            make_tool_call("tc_1", "get_weather", {"city": "Oslo"})]),
+        reply("stop", content="done"),
+    ])
+    agent = AgentLoop(llm, tools=_weather_tool())
+    agent.run("q")
+    (call,) = agent.last_trace["turns"][0]["tool_calls"]
+    assert call["name"] == "get_weather" and "requested" not in call

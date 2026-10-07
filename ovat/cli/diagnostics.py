@@ -212,18 +212,35 @@ def check_config(config_path: str) -> list[Check]:
             "text, not real retrieval. Add a rag: block and run 'ovat index'.",
         ))
 
-    # The other two builtin tools each need a model on disk, pointed at by an
-    # environment variable. Both fail politely at call time -- no traceback,
+    # The other two builtin tools each need a model on disk, named by the
+    # tool's `model:` field or an environment variable. Both fail politely at call time -- no traceback,
     # and the agent explains itself -- but "fails politely" is not "works", and
     # a verification sweep found neither had ever been seen working because
     # nothing mentioned the missing model until the tool was already running.
     # A missing prerequisite belongs here, beside the two rows above.
+    #
+    # The tool's own `model:` comes FIRST, because that is the order the tool
+    # itself reads them in (transcribe._configured_model). This used to look
+    # only at the env var, so a workflow that named its model correctly was
+    # told the env var was unset -- a warning about the very setting `model:`
+    # was added to replace.
+    configured = {t.name: t.model for t in cfg.tools if t.model}
     for tool_name, env_var, what in (
             ("describe_image", "OVAT_VLM_MODEL", "vision-language"),
             ("transcribe", "OVAT_WHISPER_MODEL", "Whisper speech-to-text")):
         if tool_name not in tool_names:
             continue                      # not declared: not this config's problem
         label = f"{tool_name} model"
+        if tool_name in configured:
+            path = configured[tool_name]
+            if os.path.exists(path):
+                checks.append(Check(label, OK, f"model: {path}"))
+            else:
+                checks.append(Check(label, WARN,
+                                    f"model: {path} does not exist; "
+                                    f"{tool_name} will report that it cannot "
+                                    f"load its model"))
+            continue
         path = os.environ.get(env_var)
         if path and os.path.exists(path):
             checks.append(Check(label, OK, f"{env_var}={path}"))
