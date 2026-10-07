@@ -36,7 +36,7 @@ Which model to run, where, and how to reach it.
 | `device` | string | `CPU` | - | Where the model runs. `NPU` needs a channel-wise INT4 export; see the README. |
 | `ovms_url` | string | `http://localhost:8000/v3` | - | OpenAI-compatible endpoint. Ends in `/v3` unless a gateway sits in front. |
 | `ovms_port` | integer | `8000` | - | Port `ovat serve` binds OVMS to. |
-| `tool_parser` | string \| null | `null` | - | How OVMS decodes tool calls. `qwen3coder` for Qwen3.5, `hermes3` for Qwen3. Derived from `name` when omitted. |
+| `tool_parser` | string \| null | `null` | - | How OVMS decodes tool calls. `qwen3coder` for Qwen3.5, Qwen3.6 and Qwen3-Coder, `hermes3` for Qwen3, `phi4` for Phi-4-mini, `gptoss`, `llama3` for Llama-3.2, `devstral`. Derived from `name` when omitted; `hermes3` for a family OVAT does not recognise. |
 | `reasoning_parser` | string \| null | `null` | - | For thinking models that emit a separate reasoning channel. |
 | `source_model` | string \| null | `null` | - | Hugging Face id `ovat serve` downloads on first run. |
 | `model_repository_path` | string | `models` | - | Folder OVMS keeps its models in. |

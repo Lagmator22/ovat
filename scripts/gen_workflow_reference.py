@@ -44,8 +44,11 @@ PURPOSE = {
                            "a gateway sits in front.",
     ("model", "ovms_port"): "Port `ovat serve` binds OVMS to.",
     ("model", "tool_parser"): "How OVMS decodes tool calls. `qwen3coder` for "
-                              "Qwen3.5, `hermes3` for Qwen3. Derived from "
-                              "`name` when omitted.",
+                              "Qwen3.5, Qwen3.6 and Qwen3-Coder, `hermes3` "
+                              "for Qwen3, `phi4` for Phi-4-mini, `gptoss`, "
+                              "`llama3` for Llama-3.2, `devstral`. Derived "
+                              "from `name` when omitted; `hermes3` for a "
+                              "family OVAT does not recognise.",
     ("model", "reasoning_parser"): "For thinking models that emit a separate "
                                    "reasoning channel.",
     ("model", "source_model"): "Hugging Face id `ovat serve` downloads on "
