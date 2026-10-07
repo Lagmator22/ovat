@@ -352,7 +352,7 @@ current drivers; it has not been demonstrated here.
 git clone https://github.com/Lagmator22/ovat.git && cd ovat
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate.bat
 pip install -e ".[dev]"
-pytest -q                    # 706 passed, 8 skipped, no server needed
+pytest -q                    # about 750 tests, no server needed
 pytest -m live               # against a running OVMS (AI PC only)
 ```
 

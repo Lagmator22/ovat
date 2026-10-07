@@ -129,7 +129,7 @@ workflow.yml ──load_workflow()──> WorkflowConfig (pydantic, STRICT)
    to OVMS for exactly this reason.
 5. **Tests gate everything.** Run `python -m pytest -q` with the venv's own
    interpreter (`.venv/bin/python` on macOS, `.\.venv\Scripts\python.exe`
-   on the AI PC), never the system one. ~522 tests; must end green. Every fix
+   on the AI PC), never the system one. ~750 tests; must end green. Every fix
    ships with a test, and that test must FAIL with the fix backed out: verify
    it, do not assume. A test that passes against the broken code is worse
    than none, and that has happened here more than once. One logical change
@@ -351,7 +351,9 @@ and a fake HOME, or they describe the developer's machine instead of the code.
   with severity sort and per-row copy, check_action greying, turn separators,
   indexing progress bar. Verified against live OVMS from the TUI itself
   (`/engine ovms` -> real tool calls). Widgets deliberately NOT used, so they
-  are not re-proposed: Sparkline, Digits, Tree, TabbedContent, MODES.
+  are not re-proposed: Sparkline (tried on the telemetry page and replaced by
+  a numbers table), Tree, MODES. Digits and TabbedContent were adopted later
+  by the telemetry page, where they earn their place.
   "Use every Textual widget" is not a goal; push back on it.
 - **W7-W8 complete 2026-07-29** (tag `v0.2.0-w7-8-complete`): LlamaIndex and
   OpenAI Agents SDK engines, `ovat bench`, and `examples/document-qa.yml` as
