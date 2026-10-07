@@ -116,9 +116,19 @@ def transcribe_impl(path: str, language: str = "en", pipeline=None,
 
     Note to myself: I check the file exists first and return a clear error
     string instead of letting a missing path blow up the whole agent.
+
+    A misspelt path may be swapped for a near match (ovat/tools/fuzzy.py);
+    when it is, the note saying so leads the result, so the substitution is
+    never silent.
     """
     from ovat.tools.fuzzy import resolve_path
-    path = resolve_path(path)
+    path, note = resolve_path(path)
+    result = _transcribe(path, language, pipeline, model, device)
+    return f"{note}\n{result}" if note else result
+
+
+def _transcribe(path: str, language: str, pipeline, model, device) -> str:
+    """transcribe_impl's body, once the path is settled."""
     if not os.path.isfile(path):
         return f"Error: I could not find an audio file at: {path}"
     try:

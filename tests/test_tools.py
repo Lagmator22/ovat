@@ -365,3 +365,92 @@ def test_a_language_the_model_already_wrapped_is_not_wrapped_twice():
             transcribe_impl(path, language=given, pipeline=FakePipeline())
             assert seen["language"].count("<|") == 1, seen["language"]
             assert seen["language"].count("|>") == 1, seen["language"]
+
+
+# Fuzzy path recovery: bounded, and never silent
+
+def test_an_existing_path_is_used_as_is_with_no_note(tmp_path):
+    from ovat.tools.fuzzy import resolve_path
+
+    real = tmp_path / "clip.wav"
+    real.write_bytes(b"")
+    assert resolve_path(str(real)) == (str(real), None)
+
+
+def test_a_near_miss_in_the_same_folder_is_used_and_announced(tmp_path):
+    """The case the matcher exists for: a typo in the filename itself."""
+    from ovat.tools.fuzzy import resolve_path
+
+    real = tmp_path / "meeting-notes.wav"
+    real.write_bytes(b"")
+    path, note = resolve_path(str(tmp_path / "meeting_note.wav"))
+    assert path == str(real)
+    assert note and "meeting_note.wav" in note and "meeting-notes.wav" in note
+
+
+def test_an_unrelated_name_is_not_substituted(tmp_path):
+    """0.66 similarity -- file.wav vs sample.wav -- is a different file."""
+    from ovat.tools.fuzzy import resolve_path
+
+    (tmp_path / "sample.wav").write_bytes(b"")
+    missing = str(tmp_path / "file.wav")
+    assert resolve_path(missing) == (missing, None)
+
+
+def test_the_model_is_told_which_file_it_actually_got(tmp_path):
+    """c4f4dc3 swapped files without a word: asked for one recording, the
+    model was handed another and answered as if it were the first."""
+    real = tmp_path / "meeting-notes.wav"
+    _write_wav(real, channels=1, rate=16000)
+
+    class FakePipeline:
+        def generate(self, samples, language=None):
+            return "the transcript"
+
+    out = transcribe_impl(str(tmp_path / "meeting_note.wav"),
+                          pipeline=FakePipeline())
+    assert out.startswith("Note:"), out
+    assert "meeting-notes.wav" in out and out.endswith("the transcript")
+
+
+def test_a_bare_name_is_found_a_couple_of_folders_down(tmp_path, monkeypatch):
+    """The model says "sample.wav" for examples/audio-multimodal/sample.wav.
+    Two levels under the cwd reaches it; .venv and deeper trees stay unread."""
+    import os
+
+    from ovat.tools.fuzzy import resolve_path
+
+    real = tmp_path / "examples" / "audio" / "sample.wav"
+    real.parent.mkdir(parents=True)
+    real.write_bytes(b"")
+    hidden = tmp_path / ".venv" / "sample.wav"
+    hidden.parent.mkdir()
+    hidden.write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+
+    path, note = resolve_path("sample.wav")
+    assert os.path.samefile(path, real)
+    assert note and "sample.wav" in note
+
+
+def test_a_miss_does_not_crawl_the_working_directory(tmp_path, monkeypatch):
+    """The first version walked EVERYTHING under the cwd on every miss: 31.6 s
+    for one call started from a home directory. A file buried deep in an
+    unrelated tree must not even be looked at."""
+    import time
+
+    from ovat.tools.fuzzy import resolve_path
+
+    deep = tmp_path / "a" / "b" / "c" / "d" / "e"
+    deep.mkdir(parents=True)
+    (deep / "meeting-notes.wav").write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+
+    started = time.monotonic()
+    path, note = resolve_path(str(tmp_path / "elsewhere" / "meeting_note.wav"))
+    assert time.monotonic() - started < 1.0
+    assert note is None, f"reached into an unrelated tree: {path}"
+
+    # A bare name walks, but only two levels: depth five stays out of reach.
+    path, note = resolve_path("meeting_note.wav")
+    assert note is None, f"walked past the depth bound: {path}"
