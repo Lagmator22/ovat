@@ -120,6 +120,8 @@ class OpenAIAgentsAgent:
         # full transcript (input plus everything the run added), which is
         # exactly the input the next run should start from.
         self._input_items: list = []
+        # True when the last run() could not answer; see LangChainAgent.
+        self.last_failed = False
 
     def run(self, user_message: str) -> str:
         """Run for one message and return the final text.
@@ -142,6 +144,7 @@ class OpenAIAgentsAgent:
 
         from agents.exceptions import MaxTurnsExceeded
 
+        self.last_failed = False
         try:
             result = asyncio.run(Runner.run(
                 self._agent,
@@ -155,6 +158,7 @@ class OpenAIAgentsAgent:
             # History is left untouched: a failed run must not poison the next
             # question with a half-finished exchange.
             # Same wording as the native loop so every engine fails alike.
+            self.last_failed = True
             return (f"Error: I reached my max of {self.max_iterations} steps "
                     f"without a final answer.")
         self._input_items = result.to_input_list()

@@ -76,11 +76,17 @@ class LangChainAgent:
         # visits plus the final answer. This keeps my cap close in meaning to
         # the native loop's max_iterations.
         self._recursion_limit = max_iterations * 2 + 1
+        # True when the last run() could not answer. The framework engines
+        # keep no trace, so this is how `ovat run` and bench learn that a run
+        # failed: the failure sentence below is otherwise just text, and a
+        # capped run exited 0 like a good one.
+        self.last_failed = False
 
     def run(self, user_message: str) -> str:
         """Run the LangChain agent for one message and return the final text."""
         from langgraph.errors import GraphRecursionError
 
+        self.last_failed = False
         try:
             result = self._graph.invoke(
                 {"messages": [*self._messages, ("user", user_message)]},
@@ -90,6 +96,7 @@ class LangChainAgent:
             # History is left untouched: a failed run must not poison the next
             # question with a half-finished exchange.
             # Same wording as the native loop so the two engines fail alike.
+            self.last_failed = True
             return (f"Error: I reached my max of {self.max_iterations} steps "
                     f"without a final answer.")
         # The graph returns the FULL message list (input plus everything new),

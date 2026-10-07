@@ -267,3 +267,18 @@ def test_markdown_fenced_arguments_parse_on_the_openai_sdk_path_too():
 
     assert called.get("city") == "Tokyo", f"fenced args were not parsed: {result}"
     assert "could not parse" not in str(result)
+
+
+def test_the_agents_adapter_flags_a_capped_run_as_failed(monkeypatch):
+    import agents
+    from agents.exceptions import MaxTurnsExceeded
+
+    tools, _ = _tools()
+
+    async def capped(agent, input_items, max_turns=None):
+        raise MaxTurnsExceeded("too many")
+
+    monkeypatch.setattr(agents.Runner, "run", capped)
+    agent = OpenAIAgentsAgent(object(), tools, 3, None)
+    agent.run("q")
+    assert agent.last_failed is True

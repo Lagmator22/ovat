@@ -374,8 +374,13 @@ def run(
     # A run that could not answer must EXIT non-zero. The loop returns its
     # failures as the answer text (the model needs to read them), so without
     # this the CLI printed "Error: ..." and reported success.
+    #
+    # Two sources, because only the native loop keeps a trace. The framework
+    # adapters flag their own failures in last_failed; reading the trace
+    # alone let a capped llamaindex run exit 0 (measured on the AI PC).
     failed = bool((getattr(agent, "last_trace", None) or {})
-                  .get("totals", {}).get("failed"))
+                  .get("totals", {}).get("failed")) or bool(
+        getattr(agent, "last_failed", False))
     answer = ui.strip_thinking(answer) or answer
 
     # An answer that still CONTAINS tool-call markup is a tool call that was

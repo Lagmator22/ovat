@@ -1737,3 +1737,26 @@ def test_setup_into_a_custom_folder_says_how_ovat_will_find_it(monkeypatch,
     assert result.exit_code == 0, result.output
     assert "looks here on its own" not in flat
     assert "OVAT_OVMS" in flat and "ovms_binary" in flat
+
+
+def test_a_framework_engine_that_failed_exits_non_zero(monkeypatch, tmp_path):
+    """Measured on the AI PC: the llamaindex step cap printed "Error: I
+    reached my max of 1 steps" and exited 0. `failed` was read only from the
+    native loop's trace totals, and the framework adapters keep no trace, so
+    none of the three could ever fail a run. They flag it themselves now."""
+    from ovat.cli import main as cli_main
+
+    class CappedAdapter:                     # a framework engine: no last_trace
+        tools, max_iterations = {}, 3
+        last_failed = True
+
+        def run(self, text):
+            return "Error: I reached my max of 3 steps without a final answer."
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: CappedAdapter())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\nagent:\n  type: llamaindex\n",
+                      encoding="utf-8")
+    result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+    assert result.exit_code == 1, result.output
+    assert "max of 3 steps" in result.output        # and it still says why

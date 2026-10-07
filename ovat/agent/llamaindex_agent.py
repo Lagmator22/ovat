@@ -88,6 +88,8 @@ class LlamaIndexAgent:
         # Each workflow run is stateless on its own, so the adapter keeps the
         # history and hands it back as chat_history on every call.
         self._history: list = []
+        # True when the last run() could not answer; see LangChainAgent.
+        self.last_failed = False
 
     def run(self, user_message: str) -> str:
         """Run the agent for one message and return the final text.
@@ -110,6 +112,7 @@ class LlamaIndexAgent:
                 "agent.type: native.")
         from llama_index.core.workflow.errors import WorkflowRuntimeError
 
+        self.last_failed = False
         try:
             return asyncio.run(self._arun(user_message))
         except WorkflowRuntimeError as exc:
@@ -119,6 +122,7 @@ class LlamaIndexAgent:
             # "Error talking to OVMS", blaming a server that was fine.
             if not str(exc).startswith("Max iterations"):
                 raise
+            self.last_failed = True
             return (f"Error: I reached my max of {self.max_iterations} steps "
                     f"without a final answer.")
 
