@@ -195,6 +195,24 @@ _UT_KNOWN_DIRS = [
 #: How long ut is told to collect for (its -t); see IntelHardwareSource.start.
 UT_DURATION_S = 86400
 
+#: One line of ut's continuous output, as ut-tool-ext-v0.2.0-beta1.1 prints it
+#: on the AI PC:
+#:   Metric:  PKG-PWR | PID:  0 | Process:  | Entity: Package_0 Power |
+#:   Descriptor: Power | Value: 4738.83 mJ | Timestamp: 1791386264570075600 |
+#:   Duration: 524996100
+#: Timestamp and Duration are nanoseconds. UT's docs do not say so; it was
+#: measured: Duration doubled with the sampling interval (507 -> 1006 ms),
+#: equals the gap between consecutive Timestamps, and Timestamp decodes to the
+#: wall clock as epoch nanoseconds.
+_UT_METRIC_LINE = re.compile(
+    r"^Metric:\s*(?P<name>[^|]+?)\s*\|.*\|\s*Value:\s*(?P<value>[-+0-9.eE]+)"
+    r"\s*(?P<unit>[^|\s]*)\s*\|\s*Timestamp:\s*\d+\s*\|\s*Duration:\s*"
+    r"(?P<duration>\d+)\s*$")
+
+#: A reading over a shorter window than this is a counter's baseline, not a
+#: measurement: each counter's FIRST line covers ~57 us and reads 0.00 mJ.
+_UT_MIN_WINDOW_NS = 1_000_000
+
 
 def find_ut(explicit: str | None = None) -> tuple:
     """Locate Intel UT. Returns (path or None, how it was found).
@@ -268,17 +286,15 @@ class IntelHardwareSource(TelemetrySource):
 
     name = "intel"
 
-    #: What UT's collectors report, and therefore what the page can draw.
-    #: level-zero gives per-engine device activity on GPU and NPU; socwatch
-    #: gives package power and frequency. Names are normalised to snake_case
-    #: here so the page does not have to know UT's exact spelling, which has
-    #: differed between beta builds.
+    #: What this UT build (ut-tool-ext-v0.2.0-beta1.1) reports in continuous
+    #: mode on the LunarLake AI PC, as named by _parse_metric_line. All of it
+    #: comes from socwatch: UT's README says only SocWatch and XPU OS produce
+    #: data in continuous mode, and level-zero printed no Metric lines here.
+    #: Names follow UT's own (PMT-VCCGT-PWR -> vccgt_power_w) rather than
+    #: "gpu_power_w": UT's docs do not say what each rail powers.
     KNOWN_METRICS = (
-        "npu_utilization", "gpu_utilization", "gpu_render_pct",
-        "gpu_media_pct", "gpu_compute_pct", "gpu_copy_pct",
-        "power_w", "package_power_w", "gpu_power_w", "npu_power_w",
-        "gpu_freq_mhz", "cpu_freq_mhz", "gpu_mem_used_mb",
-        "gpu_mem_bandwidth_gbs", "temperature_c",
+        "pkg_power_w", "vccia_power_w", "vccgt_power_w", "npu_power_w",
+        "npu_bw_gbs", "igfx_pstate_mhz",
     )
 
     def __init__(self, ut_binary: str | None = None,
@@ -294,6 +310,8 @@ class IntelHardwareSource(TelemetrySource):
         self._out_path = None
         # Lines UT has printed, filled by a reader thread; see start().
         self._lines: queue.Queue = queue.Queue()
+        # Whether any line has become a number yet, for `note`.
+        self._got_metric = False
 
     @property
     def unavailable(self) -> str | None:
@@ -356,16 +374,13 @@ class IntelHardwareSource(TelemetrySource):
         """One snapshot of whatever UT has emitted since the last read.
 
         MEASURED ON THE AI PC (ut-tool-ext-v0.2.0-beta1.1, 2026-10-07):
-        continuous mode DOES print text on stdout, in lines shaped like
-        `Metric: PKG-PWR | ... | Value: 1568.97 mJ`. An earlier note here said
-        it printed nothing; that was never measured. The middle fields of that
-        line are not yet recorded, so the format is not parsed here and those
-        lines are skipped -- reading it needs a captured sample first.
+        continuous mode prints one `Metric: NAME | ... | Value: N unit |
+        Timestamp: T | Duration: D` line per reading; see _parse_metric_line.
 
-        Shapes handled: a JSON line if a build ever streams one, and
-        "name: value" or "name = value" text otherwise. Anything unparseable
-        is skipped rather than raised, because a malformed frame is a missing
-        reading and not a reason to lose the run.
+        Also handled: a JSON line if a build ever streams one, and "name:
+        value" or "name = value" text. Anything unparseable is skipped rather
+        than raised, because a malformed frame is a missing reading and not a
+        reason to lose the run.
         """
         if self._proc is None:
             return {}
@@ -379,13 +394,65 @@ class IntelHardwareSource(TelemetrySource):
                 return out
             if not line:
                 continue
-            if not line.startswith("{"):
-                out.update(self._parse_text_line(line))
-                continue
-            try:
-                out.update(self._normalise(json.loads(line)))
-            except ValueError:
-                continue
+            if line.startswith("Metric:"):
+                # Checked first: the generic "name: value" fallback below
+                # would split at the first colon, read the name "Metric", and
+                # drop every line this build prints.
+                reading = self._parse_metric_line(line)
+            elif not line.startswith("{"):
+                reading = self._parse_text_line(line)
+            else:
+                try:
+                    reading = self._normalise(json.loads(line))
+                except ValueError:
+                    continue
+            if reading:
+                self._got_metric = True
+                out.update(reading)
+
+    @staticmethod
+    def _parse_metric_line(line: str) -> dict:
+        """One `Metric: ... | Value: ... | Timestamp: ... | Duration: ...` line.
+
+        The name is UT's own, lower-cased with the PMT-/HW- prefixes dropped,
+        so nothing here claims to know what a rail powers. The unit decides
+        the conversion, each one seen on the AI PC:
+
+          mJ     energy over the window, so mJ / ms = watts ("-PWR" -> _power_w)
+          bytes  moved over the window, as GB/s (_gbs)
+          MHz    already a rate (_mhz)
+
+        Any other unit passes through under its own name; none was seen, so
+        that path is untested against real output. A reading over a window
+        shorter than 1 ms is dropped: each counter's first line covers ~57 us
+        and reads 0.00, which as watts would be a confident and wrong zero.
+        """
+        match = _UT_METRIC_LINE.match(line)
+        if not match:
+            return {}
+        try:
+            value = float(match["value"])
+        except ValueError:
+            return {}
+        duration_ns = int(match["duration"])
+        name = match["name"].strip().lower()
+        for prefix in ("pmt-", "hw-"):
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+        name = re.sub(r"[^0-9a-z]+", "_", name).strip("_")
+        unit = match["unit"]
+        if unit in ("mJ", "bytes") and duration_ns < _UT_MIN_WINDOW_NS:
+            return {}
+        if unit == "mJ":
+            if name.endswith("_pwr"):
+                name = name[:-len("_pwr")] + "_power"
+            return {f"{name}_w": round(value / (duration_ns / 1e6), 3)}
+        if unit == "bytes":
+            return {f"{name}_gbs": round(value / (duration_ns / 1e9) / 1e9, 3)}
+        if unit == "MHz":
+            return {f"{name}_mhz": value}
+        suffix = re.sub(r"[^0-9a-z]+", "_", unit.lower()).strip("_")
+        return {f"{name}_{suffix}" if suffix else name: value}
 
     @staticmethod
     def _parse_text_line(line: str) -> dict:
@@ -441,9 +508,16 @@ class IntelHardwareSource(TelemetrySource):
         "live" with no metrics behind it is the most confusing state a source
         can be in: it looks like an idle NPU rather than an unreadable one.
         """
-        if self.unavailable is None and self._proc is not None:
-            return ("running, but this UT build prints `Metric: ... | Value:` "
-                    "lines that OVAT cannot parse yet")
+        if self.unavailable is not None or self._proc is None:
+            return None
+        code = self._proc.poll() if hasattr(self._proc, "poll") else None
+        if code is not None:
+            # Measured on the AI PC: ut sometimes exits straight after its
+            # first line, intermittently, cause not determined. Say so rather
+            # than leave a source that reads as idle hardware.
+            return f"ut exited (code {code}) and is no longer sampling"
+        if not self._got_metric:
+            return "running, no reading parsed yet"
         return None
 
     def stop(self) -> None:

@@ -48,16 +48,17 @@ REFRESH_HZ = 2.0
 # RAM in those slots instead of three boxes reading "---" forever. A fixed
 # list was the reason the page looked broken rather than merely limited.
 _PREFERRED = [
-    # npu.* comes from the driver's own busy counter and is a real percentage;
-    # intel.* comes from UT and is richer but currently silent. Preferring the
-    # driver means the NPU card shows a number where one exists.
+    # npu.* comes from the driver's own busy counter and is a real percentage.
+    # intel.* comes from UT, whose continuous mode on the AI PC reports power,
+    # NPU bandwidth and GPU frequency but no utilisation percentage, so the
+    # driver's figure stays first for the NPU card.
     ("npu.utilization", "NPU", "%"),
     # The cache figure earns a headline slot because it is the one number that
     # predicts the undecoded-tool-call failure before it happens.
     ("ovms.kv_cache_pct", "KV CACHE", "%"),
     ("intel.npu_utilization", "NPU", "%"),
     ("intel.gpu_utilization", "GPU", "%"),
-    ("intel.power_w", "POWER", "W"),
+    ("intel.pkg_power_w", "POWER", "W"),
     ("system.cpu_pct", "SYS CPU", "%"),
     ("system.ram_used_pct", "SYS RAM", "%"),
     ("process.rss_mb", "OVAT MEM", "MB"),
@@ -126,12 +127,15 @@ measured, it read 100% while the GPU generated and the NPU sat idle.
      [cyan]~/ut[/cyan] and OVAT finds it
   4. Windows and Linux only; there is no macOS build
 
-[b]Why the intel.* rows are still empty[/b]
-MEASURED on the AI PC: continuous mode prints text lines such as
-[cyan]Metric: PKG-PWR | ... | Value: 1568.97 mJ[/cyan], which OVAT does not
-parse yet, so the Sources tab honestly reports it running while this page
-gets nothing from it. Parsing those lines is the next step. Saying so beats
-a graph that pretends to be live.
+[b]What the intel.* rows are[/b]
+MEASURED on the AI PC (ut-tool-ext-v0.2.0-beta1.1): continuous mode prints
+one [cyan]Metric: PKG-PWR | ... | Value: 4738.83 mJ | ... | Duration: ...[/cyan]
+line per reading. OVAT turns energy over its window into watts
+([cyan]pkg_power_w[/cyan], [cyan]vccia_power_w[/cyan], [cyan]vccgt_power_w[/cyan],
+[cyan]npu_power_w[/cyan]), bytes into [cyan]npu_bw_gbs[/cyan], and keeps
+[cyan]igfx_pstate_mhz[/cyan] as is. Names are UT's own: its docs do not say
+which rail powers what. No utilisation percentage comes from UT in this mode;
+that is what the npu.* row is for.
 """
 
 _PLANO_HELP = """

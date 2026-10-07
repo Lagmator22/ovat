@@ -1490,8 +1490,8 @@ def telemetry(
     file_sink = JSONFileSink(out) if out else None
     sink = FanOutSink(live, file_sink) if out else live
     # NPUSource before IntelHardwareSource: it reads the driver's own busy
-    # counter and produces an actual percentage, where UT's continuous mode
-    # prints `Metric: ... | Value:` text that OVAT does not parse yet.
+    # counter and produces an actual percentage, which UT's continuous mode
+    # does not report (it gives power, bandwidth and frequency).
     # OVMSLogSource carries the KV cache figure, which is the number the
     # undecoded-tool-call explanation rests on and the only one that has to be
     # captured in the same window as the failure it explains.
