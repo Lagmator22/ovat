@@ -1554,9 +1554,10 @@ def telemetry(
         pass
     finally:
         # Asked again while every source is still RUNNING. The Intel source
-        # only has something to say once started (ut takes ~6.4 s to its
-        # first reading on the AI PC, or may have exited), so the line above,
-        # printed before start(), could never show it.
+        # only has something to say once started (on the AI PC ut's first
+        # reading takes ~1.3 s, or 6.4 s right after a killed ut, and it may
+        # have exited), so the line above, printed before start(), could
+        # never show it.
         late = {name: note for name, note in collector.notes.items()
                 if shown.get(name) != note}
         collector.stop()

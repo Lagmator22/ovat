@@ -952,7 +952,8 @@ def test_telemetry_names_the_sources_that_cannot_run_here():
 
 class _StartedButSilent:
     """Like the real Intel source: no note until it has been started, then
-    "no reading yet" (ut needs ~6.4 s to its first reading on the AI PC)."""
+    "no reading yet" (on the AI PC ut needs ~1.3 s to its first reading, or
+    6.4 s when the previous ut was killed)."""
 
     name = "intel"
     unavailable = None

@@ -365,9 +365,12 @@ Do not "improve" any of these without reading the reason first.
   `_parse_metric_line` (tests use captured lines verbatim). Duration is
   nanoseconds by MEASUREMENT, not from UT's docs. Only socwatch produces
   data in this mode; names stay UT's own (vccgt_power_w, not gpu_power_w)
-  because UT does not document which rail powers what. ut also sometimes
-  exits right after its first line, intermittently (2 of ~11 starts on
-  2026-10-07, both with OVMS busy), cause not determined.
+  because UT does not document which rail powers what. A ut started right
+  after a KILLED ut takes 6.4 s to its first reading instead of ~1.3 s
+  (measured 5/5 each way). OVAT's stop() has to kill it: UT documents no
+  graceful stop, and Ctrl-Break crashes it (exit 0xC0000409). An early exit
+  after the first line (exit 11 once) was seen 3 times on 2026-10-07 and
+  did not reproduce in 76 starts later the same day; cause not determined.
 
 ### TUI
 - **`#masthead` height stays 17.** At 18 the TUI HANGS at 80x24.
@@ -450,8 +453,8 @@ machine instead of the code.
 On the AI PC, measurement first:
 - `ovat bench --repeat 5` A/B for each unmeasured knob above, then decide
   defaults.
-- Intel UT: find why ut sometimes exits after its first line (see
-  Measurement landmines).
+- Intel UT: the rare early exit after the first line (exit 11) is still
+  unexplained (see Measurement landmines).
 - `enable_thinking: false` on a unified Qwen3.5 through local `/chat`.
 - Upgrade the pinned OVMS (2026.2.1 -> current, 2026.4.1 at the time of
   writing) and re-measure `tool_parser: auto`.
