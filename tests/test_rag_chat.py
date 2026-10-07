@@ -11,8 +11,10 @@ from ovat.agent.rag_chat import build_context, rag_chat
 class FakeRetriever:
     def __init__(self, hits):
         self._hits = hits
+        self.queries = []
 
     def retrieve(self, query, top_k=5):
+        self.queries.append(query)
         return self._hits[:top_k]
 
 
@@ -71,6 +73,31 @@ def test_rag_chat_threads_history_between_system_and_question():
     assert roles == ["system", "user", "assistant", "user"]
     assert llm.seen[1]["content"] == "earlier question"
     assert "follow-up" in llm.seen[-1]["content"]
+
+
+def test_a_follow_up_is_searched_with_the_question_before_it():
+    """"And how is that number measured?" has no subject of its own. Searched
+    alone it pulled the wrong chunk first on the AI PC; the previous question
+    carries the subject back into the search."""
+    retriever = FakeRetriever([])
+    history = [{"role": "user", "content": "What is OVAT's memory budget?"},
+               {"role": "assistant", "content": "Under 8 GB."}]
+    rag_chat(retriever, FakeLLM(), "And how is that number measured?",
+             history=history)
+    assert retriever.queries == [
+        "What is OVAT's memory budget?\nAnd how is that number measured?"]
+
+
+def test_only_the_last_question_steers_the_search():
+    from ovat.agent.rag_chat import retrieval_query
+
+    history = [{"role": "user", "content": "old topic"},
+               {"role": "assistant", "content": "a"},
+               {"role": "user", "content": "recent topic"},
+               {"role": "assistant", "content": "b"}]
+    assert retrieval_query("next", history) == "recent topic\nnext"
+    assert retrieval_query("first", None) == "first"
+    assert retrieval_query("first", []) == "first"
 
 
 def test_rag_chat_caps_history_to_the_last_8_turns():
