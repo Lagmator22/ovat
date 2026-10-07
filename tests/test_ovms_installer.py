@@ -233,6 +233,37 @@ def test_checksum_mismatch_installs_nothing(tmp_path, monkeypatch):
     assert installer.installed_binary(str(root)) is None
 
 
+def test_an_install_without_a_published_checksum_says_so(tmp_path,
+                                                          monkeypatch):
+    """The checksum is only checked when the release publishes one. When it
+    does not, install() carried on (by design) but reported "installed"
+    exactly as for a verified archive, so nothing downstream could tell the
+    user their OVMS was never checked."""
+    _install_from_local_zip(tmp_path, monkeypatch)
+    monkeypatch.setattr(installer, "_expected_sha256", lambda url: None)
+
+    binary, what = installer.install(root=str(tmp_path / "root"))
+    assert os.path.isfile(binary)
+    assert what == "installed-unverified"
+
+
+def test_setup_warns_when_the_checksum_could_not_be_verified(tmp_path,
+                                                            monkeypatch):
+    """`ovat setup`'s help says it checks the checksum; when there was none
+    to check, the user has to hear that."""
+    from typer.testing import CliRunner
+
+    from ovat.cli.main import app
+
+    _install_from_local_zip(tmp_path, monkeypatch)
+    monkeypatch.setattr(installer, "_expected_sha256", lambda url: None)
+    result = CliRunner().invoke(app, ["setup", "--yes", "--dest",
+                                      str(tmp_path / "root")])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "no published checksum" in flat, result.output
+
+
 def test_install_refuses_on_macos(tmp_path, monkeypatch):
     monkeypatch.setattr(installer, "asset_for_platform",
                         lambda version=None: None)

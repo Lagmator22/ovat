@@ -1108,12 +1108,26 @@ def _offer_ovms_install(assume_yes: bool) -> str | None:
             return None
 
     try:
-        binary, _what = _install_ovms()
+        binary, what = _install_ovms()
     except Exception as exc:
         rprint(f"[red]Could not install OVMS:[/red] {esc(exc)}")
         return None
     rprint(f"[green]OVMS installed[/green] → {esc(binary)}")
+    _say_if_unverified(what)
     return binary
+
+
+def _say_if_unverified(what: str) -> None:
+    """Warn when an install went ahead with nothing to check it against.
+
+    `setup` promises a checksum check, and the installer does one whenever the
+    release publishes a .sha256. When it does not, installing anyway is the
+    right call (refusing would be our bug on Intel's release process), but the
+    user has to know their archive was never verified.
+    """
+    if what == "installed-unverified":
+        rprint("[yellow]Not verified:[/yellow] this OVMS release has no "
+               "published checksum, so the download could not be checked.")
 
 
 def _ovms_not_found(how: str) -> None:
@@ -1212,13 +1226,14 @@ def setup(
             raise typer.Exit(code=1)
 
     try:
-        binary, _what = _install_ovms(root=root, version=ovms_version,
-                                      force=force)
+        binary, what = _install_ovms(root=root, version=ovms_version,
+                                     force=force)
     except Exception as exc:
         rprint(f"[red]Could not install OVMS:[/red] {esc(exc)}")
         raise typer.Exit(code=1)
 
     rprint(f"[green]OVMS installed[/green] → {esc(binary)}")
+    _say_if_unverified(what)
     # Only the DEFAULT root is one the locator searches. --dest used to get
     # the same "looks here on its own" line, and the next `ovat serve` then
     # reported OVMS as not installed.
