@@ -129,7 +129,7 @@ workflow.yml ──load_workflow()──> WorkflowConfig (pydantic, STRICT)
    to OVMS for exactly this reason.
 5. **Tests gate everything.** Run `python -m pytest -q` with the venv's own
    interpreter (`.venv/bin/python` on macOS, `.\.venv\Scripts\python.exe`
-   on the AI PC), never the system one. ~522 tests; must end green. Every fix
+   on the AI PC), never the system one. ~750 tests; must end green. Every fix
    ships with a test, and that test must FAIL with the fix backed out: verify
    it, do not assume. A test that passes against the broken code is worse
    than none, and that has happened here more than once. One logical change
@@ -351,7 +351,9 @@ and a fake HOME, or they describe the developer's machine instead of the code.
   with severity sort and per-row copy, check_action greying, turn separators,
   indexing progress bar. Verified against live OVMS from the TUI itself
   (`/engine ovms` -> real tool calls). Widgets deliberately NOT used, so they
-  are not re-proposed: Sparkline, Digits, Tree, TabbedContent, MODES.
+  are not re-proposed: Sparkline (tried on the telemetry page and replaced by
+  a numbers table), Tree, MODES. Digits and TabbedContent were adopted later
+  by the telemetry page, where they earn their place.
   "Use every Textual widget" is not a goal; push back on it.
 - **W7-W8 complete 2026-07-29** (tag `v0.2.0-w7-8-complete`): LlamaIndex and
   OpenAI Agents SDK engines, `ovat bench`, and `examples/document-qa.yml` as
@@ -464,6 +466,25 @@ and a fake HOME, or they describe the developer's machine instead of the code.
     (`_WindowsNPUCounter`, PDH via ctypes, adapter chosen by shape). Two
     controls, both measured: NPU load -> 93.5%, and OVMS generating on the
     GPU with the NPU idle -> 0.0% while `engtype_neural` read 100.0%.
+
+- **Intel UT: two code comments were never measured, 2026-10-07.**
+  ut-tool-ext-v0.2.0-beta1.1 REJECTS `--continuous` with `--output` and exits
+  within a second, so the hardware source died at startup from dade76f on.
+  It now runs with its working directory set to a scratch folder instead.
+  And continuous mode DOES print text (`Metric: PKG-PWR | ... | Value: 1568.97
+  mJ`); the "prints nothing, writes binary traces" comments were inference.
+  Parsing that format needs one full captured line from the AI PC first.
+
+- **Knobs that exist and are NOT yet measured, 2026-10-07.** Researched from
+  OVMS's own docs and the Qwen3.5 model card, plumbed through, all OFF:
+  `model.ovms_tool_guided_generation` (OVMS `--enable_tool_guided_generation`,
+  XGrammar, in 2026.2.1), `model.enable_thinking`, and `top_p` / `top_k` /
+  `min_p` / `presence_penalty` / `seed`. The model card warns that greedy
+  decoding causes endless repetition, which is OVAT's `temperature: 0.0`
+  default. Decide defaults from `ovat bench --repeat N` on the AI PC, not from
+  the card. Also: OVMS auto parser detection landed in 2026.3.0 (PR #4312),
+  AFTER the "auto decodes nothing" measurement above; re-measure it on a
+  current OVMS before trusting either version of that claim.
 
 - **Nothing capped a generation, on any engine, until 2026-08-12.**
   `OVMSLLMProvider` defaulted `max_tokens` to None and omitted the key, and

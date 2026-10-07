@@ -79,7 +79,7 @@ while True:                                            # the loop, by hand
                          "content": str(result)})
 ```
 
-That is already fifty lines with the interesting parts removed. Still missing: an
+That is already a screenful with the interesting parts removed. Still missing: an
 iteration cap so a confused model cannot loop forever, error handling so a
 failing tool does not kill the run, session history if you want a second turn,
 device selection, and starting the model server in the first place.
@@ -120,10 +120,11 @@ ovat run workflow.yml -i "what did the Q3 review conclude?"
 ```
 
 That is the whole thing. The loop, the schemas, the history, the retries and the
-error messages are the toolkit's job. Ten commands cover the rest:
+error messages are the toolkit's job. Eleven commands cover the rest:
 
 | Command | Does |
 | --- | --- |
+| `ovat setup` | install the model server for this OS, once |
 | `ovat init` | write a starter `workflow.yml` |
 | `ovat doctor` | check Python, devices, drivers, OVMS, and your config |
 | `ovat serve` / `--stop` | start and stop the model server |
@@ -429,7 +430,7 @@ And the models themselves:
 > the KV cache as it goes, and that is not included above. Measured on an AI PC
 > during a runaway 18-minute request, the KV cache grew 3.6 → 5.8 GB and
 > `ovms.exe` reached **10.6 GB** resident. Cap it with `agent.max_iterations`
-> and the model's own answer length if you are near your RAM limit; the steady
+> and `model.max_tokens` (4096 by default) if you are near your RAM limit; the steady
 > figures are what to plan for, not a ceiling.
 
 The 4B numbers are measured on a real Intel AI PC; the rows written with `~` are estimates from parameter count and precision, not measurements. Note the peak sits **2.2 GB

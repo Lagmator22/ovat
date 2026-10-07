@@ -140,9 +140,9 @@ model or the human can act on, never a bare traceback on the CLI or TUI path.
 
 **Files:** `ovat/cli/main.py`, `ovat/config/workflow.py`, `ovat/cli/ui.py`
 
-Typer turns each function into a subcommand from its type hints. Ten commands:
-`run`, `chat`, `serve`, `index`, `init`, `doctor`, `models`, `bench`,
-`telemetry`, and a bare `ovat` that opens the TUI.
+Typer turns each function into a subcommand from its type hints. Eleven
+commands: `run`, `chat`, `index`, `init`, `doctor`, `setup`, `serve`,
+`models`, `bench`, `telemetry` and `tui`, and a bare `ovat` also opens the TUI.
 
 **Configuration is strict.** `WorkflowConfig` derives from a `StrictModel` base
 with `extra="forbid"`, so an unknown key is an *error*, not a silent default.
@@ -225,11 +225,11 @@ The native loop is four beats:
 ```mermaid
 flowchart TD
     Start["user message"] --> Ask["1. ASK<br/>POST history + tool menu"]
-    Ask --> Read{"2. READ<br/>finish_reason?"}
-    Read -->|"stop"| Check{"content usable?"}
-    Read -->|"tool_calls"| Guard{"list actually populated?"}
-    Guard -->|"empty"| ErrA["report; do not re-ask"]
-    Guard -->|"yes"| Act["3. ACT<br/>run each tool"]
+    Ask --> Read{"2. READ<br/>reply carries tool calls?"}
+    Read -->|"no"| Label{"finish_reason says tool_calls?"}
+    Label -->|"yes, but none sent"| ErrA["report; do not re-ask"]
+    Label -->|"no"| Check{"content usable?"}
+    Read -->|"yes"| Act["3. ACT<br/>run each tool"]
     Act --> Report["4. REPORT<br/>append tool results"]
     Report --> Cap{"iterations left?"}
     Cap -->|"yes"| Ask
@@ -239,7 +239,7 @@ flowchart TD
     Check -->|"real answer"| Done["answer + trace"]
 ```
 
-Exit on `finish_reason: stop`; `max_iterations` guarantees termination. Every
+Exit when a reply carries no tool calls. The decision is made on the payload, not on `finish_reason`, because OVMS documents NPU serving labelling a decoded tool call as `stop`. `max_iterations` guarantees termination. Every
 exit path goes through one `_finish` so the trace totals are always populated.
 
 Design points worth knowing:
@@ -284,6 +284,7 @@ flowchart TD
     end
     subgraph Ret ["RetrieverProvider"]
         SQLite["SQLiteVecRetrieverProvider<br/>sqlite-vec, persists to disk"]
+        Memory["InMemoryRetrieverProvider<br/>numpy, nothing on disk"]
     end
     subgraph VLM ["VLMProvider"]
         GenAIVLM["GenAIVLMProvider<br/>VLMPipeline"]
@@ -383,6 +384,8 @@ contracts, so any source feeds any sink.
 | `SystemSource` | CPU per core, RAM, thread count | all |
 | `ProcessMemorySource` | this process's resident memory | all |
 | `IntelHardwareSource` | GPU/NPU utilisation and power | Windows / Linux with Intel UT |
+| `NPUSource` | NPU utilisation | Linux (driver sysfs), Windows (PDH `GPU Engine`) |
+| `OVMSLogSource` | KV cache usage and type | wherever `ovat serve` writes `ovms.log` |
 
 Three rules this layer follows, because a measurement that lies is worse than a
 measurement that is missing:
@@ -538,13 +541,6 @@ It lives as a module-level function rather than inline in `start()` precisely
 so it can be tested without launching a server - while it was inline, the
 Linux branch had never been executed once.
 
-**The child environment is what `setupvars.bat` would have set.** Not just the
-binary's folder: the `python_on` build links `python3xx.dll` from
-`<ovms>/python`, so `PYTHONHOME` and two extra `PATH` entries are required. Get
-this wrong and the process dies instantly with `0xC0000135 DLL_NOT_FOUND` before
-writing a single byte to the log, which reads as "OVMS had nothing to say"
-rather than "OVMS never started".
-
 **Readiness is a stall budget, not a deadline.** A first run downloads the model,
 and that time is unbounded: gigabytes over whatever link the user has. Any fixed
 cap is either too small for a slow connection or too large to notice a real hang.
@@ -583,11 +579,11 @@ flowchart TD
     Detect -->|"CPU + GPU"| NoNPU["emb → CPU<br/>LLM → GPU"]
     Detect -->|"CPU + GPU + NPU"| Full["emb → NPU<br/>LLM → GPU<br/>whisper → CPU"]
 
-    Full --> Limits["NPU limits. CRITICAL"]
-    Limits --> L1["NO tool calling"]
-    Limits --> L2["NO continuous batching"]
-    Limits --> L3["static shapes only"]
-    Limits --> L4["prefers static shapes"]
+    Full --> Limits["To serve an LLM on the NPU"]
+    Limits --> L1["needs a -int4-cw-ov export"]
+    Limits --> L2["prompt capped: set --max_prompt_len"]
+    Limits --> L3["no batching or beam search"]
+    Limits --> L4["KV cache settings ignored"]
 ```
 
 | Model type | Device | Why |
@@ -753,9 +749,9 @@ to OVAT**. It is observability as configuration.
 
 ```mermaid
 flowchart LR
-    OVAT["ovat run<br/>ovms_url → :12000"] --> Plano["plano (Envoy)<br/>:12000<br/>OTEL spans"]
-    Plano --> Bridge["ovms_id_bridge.py<br/>:8001 (127.0.0.1)"]
-    Bridge --> OVMS["OVMS :8000/v3"]
+    OVAT["ovat run<br/>ovms_url → :8000/v1"] --> Plano["plano (Envoy)<br/>:8000<br/>OTEL spans"]
+    Plano --> Bridge["ovms_id_bridge.py<br/>:8001"]
+    Bridge --> OVMS["OVMS :8002/v3<br/>(model.ovms_port)"]
     Plano -.-> Obs["planoai obs<br/>latency · TTFT · tokens"]
 ```
 
@@ -780,7 +776,7 @@ did, latency, TTFT, HTTP status. Neither substitutes for the other.
 
 ## Testing strategy
 
-~550 tests, no server required. `pytest -q` must end green.
+About 750 tests, no server required. `pytest -q` must end green.
 
 | Convention | Reason |
 | --- | --- |
@@ -808,7 +804,7 @@ the documented command was still broken.
 
 | Layer | Status | Notes |
 | --- | --- | --- |
-| 1 CLI / Config | ✅ complete | 10 commands, strict validation |
+| 1 CLI / Config | ✅ complete | 11 commands, strict validation |
 | 2 Framework integration | ✅ complete | all four engines verified live on an AI PC |
 | 3 Agent core | ✅ complete | loop, session, three failure guards |
 | 4 Provider abstraction | ✅ complete | LLM, embeddings and retrievers each have two implementations behind one socket; sqlite-vec persists, `memory` does not. ANN backends (FAISS, USearch) would slot in without touching the factory |

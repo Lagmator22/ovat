@@ -26,10 +26,13 @@ class LLMProvider(ABC):
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
         """Send messages (+ optional tools), return the raw response.
 
-        The returned dict MUST expose `finish_reason` and any `tool_calls`,
-        because the agent loop (Layer 3, built in W3-W4) dispatches on them:
-          - finish_reason == "stop"        -> return the final answer
-          - finish_reason == "tool_calls"  -> run the tool, append result, loop
+        The returned dict MUST expose `finish_reason` and any `tool_calls`.
+        The agent loop (Layer 3) dispatches on the PAYLOAD:
+          - tool_calls present  -> run the tools, append results, loop
+          - tool_calls absent   -> return the content as the answer
+        finish_reason is recorded and used only to diagnose a broken reply
+        ("tool_calls" with none attached, or "length" for a cut-off one),
+        because OVMS documents NPU serving labelling a real call "stop".
         """
         ...
 

@@ -136,12 +136,12 @@ def test_tracing_is_on_so_the_gateway_earns_its_hop():
 def test_the_workflow_uses_planos_front_door_path_not_ovms_own():
     """This looks wrong and is correct. There are two different paths:
 
-        ovat  -> POST /v1/chat/completions -> plano :12000
-        plano -> POST /v3/chat/completions -> OVMS  :8000
+        ovat  -> POST /v1/chat/completions -> plano  :8000
+        plano -> POST /v3/chat/completions -> bridge :8001 -> OVMS :8002
 
     Clients always call plano at /v1; that is its own front door and is not
     configurable. The UPSTREAM path is what base_url sets. If the workflow
-    pointed at :8000/v3 the gateway would be bypassed and the example would
+    pointed at OVMS's own :8002/v3 the gateway would be bypassed and the example would
     prove nothing at all.
     """
     url = load_workflow(WORKFLOW).model.ovms_url

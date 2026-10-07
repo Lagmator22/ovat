@@ -77,6 +77,9 @@ _SOURCES_HELP = """
            so it works on macOS, Windows and Linux alike.
   [cyan]process[/cyan]  OVAT's OWN memory. Not the model's: an 8B model lives
            inside OVMS, in a different process entirely.
+  [cyan]npu[/cyan]      NPU utilisation from the driver (Linux) or the
+           Windows GPU Engine counter on the AI Boost adapter.
+  [cyan]ovms[/cyan]     KV cache usage and its type, read from ovms.log.
   [cyan]intel[/cyan]    GPU/NPU activity and package power, via Intel's
            Unified Telemetry tool. AI PC only.
 
@@ -92,7 +95,7 @@ Two different things can report an NPU, and only one of them currently gives
 this page a figure. Read this tab as "which one am I getting, and why".
 
   [cyan]npu.*[/cyan]     the DRIVER's own counter. A real live percentage.
-             Linux only today. This is what the NPU card shows.
+             Linux and Windows. This is what the NPU card shows.
   [cyan]intel.*[/cyan]   Intel Unified Telemetry. Much richer -- power,
              per-engine timelines, thermals -- but see the limit below.
 
@@ -106,17 +109,13 @@ OVAT reads it twice and divides to get a duty cycle -- the same arithmetic
 btop's NPU meter uses. Nothing to install; if the row is missing, check the
 module is loaded with [cyan]lsmod | grep intel_vpu[/cyan].
 
-[b]2. On Windows there is no verified equivalent yet[/b]
-Task Manager shows NPU usage, but it reads it through DXCore rather than a
-documented performance counter, so there is no path OVAT can rely on. Before
-assuming, check whether YOUR build exposes one:
-
-  [cyan]Get-Counter -ListSet *NPU*[/cyan]
-  [cyan]Get-Counter "\\GPU Engine(*)\\Utilization Percentage" -MaxSamples 1[/cyan]
-
-The second is documented and does work, so a GPU figure is reachable on
-Windows even where the NPU one is not. If the first prints a counter set,
-that is worth reporting -- it is the missing piece.
+[b]2. On Windows, the GPU Engine counter (no install)[/b]
+There is no NPU counter set: [cyan]Get-Counter -ListSet *NPU*[/cyan] only
+matches "I-npu-t Delay". But the NPU enumerates as a WDDM adapter, so its
+engines appear under [cyan]\\GPU Engine(*)\\Utilization Percentage[/cyan].
+OVAT reads them through PDH and picks the adapter that publishes only a
+compute engine. The GPU's own [cyan]engtype_neural[/cyan] is NOT the NPU:
+measured, it read 100% while the GPU generated and the NPU sat idle.
 
 [b]3. Intel Unified Telemetry (optional, richer)[/b]
   1. Download the ut-tool release and unzip it; it extracts to a versioned
@@ -163,11 +162,12 @@ any config. Three ways round it, none of them a workaround for a bug:
      against. 0.4.33 is current; treat an upgrade as a retest, since the
      config schema is what the two walls below are about.
   [b]2.[/b] [cyan]ovat serve examples/plano/workflow.yml[/cyan]
-     OVMS on :8000. Wait for it to report ready.
+     OVMS on :8002 (model.ovms_port), so plano can take :8000. Wait
+     for it to report ready.
   [b]3.[/b] [cyan]python examples/plano/ovms_id_bridge.py[/cyan]
      The bridge on :8001. Leave it running.
   [b]4.[/b] [cyan]planoai up examples/plano/plano-config.yaml[/cyan]
-     plano on :12000. Add [cyan]--docker[/cyan] on Windows.
+     plano on :8000. Add [cyan]--docker[/cyan] on Windows.
   [b]5.[/b] [cyan]ovat run examples/plano/workflow.yml --input "hello"[/cyan]
      The request now goes OVAT -> plano -> bridge -> OVMS.
   [b]6.[/b] [cyan]planoai obs[/cyan]            live aggregate view
@@ -193,7 +193,7 @@ than guessed at:
   [b]2.[/b] plano's Envoy WASM filter requires a top-level [cyan]"id"[/cyan]
      string in the response. OVMS returns valid OpenAI JSON but omits it, so
      plano rejects every reply. [cyan]examples/plano/ovms_id_bridge.py[/cyan]
-     sits on :8001, forwards to OVMS on :8000, injects the field, and also
+     sits on :8001, forwards to OVMS on :8002, injects the field, and also
      handles the Transfer-Encoding: chunked bodies plano sends.
 
 So base_url points at the BRIDGE, not at OVMS directly. Still no fork and no
