@@ -5,9 +5,11 @@ Note to myself: I test the plain impl functions directly with fakes, so I do
 not need a running MCP server, a vector database, or the Whisper model loaded.
 This keeps the suite fast and green on my Mac.
 """
+import os
 import wave
 
 import numpy as np
+import pytest
 
 from ovat.tools.search_docs import search_docs_impl
 from ovat.tools.transcribe import transcribe_impl
@@ -411,6 +413,29 @@ def test_the_model_is_told_which_file_it_actually_got(tmp_path):
                           pipeline=FakePipeline())
     assert out.startswith("Note:"), out
     assert "meeting-notes.wav" in out and out.endswith("the transcript")
+
+
+def test_the_note_shows_a_windows_path_the_way_it_is_written():
+    """repr() doubled every backslash, so the model was shown docs\\\\jfk.wav
+    and could send that back as a path. Measured on the AI PC."""
+    from ovat.tools.fuzzy import _note
+
+    note = _note("docs\\jkf.wav", "docs\\jfk.wav")
+    assert "'docs\\jfk.wav'" in note and "'docs\\jkf.wav'" in note
+    assert "\\\\" not in note
+
+
+@pytest.mark.skipif(os.sep == "\\", reason="a backslash is a separator here")
+def test_the_note_names_the_file_exactly_as_it_is_on_disk(tmp_path):
+    """The same doubling, end to end: a backslash in a POSIX file name stands
+    in for a Windows separator, and the note must quote the real path."""
+    from ovat.tools.fuzzy import resolve_path
+
+    real = tmp_path / "team\\meeting-notes.wav"
+    real.write_bytes(b"")
+    path, note = resolve_path(str(tmp_path / "team\\meeting_note.wav"))
+    assert path == str(real)
+    assert f"'{real}'" in note, note
 
 
 def test_a_bare_name_is_found_a_couple_of_folders_down(tmp_path, monkeypatch):

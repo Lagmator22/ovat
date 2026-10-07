@@ -85,5 +85,15 @@ def resolve_path(requested: str) -> tuple[str, str | None]:
     if best is None:
         return requested, None
     best = os.path.normpath(best)
-    return best, (f"Note: there is no file at {requested!r}; used the closest "
-                  f"match, {best!r}.")
+    return best, _note(requested, best)
+
+
+def _note(requested: str, used: str) -> str:
+    """The sentence that leads the tool result.
+
+    Plain quotes, not repr(): repr doubles every backslash, so on Windows the
+    model read 'docs\\\\jfk.wav' and could copy that doubled path into its
+    next call, a path that exists nowhere.
+    """
+    return (f"Note: there is no file at '{requested}'; used the closest "
+            f"match, '{used}'.")
