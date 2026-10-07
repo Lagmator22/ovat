@@ -1657,22 +1657,29 @@ def bench(
            + (f" x {repeat} runs" if repeat > 1 else "") + ")[/dim]")
     report = benchmark(cfg, input, names, config_path=config, repeat=repeat)
 
-    table = Table(header_style=f"bold {ui.BLUE}", border_style=ui.BLUE,
-                  box=box.ROUNDED)
-    for column in ("Engine", "Build s", "Answer s", "Peak MB", "Prompt tok",
-                   "Reply tok", "Tools"):
-        table.add_column(column, no_wrap=True)
+    # The decisive columns first: if an unusually wide value ever pushes the
+    # table past the terminal edge, the tail that gets cut is a measurement,
+    # not whether the engine worked.
+    headers = ["Engine"]
     if repeat > 1:
         # k/N: the number every A/B needs. A single run is a coin flip on a
         # model that fails some of the time.
-        table.add_column("OK", no_wrap=True)
-    table.add_column("Result", no_wrap=True)
+        headers.append("OK")
+    # Two-line headers on purpose: Rich does not break a header word, and its
+    # own collapse left an 80-column table one column too wide.
+    headers += ["Result", "Answer\ns", "Build\ns", "Peak\nMB",
+                "Tokens\nin/out", "Tools"]
+    rows, footnotes = [], []
     for row in report["results"]:
         # A dash, never a zero: "unknown" and "none" are different claims, and
         # only the native loop records token usage.
         def cell(key):
             value = row[key]
             return "-" if value is None else str(value)
+        if row["prompt_tokens"] is None and row["completion_tokens"] is None:
+            tokens = "-"
+        else:
+            tokens = f"{cell('prompt_tokens')}/{cell('completion_tokens')}"
         # The table is a SUMMARY, so the message is shortened. Keep the part
         # that says WHAT TO DO, not the exception class.
         #
@@ -1685,16 +1692,36 @@ def bench(
         if row["ok"]:
             status = Text("ok", style=f"bold {ui.GREEN}")
         else:
-            status = Text(_brief_error(row["error"]), style=ui.RED)
-        cells = [Text(row["engine"], style=ui.CYAN), cell("build_s"),
-                 cell("latency_s"), cell("peak_rss_mb"),
-                 cell("prompt_tokens"), cell("completion_tokens"),
-                 cell("tool_calls")]
+            # Under the table there is room for the sentence, not a cell's
+            # worth of it.
+            footnotes.append((row["engine"],
+                              _brief_error(row["error"], limit=240)))
+            status = Text(f"failed [{len(footnotes)}]", style=ui.RED)
+        cells = [Text(row["engine"], style=ui.CYAN)]
         if repeat > 1:
             rate = f"{row['ok_runs']}/{row['runs']}"
             cells.append(Text(rate, style=ui.GREEN if row["ok"] else ui.YELLOW))
-        table.add_row(*cells, status)
+        cells += [status, cell("latency_s"), cell("build_s"),
+                  cell("peak_rss_mb"), tokens, cell("tool_calls")]
+        rows.append(cells)
+
+    # Every column is at least as wide as its longest VALUE. The failure
+    # reason goes UNDER the table, keyed [n], and the two token counts share
+    # a column. Measured on the AI PC: with every column no_wrap and the
+    # reason inline, an 80-column terminal (and any piped output) squeezed OK
+    # and Tools to zero width and cut the timings to "5.…", so the k/N rate
+    # --repeat exists for never printed.
+    table = Table(header_style=f"bold {ui.BLUE}", border_style=ui.BLUE,
+                  box=box.ROUNDED)
+    for i, header in enumerate(headers):
+        widest = max((len(c[i].plain if isinstance(c[i], Text) else c[i])
+                      for c in rows), default=0)
+        table.add_column(header, min_width=widest)
+    for cells in rows:
+        table.add_row(*cells)
     console.print(table)
+    for number, (engine, reason) in enumerate(footnotes, start=1):
+        rprint(f"[red][{number}][/red] {esc(engine)}: {esc(reason)}")
 
     if any(not r["ok"] for r in report["results"]) and not out:
         rprint("[dim]Pass --out report.json for the full error text.[/dim]")

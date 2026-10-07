@@ -458,6 +458,42 @@ def test_a_single_run_still_looks_exactly_as_before():
     assert row["ok"] is True and "attempts" not in row
 
 
+def test_the_success_rate_survives_an_80_column_terminal(monkeypatch,
+                                                        tmp_path):
+    """k/N is the number --repeat exists for, and it vanished.
+
+    Measured on the AI PC: with real failure text in the Result column, an
+    80-column table (a default terminal, or any piped output) squeezed the
+    no_wrap OK and Tools columns to zero width, so the rate never printed.
+    """
+    import ovat.bench as bench_mod
+    from ovat.cli import main as cli_main
+
+    def fake_isolated(config_path, engine, question, timeout=None):
+        return {"engine": engine, "ok": False, "answer": "",
+                "error": ("the model asked for a tool but the server could "
+                          "not decode the request, so no tool ran. Usually a "
+                          "tool_parser that does not match the model."),
+                "latency_s": 5.628, "build_s": 0.641, "peak_rss_mb": 465.2,
+                "prompt_tokens": 1520, "completion_tokens": 101,
+                "tool_calls": 0}
+
+    monkeypatch.setattr(bench_mod, "_run_isolated", fake_isolated)
+    monkeypatch.setattr(cli_main.console, "width", 80)
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    result = runner.invoke(app, ["bench", str(config), "-i", "q", "--repeat",
+                                 "3", "--engines",
+                                 "native,react,llamaindex,openai-agents"])
+    assert result.exit_code == 0, result.output
+    assert result.output.count("0/3") == 4, result.output
+    # and the table fits rather than being cropped at the edge
+    widest = max(len(line) for line in result.output.splitlines())
+    assert widest <= 80, result.output
+    flat = " ".join(result.output.split())
+    assert "decode the request" in flat                # the reason survives
+
+
 def test_repeat_must_be_at_least_one(tmp_path):
     config = tmp_path / "w.yml"
     config.write_text("model:\n  name: m\n", encoding="utf-8")
