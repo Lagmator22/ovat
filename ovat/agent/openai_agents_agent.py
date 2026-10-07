@@ -103,7 +103,14 @@ def _model_settings(config: WorkflowConfig):
     from agents import ModelSettings
 
     b = LLMBackend.from_config(config)
-    return ModelSettings(temperature=b.temperature, max_tokens=b.max_tokens)
+    # ModelSettings has no `seed` field, so it travels in extra_body with the
+    # OVMS-only settings; OVMS reads it from the body either way.
+    kwargs = b.openai_kwargs()
+    extra = b.extra_body()
+    if "seed" in kwargs:
+        extra["seed"] = kwargs.pop("seed")
+    return ModelSettings(temperature=b.temperature, max_tokens=b.max_tokens,
+                         extra_body=extra or None, **kwargs)
 
 
 class OpenAIAgentsAgent:
@@ -120,6 +127,8 @@ class OpenAIAgentsAgent:
         # full transcript (input plus everything the run added), which is
         # exactly the input the next run should start from.
         self._input_items: list = []
+        # True when the last run() could not answer; see LangChainAgent.
+        self.last_failed = False
 
     def run(self, user_message: str) -> str:
         """Run for one message and return the final text.
@@ -140,8 +149,9 @@ class OpenAIAgentsAgent:
                 "event loop. Call it from a worker thread, or use "
                 "agent.type: native.")
 
-        from agents.exceptions import MaxTurnsExceeded
+        from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
 
+        self.last_failed = False
         try:
             result = asyncio.run(Runner.run(
                 self._agent,
@@ -155,8 +165,21 @@ class OpenAIAgentsAgent:
             # History is left untouched: a failed run must not poison the next
             # question with a half-finished exchange.
             # Same wording as the native loop so every engine fails alike.
+            self.last_failed = True
             return (f"Error: I reached my max of {self.max_iterations} steps "
                     f"without a final answer.")
+        except ModelBehaviorError as exc:
+            # The MODEL broke the contract, typically by calling a tool that
+            # does not exist ("search" for "search_docs"). The SDK ends the
+            # run there, and its maintainers declined in-SDK recovery
+            # (openai-agents-python#2957). Uncaught, `ovat run` called this
+            # "Error talking to OVMS" while the server was fine.
+            self.last_failed = True
+            available = ", ".join(self.tools) or "none"
+            return (f"Error: the model broke the tool-calling contract and "
+                    f"the run stopped: {exc}. Tools available: {available}. "
+                    f"Naming them in agent.system_prompt usually helps; the "
+                    f"native engine also recovers near-miss names itself.")
         self._input_items = result.to_input_list()
         return str(getattr(result, "final_output", result) or "").strip()
 

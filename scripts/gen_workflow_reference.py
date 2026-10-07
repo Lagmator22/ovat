@@ -51,6 +51,9 @@ PURPOSE = {
                               "family OVAT does not recognise.",
     ("model", "reasoning_parser"): "For thinking models that emit a separate "
                                    "reasoning channel.",
+    ("model", "enable_thinking"): "Turn a thinking model's reasoning on or "
+                                  "off via its chat template. Unset leaves "
+                                  "the template's default.",
     ("model", "source_model"): "Hugging Face id `ovat serve` downloads on "
                                "first run.",
     ("model", "model_repository_path"): "Folder OVMS keeps its models in.",
@@ -61,6 +64,17 @@ PURPOSE = {
     ("model", "max_tokens"): "Ceiling on one reply. `null` is unbounded, "
                              "which lets a model that never stops run until "
                              "the client gives up.",
+    ("model", "top_p"): "Nucleus sampling cut-off. Unset sends nothing. The "
+                        "Qwen3.5 card suggests 0.8 without thinking.",
+    ("model", "top_k"): "Sample from the k most likely tokens; `-1` for all. "
+                        "Unset sends nothing.",
+    ("model", "min_p"): "Drop tokens below this fraction of the top token's "
+                        "probability. Unset sends nothing.",
+    ("model", "presence_penalty"): "Discourages repetition. The Qwen3.5 card "
+                                   "suggests 1.5 against endless loops. Unset "
+                                   "sends nothing.",
+    ("model", "seed"): "Fixed seed, so a sampled run repeats. Unset means a "
+                       "random seed.",
     ("model", "enable_prefix_caching"): "Reuse KV cache across turns sharing "
                                         "a prefix. A large multi-turn win.",
     ("model", "ovms_binary"): "Where the `ovms` executable is. Rarely needed: "
@@ -68,6 +82,9 @@ PURPOSE = {
     ("model", "ovms_cache_size_gb"): "KV cache size in GB. Setting it also "
                                      "makes the cache **static** rather than "
                                      "dynamic. Whole numbers only.",
+    ("model", "ovms_tool_guided_generation"): "Make OVMS hold each tool "
+                                             "call to the tool's schema while "
+                                             "generating. Read by `ovat serve`.",
     ("model", "ovms_max_prompt_len"): "Longest prompt OVMS accepts. On `NPU` "
                                       "an unset value becomes **4096**, "
                                       "because OVMS's own NPU cap of 1024 is "

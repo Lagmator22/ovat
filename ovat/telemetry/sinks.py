@@ -27,6 +27,10 @@ class JSONFileSink(TelemetrySink):
     def __init__(self, path: str):
         self.path = path
         self._handle = None
+        # The first write failure, kept rather than raised. record() must not
+        # break the run it measures, but the CLI must not then announce a
+        # file it never wrote, which is what it did.
+        self.error: str | None = None
 
     def record(self, sample: dict) -> None:
         if not sample:
@@ -36,10 +40,11 @@ class JSONFileSink(TelemetrySink):
                 self._handle = open(self.path, "a", encoding="utf-8")
             self._handle.write(json.dumps(sample) + "\n")
             self._handle.flush()
-        except Exception:
+        except Exception as exc:
             # A full disk must not end the agent run. The measurement is lost;
             # the work is not.
-            pass
+            if self.error is None:
+                self.error = f"{type(exc).__name__}: {exc}"
 
     def close(self) -> None:
         if self._handle is not None:

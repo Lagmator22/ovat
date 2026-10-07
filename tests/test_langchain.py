@@ -194,3 +194,25 @@ def test_a_failed_run_does_not_poison_the_next_question():
     assert "max of 3 steps" in agent.run("first")
     agent.run("second")
     assert seen == [1, 1], "the failed turn leaked into the next question"
+
+
+def test_the_adapter_flags_its_own_failure_and_clears_it_on_success():
+    """The CLI's exit code and bench's ok column read this; without it a
+    capped run looked like a success to every script."""
+    from langgraph.errors import GraphRecursionError
+
+    class Graph:
+        def __init__(self):
+            self.calls = 0
+
+        def invoke(self, state, config=None):
+            self.calls += 1
+            if self.calls == 1:
+                raise GraphRecursionError("too deep")
+            return {"messages": [*state["messages"], AIMessage(content="ok")]}
+
+    agent = LangChainAgent(Graph(), tools={}, max_iterations=2, system_prompt=None)
+    agent.run("first")
+    assert agent.last_failed is True
+    agent.run("second")
+    assert agent.last_failed is False

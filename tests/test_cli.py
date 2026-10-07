@@ -370,7 +370,7 @@ def test_chat_max_tokens_zero_means_no_cap(monkeypatch):
     monkeypatch.setattr(rag_chat_mod, "rag_chat", lambda *a, **k: ("ok", []))
     monkeypatch.setattr(
         llm_genai, "GenAILLMProvider",
-        lambda path, device=None, max_new_tokens=None:
+        lambda path, device=None, max_new_tokens=None, **kw:
             built.update(max_new_tokens=max_new_tokens) or object())
 
     runner.invoke(app, ["chat", "examples/workflow.yml", "-i", "hi",
@@ -1737,3 +1737,174 @@ def test_setup_into_a_custom_folder_says_how_ovat_will_find_it(monkeypatch,
     assert result.exit_code == 0, result.output
     assert "looks here on its own" not in flat
     assert "OVAT_OVMS" in flat and "ovms_binary" in flat
+
+
+def test_a_framework_engine_that_failed_exits_non_zero(monkeypatch, tmp_path):
+    """Measured on the AI PC: the llamaindex step cap printed "Error: I
+    reached my max of 1 steps" and exited 0. `failed` was read only from the
+    native loop's trace totals, and the framework adapters keep no trace, so
+    none of the three could ever fail a run. They flag it themselves now."""
+    from ovat.cli import main as cli_main
+
+    class CappedAdapter:                     # a framework engine: no last_trace
+        tools, max_iterations = {}, 3
+        last_failed = True
+
+        def run(self, text):
+            return "Error: I reached my max of 3 steps without a final answer."
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: CappedAdapter())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\nagent:\n  type: llamaindex\n",
+                      encoding="utf-8")
+    result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+    assert result.exit_code == 1, result.output
+    assert "max of 3 steps" in result.output        # and it still says why
+
+
+def _run_raising(monkeypatch, tmp_path, exc):
+    from ovat.cli import main as cli_main
+
+    class Raising:
+        tools, max_iterations, last_trace = {}, 5, {}
+
+        def run(self, text):
+            raise exc
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Raising())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n  ovms_url: http://localhost:8000/v3\n",
+                      encoding="utf-8")
+    result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+    return result, " ".join(result.output.split())
+
+
+def test_only_a_server_error_is_blamed_on_the_server(monkeypatch, tmp_path):
+    """Every exception from a run was printed as "Error talking to OVMS at
+    <url>", so a bug in a tool or a framework sent the reader to restart a
+    server that was fine. Only the OpenAI client's own errors -- which is how
+    every engine reaches OVMS -- earn that label."""
+    import httpx
+    import openai
+
+    result, flat = _run_raising(monkeypatch, tmp_path,
+                                ValueError("tool exploded"))
+    assert result.exit_code == 1
+    assert "talking to OVMS" not in flat
+    assert "tool exploded" in flat
+
+    refused = openai.APIConnectionError(
+        request=httpx.Request("POST", "http://localhost:8000/v3/chat/completions"))
+    result, flat = _run_raising(monkeypatch, tmp_path, refused)
+    assert result.exit_code == 1
+    assert "OVMS at http://localhost:8000/v3" in flat
+
+
+def test_telemetry_does_not_claim_a_file_it_could_not_write(tmp_path):
+    """Measured on the AI PC: --out into a folder that does not exist wrote
+    nothing and still printed "telemetry written to". JSONFileSink rightly
+    never raises mid-run, but the command must not then claim success."""
+    target = tmp_path / "missing" / "t.jsonl"
+    result = runner.invoke(app, ["telemetry", "--seconds", "0.3",
+                                 "--interval", "0.1", "--out", str(target)])
+    flat = " ".join(result.output.split())
+    assert not target.exists()
+    assert "telemetry written to" not in flat
+    assert "could not write" in flat
+
+
+def test_run_telemetry_does_not_claim_a_file_it_could_not_write(monkeypatch,
+                                                               tmp_path):
+    from ovat.cli import main as cli_main
+
+    class Agent:
+        tools, max_iterations = {}, 5
+        last_trace = {"totals": {"failed": False}}
+
+        def run(self, text):
+            import time
+            time.sleep(0.6)          # long enough for the collector to tick
+            return "ok"
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Agent())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    target = tmp_path / "missing" / "t.jsonl"
+    result = runner.invoke(app, ["run", str(config), "-i", "hi",
+                                 "--telemetry", str(target)])
+    flat = " ".join(result.output.split())
+    assert "telemetry written to" not in flat
+    assert "could not write" in flat
+
+
+def test_the_thinking_switch_reaches_the_local_chat_model(monkeypatch, tmp_path):
+    """`ovat chat` and the TUI build their own GenAILLMProvider; the config
+    switch has to reach both, or it exists only on the OVMS path."""
+    from ovat.agent import factory, rag_chat as rag_chat_mod
+    from ovat.cli import chat_screen
+    from ovat.cli import main as cli_main
+    from ovat.providers import llm_genai
+
+    seen = []
+
+    class FakeRetriever:
+        def retrieve(self, query, top_k=5):
+            return []
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(cli_main, "resolve_chat_model", lambda p, roots=None: "m")
+    monkeypatch.setattr(factory, "build_rag", lambda cfg: FakeRetriever())
+    monkeypatch.setattr(rag_chat_mod, "rag_chat", lambda *a, **k: ("ok", []))
+    monkeypatch.setattr(llm_genai, "GenAILLMProvider",
+                        lambda path, **kw: seen.append(kw.get("enable_thinking")))
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n  enable_thinking: false\n"
+                      "rag:\n  retriever:\n    db_path: ':memory:'\n",
+                      encoding="utf-8")
+    runner.invoke(app, ["chat", str(config), "-i", "hi"])
+
+    monkeypatch.setattr(chat_screen, "identify_model", lambda p: ("llm", ""),
+                        raising=False)
+    import ovat.core.model_scout as scout
+    monkeypatch.setattr(scout, "identify_model", lambda p: ("llm", ""))
+    chat_screen._build_components(str(config), "m")
+
+    assert seen == [False, False], seen
+
+
+def test_serve_passes_tool_guided_generation_from_the_config(monkeypatch,
+                                                             tmp_path):
+    from ovat.cli import main as cli_main
+    from ovat.core import model_server, ovms_locator
+
+    monkeypatch.setattr(cli_main.sys, "platform", "linux")
+    seen = {}
+
+    class FakeModelServer:
+        DEFAULT_STALL_TIMEOUT = 120
+
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+            self.port, self.log_path = 8000, ""
+            self.base_url = "http://localhost:8000/v3"
+            self.process = type("P", (), {"pid": 1, "poll": lambda s: None})()
+
+        def already_serving(self):
+            return None
+
+        def start(self, *a, **k):
+            pass
+
+        def wait_until_ready(self, *a, **k):
+            return True
+
+    monkeypatch.setattr(model_server, "ModelServer", FakeModelServer)
+    monkeypatch.setattr(ovms_locator, "find_ovms", lambda *a: ("/ovms", "x"))
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n  ovms_tool_guided_generation: true\n",
+                      encoding="utf-8")
+    result = runner.invoke(app, ["serve", str(config)])
+    assert result.exit_code == 0, result.output
+    assert seen.get("tool_guided_generation") is True

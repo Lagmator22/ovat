@@ -90,6 +90,7 @@ class ModelServer:
                  enable_prefix_caching: bool = True,
                  cache_size_gb: int | None = None,
                  max_prompt_len: int | None = None,
+                 tool_guided_generation: bool = False,
                  binary: str = "ovms"):
         self.model_name = model_name
         # Note to myself: source_model is the Hugging Face id OVMS downloads if
@@ -107,6 +108,7 @@ class ModelServer:
         self.enable_prefix_caching = enable_prefix_caching
         self.cache_size_gb = cache_size_gb
         self.max_prompt_len = max_prompt_len
+        self.tool_guided_generation = tool_guided_generation
         # The resolved executable ("ovms" if on PATH, or a full path found by
         # ovms_locator). Launching by full path means no setupvars.bat needed.
         self.binary = binary
@@ -207,6 +209,11 @@ class ModelServer:
             # neither the cap nor this flag. See ModelConfig for the measured
             # failure.
             cmd += ["--max_prompt_len", str(int(self.max_prompt_len))]
+        if self.tool_guided_generation:
+            # Constrains generation to the request's tool schema (XGrammar).
+            # OVMS documents it as requiring a response parser; it has one
+            # whenever tool_parser is set, which ModelConfig always derives.
+            cmd += ["--enable_tool_guided_generation", "true"]
         if self.reasoning_parser:
             cmd += ["--reasoning_parser", self.reasoning_parser]
         # I only add source_model when I have one. On the first run OVMS uses it

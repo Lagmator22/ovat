@@ -337,8 +337,19 @@ def run(
         with memory:
             answer = agent.run(input)
     except Exception as exc:
-        rprint(f"[red]Error talking to OVMS at {esc(cfg.model.ovms_url)}[/red]: "
-               f"{esc(exc)}")
+        # Name the server only when the server is what failed. Every engine
+        # reaches OVMS through the OpenAI client, so its errors (connection,
+        # timeout, HTTP status) are the server's; anything else -- a tool, a
+        # framework, a model breaking the tool contract -- is not, and calling
+        # it "talking to OVMS" sent readers to restart a server that was fine.
+        import openai
+
+        if isinstance(exc, openai.APIError):
+            rprint(f"[red]Error talking to OVMS at "
+                   f"{esc(cfg.model.ovms_url)}[/red]: {esc(exc)}")
+        else:
+            rprint(f"[red]The run failed[/red] "
+                   f"({esc(type(exc).__name__)}): {esc(exc)}")
         # A timeout is the one failure here whose fix is a config value, and
         # the SDK's own words ("Request timed out.") name neither the setting
         # nor the file. Measured on a CPU-only Ubuntu box: the server answers a
@@ -374,8 +385,13 @@ def run(
     # A run that could not answer must EXIT non-zero. The loop returns its
     # failures as the answer text (the model needs to read them), so without
     # this the CLI printed "Error: ..." and reported success.
+    #
+    # Two sources, because only the native loop keeps a trace. The framework
+    # adapters flag their own failures in last_failed; reading the trace
+    # alone let a capped llamaindex run exit 0 (measured on the AI PC).
     failed = bool((getattr(agent, "last_trace", None) or {})
-                  .get("totals", {}).get("failed"))
+                  .get("totals", {}).get("failed")) or bool(
+        getattr(agent, "last_failed", False))
     answer = ui.strip_thinking(answer) or answer
 
     # An answer that still CONTAINS tool-call markup is a tool call that was
@@ -440,11 +456,26 @@ def _close_out_run(cfg, agent, collector, telemetry_path, trace_path,
     """
     if collector is not None:
         collector.stop()
-        rprint(f"[dim]telemetry written to[/dim] {esc(telemetry_path)}")
+        _report_telemetry_file(telemetry_path, collector.sink)
     if trace_path:
         _write_trace(trace_path, cfg, agent, peak_rss_mb=peak_rss_mb,
                      error=error)
     close_agent(agent)
+
+
+def _report_telemetry_file(path: str, sink) -> None:
+    """Say where telemetry went, or that it went nowhere.
+
+    The sink swallows write errors so a full disk cannot end a run, and both
+    telemetry commands then printed "written to" regardless: measured on the
+    AI PC, an --out into a missing folder wrote nothing and claimed success.
+    """
+    error = getattr(sink, "error", None)
+    if error:
+        rprint(f"[yellow]telemetry: could not write[/yellow] {esc(path)} "
+               f"[dim]({esc(error)})[/dim]")
+    else:
+        rprint(f"[dim]telemetry written to[/dim] {esc(path)}")
 
 
 def _exit_is_a_folder(path: str):
@@ -784,7 +815,8 @@ def chat(
     try:
         # 0 -> None: the provider reads None as "no cap".
         llm = GenAILLMProvider(model_path, device=device,
-                               max_new_tokens=max_tokens or None)
+                               max_new_tokens=max_tokens or None,
+                               enable_thinking=cfg.model.enable_thinking)
     except Exception as exc:
         rprint(f"[red]Could not load the local model at "
                f"{esc(model_path)}:[/red] {esc(exc)}")
@@ -1258,6 +1290,7 @@ def serve(
         enable_prefix_caching=cfg.model.enable_prefix_caching,
         cache_size_gb=cfg.model.ovms_cache_size_gb,
         max_prompt_len=_max_prompt_len_for(cfg.model),
+        tool_guided_generation=cfg.model.ovms_tool_guided_generation,
         binary=binary,
     )
     # Refuse to start a SECOND server on a port that already has one. On
@@ -1454,7 +1487,8 @@ def telemetry(
                                         SystemSource)
 
     live = LiveBufferSink()
-    sink = FanOutSink(live, JSONFileSink(out)) if out else live
+    file_sink = JSONFileSink(out) if out else None
+    sink = FanOutSink(live, file_sink) if out else live
     # NPUSource before IntelHardwareSource: it reads the driver's own busy
     # counter and produces an actual percentage, where UT's continuous mode
     # writes binary traces that decode to nothing readable here.
@@ -1521,7 +1555,7 @@ def telemetry(
         _print_cache_type(cache_source)
         if out:
             sink.close()
-            rprint(f"[dim]telemetry written to[/dim] {esc(out)}")
+            _report_telemetry_file(out, file_sink)
 
 
 def _print_telemetry(sample: dict) -> None:

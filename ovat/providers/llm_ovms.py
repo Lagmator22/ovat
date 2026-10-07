@@ -31,7 +31,9 @@ class OVMSLLMProvider(LLMProvider):
     def __init__(self, base_url: str = "http://localhost:8000/v3",
                  model: str = "Qwen3-8B-int4-ov", timeout: float = 120.0,
                  max_tokens: int | None = DEFAULT_MAX_TOKENS,
-                 temperature: float = 0.0):
+                 temperature: float = 0.0,
+                 sampling: dict | None = None,
+                 extra_body: dict | None = None):
         # api_key is required by the SDK but ignored by OVMS, any string works.
         # timeout caps each request; the SDK default (~600s) would freeze the
         # CLI for ten minutes on a hung server before erroring.
@@ -49,10 +51,18 @@ class OVMSLLMProvider(LLMProvider):
         # compare determinism against sampling rather than framework against
         # framework.
         self.temperature = temperature
+        # Optional settings from LLMBackend: standard OpenAI ones go as
+        # keywords, OVMS-only ones (top_k, min_p, ...) in the request body.
+        # Both empty by default, so nothing extra is sent.
+        self.sampling = dict(sampling or {})
+        self.extra_body = dict(extra_body or {})
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
         extra = {} if self.max_tokens is None else {"max_tokens": self.max_tokens}
         extra["temperature"] = self.temperature
+        extra.update(self.sampling)
+        if self.extra_body:
+            extra["extra_body"] = self.extra_body
         try:
             return self._ask(messages, tools, extra)
         except Exception as exc:

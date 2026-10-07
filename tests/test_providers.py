@@ -386,3 +386,78 @@ def test_an_unrelated_error_is_passed_through_untouched():
     provider = OVMSLLMProvider(base_url="http://localhost:8000/v3", model="m")
     original = Exception("connection reset by peer")
     assert provider._explain(original) is original
+
+
+class _RecordingPipe(_FakePipe):
+    """Also records WHAT was asked, not only the generation kwargs."""
+
+    def __init__(self):
+        super().__init__()
+        self.inputs = []
+
+    def generate(self, inputs, **kwargs):
+        self.inputs.append(inputs)
+        return super().generate(inputs, **kwargs)
+
+
+def test_the_conversation_reaches_the_model_as_a_conversation(monkeypatch):
+    """_format flattened the messages into "role: content" lines and passed
+    ONE string, and LLMPipeline then applied the model's chat template on top.
+    Rendered with a real tokenizer (TinyLlama), the whole conversation --
+    system prompt included -- arrived as a single USER message full of fake
+    role labels, ending in a dangling "assistant:" inside that user turn.
+
+    A ChatHistory hands the pipeline the real roles, so the template it
+    applies is the one the model was trained on."""
+    pipe = _RecordingPipe()
+    monkeypatch.setattr(llm_genai.ov_genai, "LLMPipeline",
+                        lambda path, device: pipe)
+    provider = GenAILLMProvider("model-dir")
+    messages = [{"role": "system", "content": "be terse"},
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+                {"role": "user", "content": "again"}]
+    provider.chat(messages)
+
+    sent = pipe.inputs[-1]
+    assert isinstance(sent, llm_genai.ov_genai.ChatHistory), (
+        f"the model was sent a {type(sent).__name__}, not a conversation")
+    assert [(m["role"], m["content"]) for m in sent.get_messages()] == \
+        [(m["role"], m["content"]) for m in messages]
+
+
+def test_the_thinking_switch_reaches_the_local_model(monkeypatch):
+    """The local engine is where the cap ran out: /chat on the AI PC."""
+    pipe = _RecordingPipe()
+    monkeypatch.setattr(llm_genai.ov_genai, "LLMPipeline",
+                        lambda path, device: pipe)
+    GenAILLMProvider("model-dir", enable_thinking=False).chat(
+        [{"role": "user", "content": "hi"}])
+    assert pipe.inputs[-1].get_extra_context() == {"enable_thinking": False}
+
+
+def test_a_unified_model_gets_the_switch_too(tmp_path, monkeypatch):
+    """Qwen3.5 is the model the switch is FOR. Setting it moves the unified
+    path onto a ChatHistory as well; leaving it unset keeps that path exactly
+    as verified on the AI PC."""
+    vlm_pipe = _FakeVLMPipe()
+    vlm_pipe.inputs = []
+    original = vlm_pipe.generate
+
+    def generate(inputs, **kwargs):
+        vlm_pipe.inputs.append(inputs)
+        return original(inputs, **kwargs)
+
+    vlm_pipe.generate = generate
+    monkeypatch.setattr(llm_genai.ov_genai, "VLMPipeline",
+                        lambda path, device: vlm_pipe)
+    folder = _unified_export(tmp_path)
+
+    GenAILLMProvider(folder, enable_thinking=False).chat(
+        [{"role": "user", "content": "hi"}])
+    sent = vlm_pipe.inputs[-1]
+    assert isinstance(sent, llm_genai.ov_genai.ChatHistory)
+    assert sent.get_extra_context() == {"enable_thinking": False}
+
+    GenAILLMProvider(folder).chat([{"role": "user", "content": "hi"}])
+    assert isinstance(vlm_pipe.inputs[-1], str), "the verified path changed"

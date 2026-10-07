@@ -53,7 +53,8 @@ def build_llm(config: WorkflowConfig) -> LLMProvider:
         # Imported lazily, exactly like build_embedder does: the OVMS path
         # must not pay openvino_genai's import cost.
         from ovat.providers.llm_genai import GenAILLMProvider
-        return GenAILLMProvider(m.name, m.device)
+        return GenAILLMProvider(m.name, m.device,
+                                enable_thinking=m.enable_thinking)
     if m.provider != "ovms":
         raise ValueError(
             f"Unknown model provider '{m.provider}'. Supported: ovms, genai."
@@ -62,7 +63,9 @@ def build_llm(config: WorkflowConfig) -> LLMProvider:
     return OVMSLLMProvider(base_url=backend.url, model=backend.model,
                            timeout=backend.timeout,
                            temperature=backend.temperature,
-                           max_tokens=backend.max_tokens)
+                           max_tokens=backend.max_tokens,
+                           sampling=backend.openai_kwargs(),
+                           extra_body=backend.extra_body())
 
 
 def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:

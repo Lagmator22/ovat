@@ -64,6 +64,13 @@ class ModelConfig(StrictModel):
     # reasoning_parser is for thinking models like the Qwen3 30B variant. It
     # stays None for normal models, which is why I default it to None.
     reasoning_parser: str | None = None
+    # Turn a thinking model's reasoning on or off, through the chat template's
+    # own `enable_thinking` switch (what the Qwen3.5 card documents). None
+    # leaves the template's default. Sent to OVMS as chat_template_kwargs and
+    # to openvino_genai as ChatHistory extra context. Measured on the AI PC:
+    # with thinking on, Qwen3.5 spent the whole 1024-token /chat budget on
+    # reasoning and the answer never started.
+    enable_thinking: bool | None = None
     # These two only matter for `ovat serve`, which starts OVMS for me. They
     # tell OVMS where to find (or download) the model. Without them, serve points
     # OVMS at a relative "models" folder with nothing in it, so it cannot start.
@@ -126,6 +133,24 @@ class ModelConfig(StrictModel):
     # bounded reply that `finish_reason: "length"` labels honestly. Set it to
     # None to restore the old unbounded behaviour.
     max_tokens: int | None = Field(default=4096, gt=0)
+    # Sampling beyond temperature. Every one defaults to None, which means
+    # "do not send it", so OVMS's own defaults apply and no existing config
+    # changes behaviour.
+    #
+    # WHY THEY EXIST. The Qwen3.5 model card recommends presets built from
+    # these (non-thinking: temperature 0.7, top_p 0.8, top_k 20,
+    # presence_penalty 1.5) and warns that greedy decoding "can lead to
+    # performance degradation and endless repetitions" -- the runaway
+    # generations recorded in AGENTS.md. OVMS accepts all of them
+    # (docs/model_server_rest_api_chat.md). Which preset suits OVAT's agents
+    # is NOT yet measured, which is why nothing here is switched on.
+    #
+    # seed makes a sampled run repeatable, the job temperature 0.0 was doing.
+    top_p: float | None = Field(default=None, gt=0, le=1)
+    top_k: int | None = Field(default=None, ge=-1)     # -1 = all tokens
+    min_p: float | None = Field(default=None, ge=0, le=1)
+    presence_penalty: float | None = Field(default=None, ge=-2, le=2)
+    seed: int | None = Field(default=None, ge=0, le=4294967295)
     # Prefix caching reuses KV-cache across turns that share a prefix (the
     # whole conversation history does): a big multi-turn speedup. A knob
     # because not every OVMS build/device supports it; was hardcoded before.
@@ -196,6 +221,14 @@ class ModelConfig(StrictModel):
     # that cannot answer a single agent question out of the box.
     ovms_max_prompt_len: int | None = Field(default=None, gt=0)
 
+    # Make OVMS constrain each tool call to the request's tool schema while it
+    # generates (--enable_tool_guided_generation, XGrammar). In OVMS since
+    # July 2025 and in the 2026.2.1 parameter table; OVAT never passed it.
+    # Measured on the AI PC: Qwen3.5 wrote malformed <parameter> markup 4
+    # times in 5 on a fresh server, the drift Ollama #18563 also records.
+    # Whether this prevents that is NOT yet measured, so it is off.
+    ovms_tool_guided_generation: bool = False
+
     # Which OVMS parser suits which model family. Data, not branching, so a
     # new family is one line. Longest prefix first: "qwen3.5" has to be tested
     # before "qwen3", or every Qwen3.5 model matches the Qwen3 rule.
@@ -216,6 +249,14 @@ class ModelConfig(StrictModel):
                          ("llama-3.2", "llama3"),
                          ("devstral", "devstral"))
     _DEFAULT_TOOL_PARSER = "hermes3"
+
+    @model_validator(mode="after")
+    def _top_k_is_never_zero(self):
+        """OVMS reads -1 as "all tokens" and N >= 1 as a cut-off; 0 is
+        neither, and would silently mean whatever the server decides."""
+        if self.top_k == 0:
+            raise ValueError("top_k must be -1 (all tokens) or at least 1")
+        return self
 
     @model_validator(mode="after")
     def _derive_tool_parser(self):

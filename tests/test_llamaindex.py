@@ -303,3 +303,28 @@ def test_an_unrelated_workflow_error_is_not_dressed_up_as_the_cap():
 
     with pytest.raises(WorkflowRuntimeError, match="step exploded"):
         LlamaIndexAgent(Broken(), tools, 3, None).run("q")
+
+
+def test_the_llamaindex_adapter_flags_a_capped_run_as_failed():
+    from llama_index.core.workflow.errors import WorkflowRuntimeError
+
+    tools, _ = _tools()
+
+    class Response:
+        response = "fine"
+
+    class Flaky:
+        def __init__(self):
+            self.calls = 0
+
+        async def run(self, message, chat_history=None, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise WorkflowRuntimeError("Max iterations of 3 reached!")
+            return Response()
+
+    agent = LlamaIndexAgent(Flaky(), tools, 3, None)
+    agent.run("q")
+    assert agent.last_failed is True
+    agent.run("q")
+    assert agent.last_failed is False

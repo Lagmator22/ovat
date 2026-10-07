@@ -128,11 +128,11 @@ that is worth reporting -- it is the missing piece.
   4. Windows and Linux only; there is no macOS build
 
 [b]Why the intel.* rows are still empty[/b]
-MEASURED on the AI PC, not assumed: continuous mode does not stream numbers.
-It writes binary traces (ut_default_output.l0_gpu.bin, .l0_npu.bin) that need
-[cyan]bin2perfetto[/cyan] to decode, so the Sources tab honestly reports it
-running while this page gets nothing from it. Decoding those traces is the
-next step. Saying so beats a graph that pretends to be live.
+MEASURED on the AI PC: continuous mode prints text lines such as
+[cyan]Metric: PKG-PWR | ... | Value: 1568.97 mJ[/cyan], which OVAT does not
+parse yet, so the Sources tab honestly reports it running while this page
+gets nothing from it. Parsing those lines is the next step. Saying so beats
+a graph that pretends to be live.
 """
 
 _PLANO_HELP = """

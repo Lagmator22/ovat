@@ -61,7 +61,13 @@ def _build_llm(config: WorkflowConfig):
     # One shared description of the connection, so this engine cannot drift
     # from the other three. See ovat/providers/backend.py.
     b = LLMBackend.from_config(config)
+    # additional_kwargs reach the OpenAI client's create() call unchanged,
+    # so the OVMS-only settings ride along as its extra_body.
+    additional = b.openai_kwargs()
+    if b.extra_body():
+        additional["extra_body"] = b.extra_body()
     return OpenAILike(
+        additional_kwargs=additional,
         model=b.model,
         api_base=b.url,
         api_key=b.api_key,
@@ -88,6 +94,8 @@ class LlamaIndexAgent:
         # Each workflow run is stateless on its own, so the adapter keeps the
         # history and hands it back as chat_history on every call.
         self._history: list = []
+        # True when the last run() could not answer; see LangChainAgent.
+        self.last_failed = False
 
     def run(self, user_message: str) -> str:
         """Run the agent for one message and return the final text.
@@ -110,6 +118,7 @@ class LlamaIndexAgent:
                 "agent.type: native.")
         from llama_index.core.workflow.errors import WorkflowRuntimeError
 
+        self.last_failed = False
         try:
             return asyncio.run(self._arun(user_message))
         except WorkflowRuntimeError as exc:
@@ -119,6 +128,7 @@ class LlamaIndexAgent:
             # "Error talking to OVMS", blaming a server that was fine.
             if not str(exc).startswith("Max iterations"):
                 raise
+            self.last_failed = True
             return (f"Error: I reached my max of {self.max_iterations} steps "
                     f"without a final answer.")
 

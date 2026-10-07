@@ -18,7 +18,8 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
     """Runs a local text LLM via openvino_genai.LLMPipeline."""
 
     def __init__(self, model_path: str, device: str = "CPU",
-                 max_new_tokens: int | None = 256):
+                 max_new_tokens: int | None = 256,
+                 enable_thinking: bool | None = None):
         """
         init (Constructor) runs once here to load the converted model onto a device.
         This is the same call made in [PoC] OvaSearch's C++:
@@ -53,6 +54,10 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
         # Read fresh on every chat() call, so a caller can retune the cap on a
         # live provider without paying to rebuild the pipeline.
         self.max_new_tokens = max_new_tokens
+        # The chat template's thinking switch (model.enable_thinking). None
+        # leaves the template's own default. Fixed for the provider's life,
+        # so each instance keeps ONE input type (see chat()).
+        self.enable_thinking = enable_thinking
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None,
              on_token=None) -> dict:
@@ -63,7 +68,30 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
         token; we forward the text and return False ("keep generating").
         The final return dict is identical either way.
         """
-        prompt = self._format(messages)
+        # A text LLM gets the conversation AS a conversation. LLMPipeline
+        # applies the model's chat template itself, so the old flattened
+        # "role: content" string was wrapped as ONE user message holding fake
+        # role labels -- verified by rendering it with a real tokenizer.
+        #
+        # A unified export still takes the flattened string inside
+        # start_chat(): that path is verified on the AI PC with Qwen3.5, and
+        # switching it is unverified until it is run there. Note the pipeline
+        # refuses to MIX the two input types on one instance ("Chat doesn't
+        # support switching between input types"), so each path keeps one.
+        #
+        # The exception is enable_thinking: the switch only exists as chat
+        # template context, so a unified model that is GIVEN it goes through
+        # a ChatHistory too. Opt-in, and fixed per instance, so one instance
+        # still never mixes input types.
+        if self.is_unified and self.enable_thinking is None:
+            prompt = self._format(messages)
+        else:
+            prompt = ov_genai.ChatHistory(
+                [{"role": m["role"], "content": str(m.get("content") or "")}
+                 for m in messages])
+            if self.enable_thinking is not None:
+                prompt.set_extra_context(
+                    {"enable_thinking": self.enable_thinking})
         # Omitting the argument entirely is what "no cap" means to
         # openvino_genai; passing None would not be read as a number.
         limit = ({} if self.max_new_tokens is None
@@ -87,7 +115,7 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
             "raw": text,
         }
 
-    def _generate(self, prompt: str, **kwargs):
+    def _generate(self, prompt, **kwargs):
         """One generate call, with the chat session a unified model needs.
 
         VLMPipeline needs start_chat()/finish_chat() around generation so the
@@ -96,7 +124,9 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
         finish_chat() runs in a finally: an exception mid-generation must not
         leave the pipeline stuck in a chat session for every later turn.
         """
-        if not self.is_unified:
+        # A ChatHistory is the stateless path: the pipeline applies the
+        # template itself and needs no chat session around it.
+        if not self.is_unified or isinstance(prompt, ov_genai.ChatHistory):
             return self.pipe.generate(prompt, **kwargs)
         self.pipe.start_chat()
         try:
@@ -108,8 +138,9 @@ class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
     def _format(messages: list[dict]) -> str:
         """
         Flatten [{role, content}, ...] into one prompt string, then cue
-        the assistant to answer. (Simple for now; we can swap in 
-        the model's real chat template later and the chat() interface won't change.)
+        the assistant to answer. Used ONLY for unified exports now; a text
+        LLM gets a ChatHistory instead, so the model's own template sees the
+        real roles. See chat().
         """
         lines = [f"{m['role']}: {m['content']}" for m in messages] # make the string role: content, and collect them all into a list called lines.
         lines.append("assistant:") # add assistant prompt so the LLM knows to start generating a response.

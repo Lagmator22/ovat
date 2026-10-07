@@ -32,8 +32,8 @@ class Collector:
 
         A third state, and the one that reads worst when it is not shown.
         `unavailable` covers a source that could not start; this covers one
-        that started and emits nothing anyway -- Intel UT on a build whose
-        continuous mode writes binary traces instead of streaming values.
+        that started and emits nothing usable anyway -- Intel UT, whose
+        continuous-mode text OVAT does not yet parse.
         Reported from an AI PC: the table showed no GPU, NPU or power rows and
         no line saying why, which is indistinguishable from idle hardware.
         """

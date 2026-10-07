@@ -305,31 +305,30 @@ class IntelHardwareSource(TelemetrySource):
         """Begin continuous collection in the background."""
         if self.unavailable or self._proc is not None:
             return
-        # A DIRECTORY, and one that ut is actually told about. The old code
-        # made a temp FILE and never passed it on the command line, so ut
-        # ignored it entirely and dumped its own binary traces
-        # (ut_default_output.*.bin, tens of MB) into whatever directory the
-        # user happened to run from. stop() then deleted the untouched temp
-        # file and left the real output behind -- so every `ovat run
-        # --telemetry` quietly added to a pile in the user's project folder.
+        # ut writes its files (ut_default_output.*, SoCWatchHelp.json) into
+        # its WORKING DIRECTORY, so it runs inside a scratch folder that stop()
+        # removes. Not `--output <dir>`: measured on the AI PC with
+        # ut-tool-ext-v0.2.0-beta1.1, ut refuses that together with
+        # --continuous ("--continuous (-c) and --output (-o) cannot be used
+        # together") and exits within a second, so passing it killed the
+        # hardware source at startup on every run.
         self._out_path = tempfile.mkdtemp(prefix="ovat-ut-")
         try:
             self._proc = subprocess.Popen(
                 [self.binary, "--continuous",
                  "--enable", self.collectors,
-                 "--sampling-interval", str(self.sampling_interval_ms),
-                 "--output", self._out_path],
+                 "--sampling-interval", str(self.sampling_interval_ms)],
+                cwd=self._out_path,
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         except Exception:
             # A profiler that cannot start must not stop the agent running.
             self._proc = None
             return
         # Read stdout on its OWN thread. sample() used to call readline()
-        # directly, and continuous UT prints nothing (it writes binary
-        # traces), so that call blocked forever -- and since the Collector
-        # samples every source in turn on one thread, CPU, NPU and the KV
-        # cache all froze after the first tick. Draining continuously also
-        # keeps a chatty UT from filling the pipe and stalling itself.
+        # directly, which blocks until ut prints its next line; the Collector
+        # samples every source in turn on one thread, so that wait stalled
+        # CPU, NPU and the KV cache readings too. Draining continuously also
+        # keeps a chatty ut from filling the pipe and stalling itself.
         if self._proc.stdout is not None:
             threading.Thread(target=self._pump, args=(self._proc.stdout,),
                              daemon=True, name="ovat-ut-reader").start()
@@ -344,13 +343,14 @@ class IntelHardwareSource(TelemetrySource):
     def sample(self) -> dict:
         """One snapshot of whatever UT has emitted since the last read.
 
-        MEASURED ON THE AI PC, and not what the README implied: continuous
-        mode does not stream JSON on stdout. It writes binary traces
-        (ut_default_output.l0_gpu.bin, .l0_npu.bin, .ut.main.bin) which need
-        bin2perfetto to decode. So the process starts, reports "live", and
-        emits nothing this can read.
+        MEASURED ON THE AI PC (ut-tool-ext-v0.2.0-beta1.1, 2026-10-07):
+        continuous mode DOES print text on stdout, in lines shaped like
+        `Metric: PKG-PWR | ... | Value: 1568.97 mJ`. An earlier note here said
+        it printed nothing; that was never measured. The middle fields of that
+        line are not yet recorded, so the format is not parsed here and those
+        lines are skipped -- reading it needs a captured sample first.
 
-        Both shapes are handled: a JSON line if a build ever streams one, and
+        Shapes handled: a JSON line if a build ever streams one, and
         "name: value" or "name = value" text otherwise. Anything unparseable
         is skipped rather than raised, because a malformed frame is a missing
         reading and not a reason to lose the run.
@@ -430,8 +430,8 @@ class IntelHardwareSource(TelemetrySource):
         can be in: it looks like an idle NPU rather than an unreadable one.
         """
         if self.unavailable is None and self._proc is not None:
-            return ("running, but this UT build writes binary traces rather "
-                    "than streaming numbers; decode with bin2perfetto")
+            return ("running, but this UT build prints `Metric: ... | Value:` "
+                    "lines that OVAT cannot parse yet")
         return None
 
     def stop(self) -> None:
@@ -700,9 +700,9 @@ class NPUSource(TelemetrySource):
     """NPU utilisation, from the driver rather than from a profiler.
 
     WHY THIS EXISTS ALONGSIDE IntelHardwareSource. Intel UT is the rich
-    answer -- power, per-engine timelines, thermals -- but its continuous mode
-    writes binary traces that need bin2perfetto to decode, so it produces no
-    number this page can draw. A live utilisation percentage is the number
+    answer -- power, per-engine timelines, thermals -- but OVAT does not yet
+    parse the text its continuous mode prints, so it produces no number this
+    page can draw. A live utilisation percentage is the number
     actually being asked for, and on Linux the driver publishes it directly.
 
     THE MEASUREMENT. `npu_busy_time_us` is a monotonic counter of microseconds
