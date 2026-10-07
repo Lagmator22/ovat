@@ -444,9 +444,9 @@ class IntelHardwareSource(TelemetrySource):
             self._proc = None
         if self._out_path and os.path.exists(self._out_path):
             try:
-                # rmtree, not remove: it is a directory now, and ut writes its
-                # binary traces inside it. Removing only the directory entry
-                # would leave those behind, which is the leak this fixes.
+                # rmtree, not remove: it is a directory now, and ut runs
+                # inside it, so whatever it writes lands there. Removing only
+                # the directory entry would leave that behind.
                 shutil.rmtree(self._out_path)
             except OSError:
                 pass

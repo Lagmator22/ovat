@@ -26,7 +26,9 @@ models/
 .vscode/
 .idea/
 
-# Personal Claude Code bridge to AGENTS.md: not shared, per-machine.
+# Claude Code reads AGENTS.md directly, and stops reading it the moment a
+# CLAUDE.md or CLAUDE.local.md exists. Ignored so a personal one can never
+# be committed for everyone; better still, do not create one at all.
 CLAUDE.local.md
 
 # OVMS process logs
