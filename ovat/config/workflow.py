@@ -295,6 +295,13 @@ class ToolConfig(StrictModel):
     # every tool it advertises; ANY MCP server plugs in this way.
     type: str = "builtin"
     command: list[str] | None = None  # the mcp_stdio server launch command
+    # Extra environment for an mcp_stdio server. The mcp SDK starts a server
+    # with only a short allowlist of the parent's variables (HOME, PATH, ...)
+    # on purpose, so a third-party server cannot read every secret in the
+    # shell. That also meant OVAT's own servers never saw OVAT_WHISPER_MODEL
+    # and friends. Listing a variable here passes it on; ${VAR} in a value is
+    # expanded from the parent, so a secret can stay out of the YAML.
+    env: dict[str, str] | None = None
 
     # Where this tool's own weights live, and what runs them. Only the tools
     # that load a model read these: `transcribe` and `describe_image`.
@@ -314,6 +321,14 @@ class ToolConfig(StrictModel):
     # default, so nothing that works today stops working.
     model: str | None = None
     device: str | None = None       # CPU, GPU or NPU; unset asks DeviceManager
+
+    @model_validator(mode="after")
+    def _env_needs_a_subprocess(self):
+        """A builtin runs inside this process, where an env would do nothing."""
+        if self.env and self.type != "mcp_stdio":
+            raise ValueError("env only applies to type: mcp_stdio tools, "
+                             "which run as their own process")
+        return self
 
 
 class AgentConfig(StrictModel):
