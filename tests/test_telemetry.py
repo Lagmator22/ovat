@@ -353,8 +353,8 @@ def test_the_agent_source_says_what_to_DO_not_just_that_it_is_empty():
 
 
 def test_a_ut_text_line_becomes_a_metric():
-    """Measured on the AI PC: continuous mode writes binary traces rather
-    than streaming JSON, so a text fallback is what actually gets read."""
+    """Measured on the AI PC: continuous mode prints text, not JSON, so a
+    text fallback is what actually gets read."""
     from ovat.telemetry.sources import IntelHardwareSource as I
 
     assert I._parse_text_line("NPU Utilization: 42.5") == {
@@ -363,13 +363,17 @@ def test_a_ut_text_line_becomes_a_metric():
     assert I._parse_text_line("collecting...") == {}
 
 
-def test_intel_ut_is_told_where_to_write_and_cleans_it_up(monkeypatch, tmp_path):
-    """ut dumped binary traces into the user's project folder, forever.
+def test_intel_ut_writes_into_a_scratch_folder_and_cleans_it_up(monkeypatch,
+                                                               tmp_path):
+    """ut dumps files into its working directory, and must not into yours.
 
-    start() created a temp FILE and never passed it on the command line, so ut
-    ignored it and wrote its own ut_default_output.*.bin (tens of MB) into the
-    current directory. stop() then deleted the untouched temp file and left the
-    real output behind. Every `ovat run --telemetry` added to the pile.
+    The first fix for that passed `--output <dir>`. Measured on the AI PC
+    (ut-tool-ext-v0.2.0-beta1.1), ut rejects that combination outright --
+    "Error: --continuous (-c) and --output (-o) cannot be used together" --
+    and exits within a second, so the hardware source died at startup on
+    every run from dade76f on. Running ut with its WORKING DIRECTORY set to a
+    scratch folder keeps its files (SoCWatchHelp.json, ut_default_output.*)
+    out of the project without the flag it refuses.
     """
     import shutil
     from ovat.telemetry.sources import IntelHardwareSource
@@ -390,6 +394,7 @@ def test_intel_ut_is_told_where_to_write_and_cleans_it_up(monkeypatch, tmp_path)
 
     def fake_popen(cmd, **kwargs):
         captured["cmd"] = cmd
+        captured["cwd"] = kwargs.get("cwd")
         return FakeProc()
 
     monkeypatch.setattr("ovat.telemetry.sources.subprocess.Popen", fake_popen)
@@ -413,9 +418,12 @@ def test_intel_ut_is_told_where_to_write_and_cleans_it_up(monkeypatch, tmp_path)
     source.start()
 
     cmd = captured["cmd"]
-    assert "--output" in cmd, "ut was never told where to write"
-    out_dir = cmd[cmd.index("--output") + 1]
-    assert os.path.isdir(out_dir), "--output must name a real directory"
+    assert "--continuous" in cmd
+    assert "--output" not in cmd and "-o" not in cmd, (
+        "ut refuses --continuous with --output and exits at once")
+    out_dir = captured["cwd"]
+    assert out_dir and os.path.isdir(out_dir), "ut must run in a scratch folder"
+    assert os.path.abspath(out_dir) != os.path.abspath(os.getcwd())
 
     # Something ut-shaped lands in there; stop() must take the folder with it.
     with open(os.path.join(out_dir, "ut_default_output.l0_gpu.bin"), "wb") as f:
