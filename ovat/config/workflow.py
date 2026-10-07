@@ -138,10 +138,11 @@ class ModelConfig(StrictModel):
     # changes behaviour.
     #
     # WHY THEY EXIST. The Qwen3.5 model card recommends presets built from
-    # these (non-thinking: temperature 0.7, top_p 0.8, top_k 20,
-    # presence_penalty 1.5) and warns that greedy decoding "can lead to
-    # performance degradation and endless repetitions" -- the runaway
-    # generations recorded in AGENTS.md. OVMS accepts all of them
+    # these (non-thinking, general tasks: temperature 0.7, top_p 0.8, top_k
+    # 20, presence_penalty 1.5). The warning that greedy decoding "can lead
+    # to performance degradation and endless repetitions" is on the Qwen3
+    # card (Qwen/Qwen3-8B), not Qwen3.5's; Qwen3.5's card only says
+    # presence_penalty can reduce endless repetitions. OVMS accepts all of them
     # (docs/model_server_rest_api_chat.md). Which preset suits OVAT's agents
     # is NOT yet measured, which is why nothing here is switched on.
     #
