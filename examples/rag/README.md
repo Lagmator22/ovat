@@ -45,7 +45,7 @@ separates a retrieved answer from a plausible one.
 More questions the sample documents can answer, and pre-training cannot:
 
 ```bash
-ovat run examples/rag/workflow.yml -i "Which device is never used for tool calling, and why?"
+ovat run examples/rag/workflow.yml -i "What does the NPU need in order to run a tool-calling agent?"
 ovat run examples/rag/workflow.yml -i "Why does OVAT record null instead of 0 for tokens?"
 ovat run examples/rag/workflow.yml -i "Which engine records per-turn token counts?"
 ```

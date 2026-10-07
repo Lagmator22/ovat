@@ -10,9 +10,14 @@ because Python has already freed the large allocations by then.
 ## Device routing
 
 The device routing table sends the LLM to the GPU when one is present,
-embeddings to the CPU, and Whisper to the CPU. The NPU is never chosen for a
-tool-calling agent, because the NPU plugin favours static shapes while an agent prompt grows every round. The NPU is
-still used for embeddings and for plain chat.
+embeddings to the NPU when one is present (otherwise the CPU), and Whisper to
+the CPU. The GPU is the default for an agent because it runs any export.
+
+The NPU can run a tool-calling agent too, but only from a channel-wise
+symmetric INT4 export, the `-int4-cw-ov` model family. A stock `-int4-ov`
+export fails to compile on the NPU before generating a token. The NPU also
+caps the prompt length unless OVMS is started with `--max_prompt_len`, and
+an agent prompt grows every round.
 
 ## The four engines
 
