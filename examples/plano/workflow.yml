@@ -1,9 +1,10 @@
 # examples/plano/workflow.yml
 #
 # The exact same agent as examples/workflow.yml. The ONLY change in this whole
-# file is model.ovms_url: instead of pointing straight at OVMS (port 8000), it
-# points at plano's model listener (port 12000, see plano-config.yaml). Plano
-# then forwards every request on to OVMS for us.
+# file is the model's address: model.ovms_url points at plano's model listener
+# (port 8000, see plano-config.yaml) instead of at OVMS, and model.ovms_port
+# moves OVMS itself to 8002. plano forwards every request through the id
+# bridge (8001) on to OVMS.
 #
 # EVERYTHING else stays the same: same model name, same device, same tools,
 # same agent loop, same RAG block. `ovat run`/`ovat index`/`ovat chat` do not
@@ -25,8 +26,9 @@
 # --docker; see README.md), separate from `ovat serve`.
 #
 # Run steps (see examples/plano/README.md for the full walkthrough):
-#   ovat serve examples/plano/workflow.yml            # starts OVMS on :8000
-#   planoai up examples/plano/plano-config.yaml       # starts plano on :12000
+#   ovat serve examples/plano/workflow.yml            # starts OVMS on :8002
+#   python examples/plano/ovms_id_bridge.py           # the bridge on :8001
+#   planoai up examples/plano/plano-config.yaml       # starts plano on :8000
 #   ovat run   examples/plano/workflow.yml --input "..."   # talks to plano
 
 model:
@@ -48,7 +50,7 @@ tools:
     type: builtin
 
 agent:
-  type: native                    # or: react (LangChain), llamaindex, openai_agents
+  type: native                    # or: react (LangChain), llamaindex, openai-agents
   max_iterations: 10
   system_prompt: >-
     You are a helpful assistant that uses tools when needed.
