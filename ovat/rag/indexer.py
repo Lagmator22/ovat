@@ -93,6 +93,7 @@ def index_folder(folder: str, retriever: RetrieverProvider,
     total = len(paths)
     total_files = 0
     total_chunks = 0
+    indexed = {}
     for done, path in enumerate(paths, start=1):
         try:
             # utf-8-SIG, not utf-8: a file saved with a BOM (the Windows default
@@ -119,8 +120,58 @@ def index_folder(folder: str, retriever: RetrieverProvider,
             retriever.add(chunks, sources=sources)
             total_files += 1
             total_chunks += len(chunks)
+            indexed[key] = {"path": os.path.abspath(path),
+                            "mtime": os.path.getmtime(path)}
         if on_progress is not None:
             # Empty files are reported too. They cost nothing to skip, but a
             # bar that silently stops short of its total reads as a failure.
             on_progress(done, total, str(path))
-    return {"files": total_files, "chunks": total_chunks}
+    return {"files": total_files, "chunks": total_chunks, "indexed": indexed}
+
+
+# Which files an index was built from, and when they were last changed. It
+# lives next to the database: the vector store holds chunks, not file dates.
+#
+# Why it exists: on the AI PC the NPU example answered that the NPU "is
+# explicitly not used for tool-calling agents", a claim the docs had dropped
+# weeks earlier. Its document_qa.db was built before the correction, and
+# nothing said the answer came from an old copy of the text.
+MANIFEST_SUFFIX = ".sources.json"
+
+
+def record_index(db_path: str, indexed: dict) -> None:
+    """Merge this run's {source: {path, mtime}} into the index's manifest."""
+    if not db_path or db_path == ":memory:" or not indexed:
+        return
+    import json
+    manifest = _read_manifest(db_path)
+    manifest.update(indexed)
+    with open(db_path + MANIFEST_SUFFIX, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=1, sort_keys=True)
+
+
+def stale_sources(db_path: str) -> list[str]:
+    """Indexed files that changed or vanished since they were indexed.
+
+    An index with no manifest (built before OVAT recorded one) reports
+    nothing: there is no date to compare against, and a warning on every run
+    for every old index would teach people to ignore it.
+    """
+    stale = []
+    for source, entry in sorted(_read_manifest(db_path).items()):
+        try:
+            if os.path.getmtime(entry["path"]) > entry["mtime"] + 1:
+                stale.append(source)
+        except (OSError, KeyError, TypeError):
+            stale.append(source)          # deleted, or an unreadable entry
+    return stale
+
+
+def _read_manifest(db_path: str) -> dict:
+    import json
+    try:
+        with open(db_path + MANIFEST_SUFFIX, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
