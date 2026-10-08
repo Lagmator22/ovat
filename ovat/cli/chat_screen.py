@@ -36,7 +36,7 @@ from textual.binding import Binding
 from textual.color import Color
 from textual.screen import ModalScreen, Screen
 from textual.containers import Vertical, VerticalScroll
-from textual.widgets import (Collapsible, Footer, Input, Label, Markdown,
+from textual.widgets import (Collapsible, Input, Label, Markdown,
                              OptionList, Rule, Static)
 from textual.widgets.option_list import Option
 
@@ -45,7 +45,7 @@ from ovat.agent.session import Session
 from ovat.cli import ui
 from ovat.cli.commands import ScreenCommands
 from ovat.cli.editing import InputHistory
-from ovat.cli.widgets import ChatInput
+from ovat.cli.widgets import ChatInput, Footer
 
 # The slash menu for this screen. Unlike the doctor screen's, choosing one
 # INSERTS it rather than running it: most of these take an argument

@@ -21,11 +21,12 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import (DataTable, Digits, Footer, Label, ProgressBar,
+from textual.widgets import (DataTable, Digits, Label, ProgressBar,
                              Rule, Static, TabbedContent, TabPane)
 
 from ovat.cli import ui
 from ovat.cli.commands import ScreenCommands
+from ovat.cli.widgets import Footer
 from ovat.telemetry.collector import Collector
 from ovat.telemetry.sinks import LiveBufferSink
 from ovat.telemetry.sources import (IntelHardwareSource, NPUSource,
