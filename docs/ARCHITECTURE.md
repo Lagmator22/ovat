@@ -468,15 +468,15 @@ it performs, and the one judgement call it exists to remove.
 **Windows 11**, from the folder you want OVMS in:
 
 ```bat
-curl -L https://github.com/openvinotoolkit/model_server/releases/download/v2026.2.1/ovms_windows_2026.2.1_python_on.zip -o ovms.zip
+curl -L https://github.com/openvinotoolkit/model_server/releases/download/v2026.4.1/ovms_windows_2026.4.1_python_on.zip -o ovms.zip
 tar -xf ovms.zip
 ```
 
 **Ubuntu 24.04** (swap `ubuntu22` or `redhat` as needed):
 
 ```bash
-wget https://github.com/openvinotoolkit/model_server/releases/download/v2026.2.1/ovms_ubuntu24_2026.2.1_python_on.tar.gz
-tar -xzvf ovms_ubuntu24_2026.2.1_python_on.tar.gz
+wget https://github.com/openvinotoolkit/model_server/releases/download/v2026.4.1/ovms_ubuntu24_2026.4.1_python_on.tar.gz
+tar -xzvf ovms_ubuntu24_2026.4.1_python_on.tar.gz
 sudo apt update && sudo apt install -y libxml2 curl
 ```
 

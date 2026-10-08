@@ -29,7 +29,15 @@ import zipfile
 
 # The build this project has actually been verified against on an AI PC.
 # One constant, so the README, the installer and the tests cannot drift.
-OVMS_VERSION = "2026.2.1"
+#
+# 2026.4.1 since 2026-10-08. Measured against 2026.2.1 on the LunarLake AI PC
+# with Qwen3.5-4B (GPU) and Qwen3-8B-int4-cw (NPU), 15 tool-requiring
+# questions through all four engines: 56/60 answers right against 42/60, 14
+# flipped wrong -> right and none the other way (McNemar p = 0.0001); the
+# same output on every repeat; a 4.9 GB GPU server peak against 17.3 GB; no
+# log errors. Every platform's python_on archive ships a .sha256. Not run on
+# Linux yet; only Windows was measured.
+OVMS_VERSION = "2026.4.1"
 
 _RELEASE_URL = ("https://github.com/openvinotoolkit/model_server/releases/"
                 "download/v{version}/{asset}")
