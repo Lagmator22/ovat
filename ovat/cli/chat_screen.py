@@ -36,7 +36,7 @@ from textual.binding import Binding
 from textual.color import Color
 from textual.screen import ModalScreen, Screen
 from textual.containers import Vertical, VerticalScroll
-from textual.widgets import (Collapsible, Footer, Input, Label, Markdown,
+from textual.widgets import (Collapsible, Input, Label, Markdown,
                              OptionList, Rule, Static)
 from textual.widgets.option_list import Option
 
@@ -45,7 +45,7 @@ from ovat.agent.session import Session
 from ovat.cli import ui
 from ovat.cli.commands import ScreenCommands
 from ovat.cli.editing import InputHistory
-from ovat.cli.widgets import ChatInput
+from ovat.cli.widgets import ChatInput, Footer
 
 # The slash menu for this screen. Unlike the doctor screen's, choosing one
 # INSERTS it rather than running it: most of these take an argument
@@ -812,6 +812,10 @@ class ChatScreen(Screen):
                     widgets.append(Reasoning(reasoning))
                 answers.append(len(widgets))
                 widgets.append(Response(answer))
+                if message.get("sources"):
+                    label = message.get("sources_label") or "sources"
+                    widgets.append(Sources(
+                        f"{label}: " + ", ".join(message["sources"])))
 
         # Downgrade all but the newest answers to plain text. Done after the
         # loop so "newest" is known; a Response is swapped for a PlainAnswer
@@ -1303,7 +1307,9 @@ class ChatScreen(Screen):
 
         answer = (answer or "").strip()
         self._session.add_user(question)
-        self._session.add_assistant(answer)
+        self._session.add_assistant(
+            answer, sources=sources,
+            sources_label=getattr(engine, "footnote_label", "sources"))
         # Autosave after every turn, so a crash never loses the conversation.
         path = _session_path(self._cwd, self._autosave)
         os.makedirs(os.path.dirname(path), exist_ok=True)

@@ -28,12 +28,12 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.timer import Timer
 from textual.widget import Widget
-from textual.widgets import Footer, Input, OptionList, RichLog, Static
+from textual.widgets import Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from ovat.cli import shell, ui
 from ovat.cli.editing import InputHistory
-from ovat.cli.widgets import PasteInput, SelectableRichLog
+from ovat.cli.widgets import Footer, PasteInput, SelectableRichLog
 from ovat.cli.theme import OVAT_THEME
 
 # A dependency-free fallback, used only if pyfiglet is somehow unavailable.
@@ -497,16 +497,24 @@ def _banner() -> Text:
     return out
 
 
-def _startup_updates() -> Text:
+def _startup_updates(max_width: int | None = None) -> Text:
     """The Updates board: a shaded heading over what actually changed.
 
     The heading drops to the mid-size face rather than the six-row one it
     used to use. It is not competing with OVAT for attention, and the rows it
     gives back are what make room for the list underneath, which is the part
     with something to say. The panel used to be a heading over nothing.
+
+    max_width: the panel's width. FIGlet art wider than its box WRAPS, which
+    shears the glyphs (the same failure #brand-panel's fixed width exists to
+    avoid); on an 83-column terminal the heading came out as scrambled
+    blocks. So when the art does not fit, the heading is plain text.
     """
     out = _gradient_mark("Updates", _ATTRIBUTION_FONTS,
                          _MINT_RGB, _FOREST_RGB, ui.GREEN)
+    widest = max((len(line) for line in out.plain.splitlines()), default=0)
+    if max_width is not None and widest > max_width:
+        out = Text("Updates\n", style=f"bold {ui.GREEN}")
     out.append("\n")
     for line in TUI_UPDATES:
         # Darker than the heading so the eye lands on the heading first, and
@@ -514,6 +522,20 @@ def _startup_updates() -> Text:
         out.append("  › ", style=f"bold {_DARK_GREEN}")
         out.append(f"{line}\n", style=_DARK_GREEN)
     return out
+
+
+class _UpdatesPanel(Static):
+    """The Updates board, redrawn to fit whatever width it is given."""
+
+    def on_resize(self, event) -> None:
+        self.update(_startup_updates(self.content_size.width))
+
+
+#: Below this many rows the masthead is hidden. It is a fixed 17 rows, and
+#: under 24 it pushed the input line off the screen: at 83x23 there was
+#: nowhere to type. A screen without its logo still works; one without its
+#: prompt does not.
+MASTHEAD_MIN_ROWS = 24
 
 
 def _option(template) -> Option:
@@ -732,7 +754,7 @@ class OvatTUI(App):
     def compose(self) -> ComposeResult:
         with Horizontal(id="masthead"):
             yield Static(_banner(), id="brand-panel")
-            yield Static(_startup_updates(), id="updates-panel")
+            yield _UpdatesPanel(_startup_updates(), id="updates-panel")
             with Vertical(id="intel-panel"):
                 yield _StartupIntelAnimation(id="intel-animation")
         output = SelectableRichLog(id="output", highlight=False,
@@ -786,6 +808,18 @@ class OvatTUI(App):
         banner = self.query_one("#brand-panel", Static)
         banner.styles.opacity = 0.0
         banner.styles.animate("opacity", value=1.0, duration=0.25)
+        self._fit_masthead()
+
+    def on_resize(self, event) -> None:
+        self._fit_masthead()
+
+    def _fit_masthead(self) -> None:
+        """Hide the masthead when the window is too short to keep the prompt."""
+        try:
+            masthead = self.query_one("#masthead")
+        except Exception:           # another screen is active; nothing to fit
+            return
+        masthead.display = self.size.height >= MASTHEAD_MIN_ROWS
 
     # The live slash dropdown
 

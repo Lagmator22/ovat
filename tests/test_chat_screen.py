@@ -1829,6 +1829,32 @@ def test_the_ovms_engine_keeps_the_configs_cap_unless_told_otherwise():
     assert agent.llm.max_tokens == 300
 
 
+def test_the_sources_line_survives_a_redraw(monkeypatch, tmp_path):
+    """Hands-on test on the AI PC: the "sources:" line under an answer was
+    gone after /thinking (and after /load), because the redraw rebuilt the
+    transcript from messages that never recorded it."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", ChatInput)
+            inp.value = "how did revenue do?"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "sources: finance.md" in _log_text(screen)
+
+            inp.value = "/thinking"
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "sources: finance.md" in _log_text(screen), (
+                "the redraw dropped the sources line")
+    _run(scenario())
+
+
 def test_reasoning_before_a_lone_closing_tag_goes_in_the_fold():
     """Qwen3.5's template opens <think> in the PROMPT, so a thinking reply is
     "reasoning </think> answer". The answer was right, but the reasoning was

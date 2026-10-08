@@ -890,6 +890,24 @@ def test_no_widget_carries_a_hover_tooltip():
     _run(scenario())
 
 
+def test_the_footer_keys_carry_no_tooltip_with_tooltips_on():
+    """The test above runs under run_test(), which switches tooltips OFF, so
+    it never saw the one Textual's Footer puts on its keys: "^p palette"
+    showed an "Open the command palette" box on the AI PC. This runs with
+    tooltips on, the way a real terminal does."""
+    from textual.widgets._footer import FooterKey
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(tooltips=True) as pilot:
+            await pilot.pause()
+            keys = list(app.screen.query(FooterKey))
+            assert keys, "no footer keys rendered"
+            for key in keys:
+                assert not key.tooltip, f"{key!r} has tooltip {key.tooltip!r}"
+    _run(scenario())
+
+
 # The telemetry screen: live numbers inside the TUI
 
 def test_slash_telemetry_opens_the_page():
@@ -1128,3 +1146,36 @@ def test_a_real_pillow_image_still_reads():
 
     image = Image.new("RGB", (2, 1), (10, 20, 30))
     assert list(_pixels(image)) == [(10, 20, 30), (10, 20, 30)]
+
+
+# Small windows: the prompt must survive, and art must never wrap.
+
+def test_a_short_window_hides_the_masthead_not_the_prompt():
+    """Hands-on test on the AI PC: at 83x23 the 17-row masthead pushed the
+    input line off the screen."""
+    async def scenario(size, shown):
+        app = OvatTUI()
+        async with app.run_test(size=size) as pilot:
+            await pilot.pause()
+            prompt = app.query_one("#prompt")
+            assert prompt.region.height > 0, f"nowhere to type at {size}"
+            assert app.query_one("#masthead").display is shown
+    _run(scenario((83, 23), False))
+    _run(scenario((83, 31), True))
+
+
+def test_the_updates_heading_never_wraps_its_art():
+    """At 83 columns the FIGlet "Updates" heading wrapped inside its panel and
+    came out as scrambled blocks."""
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(size=(83, 31)) as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            panel = app.query_one("#updates-panel")
+            width = panel.content_size.width
+            heading = str(panel.content).splitlines()[0]
+            assert len(heading) <= width, (
+                f"a {len(heading)}-column heading in a {width}-column panel")
+    _run(scenario())
+

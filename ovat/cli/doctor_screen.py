@@ -31,12 +31,12 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Input, OptionList, Static
+from textual.widgets import DataTable, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from ovat.cli import ui
 from ovat.cli.commands import ScreenCommands
-from ovat.cli.widgets import SelectableRichLog
+from ovat.cli.widgets import Footer, SelectableRichLog
 
 # The slash menu for this screen. Same shape as shell.TEMPLATES in the
 # launcher: name, one-line help. Every one is a UI action, so unlike the
