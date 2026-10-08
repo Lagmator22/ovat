@@ -890,6 +890,24 @@ def test_no_widget_carries_a_hover_tooltip():
     _run(scenario())
 
 
+def test_the_footer_keys_carry_no_tooltip_with_tooltips_on():
+    """The test above runs under run_test(), which switches tooltips OFF, so
+    it never saw the one Textual's Footer puts on its keys: "^p palette"
+    showed an "Open the command palette" box on the AI PC. This runs with
+    tooltips on, the way a real terminal does."""
+    from textual.widgets._footer import FooterKey
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(tooltips=True) as pilot:
+            await pilot.pause()
+            keys = list(app.screen.query(FooterKey))
+            assert keys, "no footer keys rendered"
+            for key in keys:
+                assert not key.tooltip, f"{key!r} has tooltip {key.tooltip!r}"
+    _run(scenario())
+
+
 # The telemetry screen: live numbers inside the TUI
 
 def test_slash_telemetry_opens_the_page():

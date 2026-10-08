@@ -28,12 +28,12 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.timer import Timer
 from textual.widget import Widget
-from textual.widgets import Footer, Input, OptionList, RichLog, Static
+from textual.widgets import Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from ovat.cli import shell, ui
 from ovat.cli.editing import InputHistory
-from ovat.cli.widgets import PasteInput, SelectableRichLog
+from ovat.cli.widgets import Footer, PasteInput, SelectableRichLog
 from ovat.cli.theme import OVAT_THEME
 
 # A dependency-free fallback, used only if pyfiglet is somehow unavailable.
