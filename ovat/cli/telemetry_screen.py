@@ -58,8 +58,8 @@ _PREFERRED = [
     # The cache figure earns a headline slot because it is the one number that
     # predicts the undecoded-tool-call failure before it happens.
     ("ovms.kv_cache_pct", "KV CACHE", "%"),
-    ("intel.npu_utilization", "NPU", "%"),
-    ("intel.gpu_utilization", "GPU", "%"),
+    # Package power from Intel UT. Its first reading arrives seconds after
+    # the others, so _sync_cards lets it take a slot from a lower card then.
     ("intel.pkg_power_w", "POWER", "W"),
     ("system.cpu_pct", "SYS CPU", "%"),
     ("system.ram_used_pct", "SYS RAM", "%"),
@@ -90,9 +90,9 @@ _HELP = """
 [green]live[/green], [yellow]silent[/yellow] (running, nothing read yet) or
 [yellow]n/a[/yellow] (cannot run here), and why.
 
-[b]Turning on the intel rows[/b] (Windows and Linux)
-  Unzip Intel's ut-tool, then set [cyan]OVAT_UT[/cyan] to that folder or put it
-  in [cyan]~/ut[/cyan]. On Windows run [cyan]ut-vars.cmd[/cyan] from an
+[b]Turning on the intel rows[/b] (Windows 11, Intel Core Ultra)
+  Unzip Intel Unified Telemetry, then set [cyan]OVAT_UT[/cyan] to that folder
+  or put it in [cyan]~/ut[/cyan]. Run [cyan]ut-vars.cmd[/cyan] from an
   Administrator prompt first. The first reading takes a few seconds.
 
 [b]Per-request traces[/b] come from the plano gateway instead:
@@ -242,9 +242,9 @@ class TelemetryScreen(Screen):
                 line.append(" live", style=f"bold {ui.GREEN}")
         return line
 
-    def _redraw(self) -> None:
+    async def _redraw(self) -> None:
         self.query_one("#tel-sources", Static).update(self._sources_line())
-        self._sync_cards()
+        await self._sync_cards()
         for metric, digits, bar in self._cards.values():
             value = self.live.latest(metric)
             if value is None:
@@ -256,35 +256,31 @@ class TelemetryScreen(Screen):
                 bar.update(progress=max(0.0, min(100.0, float(value))))
         self._redraw_numbers()
 
-    def _sync_cards(self) -> None:
-        """Mount headline cards for the preferred metrics that have data.
+    async def _sync_cards(self) -> None:
+        """Show cards for the best-ranked metrics that have data, in order.
 
         Done here rather than in compose because which metrics exist depends
         on which SOURCES work on this machine, and that is not known until
-        the collector has ticked at least once.
+        the collector has ticked at least once. And it is re-checked every
+        tick, not filled once: Intel UT's first reading lands seconds after
+        the rest, by which time five lower-ranked cards had taken every slot
+        and POWER never appeared (AI PC). When the ranking changes, the row
+        is rebuilt in the new order.
         """
-        if len(self._cards) >= MAX_CARDS:
+        wanted = [entry for entry in _PREFERRED
+                  if self.live.latest(entry[0]) is not None][:MAX_CARDS]
+        if [entry[0] for entry in wanted] == list(self._cards):
             return
         row = self.query_one("#tel-numbers", Horizontal)
-        for metric, label, unit in _PREFERRED:
-            if len(self._cards) >= MAX_CARDS:
-                break
-            if metric in self._cards or self.live.latest(metric) is None:
-                continue
-            # BUILT FIRST, MOUNTED ONCE. The obvious shape -- mount the card,
-            # then mount its children into it -- has a window in it: mount()
-            # is asynchronous, so `card.parent` may still be unset on the very
-            # next line, and Textual then raises
-            #
-            #   MountError: Unable to find relative location of Vertical(...)
-            #   because it has no parent
-            #
-            # Seen once on the AI PC as card-npu-utilization and never
-            # reproduced -- 10/10 isolated, 47/47 with a server up, clean in
-            # two full suites -- which is exactly what a timing window looks
-            # like from the outside. Passing the children to the constructor
-            # removes the window rather than narrowing it, and is the pattern
-            # Textual documents for building a widget before it is displayed.
+        # AWAITED: removal is asynchronous, and the rebuilt cards reuse the
+        # same ids, so mounting before it finishes raises DuplicateIds.
+        await row.remove_children()
+        self._cards = {}
+        for metric, label, unit in wanted:
+            # Built first, mounted once: mounting a card and then its
+            # children has a window where card.parent is unset, and Textual
+            # raised MountError there once on the AI PC (never reproduced,
+            # the shape of a timing window). Children go to the constructor.
             digits = Digits("---")
             children = [Label(f"{label}  [dim]{unit}[/dim]", markup=True),
                         digits]

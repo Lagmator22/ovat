@@ -1275,7 +1275,7 @@ def test_every_card_still_gets_its_widgets():
             screen.live.samples.clear()
             # a percentage (gets a bar) and a plain figure (does not)
             screen.live.record({"system.cpu_pct": 40.0, "system.threads": 9})
-            screen._sync_cards()
+            await screen._sync_cards()
             await pilot.pause()
 
             percent = screen.query_one(f"#{_card_id('system.cpu_pct')}")
@@ -1345,3 +1345,44 @@ def test_lines_ut_does_print_are_still_read(monkeypatch):
         assert got == {"npu_utilization": 42.5}
     finally:
         source.stop()
+
+
+def test_a_late_power_reading_takes_a_card_slot():
+    """Intel UT's first reading lands seconds after the other sources. The
+    cards used to be filled once, so five lower-ranked metrics took every
+    slot and POWER never appeared, while its numbers sat in the table (AI
+    PC). The ranking is re-checked each tick and the row rebuilt."""
+    import asyncio
+
+    pytest.importorskip("textual")
+    from textual.app import App
+
+    from ovat.cli.telemetry_screen import MAX_CARDS, TelemetryScreen, _card_id
+
+    async def scenario():
+        class Harness(App):
+            def on_mount(self):
+                self.push_screen(TelemetryScreen())
+
+        app = Harness()
+        async with app.run_test() as pilot:
+            screen = app.screen
+            screen.collector.stop()
+            screen.live.samples.clear()
+            early = {"npu.utilization": 0.0, "ovms.kv_cache_pct": 50.0,
+                     "system.cpu_pct": 4.0, "system.ram_used_pct": 36.0,
+                     "process.rss_mb": 270.0, "system.proc_cpu_pct": 30.0}
+            screen.live.record(early)
+            await screen._sync_cards()
+            await pilot.pause()
+            assert len(screen._cards) == MAX_CARDS
+            assert "intel.pkg_power_w" not in screen._cards
+
+            screen.live.record({**early, "intel.pkg_power_w": 3.9})
+            await screen._sync_cards()
+            await pilot.pause()
+            assert "intel.pkg_power_w" in screen._cards
+            assert screen.query_one(f"#{_card_id('intel.pkg_power_w')}")
+            assert len(screen._cards) == MAX_CARDS
+    asyncio.run(scenario())
+
