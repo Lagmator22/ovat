@@ -142,9 +142,39 @@ def identify_model(path: str) -> tuple[str, str]:
         return "embeddings", f"config model_type={model_type} (embedder)"
     if any(a.endswith("ForCausalLM") for a in architectures) \
             or model_type in _LLM_TYPES:
+        if _exported_for_features(os.path.join(path, "openvino_model.xml")):
+            return "embeddings", ("feature-extraction export (no generation "
+                                  "inputs), not a text LLM")
         return "llm", f"config model_type={model_type or 'causal-lm'}"
     return "unknown", (f"could not classify (model_type="
                        f"{model_type or 'missing'})")
+
+
+def _exported_for_features(xml_path: str) -> bool:
+    """True when an export takes no text-generation inputs: an embedder.
+
+    Qwen3-Embedding's config.json says Qwen3ForCausalLM, exactly like a chat
+    model, and its OpenVINO export has the same files as one, so `/chat` on
+    the AI PC offered it as a chat model. The graph tells them apart. A
+    text-generation export takes `beam_idx` (stateful, the default) or
+    `past_key_values.*` (stateless); a feature-extraction export takes only
+    input_ids and attention_mask. Checked against real exports: TinyLlama and
+    Llama-3.2-3B have beam_idx, bge-small and OpenVINO/Qwen3-Embedding-0.6B
+    do not.
+
+    Only the head of the file is read: the inputs are the first layers (byte
+    844 in both LLMs above), and the weights live in the .bin anyway. A file
+    that declares no inputs at all says nothing either way, so it keeps the
+    config's verdict.
+    """
+    try:
+        with open(xml_path, encoding="utf-8", errors="replace") as handle:
+            head = handle.read(64 * 1024)
+    except OSError:
+        return False
+    if 'type="Parameter"' not in head:
+        return False
+    return 'name="beam_idx"' not in head and "past_key_values" not in head
 
 
 def _roots(extra_roots: list[str] | None = None) -> list[str]:

@@ -384,3 +384,62 @@ def test_models_under_a_configured_path_are_actually_found(tmp_path,
 
     assert find_models("llm", [str(tmp_path / "drive-d")]), "config path ignored"
     assert not find_models("llm"), "found without the config path?"
+
+
+# An embedder whose config says ForCausalLM. Qwen3-Embedding's does, and /chat
+# on the AI PC offered "qwen3-embedding" as a chat model.
+
+def _graph(*inputs):
+    """The head of an OpenVINO IR: its inputs, as real exports write them."""
+    layers = "".join(f'<layer id="{i}" name="{name}" type="Parameter" '
+                     f'version="opset1">' for i, name in enumerate(inputs))
+    return f'<?xml version="1.0"?><net name="Model0" version="11"><layers>{layers}'
+
+
+def _causal_export(root, name, graph):
+    folder = root / name
+    folder.mkdir()
+    (folder / "openvino_model.xml").write_text(graph, encoding="utf-8")
+    (folder / "config.json").write_text(json.dumps(
+        {"model_type": "qwen3", "architectures": ["Qwen3ForCausalLM"]}))
+    return str(folder)
+
+
+def test_a_causal_lm_config_exported_for_features_is_an_embedder(tmp_path):
+    """OpenVINO/Qwen3-Embedding-0.6B-int8-ov: Qwen3ForCausalLM in its config,
+    and only input_ids + attention_mask in its graph."""
+    path = _causal_export(tmp_path, "qwen3-embedding",
+                          _graph("input_ids", "attention_mask"))
+    kind, why = identify_model(path)
+    assert kind == "embeddings", why
+
+
+def test_text_generation_exports_stay_llms(tmp_path):
+    """Stateful exports take beam_idx (TinyLlama, Llama-3.2-3B, at byte 844);
+    stateless ones take past_key_values.*."""
+    stateful = _causal_export(tmp_path, "stateful", _graph(
+        "input_ids", "attention_mask", "position_ids", "beam_idx"))
+    stateless = _causal_export(tmp_path, "stateless", _graph(
+        "input_ids", "attention_mask", "past_key_values.0.key"))
+    assert identify_model(stateful)[0] == "llm"
+    assert identify_model(stateless)[0] == "llm"
+
+
+def test_a_graph_that_shows_no_inputs_keeps_the_config_verdict(tmp_path):
+    """Nothing to read is not evidence of an embedder."""
+    path = _causal_export(tmp_path, "opaque", "<net/>")
+    assert identify_model(path)[0] == "llm"
+
+
+def test_resolve_says_a_missing_folder_is_missing(tmp_path, monkeypatch, capsys):
+    """A typo in the path was reported as "is not a text LLM", which sent the
+    user hunting for a model problem (AI PC, hands-on test T04)."""
+    from ovat.cli.main import resolve_chat_model
+    monkeypatch.setenv("OVAT_MODELS", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(typer.Exit):
+        resolve_chat_model(str(tmp_path / "no-such-model"))
+    out = " ".join(capsys.readouterr().out.split())
+    assert "No model folder at" in out
+    assert "not a text" not in out
+

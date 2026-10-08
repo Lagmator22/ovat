@@ -248,6 +248,31 @@ def test_build_components_refuses_a_vision_model_before_loading(tmp_path):
         chat_screen._build_components(str(cfg), str(vlm))
 
 
+def test_a_missing_model_folder_is_named_with_paths_to_try(tmp_path,
+                                                           monkeypatch):
+    """Hands-on test T04 on the AI PC: a wrong path was reported as "is not a
+    text LLM", and the suggestions were bare names (one of them listed twice,
+    from two folders) that cannot be typed into /chat."""
+    import json
+
+    import pytest as _pytest
+    llm = tmp_path / "models" / "Qwen3-8B-int4-ov"
+    llm.mkdir(parents=True)
+    (llm / "openvino_model.xml").write_text("")
+    (llm / "config.json").write_text(json.dumps(
+        {"model_type": "qwen3", "architectures": ["Qwen3ForCausalLM"]}))
+    monkeypatch.setenv("OVAT_MODELS", str(tmp_path / "models"))
+    cfg = tmp_path / "w.yml"
+    cfg.write_text("model:\n  name: m\nrag:\n  retriever:\n    db_path: ':memory:'\n")
+
+    with _pytest.raises(ValueError) as caught:
+        chat_screen._build_components(str(cfg), str(tmp_path / "nope"))
+    message = str(caught.value)
+    assert "no model folder at" in message
+    assert "not a text" not in message
+    assert str(llm) in message                 # a path the user can type
+
+
 def test_build_components_accepts_a_unified_model(tmp_path, monkeypatch):
     """The TUI refused the model the README tells people to download.
 
