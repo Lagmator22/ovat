@@ -492,8 +492,10 @@ machine instead of the code.
 ## Open work (2026-10-08)
 
 On the AI PC:
-- Re-run the round-2 question set once on main with 2026.4.1 pinned, as a
-  regression check after the October fixes.
+- llamaindex on V3 (describe an image AND transcribe audio in one
+  question) swapped the image and audio results in 3 of its last 4 runs.
+  OVMS sent unique tool-call ids in all 41 captured calls, so duplicate ids
+  are ruled out; cause not determined.
 - The human checklists from both rounds (TUI: Esc/Ctrl-C tree kill,
   /chat, /engine ovms, /telemetry, /doctor, copy/paste, 80x24, sessions).
 - Intel UT's early exit after its first line (exit 11) was seen 3 times
@@ -571,3 +573,9 @@ earned their place on the telemetry page.
   questions retrieve with the previous one. Fuzzy paths recover a dropped
   leading folder. `telemetry --out` failures exit 1; `--once` writes its
   snapshot and says Intel is not sampled.
+- **Round 3 (PRs #49-#50) and 1.1.0**: `setup` and `doctor` read the
+  installed OVMS version, so the 2026.4.1 pin reaches machines that already
+  had 2026.2.1 (it did not, before). The vision tool asks unified models
+  with thinking off: with it on, the reasoning never finished inside the
+  200-token cap and the tool returned no description at all. Regression run
+  on main: 59/60 against round 2's 56/60, the one miss being that leak.
