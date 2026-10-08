@@ -210,7 +210,7 @@ as always `"stop"`.
    to OVMS, and how /chat refused the Qwen3.5 model `ovat chat` accepted.
 6. **Tests gate everything.** Run `python -m pytest -q` with the venv's own
    interpreter (`.venv/bin/python` on macOS, `.\.venv\Scripts\python.exe` on
-   the AI PC), never the system one. About 785 tests; must end green
+   the AI PC), never the system one. About 810 tests; must end green
    (`-n auto` works, pytest-xdist is in `[dev]`). Every fix ships with a
    test, and that test must FAIL with the fix backed out: verify it, do not
    assume. A test that passes against the broken code is worse than none,
@@ -384,6 +384,39 @@ Do not "improve" any of these without reading the reason first.
   it read 99.8% with the NPU idle. Implemented as `_WindowsNPUCounter`,
   verified with both controls (NPU load 93.5%; GPU load, NPU idle 0.0%).
 
+### Local chat (openvino_genai)
+- **Qwen3/3.5 thinking is decided by the chat TEMPLATE, not the model.**
+  Unset, the template inserts an empty `<think></think>` itself, so the
+  model does not think and `/thinking` has nothing to show. With
+  `enable_thinking: true` the template opens `<think>` in the PROMPT, so
+  the reply is "reasoning `</think>` answer" with no opening tag;
+  `split_thinking` treats text before a lone `</think>` as the reasoning.
+  The tags are plain text (`special: false` in tokenizer.json), not
+  stripped special tokens.
+- **No default answer cap on a chat you are watching.** 1024 cut Qwen3.5
+  off mid-reasoning ("Final Check: Did"), 256 in `ovat chat` was worse.
+  Local chat streams and Esc / Ctrl-C stop it, so it is uncapped by
+  default; `/tokens N` and `--max-tokens N` set one. The OVMS engine keeps
+  `model.max_tokens` (4096): a cancelled request does not stop the server.
+  The cost, measured: Qwen3.5-0.8B with thinking ON and greedy decoding
+  reasoned for over 20 minutes on a one-line question without closing the
+  block. Thinking stays off unless asked for.
+- **The local path has no tools, so tell the model.** It used to send the
+  workflow's agent prompt ("Always call search_docs") to a model that has
+  no tools and already has the search result. Qwen3.5-0.8B: 1/3 right,
+  each answer starting with the literal text "search_docs"; with
+  `rag_chat._NO_TOOLS_NOTE` appended, 3/3.
+- **openvino-genai >= 2026.4 is a floor for a reason.** 2026.2 SEGFAULTS
+  (exit 139, no Python error) building the pipeline for
+  OpenVINO/Qwen3.5-0.8B-int4-ov, whose export now ships an MTP model.
+  pip never upgrades a satisfied dependency, so without the floor
+  `pip install -U ovat` kept the crashing version.
+- **A stale index answers confidently.** The NPU example quoted a claim the
+  docs had dropped weeks earlier, from a document_qa.db built before the
+  fix. `ovat index` writes `<db>.sources.json` (path + mtime per file) and
+  `run` / `chat` warn when an indexed file changed or vanished. Re-index
+  after editing docs.
+
 ### Measurement
 - **Absent is not zero.** Tokens, peak RSS, anything unknown stays `None`
   and renders as a dash. A zero reads as "used no tokens".
@@ -417,7 +450,16 @@ Do not "improve" any of these without reading the reason first.
 - **`#masthead` height stays 17.** At 18 the TUI HANGS at 80x24.
 - **`#brand-panel` is a COLUMN COUNT (42), never a percentage.** FIGlet art
   wider than the panel WRAPS and shears.
-- **No Tooltips anywhere.** Tried, removed, tests assert none exist.
+- **No Tooltips anywhere.** Tried, removed, tests assert none exist. Trap:
+  Textual's `run_test()` switches tooltips OFF by default, so a no-tooltip
+  test passes while the real app shows one; Textual's Footer adds them to
+  its keys by itself ("Open the command palette"). Use OVAT's `Footer`
+  (`widgets.py`, strips them) and test with `run_test(tooltips=True)`.
+- **Small windows hide the masthead, never the prompt.** Below 24 rows
+  the 17-row masthead is hidden (at 83x23 it pushed the input off screen),
+  and the Updates heading falls back to plain text when its FIGlet art is
+  wider than the panel (28 columns in 12 at 83 columns: it wrapped into
+  scrambled blocks).
 - **No `priority=True` bindings on scrolling keys.** They stole keys from
   the slash menu and modals.
 - **Never mix `stream.write()` and `response.update()` on one Markdown
@@ -507,6 +549,9 @@ On the AI PC:
 Code and docs:
 - A PyPI release so `pip install ovat` gets the 2026.4.1 pin.
 - Qwen TEXT models at f16 on an ARM CPU (see the "!!!!" landmine).
+- The TUI telemetry page showed no `intel.*` rows on the AI PC while
+  `ovat telemetry` did (round 3). Not reproducible on macOS (no UT); look
+  at the page's Sources tab on the AI PC first.
 - GPU utilisation without Intel UT (Ravi's ask, 2026-08-21); the NPU
   counter is the sibling to build it on.
 - A docs / codebase-navigation site and an API reference.
@@ -579,3 +624,9 @@ earned their place on the telemetry page.
   with thinking off: with it on, the reasoning never finished inside the
   200-token cap and the tool returned no description at all. Regression run
   on main: 59/60 against round 2's 56/60, the one miss being that leak.
+- **Owner's hands-on TUI test (PRs #52-#59) and 1.1.1**: 13 of 14 checks
+  passed on the AI PC; the failures became fixes. Clearer chat errors and
+  no embedder offered as a chat model; no default local answer cap and a
+  no-tools note on the local path; genai >= 2026.4; the sources line
+  survives /thinking and /load; /thinking shows Qwen3.5's reasoning; small
+  windows keep the prompt; no footer tooltips; stale-index warnings.
