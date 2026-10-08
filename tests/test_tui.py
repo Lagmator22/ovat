@@ -927,8 +927,15 @@ def test_the_footer_keys_carry_no_tooltip_with_tooltips_on():
     async def scenario():
         app = OvatTUI()
         async with app.run_test(tooltips=True) as pilot:
-            await pilot.pause()
-            keys = list(app.screen.query(FooterKey))
+            # Wait for the footer to compose, bounded. One pause was enough
+            # locally and not on the Windows CI runner, which failed this
+            # test with "no footer keys rendered" on every PR it ran on.
+            keys = []
+            for _ in range(50):
+                await pilot.pause(0.1)
+                keys = list(app.screen.query(FooterKey))
+                if keys:
+                    break
             assert keys, "no footer keys rendered"
             for key in keys:
                 assert not key.tooltip, f"{key!r} has tooltip {key.tooltip!r}"
