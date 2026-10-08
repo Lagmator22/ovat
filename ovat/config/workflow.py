@@ -270,9 +270,11 @@ class ModelConfig(StrictModel):
         bad default was latent by convention only: any config a user wrote
         themselves without the field hit it.
 
-        "auto" is not the fix either. Measured on live OVMS: with no
+        "auto" is not the fix either. Measured on live OVMS 2026.2.1: with no
         --tool_parser flag it selected no parser at all and returned tool
-        calls as text. So OVAT derives the answer from information it already
+        calls as text. OVMS 2026.4.1 does detect qwen3coder for Qwen3.5
+        (measured 2026-10-08), but scored no better than the derived value,
+        and a named parser also keeps a 2026.2.1 install working. So OVAT derives the answer from information it already
         has -- the model name -- and falls back to the historical default for
         families it does not recognise, rather than guessing.
 
