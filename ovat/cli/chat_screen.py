@@ -63,10 +63,18 @@ CHAT_COMMANDS = [
 
 # Both live under .ovat/ in the directory the user launched from, so a
 # project's chats and preferences stay with that project.
-# 256 cut real answers off mid-sentence often enough that /tokens existed
-# mainly to undo it. 1024 is a working default for both engines; /tokens is
-# still there for the long ones.
-DEFAULT_MAX_TOKENS = 1024
+# None: each engine's own default, not one number for both.
+#
+# History: 256 cut real answers off mid-sentence, so it became 1024, and 1024
+# did the same to a thinking model. On the AI PC Qwen3.5 spent all 1024 tokens
+# reasoning and the answer stopped at "Final Check: Did". A cap on a chat you
+# are WATCHING protects nothing: the answer streams, and Esc stops it. So:
+#   local  no cap; the model finishes, or you press Esc.
+#   ovms   the config's model.max_tokens (4096 by default). That one stays:
+#          the generation runs inside the server, a cancelled request does not
+#          stop it, and an uncapped runaway once held the server for 20 min.
+# /tokens N still sets a cap on either.
+DEFAULT_MAX_TOKENS = None
 
 # How many of the most recent answers are rebuilt as real Markdown when a
 # conversation is loaded. Every Markdown widget explodes into a child widget
@@ -242,7 +250,7 @@ def _session_label(session: dict) -> Text:
 
 
 def _build_components(config_path: str, model_path: str,
-                      max_tokens: int = DEFAULT_MAX_TOKENS):
+                      max_tokens: int | None = DEFAULT_MAX_TOKENS):
     """config + model path -> (cfg, retriever, llm). The heavy step.
 
     Module-level on purpose: it is the seam tests monkeypatch to drive the
@@ -402,7 +410,7 @@ class OVMSEngine:
 
 
 def _build_engine(config_path: str, model_path: str, engine: str = "local",
-                  max_tokens: int = DEFAULT_MAX_TOKENS):
+                  max_tokens: int | None = DEFAULT_MAX_TOKENS):
     """Build the engine `/engine` selects. The seam tests monkeypatch."""
     if engine == "ovms":
         from ovat.agent.factory import build_agent

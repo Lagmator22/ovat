@@ -790,9 +790,13 @@ def chat(
                                         "OVAT_MODELS, ./models, ~/models)."),
     device: str = typer.Option("CPU", "--device", help="CPU, or GPU/NPU on the AI PC."),
     top_k: int = typer.Option(4, "--top-k", help="How many chunks to retrieve."),
-    max_tokens: int = typer.Option(256, "--max-tokens",
-                                   help="Answer length cap; 0 means no cap "
-                                        "(generate until the model stops)."),
+    # 0 by default: a cap cut thinking models off before they answered (256
+    # here, 1024 in the TUI, where Qwen3.5 stopped at "Final Check: Did").
+    # The command runs in front of you, and Ctrl-C stops it.
+    max_tokens: int = typer.Option(0, "--max-tokens",
+                                   help="Answer length cap. 0 (the default) "
+                                        "means no cap: generate until the "
+                                        "model stops; Ctrl-C to interrupt."),
 ):
     """Chat with your documents using a LOCAL OpenVINO model (no OVMS needed).
 

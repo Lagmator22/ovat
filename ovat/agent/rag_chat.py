@@ -24,6 +24,21 @@ _DEFAULT_SYSTEM = (
 )
 
 
+#: Added to a workflow's own system prompt on this path. That prompt is
+#: written for the tool-calling agent ("Always call search_docs ..."), but
+#: here the search has already run and there are no tools, so the model tried
+#: to call one anyway. Measured on Qwen3.5-0.8B with the RAG example's prompt:
+#: 1 of 3 answers right, each starting with the literal text "search_docs";
+#: with this note, 3 of 3 and no tool talk. A thinking model (Qwen3.5-4B on
+#: the AI PC) spent its whole token budget arguing about the missing tool.
+_NO_TOOLS_NOTE = (
+    "In this chat the documents have already been searched for you: the "
+    "Context in the user's message is the search result. There are no tools "
+    "here, so do not try to call search_docs or any other tool. Answer from "
+    "the Context and cite its source path."
+)
+
+
 def build_context(hits: list) -> str:
     """Turn retrieved chunks into a context block that names each source."""
     if not hits:
@@ -71,8 +86,12 @@ def rag_chat(retriever: RetrieverProvider, llm: LLMProvider, question: str,
     """
     hits = retriever.retrieve(retrieval_query(question, history), top_k=top_k)
     context = build_context(hits)
+    # A workflow's prompt is kept (it may carry a persona or rules), with the
+    # note that reconciles it with this tool-less path; see _NO_TOOLS_NOTE.
+    system = (f"{system_prompt}\n\n{_NO_TOOLS_NOTE}" if system_prompt
+              else _DEFAULT_SYSTEM)
     messages = [
-        {"role": "system", "content": system_prompt or _DEFAULT_SYSTEM},
+        {"role": "system", "content": system},
         *(history or [])[-8:],
         {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
     ]

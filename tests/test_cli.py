@@ -377,6 +377,11 @@ def test_chat_max_tokens_zero_means_no_cap(monkeypatch):
                         "--max-tokens", "0"])
     assert built["max_new_tokens"] is None            # uncapped
 
+    # And uncapped by DEFAULT: 256 cut thinking models off before the answer.
+    built.clear()
+    runner.invoke(app, ["chat", "examples/workflow.yml", "-i", "hi"])
+    assert built["max_new_tokens"] is None
+
     runner.invoke(app, ["chat", "examples/workflow.yml", "-i", "hi",
                         "--max-tokens", "900"])
     assert built["max_new_tokens"] == 900

@@ -127,3 +127,22 @@ def test_a_none_answer_becomes_an_empty_string():
     answer, sources = rag_chat(EmptyRetriever(), NoneLLM(), "hi")
     assert answer == ""
     assert sources == []
+
+
+def test_a_workflow_prompt_is_kept_and_told_there_are_no_tools():
+    """The RAG example's prompt says "Always call search_docs". On this path
+    the search has already run and there are no tools: Qwen3.5-0.8B answered
+    1 of 3 right, each answer starting "search_docs"; with the note, 3 of 3."""
+    llm = FakeLLM()
+    rag_chat(FakeRetriever([]), llm, "q",
+             system_prompt="You are terse. Always call search_docs first.")
+    system = llm.seen[0]["content"]
+    assert system.startswith("You are terse. Always call search_docs first.")
+    assert "no tools here" in system
+
+
+def test_the_default_prompt_needs_no_note():
+    llm = FakeLLM()
+    rag_chat(FakeRetriever([]), llm, "q")
+    assert "no tools here" not in llm.seen[0]["content"]
+
