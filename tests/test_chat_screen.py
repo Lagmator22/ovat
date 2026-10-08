@@ -1789,3 +1789,42 @@ def test_the_header_is_built_in_exactly_one_place():
 
     source = inspect.getsource(chat_screen)
     assert source.count('header.append("OVAT chat"') == 1
+
+
+# The answer cap. 1024 tokens stopped a thinking model at "Final Check: Did"
+# on the AI PC; a chat you are watching needs no cap, Esc stops it.
+
+def test_local_chat_loads_the_model_with_no_cap(tmp_path, monkeypatch):
+    import json
+
+    from ovat.agent import factory
+    from ovat.providers import llm_genai
+
+    model = tmp_path / "Qwen3.5-4B-int4-ov"
+    model.mkdir()
+    (model / "openvino_model.xml").write_text("")
+    (model / "config.json").write_text(json.dumps(
+        {"model_type": "qwen3", "architectures": ["Qwen3ForCausalLM"]}))
+    cfg = tmp_path / "w.yml"
+    cfg.write_text("model:\n  name: m\nrag:\n  retriever:\n    db_path: ':memory:'\n")
+    seen = {}
+    monkeypatch.setattr(factory, "build_rag", lambda c: None)
+    monkeypatch.setattr(llm_genai, "GenAILLMProvider",
+                        lambda path, device=None, max_new_tokens=0, **kw:
+                        seen.update(cap=max_new_tokens) or object())
+
+    chat_screen._build_engine(str(cfg), str(model))
+    assert seen["cap"] is None
+
+
+def test_the_ovms_engine_keeps_the_configs_cap_unless_told_otherwise():
+    """That cap stays: the server keeps generating after a cancelled request,
+    and an uncapped runaway once held it until the client's 1200 s timeout."""
+    from types import SimpleNamespace
+
+    agent = SimpleNamespace(llm=SimpleNamespace(max_tokens=4096), tools={})
+    engine = chat_screen.OVMSEngine(None, agent, chat_screen.DEFAULT_MAX_TOKENS)
+    assert engine.max_new_tokens == 4096
+    engine.max_new_tokens = 300                    # /tokens 300
+    assert agent.llm.max_tokens == 300
+
