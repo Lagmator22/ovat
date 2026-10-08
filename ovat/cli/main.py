@@ -468,8 +468,8 @@ def _close_out_run(cfg, agent, collector, telemetry_path, trace_path,
     close_agent(agent)
 
 
-def _report_telemetry_file(path: str, sink) -> None:
-    """Say where telemetry went, or that it went nowhere.
+def _report_telemetry_file(path: str, sink) -> bool:
+    """Say where telemetry went, or that it went nowhere. True if written.
 
     The sink swallows write errors so a full disk cannot end a run, and both
     telemetry commands then printed "written to" regardless: measured on the
@@ -479,8 +479,9 @@ def _report_telemetry_file(path: str, sink) -> None:
     if error:
         rprint(f"[yellow]telemetry: could not write[/yellow] {esc(path)} "
                f"[dim]({esc(error)})[/dim]")
-    else:
-        rprint(f"[dim]telemetry written to[/dim] {esc(path)}")
+        return False
+    rprint(f"[dim]telemetry written to[/dim] {esc(path)}")
+    return True
 
 
 def _exit_is_a_folder(path: str):
@@ -1551,8 +1552,24 @@ def telemetry(
         # the silent-empty-row failure this page exists to avoid.
         collector.sample_once()
         time.sleep(min(interval, 1.0))
-        _print_telemetry(collector.sample_once())
+        snapshot = collector.sample_once()
+        _print_telemetry(snapshot)
         _print_cache_type(cache_source)
+        # Intel UT is never started for one snapshot: it is a collection
+        # process with a startup of its own (~1.3 s to a first reading), and
+        # waiting for it would stop --once being a snapshot. Say so, or its
+        # missing rows read as idle hardware.
+        if any(s.name == "intel" and s.unavailable is None
+               for s in collector.sources):
+            rprint("[yellow]intel[/yellow] not sampled by --once: [dim]Intel "
+                   "UT needs a running collection; use --seconds.[/dim]")
+        # Only the clock loop records to the sink, so --once --out used to
+        # write no file at all and say nothing about it.
+        if out:
+            sink.record(snapshot)
+            sink.close()
+            if not _report_telemetry_file(out, file_sink):
+                raise typer.Exit(code=1)
         return
 
     # rich.Live redraws ONE table in place instead of printing a new one every
@@ -1563,6 +1580,7 @@ def telemetry(
 
     collector.start()
     deadline = None if seconds <= 0 else time.time() + seconds
+    written = True
     try:
         with Live(_telemetry_table({}), console=console,
                   refresh_per_second=4, transient=False) as display:
@@ -1587,7 +1605,12 @@ def telemetry(
         _print_cache_type(cache_source)
         if out:
             sink.close()
-            _report_telemetry_file(out, file_sink)
+            written = _report_telemetry_file(out, file_sink)
+    # Exit 1 when the file asked for was not written: the numbers on screen
+    # are gone when the terminal is, and a script checking the exit code
+    # would otherwise go on to read a file that does not exist.
+    if not written:
+        raise typer.Exit(code=1)
 
 
 def _print_telemetry(sample: dict) -> None:
