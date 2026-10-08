@@ -255,8 +255,24 @@ as always `"stop"`.
     Python beginner; C++ analogies land well. He decides who writes the
     code: when he asks for fixes, write them; when he asks to learn, guide.
 11. **Rollback points**: tags `v0.2.0-w5-6-midterm`, `pre-tui-repair`,
-    `v0.2.0-w7-8-complete`, and the release tags `v1.0.0` to `v1.0.9`. Cut a
+    `v0.2.0-w7-8-complete`, and the release tags `v1.0.0` to `v1.1.1`. Cut a
     new tag before anything risky.
+12. **Merge only on a fully green CI.** Wait ~30 s for checks to register,
+    then `if gh pr checks N --watch; then gh pr merge N --merge; fi`. A loop
+    that read "not failing yet" as green merged two PRs with a red Windows
+    job (a TUI test that waited one pause; the Windows runner is slower).
+    TUI tests poll for widgets in a bounded loop instead of one pause.
+13. **Leave the code simpler than you found it.** After every meaningful
+    change, review the touched area for what it made obsolete: dead code,
+    duplicate logic, unused UI, needless abstraction, legacy leftovers,
+    redundant work, orphaned files. Clean up safe, directly related debt in
+    the same change; never refactor unrelated code for its own sake. Be
+    aggressive at FINDING removable code and conservative at DELETING it:
+    check static and dynamic references, CLI entry points, config, tests,
+    string-based lookups and generated files first, and label anything
+    unproven "Needs verification". Report findings as Issue, Location, Why,
+    Impact, Risk of removal, Recommended action, Verification required.
+    Simple over clever, explicit over abstract, reused over duplicated.
 
 ## Landmines: each of these cost a whole session once
 
