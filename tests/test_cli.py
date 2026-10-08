@@ -1762,6 +1762,37 @@ def test_a_framework_engine_that_failed_exits_non_zero(monkeypatch, tmp_path):
     assert "max of 3 steps" in result.output        # and it still says why
 
 
+#: What openai-agents returned on the AI PC (Qwen3.5-4B, qwen3coder): the call
+#: came back as text because </parameter> was never closed after top_k.
+UNDECODED_ANSWER = ("<tool_call>\n<function=search_docs>\n<parameter=query>\n"
+                    "Q3 budget\n</parameter>\n<parameter=top_k>\n5\n"
+                    "</function>\n</tool_call>")
+
+
+def test_an_undecoded_tool_call_from_a_framework_engine_exits_non_zero(
+        monkeypatch, tmp_path):
+    """Measured on the AI PC, 3 runs of 3: openai-agents returned the raw
+    markup, `ovat run` printed its warning and exited 0. The native loop
+    flags this in its trace; the framework adapters keep no trace, so the
+    answer text is the only evidence and the warning was all it produced."""
+    from ovat.cli import main as cli_main
+
+    class Adapter:                            # a framework engine: no last_trace
+        tools, max_iterations = {}, 3
+        last_failed = False
+
+        def run(self, text):
+            return UNDECODED_ANSWER
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Adapter())
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\nagent:\n  type: openai-agents\n",
+                      encoding="utf-8")
+    result = runner.invoke(app, ["run", str(config), "-i", "hi"])
+    assert result.exit_code == 1, result.output
+    assert "raw tool-call markup" in result.output   # and it still says why
+
+
 def _run_raising(monkeypatch, tmp_path, exc):
     from ovat.cli import main as cli_main
 

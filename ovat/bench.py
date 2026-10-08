@@ -137,7 +137,7 @@ def benchmark_engine(config, engine: str, question: str,
     # returned no answer" string, which is not empty, so the check passed and
     # the row still scored ok. Verified on live hardware. The flags cannot be
     # fooled that way, because they record what HAPPENED, not what was printed.
-    from ovat.text import says_nothing
+    from ovat.text import looks_like_undecoded_tool_call, says_nothing
 
     failure = None
     if totals.get("empty_answer"):
@@ -148,6 +148,12 @@ def benchmark_engine(config, engine: str, question: str,
         failure = ("the model asked for a tool but the server could not decode "
                    "the request, so no tool ran. Usually a tool_parser that "
                    "does not match the model.")
+    elif looks_like_undecoded_tool_call(row.get("answer") or ""):
+        # The framework engines' version of the flag above: they keep no
+        # trace, so markup left in the answer is the only evidence that the
+        # tool never ran. Measured on the AI PC with openai-agents.
+        failure = ("the model asked for a tool but the call came back as "
+                   "text and was never decoded, so no tool ran.")
     elif getattr(agent, "last_failed", False):
         # A framework adapter that hit its cap or met a model error. Its
         # answer is the failure sentence, which is not empty, so the
