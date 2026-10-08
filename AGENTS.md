@@ -97,7 +97,7 @@ as always `"stop"`.
   PATH; this is why serve works anyway.
 - `ovat/core/ovms_installer.py`: `ovat setup`. Picks and verifies the right
   OVMS archive (never `python_off`, which cannot tool-call), extracts it
-  safely into a folder the locator searches. Pins `OVMS_VERSION = 2026.2.1`.
+  safely into a folder the locator searches. Pins `OVMS_VERSION = 2026.4.1`.
 - `ovat/core/model_scout.py`: find/identify local model folders (llm, vlm,
   unified, whisper, embeddings) from file layout + config.json.
   `CHAT_KINDS` is the one list of kinds a chat can use.
@@ -110,8 +110,11 @@ as always `"stop"`.
   contract, carries defaults), FastMCP wrapper + `mcp.run()` under
   `__main__` (standalone MCP server mode).
 - `ovat/tools/fuzzy.py`: a misspelt file path is swapped for the closest
-  existing file, BOUNDED (the named folder, or two levels under the cwd for
-  a bare name) and ANNOUNCED (a note leads the tool result).
+  existing file, BOUNDED (the named folder if it exists; for a relative
+  folder that does not, folders ENDING in that name two levels under the
+  cwd, because Qwen3.5 drops leading folders; two levels under the cwd for
+  a bare name) and ANNOUNCED (a note leads the tool result, quoted without
+  repr so Windows paths are not doubled).
 - `ovat/tools/mcp_client.py`: MCP stdio CLIENT (official `mcp` SDK). One
   event-loop thread per server; connect/serve/unwind in ONE manager
   coroutine (anyio cancel scopes must enter/exit in the same task). The SDK
@@ -177,8 +180,11 @@ as always `"stop"`.
    undone by a NEW commit. Stacked branches merge bottom-up with merge
    commits (not squash), so the commits above keep their identity.
 2. **Push only when the owner asks**, and only feature branches. The AI PC
-   has no GitHub credential and no `gh`: commit there, report the hashes,
-   and the owner pushes.
+   Claude session runs over SSH, and Windows does not hand an SSH session
+   the stored GitHub credential, so its pushes fail. It commits on
+   `aipc/<topic>` branches and reports them; the owner pushes from his own
+   terminal there and opens the PRs; the Mac session reviews and merges.
+   Never propose scp or git bundles for this: the owner rejected both.
 3. **Stage files by name.** Never `git add -A`, `git add .` or a whole
    directory. The owner's tree holds untracked files of his own (scratch
    scripts, downloaded samples, demo tooling); a broad add committed two of
@@ -201,7 +207,7 @@ as always `"stop"`.
    to OVMS, and how /chat refused the Qwen3.5 model `ovat chat` accepted.
 6. **Tests gate everything.** Run `python -m pytest -q` with the venv's own
    interpreter (`.venv/bin/python` on macOS, `.\.venv\Scripts\python.exe` on
-   the AI PC), never the system one. About 760 tests; must end green
+   the AI PC), never the system one. About 785 tests; must end green
    (`-n auto` works, pytest-xdist is in `[dev]`). Every fix ships with a
    test, and that test must FAIL with the fix backed out: verify it, do not
    assume. A test that passes against the broken code is worse than none,
@@ -230,6 +236,11 @@ as always `"stop"`.
      every value. One line of OVMS's option reference would have caught it.
    - "Intel UT continuous mode prints nothing" was inference. It prints
      text; it was rejecting the flag combination OVAT passed.
+   - "The Qwen3.5 card warns that greedy decoding causes endless
+     repetition" was quoted into code and this file. That sentence is on
+     the Qwen3 card; Qwen3.5's never mentions greedy decoding.
+   - a comment credited `start_chat()` with curing Qwen2-VL's "!!!!". The
+     cause was f16 compute on ARM CPUs (see Landmines).
    - a cursor bug was diagnosed twice from reading Textual's source and was
      wrong both times; printing what the widget held found it in one line.
 
@@ -257,9 +268,12 @@ Do not "improve" any of these without reading the reason first.
   for Qwen3.5/3.6/Qwen3-Coder, `hermes3` for Qwen3; the other families in
   `_PARSER_BY_FAMILY` are sourced from OVMS's own demos, not measured. NAME
   one. The failure is silent: the agent answers fluently and never calls a
-  tool, so check for a CITATION or a tool_calls count in the trace. OVMS's
-  automatic detection was rewritten in 2026.3.0 (PR #4312), AFTER this
-  measurement: re-measure on a current OVMS before trusting either claim.
+  tool, so check for a CITATION or a tool_calls count in the trace.
+  On OVMS 2026.4.1 (the pin since 2026-10-08) `auto` works: OVMS logs
+  "Auto-detected tool_parser: qwen3coder" and scored 54/60 against 56/60
+  for the derived value (no answer it got right that the derived value got
+  wrong). Keep deriving/naming it anyway: a named parser also works on an
+  older OVMS someone installed by hand.
 - **A pipeline that CONSTRUCTS is not the right pipeline.** On a unified
   Qwen3.5 export `openvino_genai.LLMPipeline` builds (24.6 s) and dies on
   the first `generate()` with "Port for tensor name input_ids was not
@@ -309,17 +323,41 @@ Do not "improve" any of these without reading the reason first.
   preemption-and-recompute); breaking tool decoding is NOT shown at n=3. Restart OVMS before a
   demo; if it recurs, capture `--trace` AND `ovat telemetry` KV figures in
   the same window.
-- **Same prompt, temperature 0, different outcomes.** The AI PC measured a
-  qwen3coder engine calling its tool 1 run in 5 and another 5 in 5. One run
-  proves nothing: use `ovat bench --repeat N`. The Qwen3.5 model card warns
-  greedy decoding causes endless repetition, which is OVAT's default
-  `temperature: 0.0`.
-- **Knobs that exist and are NOT yet measured (2026-10-07).** All OFF by
-  default: `model.ovms_tool_guided_generation` (OVMS
-  `--enable_tool_guided_generation`, in 2026.2.1), `model.enable_thinking`
-  (OVMS `chat_template_kwargs`; genai `set_extra_context`), `top_p`,
-  `top_k`, `min_p`, `presence_penalty`, `seed`. Decide defaults from
-  `ovat bench --repeat N` on the AI PC, not from the model card.
+- **OVMS 2026.2.1 is not deterministic; 2026.4.1 is.** On 2026.2.1 the same
+  request at temperature 0 gave up to 5 different answers in 5 runs, and
+  `seed: 42` did not help (0 of 20 attempts matched across two identical
+  arms), although OVMS's API reference says seed gives reproducible output.
+  On 2026.4.1 every engine returned one identical answer across 10 runs on
+  two servers. Consequences for measuring:
+  - Repeats of ONE question on 2026.4.1 are one sample, not N. The sample
+    unit is a DIFFERENT QUESTION (round 2 used 15, over rag, audio,
+    vision, document-qa and NPU).
+  - On 2026.2.1 failures CLUSTER by arm and engine: the same config run
+    twice moved react from 5/5 to 0/5 (Fisher p = 0.008 between two
+    identical configs). Five repeats are not five samples there either.
+  - The remaining variation on 2026.4.1 comes from the in-process vision
+    model (describe_image), not from OVMS.
+- **The knobs are measured now, and stay OFF (2026-10-08).** On 2026.4.1,
+  15 questions x 4 engines: plain 56/60, `tool_parser: auto` 54/60,
+  `ovms_tool_guided_generation: true` 55/60, `enable_thinking: false` 54/60;
+  none got a single answer right that plain got wrong (p >= 0.5). On
+  2026.2.1, `enable_thinking: false` broke native (ran to the 4096 cap 5/5)
+  and openai-agents (undecoded markup 5/5), while on the LOCAL `/chat` path
+  it did exactly what it should (169-char answer, no reasoning, against
+  874). The Qwen3.5 card's thinking preset (temperature 1.0, top_p 0.95,
+  top_k 20, presence_penalty 1.5) showed no measurable effect.
+
+- **Qwen2-VL says "!!!!" on an ARM CPU unless it runs in f32.** OpenVINO's
+  CPU plugin defaults `INFERENCE_PRECISION_HINT` to f16 on ARM (read from
+  `ov.Core` on an M-series Mac). Qwen2-VL overflows, the logits go NaN a
+  few tokens in, and greedy picks token 0, which is "!" in Qwen's
+  vocabulary: "The image features the logo!!!!!!", even for a text-only
+  "2+2". `vlm_genai._precision_properties` sets f32 only when the CPU's
+  default is f16, so x86 (already f32) and GPU/NPU are untouched; about
+  2.8x slower, but correct. The real-model test used to PASS on the broken
+  output because it only checked for "dog". Qwen TEXT models at f16 on ARM
+  through `GenAILLMProvider` are NOT verified (Llama-3.2-3B and TinyLlama
+  were fine at f16).
 
 ### NPU
 - **OVMS compiles an LLM for NPU only from a channel-wise symmetric INT4
@@ -448,20 +486,24 @@ Tests that scan the disk (`model_scout`, `fuzzy`) must isolate with
 `monkeypatch.chdir` (and a fake HOME), or they describe the developer's
 machine instead of the code.
 
-## Open work (2026-10-07)
+## Open work (2026-10-08)
 
-On the AI PC, measurement first:
-- `ovat bench --repeat 5` A/B for each unmeasured knob above, then decide
-  defaults.
-- Intel UT: the rare early exit after the first line (exit 11) is still
-  unexplained (see Measurement landmines).
-- `enable_thinking: false` on a unified Qwen3.5 through local `/chat`.
-- Upgrade the pinned OVMS (2026.2.1 -> current, 2026.4.1 at the time of
-  writing) and re-measure `tool_parser: auto`.
+On the AI PC:
+- `describe_image` returns the vision model's reasoning ("The user wants a
+  description... 1. Identify") as the tool result; strip it. Needs Qwen3.5.
+- Re-run the round-2 question set once on main with 2026.4.1 pinned, as a
+  regression check after the October fixes.
+- The human checklists from both rounds (TUI: Esc/Ctrl-C tree kill,
+  /chat, /engine ovms, /telemetry, /doctor, copy/paste, 80x24, sessions).
+- Intel UT's early exit after its first line (exit 11) was seen 3 times
+  and not in 76 later starts; cause not determined.
+- Moving the CLIENT openvino/openvino_genai to 2026.4 (the vision tool
+  still varies on 2026.2.1); untested.
+- 2026.4.1 with other model families, and on Linux.
 
 Code and docs:
-- Qwen2-VL produces "!!!!" through the local genai path (pre-existing,
-  unexplained).
+- A PyPI release so `pip install ovat` gets the 2026.4.1 pin.
+- Qwen TEXT models at f16 on an ARM CPU (see the "!!!!" landmine).
 - GPU utilisation without Intel UT (Ravi's ask, 2026-08-21); the NPU
   counter is the sibling to build it on.
 - A docs / codebase-navigation site and an API reference.
@@ -518,3 +560,13 @@ earned their place on the telemetry page.
   `bench --repeat`; MCP `tools[].env`; per-family tool parsers; Windows
   process-tree kill; bounded, announced fuzzy paths; and a docs pass that
   removed claims the code contradicted.
+- **Oct 2026 AI PC rounds 1-2 (PRs #37-#47)**: two measured rounds on the
+  LunarLake AI PC. OVMS pinned to 2026.4.1 on 15 questions x 4 engines
+  (56/60 vs 42/60, McNemar p = 0.0001; deterministic; 4.9 vs 17.3 GB peak).
+  Intel UT parsed for the first time (it also needed `-t`, or it stopped
+  after one second). Framework engines that return raw tool-call markup
+  fail the run. Bench table fits 80 columns. `setup` says when a download
+  could not be verified. Qwen2-VL "!!!!" traced to f16 on ARM. Follow-up
+  questions retrieve with the previous one. Fuzzy paths recover a dropped
+  leading folder. `telemetry --out` failures exit 1; `--once` writes its
+  snapshot and says Intel is not sampled.
