@@ -23,7 +23,14 @@ classifiers = [
 ]
 dependencies = [
   "openvino",
-  "openvino-genai",
+  # A floor, because pip never upgrades a dependency that is already
+  # satisfied: `pip install -U ovat` kept whatever genai a venv had. Measured
+  # on an M-series Mac: openvino-genai 2026.2 SEGFAULTS constructing the
+  # pipeline for OpenVINO/Qwen3.5-0.8B-int4-ov (the README's 0.9 GB tier; its
+  # export now ships an MTP model), with no Python error at all; 2026.4.1
+  # builds it in 13 s and answers. The full suite, real-model tests included,
+  # passes on 2026.4.1, which is also what CI's fresh installs resolve to.
+  "openvino-genai>=2026.4",
   "openai",
   "typer",
   "pydantic>=2",
