@@ -763,8 +763,14 @@ def resolve_chat_model(model_path: str | None,
     # would reject the model the quickstart itself recommends.
     if kind in CHAT_KINDS:
         return model_path
-    rprint(f"[red]{esc(os.path.basename(model_path.rstrip('/')))} is not a text "
-           f"LLM[/red] [dim]({esc(why)})[/dim]; chat needs a text model.")
+    if not os.path.isdir(model_path):
+        # A wrong path is not "not a text LLM"; see chat_screen for the user
+        # that sentence misled.
+        rprint(f"[red]No model folder at[/red] {esc(model_path)}.")
+    else:
+        rprint(f"[red]{esc(os.path.basename(model_path.rstrip('/')))} is not "
+               f"a text LLM[/red] [dim]({esc(why)})[/dim]; chat needs a text "
+               f"model.")
     _, llms = pick_chat_llm(extra_roots)
     if llms:
         rprint("[dim]Text LLMs found on this machine:[/dim]")

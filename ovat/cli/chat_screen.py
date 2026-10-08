@@ -264,12 +264,19 @@ def _build_components(config_path: str, model_path: str,
     kind, why = identify_model(model_path)
     if kind not in CHAT_KINDS:
         _, llms = pick_chat_llm()
-        suggestion = (" Try: " + ", ".join(m["name"] for m in llms)
-                      if llms else "")
-        raise ValueError(
-            f"{os.path.basename(model_path.rstrip(os.sep))} is not a text "
-            f"LLM ({why}); chat needs a text model.{suggestion}"
-        )
+        # Paths, not just names: the name alone cannot be typed into /chat,
+        # and two folders can share one (the AI PC had Qwen3-8B-int4-ov in
+        # both ./models and ~/models, listed twice and indistinguishable).
+        suggestion = ("\nText models found here:\n" + "\n".join(
+            f"  {m['name']}  {m['path']}" for m in llms) if llms else "")
+        if not os.path.isdir(model_path):
+            # A typo or a wrong folder is not "not a text LLM": that sentence
+            # sent a user looking for a model problem that did not exist.
+            problem = f"no model folder at {model_path}."
+        else:
+            problem = (f"{os.path.basename(model_path.rstrip(os.sep))} is not "
+                       f"a text LLM ({why}); chat needs a text model.")
+        raise ValueError(problem + suggestion)
     retriever = build_rag(cfg)
     llm = GenAILLMProvider(model_path, device="CPU", max_new_tokens=max_tokens,
                            enable_thinking=cfg.model.enable_thinking)
