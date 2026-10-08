@@ -1,8 +1,8 @@
 # Audio + vision: one agent that can listen and look
 
-Ask about a `.wav` and the agent transcribes it, then answers from the
-transcript. Ask about an image and it describes it. Both are ordinary tools,
-so the model decides when to reach for them.
+Ask about a `.wav` and the agent transcribes it (turns the speech into text),
+then answers from the transcript. Ask about an image and it describes it. Both
+are ordinary tools, so the model decides when to use them.
 
 ```
 "What is said in sample.wav?"  ─> transcribe    ─> Whisper  ─> text ─┐
@@ -50,7 +50,7 @@ tools:
     model: models/OpenVINO/Qwen3.5-4B-int4-ov
 ```
 
-Point `model` somewhere else to swap either one -- `whisper-tiny-int8-ov` for
+Point `model` somewhere else to swap either one: `whisper-tiny-int8-ov` for
 speed, any OpenVINO speech-to-text export, any vision-capable export. Nothing
 here is Whisper-specific.
 
@@ -70,7 +70,7 @@ ovat serve examples/audio-multimodal/workflow.yml
 ovat run examples/audio-multimodal/workflow.yml \
     -i "What is said in examples/audio-multimodal/sample.wav?"
 
-# look - reusing an image already in this repo, so nothing to download
+# look: reuses an image already in this repo, so nothing to download
 ovat run examples/audio-multimodal/workflow.yml \
     -i "Describe the image at ovat/assets/intel-phase-1.png"
 ```
@@ -85,6 +85,13 @@ ovat run examples/audio-multimodal/workflow.yml \
 `trace.json` records each turn, the tool called, its arguments, latency, and
 token counts where the server reports them.
 
+**A slightly wrong file name still works, and you are told.** Models often
+misspell a path or drop the first folder (`audio-multimodal/sample.wav`
+instead of `examples/audio-multimodal/sample.wav`). The tool then looks for a
+very similar file name nearby, at most two folders deep, uses it, and starts
+its result with a note naming the file it really used. If nothing is close
+enough, you get the normal "could not find" error.
+
 ## Things worth knowing
 
 - **`transcribe` and `describe_image` are also standalone MCP servers.** Any
@@ -93,11 +100,12 @@ token counts where the server reports them.
 - **Each tool has its own `device:`**, separate from the agent's. Speech-to-text
   defaults to CPU because it is small and CPU latency is fine; the vision model
   follows the GPU recommendation. Set either explicitly to override.
-- **The vision model is loaded lazily**, only when `describe_image` is first
-  called, so a text-only session never pays for it.
-- **Absolute paths are safest** for a tool's `model:`; a relative path is
-  resolved from wherever you
-  launched the command.
-- **`device:` here is about where the TOOL's model runs**, which is a different
-  question from the agent's device. No accelerator executes tools: the device
-  runs a model, and the loop runs the Python function.
+- **The vision model is loaded only when `describe_image` is first called**,
+  so a text-only session never pays for it. A unified model like Qwen3.5 is
+  asked with its "thinking" switched off here, so the whole short answer
+  budget goes to the description.
+- **Absolute paths are safest** for a tool's `model:`. A relative path is
+  read from the folder you ran the command in.
+- **`device:` here is about where the tool's own model runs**, which is a
+  different question from the agent's device. No device "runs" a tool: the
+  device runs a model, and OVAT runs the Python function.

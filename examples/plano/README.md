@@ -1,137 +1,174 @@
-# Example: Fronting OVMS with Plano AI Gateway & OpenTelemetry
+# plano in front of OVMS: request traces with no code
 
-This guide explains how **Plano** (formerly called **ArchGW**) sits in front of **OpenVINO Model Server (OVMS)** as an intelligent AI Proxy Gateway.
+[plano](https://github.com/katanemo/plano) (it used to be called archgw) is an
+AI gateway: a proxy that sits between OVAT and OVMS. Every request that passes
+through it becomes an **OpenTelemetry span**, a standard trace record with the
+request's latency and token counts. OVAT gains that without adding any tracing
+code or dependency of its own.
 
-It resolves the complete integration pipeline for GSoC Project #18 (Intel / OpenVINO):
-- **Zero-Code Observability**: Capturing real-time OpenTelemetry (OTEL) traces, token counts, and latency breakdowns in `planoai obs`.
-- **Cross-OS Gateway**: Seamlessly bridging Windows Host (OVMS on Intel Arc GPU) and WSL2 (Linux Plano proxy).
-- **JSON Schema Bridge**: Handling Plano's strict WASM response requirements via `ovms_id_bridge.py`.
+Think of OVMS as the engine and plano as the dashboard. OVAT still talks to
+"a model server at a URL". It just happens to be plano's URL now.
 
----
-
-## 💡 What is Plano (Explained for Beginners)
-
-Imagine you are running an AI model on your computer:
-- **OVMS (OpenVINO Model Server)** is like the **Engine** inside a sports car. It turns input text into LLM tokens directly on your Intel Arc GPU or NPU as fast as possible.
-- **Plano** is like the **Dashboard and Safety System**. It sits between your application (`ovat`) and the Engine (OVMS).
-
-Plano measures how fast the engine runs, records every request (telemetry), and provides a central gateway for routing traffic and enforcing safety rules.
+This example covers three problems that had to be solved to make the two
+work together, and the exact steps to run it on a Windows AI PC.
 
 ---
 
-## 🏗️ Architecture & Request Flow
-
-Below is the complete request flow when running `ovat run` through Plano and OVMS:
+## How a request travels
 
 ```mermaid
 flowchart TD
     subgraph Client ["Client (Windows host or WSL2)"]
-        OVAT["OVAT Agent Loop<br/>(ovat run workflow.yml)"]
+        OVAT["OVAT agent loop<br/>(ovat run workflow.yml)"]
     end
 
-    subgraph WSL2 ["WSL2 Linux Environment"]
-        Plano["Plano AI Gateway<br/>(:8000 /v1/chat/completions)"]
-        Obs["Plano OTEL Dashboard<br/>(planoai obs :4317)"]
+    subgraph WSL2 ["WSL2 (Linux)"]
+        Plano["plano gateway<br/>(:8000 /v1/chat/completions)"]
+        Obs["plano trace view<br/>(planoai obs, :4317)"]
     end
 
-    subgraph WinHost ["Windows Host Environment"]
-        Bridge["OVMS ID Bridge<br/>(python ovms_id_bridge.py :8001)"]
+    subgraph WinHost ["Windows host"]
+        Bridge["OVMS id bridge<br/>(ovms_id_bridge.py, :8001)"]
         OVMS["OpenVINO Model Server<br/>(:8002/v3/chat/completions on GPU)"]
     end
 
     OVAT -->|"1. POST /v1/chat/completions"| Plano
-    Plano -->|"2. Emits OTEL Trace Spans"| Obs
-    Plano -->|"3. Forwards Chunked HTTP POST"| Bridge
-    Bridge -->|"4. Reads Body & Calls OVMS"| OVMS
-    OVMS -->|"5. Returns JSON (Missing top 'id')"| Bridge
-    Bridge -->|"6. Injects 'id': 'chatcmpl-ovms'"| Plano
-    Plano -->|"7. Returns 200 OK + LLM Text"| OVAT
+    Plano -->|"2. sends a trace span"| Obs
+    Plano -->|"3. forwards the request"| Bridge
+    Bridge -->|"4. calls OVMS"| OVMS
+    OVMS -->|"5. reply, with no top-level id"| Bridge
+    Bridge -->|"6. adds an id"| Plano
+    Plano -->|"7. 200 OK and the answer"| OVAT
 ```
 
----
+The ports, and why each hop has the one it has:
 
-## 🛠️ The 3 Key Technical Challenges Solved
-
-### 1. Endpoint Prefix Matching (`/v1` vs `/v3`)
-Plano expects upstreams to speak standard OpenAI `/v1` paths, whereas OVMS serves OpenAI endpoints under `/v3`. 
-- **Solution**: Setting `base_url: http://<WSL_GATEWAY_IP>:8001/v3` in `plano-config.yaml` tells Plano to automatically construct `/v3/chat/completions` upstream paths.
-
-### 2. Cross-OS Networking (Windows Host + WSL2)
-Plano publishes binaries for Linux and macOS, but has no native Windows build (running `planoai up` directly on Windows CMD raises `Error: Unsupported platform windows/amd64`). Therefore, Plano runs inside WSL2 or Docker (`--docker`), while OVMS runs natively on the Windows host to access Intel Arc GPU hardware.
-- **Solution**: Inside WSL2, the Windows Host is reached via the gateway IP found by `ip route | grep default | awk '{print $3}'` (e.g. `172.22.64.1`). Windows Defender Firewall port 8001 is opened via `netsh advfirewall`.
-
-### 3. Response Schema Matching (`ovms_id_bridge.py`)
-Plano's Envoy WASM filter (`llm_gateway`) strictly requires a top-level `"id"` string field in JSON responses. OVMS returns valid OpenAI JSON but omits the top-level `"id"` string, and Plano sends chunked HTTP requests (`Transfer-Encoding: chunked`).
-- **Solution**: `examples/plano/ovms_id_bridge.py` is a small Python bridge that handles chunked HTTP bodies from Plano, forwards to OVMS (`:8002`), injects `"id": "chatcmpl-ovms-bridge"`, and returns the clean JSON to Plano.
+| Hop | Port | Why |
+| --- | --- | --- |
+| OVAT to plano | 8000 | the port OVAT already used for OVMS, so nothing else changes |
+| plano to the bridge | 8001 | the bridge fixes OVMS's reply for plano (problem 3 below) |
+| the bridge to OVMS | 8002 | set by `model.ovms_port: 8002` in [`workflow.yml`](workflow.yml) |
 
 ---
 
-## 🚀 Step-by-Step Setup Guide
+## The three problems, and how each is solved
 
-Follow these 3 easy steps to run the complete pipeline on your AI PC:
+### 1. plano calls `/v1`, OVMS serves `/v3`
 
-### Step 1: Start OVMS on Windows Host (`cmd.exe`)
+plano expects an upstream server to use the usual OpenAI paths under `/v1`.
+OVMS serves them under `/v3`. There is no separate prefix setting: plano reads
+the path out of `base_url` itself. So the whole fix is putting `/v3` in the
+URL in [`plano-config.yaml`](plano-config.yaml):
 
-Open **Command Prompt (`cmd.exe`)** on Windows:
+```yaml
+base_url: http://<host>:8001/v3
+```
+
+The model name also needs a `provider/` prefix, `ovms/Qwen3.5-4B-int4-ov`,
+because plano splits the name on the `/` and refuses to start without one. It
+removes the prefix again before calling OVMS.
+
+### 2. plano has no Windows build
+
+plano publishes builds for Linux and macOS. On Windows, `planoai up` stops
+with `Error: Unsupported platform windows/amd64`. So plano runs in WSL2 (or
+Docker, with `--docker`), while OVMS runs on Windows itself, where it can use
+the Intel GPU.
+
+From inside WSL2, the Windows host is the default gateway:
+
+```bash
+ip route | grep default | awk '{print $3}'      # e.g. 172.22.64.1
+```
+
+That address changes when WSL restarts. On Windows 11 22H2 or newer,
+`networkingMode=mirrored` in `.wslconfig` lets you use `127.0.0.1` instead.
+`plano-config.yaml` lists the right host for every setup (same machine, WSL2,
+Docker, another machine).
+
+### 3. plano rejects OVMS's reply
+
+plano requires a top-level `"id"` field in every chat reply. OVMS's reply is
+valid OpenAI JSON but has no top-level `"id"`. plano also sends its requests
+in chunks (`Transfer-Encoding: chunked`).
+
+[`ovms_id_bridge.py`](ovms_id_bridge.py) is a small Python proxy that fixes
+both: it reads plano's chunked request, forwards it to OVMS on port 8002, adds
+`"id": "chatcmpl-ovms-bridge"` when the reply has none, and hands the reply
+back to plano.
+
+---
+
+## Run it
+
+This was run on a Windows AI PC with plano in WSL2. Run the Windows steps
+from your clone of this repo.
+
+### Step 1: start OVMS (Windows, `cmd.exe`)
 
 ```cmd
-cd C:\Users\devcloud\ovat
 ovat serve examples\plano\workflow.yml
 ```
-*(Wait until it prints `OVMS is ready at http://localhost:8002/v3`)*
 
----
+Wait until it prints `OVMS is ready at http://localhost:8002/v3`.
 
-### Step 2: Start the ID Bridge on Windows Host (`cmd.exe`)
-
-In a second **Command Prompt (`cmd.exe`)** tab on Windows:
+### Step 2: start the bridge (Windows, a second `cmd.exe`)
 
 ```cmd
-cd C:\Users\devcloud\ovat
 python examples\plano\ovms_id_bridge.py --host 0.0.0.0
 ```
 
-The bridge binds `127.0.0.1` by default, so only this machine can reach it.
-Nothing in it checks credentials, so a wider bind is a door to your GPU. When
-plano runs in **WSL2 or Docker** it has to cross a network namespace and
-loopback will not do, which is why the command above passes `--host 0.0.0.0`.
-Firewall the port. With plano on the same machine as OVMS, drop the flag.
-*(Leave this running. It prints `OVMS ID Bridge listening on http://0.0.0.0:8001...`)*
+Leave it running. It prints `OVMS ID Bridge listening on http://0.0.0.0:8001`.
 
----
+The bridge listens only on `127.0.0.1` unless told otherwise, so only this
+machine can reach it. It does not check credentials, so opening it wider
+opens your GPU to the network too. plano in WSL2 or Docker sits in a separate
+network, which is why the command above passes `--host 0.0.0.0`. Firewall the
+port. If plano runs on the same machine as OVMS, leave the flag out.
 
-### Step 3: Start Plano & Run `ovat` in WSL2 Terminal
-
-Open your **WSL2 (Linux)** terminal:
+Check that plano will be able to reach it. This must print JSON, not hang:
 
 ```bash
-cd /mnt/c/Users/devcloud/ovat
+curl -s http://<host>:8001/v3/models
+```
+
+### Step 3: start plano and ask (WSL2)
+
+Put your host address in `base_url` in `plano-config.yaml`, then, from the
+same repo folder seen from WSL2 (for example `/mnt/c/Users/<you>/ovat`):
+
+```bash
 planoai up examples/plano/plano-config.yaml
 ovat run examples/plano/workflow.yml --input "what tools do you have available?"
 ```
 
 ---
 
-## 📊 Live OpenTelemetry Dashboard (`planoai obs`)
+## Watch the traces
 
-To view real-time request metrics, latency distribution, and token counts, open another **WSL2** terminal and run:
+In another WSL2 terminal:
 
 ```bash
-planoai obs
+planoai obs        # live view of every request
+planoai trace      # one request in detail
 ```
 
-Outputs live aggregate telemetry:
-- **Status**: 🟢 `200 OK`
-- **Latency (p50 / p95 / p99)**: e.g. `12.2s`
-- **TTFT (Time To First Token)**: e.g. `101ms`
-- **Request Log & Errors**: Zero code modification in `ovat`.
+You see each request's status, latency (p50, p95, p99), time to first token
+and token counts, with no change to OVAT.
+
+This is not the same thing as OVAT's own telemetry. `ovat run --trace`
+measures what the **agent** did: tokens per turn, which tool ran, peak memory.
+plano measures what the **network hop** did: latency, time to first token,
+HTTP status. Each answers questions the other cannot.
 
 ---
 
-## 📌 Design Choices & Summary Table
+## Design choices
 
 | Choice | Reason |
-| :--- | :--- |
-| **`ovms_id_bridge.py`** | Decouples OVMS from Plano schema differences without patching binary WASM filters. |
-| **Zero-Code OTEL** | plano emits the OpenTelemetry spans, so `ovat` carries no tracing code of its own. |
-| **`listeners: type: model`** | Configures Plano as a fast OpenAI proxy data plane while keeping OVAT's native agent loop in charge. |
+| --- | --- |
+| A separate `ovms_id_bridge.py` | Fixes the missing `id` without patching plano or OVMS |
+| Tracing in plano, not in OVAT | plano already emits OpenTelemetry spans, so OVAT carries no tracing code |
+| `listeners: type: model` | plano acts as a plain OpenAI-compatible proxy, one call in and one call out, and OVAT's own agent loop stays in charge |
+
+`plano-config.yaml` was checked against planoai 0.4.27's own config schema.
