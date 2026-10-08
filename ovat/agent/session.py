@@ -37,16 +37,28 @@ class Session:
             self.messages.append({"role": "user", "content": content})
 
     def add_assistant(self, content: str | None = None,
-                      tool_calls: list[dict] | None = None) -> None:
+                      tool_calls: list[dict] | None = None,
+                      sources: list[str] | None = None,
+                      sources_label: str | None = None) -> None:
         """I call this to record what the model replied.
 
         Note to myself: when the model wants a tool, content is usually None
         and tool_calls holds the request. I only attach tool_calls if there
         are any, so a plain text reply stays a clean two key message.
+
+        sources (and the label the screen showed them under, "sources" or
+        "tools used") ride along so a redrawn transcript can show them again:
+        /thinking and /load rebuild from these messages, and without them the
+        footer line vanished. Models never see them; every provider sends
+        only role and content.
         """
         message: dict = {"role": "assistant", "content": content}
         if tool_calls:
             message["tool_calls"] = tool_calls
+        if sources:
+            message["sources"] = list(sources)
+            if sources_label:
+                message["sources_label"] = sources_label
         with self._lock:
             self.messages.append(message)
 
