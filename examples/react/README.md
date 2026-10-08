@@ -1,20 +1,16 @@
 # ReAct: the same agent, through LangChain
 
-ReAct is the reason-then-act loop: the model thinks, decides a tool is
-needed, calls it, reads the result, and repeats until it can answer.
+ReAct ("reason, then act") is the usual agent loop: the model thinks, decides
+it needs a tool, calls it, reads the result, and repeats until it can answer.
 
-OVAT implements that loop itself (`agent.type: native`). This example runs
-the identical workflow through **LangChain** instead, to show the loop is a
-swappable component rather than the product.
+OVAT has its own version of that loop (`agent.type: native`). This example
+runs the same workflow through **LangChain** instead, to show that the loop is
+a part you can swap, not the product itself.
 
-```
-              ┌─ native         OVAT's own loop.py
-workflow.yml ─┼─ react          LangChain          ← this example
-  (one file)  ├─ llamaindex     LlamaIndex FunctionAgent
-              └─ openai-agents  OpenAI Agents SDK
-
-        all four → the same OVMS server, the same tools
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../docs/assets/diagrams/engines-dark.svg">
+  <img src="../../docs/assets/diagrams/engines-light.svg" alt="agent.type in workflow.yml selects one of four engines: native (built in), react (LangChain), llamaindex or openai-agents. All four talk to the same OVMS server with the same model, tools and endpoint.">
+</picture>
 
 ## Run it
 
@@ -41,9 +37,11 @@ server** and prints them side by side:
 ovat bench examples/react/workflow.yml -i "What can you do?" --out report.json
 ```
 
-You get a table of build time, answer time, peak memory, and token/tool
+You get a table of build time, answer time, peak memory, and token and tool
 counts where the engine reports them. `report.json` keeps each engine's full
-answer, and the complete failure text when one cannot run.
+answer, and the complete error text when one cannot run. `--repeat N` runs
+each engine N times and shows how many runs succeeded. Each engine runs in its
+own process, so one engine's memory is never counted against the next.
 
 Two deliberate behaviours in that table:
 
@@ -54,8 +52,8 @@ Two deliberate behaviours in that table:
 
 ## Try the switch yourself
 
-Fastest way, a flag, no file edit. The YAML is **never rewritten**, so the
-next run goes back to whatever it says:
+The fastest way is a flag, with no file edit. The YAML is **never rewritten**,
+so the next run goes back to whatever it says:
 
 ```bash
 ovat run examples/react/workflow.yml -i "What can you do?" --llamaindex
@@ -63,8 +61,9 @@ ovat run examples/react/workflow.yml -i "What can you do?" --native
 ```
 
 Each engine also answers to its library name, since that is the natural first
-guess: `--langchain` = `--react`, and `--openai-sdk` = `--openai-agents`.
-Naming two different engines is an error rather than a coin flip.
+guess: `--langchain` is the same as `--react`, and `--openai-sdk` is the same
+as `--openai-agents`. Naming two different engines is an error ("Pick one
+engine"), not a coin flip.
 
 To change it permanently, edit one line in `workflow.yml`:
 
@@ -73,8 +72,8 @@ agent:
   type: react          # -> native | llamaindex | openai-agents
 ```
 
-Nothing else changes, not the model, not the tools, not the prompt. Each
-engine needs its own extra:
+Nothing else changes: not the model, not the tools, not the prompt. Each
+engine except `native` needs its own extra:
 
 | `agent.type` | Install |
 | --- | --- |
@@ -89,8 +88,11 @@ engine needs its own extra:
   is defined once and works identically on all four; a second hand-kept
   registry is how a tool ends up working on one engine and crashing on
   another.
-- **The framework engines run their own event loop** and refuse to nest
-  inside an existing one. That is deliberate, not a limitation to work around.
+- **Only `native` records token counts per turn.** The other engines show a
+  dash in that column, which means "unknown", not zero.
+- **The framework engines run their own event loop** and refuse to start
+  inside one that is already running. That is on purpose, not a limitation to
+  work around.
 - **`max_iterations` is a real safety cap.** A model that keeps calling tools
   without converging stops there instead of looping forever.
 - **No `rag:` block here**, so `search_docs` answers in stub mode and this
