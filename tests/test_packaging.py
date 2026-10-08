@@ -106,3 +106,17 @@ def test_no_prose_is_trapped_inside_a_shell_code_fence():
                         offenders.append(f"{path.name}:{offset}: {text[:60]}")
             language = None
     assert not offenders, "prose inside a shell code fence:\n" + "\n".join(offenders)
+
+
+def test_openvino_genai_has_a_floor_that_loads_the_small_model():
+    """openvino-genai 2026.2 segfaults building the pipeline for
+    OpenVINO/Qwen3.5-0.8B-int4-ov, the README's smallest tier. Without a floor
+    `pip install -U ovat` keeps whatever an existing venv has, because pip
+    does not upgrade an already-satisfied dependency."""
+    pyproject = Path(__file__).parents[1] / "pyproject.toml"
+    deps = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"][
+        "dependencies"]
+    genai = [d for d in deps if d.replace("_", "-").lower().startswith(
+        "openvino-genai")]
+    assert genai == ["openvino-genai>=2026.4"], genai
+
