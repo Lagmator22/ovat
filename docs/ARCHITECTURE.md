@@ -1,8 +1,13 @@
 # OVAT Architecture
 
-How the toolkit is built, layer by layer, and why each decision was made the way
-it was. If you only want to *use* OVAT, the [README](../README.md) is the shorter
-path; this document is for contributors and for anyone evaluating the design.
+How OVAT is built, layer by layer, and why each decision was made the way it
+was. If you only want to *use* OVAT, the [README](../README.md) is the shorter
+path. This document is for contributors and for anyone judging the design.
+
+> **Prefer a guided tour?** The [OVAT docs site](https://lagmator22.github.io/ovat-navigate/)
+> walks through the same layers and the code behind them, one step at a time.
+
+Written for OVAT 1.1.1, OVMS 2026.4.1 and openvino-genai 2026.4 or newer.
 
 ---
 
@@ -39,14 +44,28 @@ path; this document is for contributors and for anyone evaluating the design.
 ## 1. What OVAT is, in one screen
 
 OVAT sits between a developer and
-[OpenVINO Model Server](https://docs.openvino.ai/2026/model-server/ovms_what_is_openvino_model_server.html).
-OVMS handles inference, tool-call decoding, batching and device targeting. It
-deliberately does not decide *which* model, *which* device, *which* parser,
-*which* tools, or when to start and stop, and that gap is a couple of hundred
-lines of boilerplate that every project rewrites.
+[OpenVINO Model Server](https://docs.openvino.ai/2026/model-server/ovms_what_is_openvino_model_server.html)
+(OVMS). OVMS runs the model: it generates text, decodes tool calls, batches
+requests and targets a device. It does not decide *which* model, *which*
+device, *which* parser, *which* tools, or when to start and stop. Filling that
+gap by hand is a couple of hundred lines that every project writes again.
 
 OVAT turns that gap into a config file, the way `kubectl` wraps the Kubernetes
 API rather than replacing it. One `workflow.yml` in, one wired agent out.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/core-flow-dark.svg">
+  <img src="assets/diagrams/core-flow-light.svg" alt="One request flowing through OVAT: workflow.yml is checked against a strict schema, the agent factory wires the model, tools and search, one of four engines runs the loop, and the model runs on an OVMS server or locally through openvino_genai, on an Intel CPU, GPU or NPU. The answer comes back with its sources.">
+</picture>
+
+There are two ways to run the model:
+
+- **Through OVMS** (`model.provider: ovms`, the default). This is the agent
+  path: `ovat run`, `ovat bench`, the TUI's `/engine ovms`. OVMS decodes tool
+  calls, so the agent can use tools. Windows and Linux only.
+- **In-process, through `openvino_genai`** (`ovat chat`, the TUI's `/chat`).
+  No server and no tool calls: OVAT searches your documents first, then hands
+  the passages to a local model. This is the path that works on macOS.
 
 The scope boundary matters and is worth stating plainly:
 
@@ -62,9 +81,12 @@ The scope boundary matters and is worth stating plainly:
 
 ## 2. The whole system, one diagram
 
+The animated diagram above follows one request. This one is the full map,
+including the parts a single request does not touch.
+
 ```mermaid
 flowchart TD
-    User["👤 User / CLI / TUI"] -->|"1. run or chat"| CLI["OVAT CLI & TUI<br/>(Typer / Textual)"]
+    User["User: CLI or TUI"] -->|"1. run or chat"| CLI["OVAT CLI & TUI<br/>(Typer / Textual)"]
     CLI -->|"2. load workflow.yml"| Config["WorkflowConfig<br/>(strict pydantic)"]
     Config -->|"3. build wired agent"| Factory["Agent Factory<br/>(factory.py)"]
     Factory -->|"4. pick 1 of 4 engines"| Engines
@@ -85,7 +107,7 @@ flowchart TD
     end
 
     subgraph Tools ["Layer 5. Tools"]
-        Builtin["Builtin:<br/>search_docs · transcribe · describe_image"]
+        Builtin["Builtin:<br/>search_docs, transcribe, describe_image"]
         MCP["MCP stdio client<br/>(any external server)"]
     end
 
@@ -94,12 +116,12 @@ flowchart TD
     end
 
     OVMS <--> Gateway
-    GenAI --> Hardware["💻 Intel CPU / Arc GPU / NPU"]
+    GenAI --> Hardware["Intel CPU / Arc GPU / NPU"]
     OVMS --> Hardware
 
     subgraph Telemetry ["Layer 7. Observability"]
-        Sources["Sources<br/>AgentTrace · ProcessMemory<br/>System · IntelHardware"]
-        Sinks["Sinks<br/>JSONFile · LiveBuffer · FanOut"]
+        Sources["Sources<br/>AgentTrace, ProcessMemory, System<br/>IntelHardware, NPU, OVMSLog"]
+        Sinks["Sinks<br/>JSONFile, LiveBuffer, FanOut"]
         Sources -->|"collector ticks ~0.5s"| Sinks
     end
 
@@ -115,11 +137,14 @@ If you extend OVAT, these are the constraints to work within. Each one exists
 because breaking it produced a bug that reached a user.
 
 **Optional dependencies stay optional.** `textual` and `pyfiglet` live in the
-`[tui]` extra only. Module-level `import textual` is permitted in exactly six
-files (`tui.py`, `chat_screen.py`, `doctor_screen.py`, `widgets.py`, `theme.py`,
-`commands.py`) and `tests/test_tui_isolation.py` enforces it. The same applies to
-the framework engines: importing the CLI must pull in none of langchain,
-llama_index or agents.
+`[tui]` extra only. A module-level `import textual` appears only in the TUI's
+own files (`tui.py`, `chat_screen.py`, `doctor_screen.py`,
+`telemetry_screen.py`, `widgets.py`, `theme.py`, `commands.py`).
+`tests/test_tui_isolation.py` checks that `main.py` and `shell.py` never import
+it at module level and that every command still works with the TUI missing.
+The same applies to the framework engines: importing the CLI must pull in none
+of langchain, llama_index or agents. CI proves both with a separate job that
+does a plain install, because the dev install has everything.
 
 **The agent core does not depend on presentation.** The loop is not allowed to
 depend on presentation. When both layers needed the same text helpers, the answer
@@ -185,6 +210,12 @@ Two details that came from real failures:
 
 Four engines, selected by `agent.type`, all exposing the same `.run(text) -> str`:
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/engines-dark.svg">
+  <img src="assets/diagrams/engines-light.svg" alt="agent.type in workflow.yml selects one of four engines: native (built in), react (LangChain), llamaindex or openai-agents. All four talk to the same OVMS server with the same model, tools and endpoint.">
+</picture>
+
+
 | `agent.type` | Library | Notes |
 | --- | --- | --- |
 | `native` | none | OVAT's own loop; the only one that traces tokens |
@@ -220,7 +251,15 @@ running.
 
 **Files:** `ovat/agent/loop.py`, `ovat/agent/session.py`
 
-The native loop is four beats:
+The native loop is four beats: ask the model, read the reply, run any tools it
+asked for, report the results back, and repeat.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/agent-loop-dark.svg">
+  <img src="assets/diagrams/agent-loop-light.svg" alt="The agent loop: the question goes to the model; a reply that asks for a tool makes the tool run as Python on your machine; the result goes back to the model; a reply with no tool call is the answer, shown with its sources. The loop stops after max_iterations rounds.">
+</picture>
+
+The same loop as a decision chart, with every exit:
 
 ```mermaid
 flowchart TD
@@ -256,6 +295,9 @@ Design points worth knowing:
   That is invalid packaging, not invalid intent; rejecting it cost a whole round
   trip. `strip_code_fence` lives in `ovat/text.py` and is shared with the OpenAI
   SDK engine, which is the only other engine that parses arguments itself.
+- **A misspelt tool name is matched, not refused.** If the model names a tool
+  that does not exist, the loop takes the closest real name (`difflib`, 60%
+  similarity) and the trace records the tool that actually ran.
 - **`Session` is thread-safe.** The TUI streams an answer on a worker thread and
   saves from there, while the main thread can `/load` or `/clear`. `json.dump`
   iterating a list another thread is appending to writes a truncated file, and
@@ -297,7 +339,7 @@ Layer 4 changes: the agent loop and all four engines only ever see the
 interface.
 
 The factory returns `LLMProvider`, never a concrete class. That is deliberate
-and worth copying if you extend it -- a factory whose return type names one
+and worth copying if you extend it: a factory whose return type names one
 implementation can only ever produce that implementation, however many others
 satisfy the contract.
 
@@ -310,10 +352,34 @@ Notes on the retriever:
 - Indexing a source **replaces** what that source had before, so `ovat index` is
   idempotent. It used to append, and three runs put the same chunk in three
   times, crowding out every other document.
+- **The index remembers when each file was read.** `ovat index` writes
+  `<db>.sources.json` beside the database, with each file's path and
+  modification time. `ovat run` and `ovat chat` compare it with the disk and
+  name any file that changed or vanished, because a stale index answers
+  confidently from text that is no longer there. An index built before this
+  existed has no manifest and gets no warning.
 - Deleting a source touches two tables: `chunks` has a `source` column, the
   `vec0` virtual table does not. Getting that half-right leaves orphan vectors,
   which `retrieve` matches and then silently skips, you ask for `top_k=5` and
   quietly get two results with no error anywhere.
+
+### How RAG fits together
+
+RAG (retrieval-augmented generation) is two separate jobs. Indexing runs once
+per folder. Searching runs for every question, either as the `search_docs`
+tool (the agent decides to call it) or directly in `ovat chat` (it always
+searches first, and has no tools).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/rag-dark.svg">
+  <img src="assets/diagrams/rag-light.svg" alt="RAG in two steps. Index once: files are cut into chunks, turned into 384 numbers each by bge-small, and stored in a sqlite-vec file. Every question: the question is turned into numbers, the closest chunks are found, and the model answers from them and names the source files.">
+</picture>
+
+`ovat chat` answers on a model you are watching, so it has **no answer length
+cap by default**: the answer streams until the model stops, and Ctrl-C (or Esc
+in the TUI) ends it. A fixed cap cut Qwen3.5 off in the middle of its
+reasoning. The OVMS path keeps `model.max_tokens` (4096), because a cancelled
+request does not stop the generation inside the server.
 
 ---
 
@@ -330,7 +396,7 @@ a co-located `SCHEMA` that is **the** contract, a FastMCP wrapper, and
 flowchart TD
     Need["agent needs a tool"] --> Type{"type?"}
     Type -->|"builtin"| B["schema from SCHEMA<br/>function bound by the factory"]
-    Type -->|"mcp_stdio"| M["MCPStdioServer<br/>launch · list_tools · call_tool"]
+    Type -->|"mcp_stdio"| M["MCPStdioServer<br/>launch, list_tools, call_tool"]
     B --> Loop["agent loop"]
     M --> Loop
     M -.->|"same shape"| Note["the loop cannot tell them apart"]
@@ -349,6 +415,33 @@ that, because it calls `str()` on whatever a tool returns. Over MCP it was a
 crash: FastMCP validates the return against the annotation and rejected the
 string with *"is not of type 'array'"*, so a locked database became a client-side
 exception instead of a sentence the model could recover from.
+
+**An MCP server gets only a short list of your environment.** The `mcp` SDK
+starts a server with `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM` and `USER`, on
+purpose, so a third-party server cannot read every secret in your shell. That
+also meant OVAT's own servers never saw the variables they needed.
+`tools[].env` passes extra ones on, and `${VAR}` in a value is read from your
+shell, so a secret can stay out of the YAML:
+
+```yaml
+tools:
+  - name: my_server
+    type: mcp_stdio
+    command: ["python", "my_server.py"]
+    env:
+      API_TOKEN: ${MY_TOKEN}
+```
+
+**A misspelt file path is recovered, and the recovery is announced.** Small
+models misspell paths, or drop a leading folder: asked for
+`examples/audio-multimodal/sample.wav`, Qwen3.5 sent `audio-multimodal/sample.wav`
+on every engine. `ovat/tools/fuzzy.py` swaps in the most similar existing
+file with the same extension (at least 70% alike), and two rules keep that
+safe. The search is bounded: the named folder if it exists, otherwise at most
+two levels under the working directory (an early version walked a whole home
+folder and took 31.6 s). And it is never silent: the tool result starts with
+"Note: there is no file at ... used the closest match ...", so the model and
+the person reading the transcript both see which file was used.
 
 **An MCP server needs the config, not the object.** `configure(retriever)` runs
 in the parent process; `type: mcp_stdio` launches a *separate* Python, and objects
@@ -407,6 +500,16 @@ right number for `ovat chat`, where the model runs in-process.
 One source contract worth stating: `sample()` must not raise. `Collector`
 catches anyway, so one broken source cannot end the collection thread.
 
+**Where to see it.** `ovat telemetry` prints a live table (`--once` for one
+snapshot, `--out` to save JSON Lines) and says first which sources are not
+available here and why. The TUI's `/telemetry` page has two tabs. **Live**
+holds number cards, a table with each metric's current, minimum, maximum and
+average, and a status line naming every source as live, silent, or not
+available (with the first clause of the reason). **Help** explains the
+numbers. The status line refreshes every tick; it used to be a separate tab
+filled once at start, which on the AI PC said "intel live" while Intel UT was
+producing nothing.
+
 ---
 
 ## Layer 8: Deployment and serving
@@ -414,34 +517,58 @@ catches anyway, so one broken source cannot end the collection thread.
 **Files:** `core/ovms_installer.py`, `core/model_server.py`, `core/ovms_locator.py`,
 `core/model_manager.py`
 
+### Which OVMS: the 2026.4.1 pin
+
+`ovms_installer.OVMS_VERSION` is the one place the version lives, so the
+installer, the docs and the tests cannot disagree. It is **2026.4.1** since
+2026-10-08, chosen by measurement, not by being newest. On the LunarLake AI PC,
+15 questions that need a tool, through all four engines, against 2026.2.1:
+
+| | OVMS 2026.2.1 | OVMS 2026.4.1 |
+| --- | --- | --- |
+| correct answers | 42 / 60 | **56 / 60** |
+| same answer on every repeat | no (up to 5 different answers in 5 runs) | yes |
+| peak memory of the GPU server | 17.3 GB | **4.9 GB** |
+
+14 answers went from wrong to right and none the other way (McNemar
+p = 0.0001). Measured on Windows only; Linux has not been measured on
+2026.4.1.
+
+A pin is useless if it never reaches machines that already have OVMS. `ovat
+setup` used to check only that a binary existed, so every machine with
+2026.2.1 was told "already installed" and kept it. Now `setup` and `doctor`
+both ask the binary for its version (`ovms --version`, run under
+`ovms_env()`, because on Windows a bare `ovms --version` exits with no output)
+and say when it differs from the pin. `ovat setup --force` replaces it.
+
 ### Getting OVMS onto the machine: `ovat setup`
 
 Installing used to be four manual steps and one judgement call: read the
 README, pick one archive out of six, unpack it, then usually export
 `OVAT_OVMS` because it landed somewhere the locator does not search. The
-judgement call is the dangerous part - the `python_off` build cannot tool-call,
+judgement call is the dangerous part: the `python_off` build cannot tool-call,
 and choosing it gives an agent that answers fluently and silently never calls a
 tool.
 
 ```mermaid
 flowchart TD
     S["ovat setup"] --> P{"platform"}
-    P -->|darwin| M["explain: no macOS build · exit 0"]
+    P -->|darwin| M["explain: no macOS build, exit 0"]
     P -->|win32| W["ovms_windows_..._python_on.zip"]
-    P -->|linux| L["read /etc/os-release →<br/>ubuntu22 · ubuntu24 · redhat"]
+    P -->|linux| L["read /etc/os-release →<br/>ubuntu22, ubuntu24 or redhat"]
     L -->|unknown distro| WARN["warn, then try ubuntu24"]
     W --> DL["download"]
     L --> DL
     WARN --> DL
     DL --> SHA{"SHA-256 matches?"}
-    SHA -->|no| STOP["refuse · install nothing"]
+    SHA -->|no| STOP["refuse, install nothing"]
     SHA -->|yes| EX["extract: flatten the archive's ovms/ wrapper,<br/>force the owner's write bit on every member"]
     EX --> R["~/.ovat/ovms/bin/ovms"]
 ```
 
-**Why this is not part of `pip install`.** The archive is 126–185 MB, Linux
+**Why this is not part of `pip install`.** The archive is 126 to 185 MB, Linux
 needs three builds that cannot be chosen at wheel-build time, wheels have no
-post-install hook, and macOS has no build at all - a bundled wheel would charge
+post-install hook, and macOS has no build at all. A bundled wheel would charge
 every Mac user ~180 MB for a binary that cannot run. A subcommand that fetches
 on demand is the shape `playwright install` and `python -m spacy download` use.
 
@@ -451,7 +578,7 @@ on demand is the shape `playwright install` and `python -m spacy download` use.
 flattened. And every member's owner-write bit is forced **before** extraction
 begins: OVMS ships mode `0o555`, and reopening such a file for write fails for
 anyone without `CAP_DAC_OVERRIDE`. That made install fail for every non-root
-Linux user while passing in Docker, in CI and in a maintainer's container - all
+Linux user while passing in Docker, in CI and in a maintainer's container, all
 of which run as root.
 
 ### Installing it by hand (air-gapped machines, or a build you already have)
@@ -460,7 +587,7 @@ of which run as root.
 it performs, and the one judgement call it exists to remove.
 
 > **Take the `python_on` build.** The `python_off` (C++ only) package **cannot
-> do tool calling** -- Intel's own docs state that its limited chat-template
+> do tool calling.** Intel's own docs state that its limited chat-template
 > support means using tools is not possible. The wrong archive gives an agent
 > that answers normally and silently never calls a tool, which is the hardest
 > failure in this project to notice.
@@ -509,7 +636,7 @@ flowchart TD
     Serve["ovat serve"] --> Locate["find_ovms()"]
     Locate -->|"config → OVAT_OVMS → PATH → known dirs"| Found{"found?"}
     Found -->|"no, and a TTY"| Offer["offer ovat setup"]
-    Found -->|"no, and no TTY"| Refuse["refuse · download nothing"]
+    Found -->|"no, and no TTY"| Refuse["refuse, download nothing"]
     Found -->|"yes"| Env["ovms_env()<br/>PATH + PYTHONHOME + LD_LIBRARY_PATH"]
     Env --> Spawn["Popen, logs to a FILE"]
     Spawn --> Wait["wait_until_ready()<br/>STALL budget, no deadline"]
@@ -521,7 +648,7 @@ flowchart TD
 **The locator searches `./ovms` first**, because that is where the README's own
 install steps unpack it. It also checks `~/.ovat/ovms` (where `ovat setup`
 puts it), `~/ovms_windows`, `~/ovms`, `C:\ovms` and `PATH`. Windows installs
-are essentially never on `PATH`, which is why `serve` works anyway - and why
+are essentially never on `PATH`, which is why `serve` works anyway, and why
 nothing in OVAT ever edits it.
 
 **`ovms_env()` is what setupvars would have done, and it is not cosmetic.** On
@@ -538,7 +665,7 @@ level wrong is the whole bug. Proven by running the same binary twice:
 | under `ovms_env()` | 0 | `OpenVINO Model Server 2026.2.1` |
 
 It lives as a module-level function rather than inline in `start()` precisely
-so it can be tested without launching a server - while it was inline, the
+so it can be tested without launching a server. While it was inline, the
 Linux branch had never been executed once.
 
 **Readiness is a stall budget, not a deadline.** A first run downloads the model,
@@ -569,8 +696,18 @@ callers.
 
 **File:** `core/device_manager.py`
 
-Device discovery via `openvino.Core().get_available_devices()`, then a routing
-table.
+OVAT asks OpenVINO which devices exist (`openvino.Core().get_available_devices()`)
+and looks the answer up in a routing table. `ovat doctor` shows the table,
+`ovat init` writes the LLM's device into the new `workflow.yml`, and the
+`transcribe` and `describe_image` tools use it when their own `device:` is not
+set. A device written in `workflow.yml` always wins.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/devices-dark.svg">
+  <img src="assets/diagrams/devices-light.svg" alt="Device routing. On an AI PC the agent model and vision go to the GPU, embeddings to the NPU, and speech to text to the CPU. With only a CPU, everything runs on the CPU.">
+</picture>
+
+The same table as a chart:
 
 ```mermaid
 flowchart TD
@@ -588,12 +725,13 @@ flowchart TD
 
 | Model type | Device | Why |
 | --- | --- | --- |
-| Embeddings (~130 MB) | NPU if present | static shape, small, low power |
+| Embeddings (~130 MB) | NPU if present (the YAML default is `CPU`; set `rag.embeddings.device`) | static shape, small, low power |
 | LLM (low-bit: INT4 / INT8) | GPU | dynamic shapes, KV cache, **tool calling** |
+| Vision (`describe_image`) | same as the LLM | it is often the same unified model |
 | Whisper (~80 MB) | CPU | small enough that CPU latency is fine |
 | Anything, no accelerator | CPU | always works; low-bit weights keep it in RAM |
 
-**`GPU` is the agent default; `NPU` works but needs a specific export.** Not because the NPU "cannot tool call" -- no accelerator executes tools. The device runs the model; the agent loop parses the tool call out of the generated text and runs the Python function itself, so tool calling is a property of the model and the parser, not the hardware. OVMS serves tool-calling LLMs on NPU and [documents the procedure](https://github.com/openvinotoolkit/model_server/blob/main/demos/llm_npu/README.md), tested on the same LunarLake silicon this project develops against.
+**`GPU` is the agent default; `NPU` works but needs a specific export.** Not because the NPU "cannot tool call": no accelerator executes tools. The device runs the model; the agent loop parses the tool call out of the generated text and runs the Python function itself, so tool calling is a property of the model and the parser, not the hardware. OVMS serves tool-calling LLMs on NPU and [documents the procedure](https://github.com/openvinotoolkit/model_server/blob/main/demos/llm_npu/README.md), tested on the same LunarLake silicon this project develops against.
 
 The real constraint is the **export format**, and it is strict:
 
@@ -615,7 +753,7 @@ LunarLake (Arc 140V GPU + Intel AI Boost NPU), OVMS 2026.2.1.1122f03bf.
 
 **`finish_reason` was *not* always `"stop"`.** Both through OVAT and through a raw `curl`, the tool-calling turn came back `finish_reason: "tool_calls"` with the call in `message.tool_calls`. The quirk OVMS documents did not reproduce on this version.
 
-**The stock export fails, but not for the stated reason.** `Qwen3.5-0.8B-int4-ov` on NPU fails with `vclAllocatedExecutableCreate3 result: 0x78000004 - [NPU_VCL]`, matching the code recorded earlier. The compiler's own diagnostic, however, is `StopLocationVerifierPass Pass failed : Found 8 duplicated names after full verification` -- a graph-naming complaint, not a quantisation-grouping one. OVMS also logged it as a *"Visual Language Model Legacy servable"* where the working 8B logged *"Language Model Legacy servable"*. **Channel-wise quantisation being the cause is therefore unverified**; what is verified is that the cw export compiles and the stock one does not.
+**The stock export fails, but not for the stated reason.** `Qwen3.5-0.8B-int4-ov` on NPU fails with `vclAllocatedExecutableCreate3 result: 0x78000004 - [NPU_VCL]`, matching the code recorded earlier. The compiler's own diagnostic, however, is `StopLocationVerifierPass Pass failed : Found 8 duplicated names after full verification`, a graph-naming complaint, not a quantisation-grouping one. OVMS also logged it as a *"Visual Language Model Legacy servable"* where the working 8B logged *"Language Model Legacy servable"*. **Channel-wise quantisation being the cause is therefore unverified**; what is verified is that the cw export compiles and the stock one does not.
 
 **There is a hard static sequence cap, and OVMS labels it `"unknown"`.** The NPU pipeline is compiled to fixed shapes from `MAX_PROMPT_LEN` and `MIN_RESPONSE_LEN` ([OpenVINO GenAI on NPU](https://docs.openvino.ai/2026/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html)). Pulled with `--max_prompt_len 2000`, this deployment stops at **exactly 2129 total tokens**, however the split falls:
 
@@ -624,9 +762,9 @@ LunarLake (Arc 140V GPU + Intel AI Boost NPU), OVMS 2026.2.1.1122f03bf.
 | 28 | 2101 | 2129 | `"unknown"` |
 | 1529 | 600 | 2129 | `"unknown"` |
 
-The reply is cut mid-sentence and the reason is `"unknown"` -- not `"length"`, which this server does return correctly when `max_tokens` is the binding limit. (Exceeding `MAX_PROMPT_LEN` on the prompt alone is a clean HTTP 400, `"Input length exceeds the maximum allowed length"`.) The exact arithmetic is not derived here: the documented `MIN_RESPONSE_LEN` default is 150, and 2000 + 150 is 2150, not 2129.
+The reply is cut mid-sentence and the reason is `"unknown"`, not `"length"`, which this server does return correctly when `max_tokens` is the binding limit. (Exceeding `MAX_PROMPT_LEN` on the prompt alone is a clean HTTP 400, `"Input length exceeds the maximum allowed length"`.) The exact arithmetic is not derived here: the documented `MIN_RESPONSE_LEN` default is 150, and 2000 + 150 is 2150, not 2129.
 
-**This is a truncation mechanism for a fragmentary tool call.** A `<tool_call>` block still being emitted when the cap lands is cut in half, and the parser is handed a fragment -- the `undecoded_tool_call` symptom, arriving with a `finish_reason` that names no cause. It is unrelated to the KV cache, which NPU ignores entirely (row 3 above). Compare upstream [openvino.genai#3255](https://github.com/openvinotoolkit/openvino.genai/issues/3255), "NPU LLM Pipeline produces garbled output instead of error when prompt exceeds practical context limits". For an agent, whose prompt grows every round, `--max_prompt_len` is the setting that matters most.
+**This is a truncation mechanism for a fragmentary tool call.** A `<tool_call>` block still being emitted when the cap lands is cut in half, and the parser is handed a fragment: the `undecoded_tool_call` symptom, arriving with a `finish_reason` that names no cause. It is unrelated to the KV cache, which NPU ignores entirely (row 3 above). Compare upstream [openvino.genai#3255](https://github.com/openvinotoolkit/openvino.genai/issues/3255), "NPU LLM Pipeline produces garbled output instead of error when prompt exceeds practical context limits". For an agent, whose prompt grows every round, `--max_prompt_len` is the setting that matters most.
 
 ---
 
@@ -684,7 +822,16 @@ choose" turned out to mean "choose nothing".
 
 So OVAT **derives** the value from the model name when the field is omitted, from
 data it already has, and falls back to `hermes3` for families it does not
-recognise. An explicit value always wins.
+recognise. An explicit value always wins. Besides the two measured families,
+the table maps Qwen3.6 and Qwen3-Coder to `qwen3coder`, Phi-4-mini to `phi4`,
+Llama-3.2 to `llama3`, gpt-oss to `gptoss` and Devstral to `devstral`; those come from OVMS's
+own demos and were not measured here.
+
+**On OVMS 2026.4.1, `auto` works.** That measurement was on 2026.2.1. On the
+current pin OVMS logs "Auto-detected tool_parser: qwen3coder" and scored 54/60
+against 56/60 for the derived value, with no answer it got right that the
+derived value got wrong. OVAT keeps deriving the name anyway, because a named
+parser also works on an older OVMS that someone installed by hand.
 
 ---
 
@@ -752,7 +899,7 @@ flowchart LR
     OVAT["ovat run<br/>ovms_url → :8000/v1"] --> Plano["plano (Envoy)<br/>:8000<br/>OTEL spans"]
     Plano --> Bridge["ovms_id_bridge.py<br/>:8001"]
     Bridge --> OVMS["OVMS :8002/v3<br/>(model.ovms_port)"]
-    Plano -.-> Obs["planoai obs<br/>latency · TTFT · tokens"]
+    Plano -.-> Obs["planoai obs<br/>latency, TTFT, tokens"]
 ```
 
 Three problems had to be solved, and each answer is recorded in the config's
@@ -776,7 +923,7 @@ did, latency, TTFT, HTTP status. Neither substitutes for the other.
 
 ## Testing strategy
 
-About 750 tests, no server required. `pytest -q` must end green.
+About 800 tests, no server required. `pytest -q` must end green.
 
 | Convention | Reason |
 | --- | --- |
@@ -808,10 +955,10 @@ the documented command was still broken.
 | 2 Framework integration | ✅ complete | all four engines verified live on an AI PC |
 | 3 Agent core | ✅ complete | loop, session, three failure guards |
 | 4 Provider abstraction | ✅ complete | LLM, embeddings and retrievers each have two implementations behind one socket; sqlite-vec persists, `memory` does not. ANN backends (FAISS, USearch) would slot in without touching the factory |
-| 5 Tools / MCP | ✅ complete | three built-ins, MCP client and server |
+| 5 Tools / MCP | ✅ complete | three built-ins, MCP client (with `tools[].env`) and server, announced fuzzy paths |
 | 6 Orchestration (A2A) | ❌ not built | scoped as a stretch goal |
 | 7 Observability | ✅ complete | sources, sinks, JSONL, CLI + TUI pages. NPU utilisation now reads on **Windows too** (PDH, `GPU Engine` on the AI Boost adapter) as well as Linux sysfs; macOS has no Intel NPU and says so |
-| 8 Deployment / serving | ✅ complete | locator, stall budget, pidfile, identity check. `ovms_cache_size_gb` verified working on hardware (it never was before) |
+| 8 Deployment / serving | ✅ complete | `ovat setup` pinned to OVMS 2026.4.1 and version-aware, locator, stall budget, pidfile, identity check. `ovms_cache_size_gb` verified working on hardware (it never was before) |
 | 9 Runtime / hardware | ✅ complete | device routing; **NPU tool-calling agent run on hardware**, and its static 2129-token cap measured, not just documented |
 
 CI runs the suite on every push across ubuntu-22.04/py3.10 (the oldest
@@ -824,12 +971,13 @@ NPU LLM serving is no longer outstanding: `examples/document-qa-npu.yml` runs
 a tool-calling agent against `Qwen3-8B-int4-cw-ov` on this machine's NPU, and
 the measurements are in "Measured on this hardware" above.
 
-Also outstanding: a VSCode extension (secondary scope), A2A orchestration
-(Layer 6, a declared stretch goal), and GPU/NPU verification on Linux, which
-WSL2 cannot give (no `/dev/dri`). The Windows NPU reader is no longer on this
-list: `_WindowsNPUCounter` reads it through PDH, and both controls were
-measured -- 93.5% under an NPU load, and 0.0% while OVMS generated on the GPU
-and the GPU's own `engtype_neural` read 100.0%.
+Also outstanding: A2A orchestration (Layer 6, a declared stretch goal),
+OVMS 2026.4.1 measured on Linux, GPU utilisation without Intel UT, stress
+tests, an API reference, and GPU/NPU verification on Linux, which WSL2 cannot
+give (no `/dev/dri`). The Windows NPU reader is no longer on this list:
+`_WindowsNPUCounter` reads it through PDH, and both controls were measured:
+93.5% under an NPU load, and 0.0% while OVMS generated on the GPU and the
+GPU's own `engtype_neural` read 100.0%.
 
 One open question is deliberately left open rather than closed on a thin
 sample: whether a full **static** KV cache causes the undecoded-tool-call
@@ -865,20 +1013,21 @@ One line each.
 - `agent/loop.py`, the native loop and the run trace
 - `agent/factory.py`, config → wired agent; the tool registry lives here
 - `agent/arg_models.py`, derives per-framework argument models from each `SCHEMA`
-- `agent/langchain_agent.py` · `llamaindex_agent.py` · `openai_agents_agent.py`, the three framework engines
+- `agent/langchain_agent.py`, `llamaindex_agent.py`, `openai_agents_agent.py`, the three framework engines
 - `agent/session.py`, conversation memory, thread-safe, with JSON save/load
-- `agent/rag_chat.py`, local retrieve-then-answer, with streaming
+- `agent/rag_chat.py`, local retrieve-then-answer, with streaming and no default answer cap
 
 **Providers**
 - `providers/base.py`, the four ABCs
 - `providers/llm_ovms.py`. OpenAI SDK → OVMS `/v3`; returns `usage`; bounded by `request_timeout`
 - `providers/llm_genai.py`, local `openvino_genai`; routes unified exports through `VLMPipeline`
-- `providers/embeddings_genai.py` · `embeddings_ovms.py`, text → vectors
+- `providers/embeddings_genai.py`, `embeddings_ovms.py`, text → vectors
 - `providers/retriever_sqlitevec.py`, the vector store
 - `providers/vlm_genai.py`, vision, reached via `describe_image`
 - `providers/backend.py`, one shared description of the OVMS connection
 
 **Core**
+- `core/ovms_installer.py`, `ovat setup`: picks, verifies and unpacks the pinned OVMS (2026.4.1), and reads an installed binary's version
 - `core/model_server.py`. OVMS lifecycle: start, stall-budget readiness, stop, pidfile
 - `core/ovms_locator.py`, find the binary: config → env → PATH → known folders
 - `core/model_scout.py`, identify local model folders; the `unified` kind lives here
@@ -886,9 +1035,10 @@ One line each.
 - `core/model_manager.py`, wraps `ovms --pull` / `--list_models`
 
 **Tools, RAG, telemetry, bench**
-- `tools/search_docs.py` · `transcribe.py` · `describe_image.py`, built-ins, each also an MCP server
-- `tools/mcp_client.py`. MCP stdio client
-- `rag/indexer.py`, chunk and index `.txt`/`.md`
+- `tools/search_docs.py`, `transcribe.py`, `describe_image.py`, built-ins, each also an MCP server
+- `tools/fuzzy.py`, bounded, announced recovery of a misspelt file path
+- `tools/mcp_client.py`. MCP stdio client; `tools[].env` adds environment variables
+- `rag/indexer.py`, chunk and index `.txt`/`.md`; writes the `<db>.sources.json` manifest behind the stale-index warning
 - `telemetry/`, `base` (ABCs), `sources`, `sinks`, `collector`
 - `bench.py`, one question, several engines, one process each
 
@@ -896,6 +1046,8 @@ One line each.
 - `cli/tui.py`, launcher and masthead
 - `cli/shell.py`, subprocess exec layer, slash templates, `\r` progress sampling
 - `cli/chat_screen.py`, in-process chat: streaming, history, sessions, `/engine`
-- `cli/doctor_screen.py` · `telemetry_screen.py` · `widgets.py` · `editing.py` · `theme.py` · `commands.py`
+- `cli/doctor_screen.py`, `telemetry_screen.py` (Live and Help tabs), `widgets.py`, `editing.py`, `theme.py`, `commands.py`
 
-Contributor rules and the landmine list live in [`AGENTS.md`](../AGENTS.md).
+Contributor rules and the landmine list live in [`AGENTS.md`](../AGENTS.md). For a
+guided walk through this code, see the
+[OVAT docs site](https://lagmator22.github.io/ovat-navigate/).
