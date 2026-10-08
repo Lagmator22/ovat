@@ -278,10 +278,11 @@ class IntelHardwareSource(TelemetrySource):
     run `ut -c` for continuous sampling or `ut -a "<cmd>"` to wrap a command.
     So this shells out and parses, exactly as ModelManager does for ovms.
 
-    Platform truth: the tool ships as .exe/.dll for Windows, with a Linux
-    build. It does NOT run on macOS, so on a Mac this reports unavailable
-    with a sentence rather than sampling zeros, which would be
-    indistinguishable from an idle NPU.
+    Platform truth: Intel's product page lists Windows 11 x64 on Intel Core
+    Ultra (Lunar Lake and later) only, and documents no Linux or macOS build
+    (checked 2026-10-08). A binary someone has on Linux is still tried. On a
+    Mac this reports unavailable with a sentence rather than sampling zeros,
+    which would be indistinguishable from an idle NPU.
     """
 
     name = "intel"
