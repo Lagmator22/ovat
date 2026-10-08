@@ -926,9 +926,9 @@ def test_slash_telemetry_opens_the_page():
 
 
 def test_the_page_shows_sources_that_cannot_run_here_with_the_reason():
-    """On a Mac the Intel row must say so rather than draw a flat line at
+    """On a Mac the Intel source must say so rather than draw a flat line at
     zero, which is indistinguishable from an idle NPU."""
-    from textual.widgets import DataTable
+    from textual.widgets import Static
     from ovat.cli.telemetry_screen import TelemetryScreen
 
     async def scenario():
@@ -936,14 +936,52 @@ def test_the_page_shows_sources_that_cannot_run_here_with_the_reason():
         async with app.run_test() as pilot:
             screen = TelemetryScreen()
             app.push_screen(screen)
-            await pilot.pause()
-            table = screen.query_one("#tel-table", DataTable)
-            rows = "\n".join(
-                " ".join(str(cell) for cell in table.get_row_at(i))
-                for i in range(table.row_count))
-            assert "process" in rows and "intel" in rows
-            # Every source is accounted for, live or not.
-            assert table.row_count == len(screen.collector.sources)
+            await pilot.pause(0.7)
+            line = str(screen.query_one("#tel-sources", Static).content)
+            for source in screen.collector.sources:   # every one accounted for
+                assert source.name in line
+            for name, reason in screen.collector.unavailable.items():
+                assert f"{name} n/a" in line and reason[:20] in line
+            screen.collector.stop()
+    _run(scenario())
+
+
+def test_a_running_but_silent_source_says_so_on_the_live_tab():
+    """The Sources table was filled once, before any source started, so on
+    the AI PC it read "intel live, sampling" while UT produced nothing."""
+    from textual.widgets import Static
+    from ovat.cli import telemetry_screen
+
+    class Silent:
+        name = "intel"
+        unavailable = None
+        note = None
+
+        def __init__(self, *a, **k):
+            pass
+
+        def start(self):
+            Silent.note = "running, no reading parsed yet"
+
+        def sample(self):
+            return {}
+
+        def stop(self):
+            pass
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            original = telemetry_screen.IntelHardwareSource
+            telemetry_screen.IntelHardwareSource = Silent
+            try:
+                screen = telemetry_screen.TelemetryScreen()
+            finally:
+                telemetry_screen.IntelHardwareSource = original
+            app.push_screen(screen)
+            await pilot.pause(0.7)
+            line = str(screen.query_one("#tel-sources", Static).content)
+            assert "intel silent (running, no reading parsed yet)" in line
             screen.collector.stop()
     _run(scenario())
 
@@ -986,11 +1024,12 @@ def test_leaving_the_page_stops_the_collector():
 
 # The telemetry page's tabs
 
-def test_the_telemetry_page_has_four_switchable_tabs():
-    """One page rather than four screens: these are four VIEWS of the same
-    machine, and separate screens would drop the live buffer every time you
-    looked at a different one."""
-    from textual.widgets import TabbedContent
+def test_the_telemetry_page_has_two_tabs_and_a_help_that_scrolls():
+    """Four tabs (Live, Sources, Intel, Plano) left the owner unsure which
+    mattered, and the long help texts did not scroll: their ends could only
+    be read by zooming the terminal out. Live and Help now, and Help scrolls."""
+    from textual.containers import VerticalScroll
+    from textual.widgets import Static, TabbedContent
     from ovat.cli.telemetry_screen import TelemetryScreen
 
     async def scenario():
@@ -1000,7 +1039,12 @@ def test_the_telemetry_page_has_four_switchable_tabs():
             app.push_screen(screen)
             await pilot.pause()
             tabs = screen.query_one("#tel-tabs", TabbedContent)
-            assert tabs.tab_count == 4
+            assert tabs.tab_count == 2
+            help_widget = screen.query_one("#tel-help", Static)
+            assert isinstance(help_widget.parent, VerticalScroll)
+            text = str(help_widget.content)
+            assert len(text.strip().splitlines()) <= 25, "help grew long again"
+            assert "examples/plano/README.md" in text
             screen.collector.stop()
     _run(scenario())
 
@@ -1019,28 +1063,6 @@ def test_no_agent_row_remains_on_the_telemetry_page():
             await pilot.pause()
             names = [s.name for s in screen.collector.sources]
             assert "agent" not in names
-            screen.collector.stop()
-    _run(scenario())
-
-
-def test_the_plano_tab_carries_the_commands_to_run_it():
-    """A tab that only says a thing exists is worse than no tab. This one has
-    to be runnable straight off the screen."""
-    from textual.widgets import Static
-    from ovat.cli.telemetry_screen import TelemetryScreen
-
-    async def scenario():
-        app = OvatTUI()
-        async with app.run_test() as pilot:
-            screen = TelemetryScreen()
-            app.push_screen(screen)
-            await pilot.pause()
-            widget = screen.query_one("#tel-plano-help", Static)
-            text = str(getattr(widget, "renderable", None)
-                       or getattr(widget, "_content", "")
-                       or widget.render())
-            assert "planoai up" in text
-            assert "base_url_path_prefix" in text     # the spike answer
             screen.collector.stop()
     _run(scenario())
 

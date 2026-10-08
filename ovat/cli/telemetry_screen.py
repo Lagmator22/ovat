@@ -16,10 +16,11 @@ Three things are load-bearing here, each a bug avoided:
     on macOS", which is the honest answer rather than a flat line at zero.
   * Every colour comes from ovat.cli.ui. This screen owns no palette.
 """
+from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import (DataTable, Digits, Label, ProgressBar,
                              Rule, Static, TabbedContent, TabPane)
@@ -72,143 +73,30 @@ MAX_CARDS = 5
 #: the rest give it a scale, which is the job the sparkline used to do badly.
 _COLUMNS = ("now", "min", "max", "mean")
 
-_SOURCES_HELP = """
-[b]What each source is[/b]
+# ONE short help, on its own scrollable tab. The page used to carry three
+# long ones (Sources, Intel, Plano) that did not scroll, so the end of each
+# was unreadable without zooming the terminal out, and four tabs left the
+# owner unsure which one mattered. The plano walkthrough lives in
+# examples/plano/README.md, where it can be followed step by step.
+_HELP = """
+[b]What the numbers are[/b]
+  [cyan]system[/cyan]   this computer: CPU per core, RAM, clock
+  [cyan]process[/cyan]  OVAT itself (with OVMS serving, the model is not here)
+  [cyan]npu[/cyan]      NPU busy %, from the driver (Windows and Linux)
+  [cyan]ovms[/cyan]     the server's KV cache, read from ovms.log
+  [cyan]intel[/cyan]    power and NPU bandwidth, from Intel Unified Telemetry
 
-  [cyan]system[/cyan]   this machine: CPU per core, RAM, clock speed. psutil,
-           so it works on macOS, Windows and Linux alike.
-  [cyan]process[/cyan]  OVAT's OWN memory. Not the model's: an 8B model lives
-           inside OVMS, in a different process entirely.
-  [cyan]npu[/cyan]      NPU utilisation from the driver (Linux) or the
-           Windows GPU Engine counter on the AI Boost adapter.
-  [cyan]ovms[/cyan]     KV cache usage and its type, read from ovms.log.
-  [cyan]intel[/cyan]    GPU/NPU activity and package power, via Intel's
-           Unified Telemetry tool. AI PC only.
+[b]The line under the table[/b] says, for each source, whether it is
+[green]live[/green], [yellow]silent[/yellow] (running, nothing read yet) or
+[yellow]n/a[/yellow] (cannot run here), and why.
 
-A source that cannot run HERE says so with a reason. That matters more than
-it looks: an absent source and an idle one draw the same flat line, and only
-one of them is worth doing anything about.
-"""
+[b]Turning on the intel rows[/b] (Windows and Linux)
+  Unzip Intel's ut-tool, then set [cyan]OVAT_UT[/cyan] to that folder or put it
+  in [cyan]~/ut[/cyan]. On Windows run [cyan]ut-vars.cmd[/cyan] from an
+  Administrator prompt first. The first reading takes a few seconds.
 
-_INTEL_HELP = """
-[b]Where the NPU number on the Live tab comes from[/b]
-
-Two different things can report an NPU, and only one of them currently gives
-this page a figure. Read this tab as "which one am I getting, and why".
-
-  [cyan]npu.*[/cyan]     the DRIVER's own counter. A real live percentage.
-             Linux and Windows. This is what the NPU card shows.
-  [cyan]intel.*[/cyan]   Intel Unified Telemetry. Much richer -- power,
-             per-engine timelines, thermals -- but see the limit below.
-
-[b]1. The driver counter (Linux, no install)[/b]
-The intel_vpu kernel module publishes a running total of microseconds the NPU
-spent executing jobs:
-
-  [cyan]/sys/bus/pci/drivers/intel_vpu/<dev>/npu_busy_time_us[/cyan]
-
-OVAT reads it twice and divides to get a duty cycle -- the same arithmetic
-btop's NPU meter uses. Nothing to install; if the row is missing, check the
-module is loaded with [cyan]lsmod | grep intel_vpu[/cyan].
-
-[b]2. On Windows, the GPU Engine counter (no install)[/b]
-There is no NPU counter set: [cyan]Get-Counter -ListSet *NPU*[/cyan] only
-matches "I-npu-t Delay". But the NPU enumerates as a WDDM adapter, so its
-engines appear under [cyan]\\GPU Engine(*)\\Utilization Percentage[/cyan].
-OVAT reads them through PDH and picks the adapter that publishes only a
-compute engine. The GPU's own [cyan]engtype_neural[/cyan] is NOT the NPU:
-measured, it read 100% while the GPU generated and the NPU sat idle.
-
-[b]3. Intel Unified Telemetry (optional, richer)[/b]
-  1. Download the ut-tool release and unzip it; it extracts to a versioned
-     folder
-  2. Windows: open Command Prompt AS ADMINISTRATOR, cd to that folder, run
-     [cyan]ut-vars.cmd[/cyan] to set the environment
-  3. Point OVAT at it: set [cyan]OVAT_UT[/cyan] to that folder, or drop it in
-     [cyan]~/ut[/cyan] and OVAT finds it
-  4. Windows and Linux only; there is no macOS build
-
-[b]What the intel.* rows are[/b]
-MEASURED on the AI PC (ut-tool-ext-v0.2.0-beta1.1): continuous mode prints
-one [cyan]Metric: PKG-PWR | ... | Value: 4738.83 mJ | ... | Duration: ...[/cyan]
-line per reading. OVAT turns energy over its window into watts
-([cyan]pkg_power_w[/cyan], [cyan]vccia_power_w[/cyan], [cyan]vccgt_power_w[/cyan],
-[cyan]npu_power_w[/cyan]), bytes into [cyan]npu_bw_gbs[/cyan], and keeps
-[cyan]igfx_pstate_mhz[/cyan] as is. Names are UT's own: its docs do not say
-which rail powers what. No utilisation percentage comes from UT in this mode;
-that is what the npu.* row is for.
-"""
-
-_PLANO_HELP = """
-[b]plano gateway[/b]  (katanemo/plano, formerly archgw)
-
-An optional proxy between OVAT and OVMS. OVAT keeps talking to a plain URL;
-plano forwards it on and adds a trace to every request.
-
-[b]Why it is here[/b]
-[cyan]OpenTelemetry for three lines of config[/cyan], rather than an exporter
-written by hand. Every request becomes an OTEL span with per-call latency and
-token counts, and OVAT gains no OTEL dependency of its own.
-
-[b]Platform, and read this first[/b]
-plano's own docs list its supported platforms as Linux (x86_64, aarch64) and
-macOS (Apple Silicon). There is NO Windows build, so on the AI PC
-`planoai up` exits with "Unsupported platform windows/amd64" before it reads
-any config. Three ways round it, none of them a workaround for a bug:
-
-  [cyan]planoai up <config> --docker[/cyan]   plano in a Linux container
-  or run plano under WSL2
-  or run it on another machine pointing at the AI PC's OVMS over the network
-  (base_url takes any host, not just 127.0.0.1)
-
-[b]Run it, in this order[/b]
-  [b]1.[/b] [cyan]uv tool install planoai==0.4.27[/cyan]
-     Pinned because that is the version this integration was verified
-     against. 0.4.33 is current; treat an upgrade as a retest, since the
-     config schema is what the two walls below are about.
-  [b]2.[/b] [cyan]ovat serve examples/plano/workflow.yml[/cyan]
-     OVMS on :8002 (model.ovms_port), so plano can take :8000. Wait
-     for it to report ready.
-  [b]3.[/b] [cyan]python examples/plano/ovms_id_bridge.py[/cyan]
-     The bridge on :8001. Leave it running.
-  [b]4.[/b] [cyan]planoai up examples/plano/plano-config.yaml[/cyan]
-     plano on :8000. Add [cyan]--docker[/cyan] on Windows.
-  [b]5.[/b] [cyan]ovat run examples/plano/workflow.yml --input "hello"[/cyan]
-     The request now goes OVAT -> plano -> bridge -> OVMS.
-  [b]6.[/b] [cyan]planoai obs[/cyan]            live aggregate view
-     [cyan]planoai trace listen[/cyan]   stream traces as they arrive
-     [cyan]planoai trace --list[/cyan]   what has been captured
-     [cyan]planoai trace <id>[/cyan]     one request in depth
-
-[b]The spike question, answered[/b]
-plano defaults to calling upstreams at /v1; OVMS serves its OpenAI API under
-/v3. There is no separate prefix field: plano parses base_url and lifts the
-path out of it itself, and its schema REJECTS base_url_path_prefix outright.
-So the path half of the fix is just the URL:
-
-  [cyan]base_url: http://<host>:8001/v3[/cyan]
-
-Two more walls turned up behind it, both found in plano's own source rather
-than guessed at:
-
-  [b]1.[/b] The model name needs a [cyan]provider/[/cyan] prefix. plano does
-     model_name.split("/") in config_generator.py and raises "Invalid model
-     name" without one, so the config says [cyan]ovms/Qwen3-8B-int4-ov[/cyan]
-     and plano strips the prefix before forwarding.
-  [b]2.[/b] plano's Envoy WASM filter requires a top-level [cyan]"id"[/cyan]
-     string in the response. OVMS returns valid OpenAI JSON but omits it, so
-     plano rejects every reply. [cyan]examples/plano/ovms_id_bridge.py[/cyan]
-     sits on :8001, forwards to OVMS on :8002, injects the field, and also
-     handles the Transfer-Encoding: chunked bodies plano sends.
-
-So base_url points at the BRIDGE, not at OVMS directly. Still no fork and no
-patch of either project: one small proxy and one URL.
-
-[b]Is this tab live?[/b]
-No, and deliberately so. plano runs as its own process with its own dashboard
-([cyan]planoai obs[/cyan]), so duplicating it here would be a worse copy of a
-tool that already exists. What this page owns is the Live tab: system,
-process and Intel. plano owns the request traces.
+[b]Per-request traces[/b] come from the plano gateway instead:
+  see [cyan]examples/plano/README.md[/cyan].
 """
 
 
@@ -249,11 +137,8 @@ class TelemetryScreen(Screen):
     .tel-card ProgressBar { width: 100%; }
     .tel-card Bar > .bar--bar { color: $success; }
     #tel-live-table { height: 1fr; border: round $primary; margin: 1 2 0 2; }
-    #tel-table { height: 12; border: round $primary; margin: 0 2 1 2; }
-    #tel-sources-help, #tel-intel-help, #tel-plano-help {
-        padding: 1 2;
-        color: $text-muted;
-    }
+    #tel-sources { height: auto; margin: 0 2 1 2; }
+    #tel-help { padding: 1 2; color: $text-muted; }
     #tel-tabs { height: 1fr; }
     Footer { background: $surface; color: $accent; }
     """
@@ -308,16 +193,15 @@ class TelemetryScreen(Screen):
                                   zebra_stripes=True)
                 table.border_title = "live numbers"
                 yield table
-            with TabPane("Sources", id="tab-sources"):
-                table = DataTable(id="tel-table", cursor_type="row",
-                                  zebra_stripes=True)
-                table.border_title = "where the numbers come from"
-                yield table
-                yield Static(_SOURCES_HELP, id="tel-sources-help")
-            with TabPane("Intel", id="tab-intel"):
-                yield Static(_INTEL_HELP, id="tel-intel-help")
-            with TabPane("Plano", id="tab-plano"):
-                yield Static(_PLANO_HELP, id="tel-plano-help")
+                # Where each number comes from, refreshed every tick. It used
+                # to be a table on its own tab, filled ONCE before any source
+                # had started: on the AI PC it said "intel live, sampling"
+                # while UT produced nothing, so the page hid the one fact
+                # that explained the missing rows.
+                yield Static("", id="tel-sources")
+            with TabPane("Help", id="tab-help"):
+                with VerticalScroll(id="tel-help-scroll"):
+                    yield Static(_HELP, id="tel-help")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -328,7 +212,6 @@ class TelemetryScreen(Screen):
         numbers.add_column("Metric", key="metric")
         for column in _COLUMNS:
             numbers.add_column(column, key=column)
-        self._fill_sources_table()
         self.collector.start()
         # set_interval, not a worker loop: the sampling already happens on
         # the collector's own thread, so all this does is redraw.
@@ -341,36 +224,26 @@ class TelemetryScreen(Screen):
 
     # ---- drawing -----------------------------------------------------------
 
-    def _fill_sources_table(self) -> None:
-        """One row per source, saying plainly whether it works HERE.
-
-        A source that cannot run and a source that is idle look identical in
-        a graph. Only one of them is worth doing something about.
-        """
-        from rich.text import Text
-
-        table = self.query_one("#tel-table", DataTable)
+    def _sources_line(self) -> Text:
+        """One line: each source, and whether it works here right now."""
         unavailable = self.collector.unavailable
-        state_signature = tuple((s.name, unavailable.get(s.name)) for s in self.collector.sources)
-        if getattr(self, "_last_table_state", None) == state_signature:
-            return
-        self._last_table_state = state_signature
-        table.clear(columns=True)
-        table.add_column("Source")
-        table.add_column("State")
-        table.add_column("Detail")
+        line = Text()
         for source in self.collector.sources:
             reason = unavailable.get(source.name)
-            state = (Text("live", style=f"bold {ui.GREEN}") if reason is None
-                     else Text("n/a", style=ui.YELLOW))
-            # Text cells, never str: a DataTable renders str as markup, and a
-            # path or an exception with a bracket in it would raise mid-draw.
-            detail = reason or getattr(source, "note", None) or "sampling"
-            table.add_row(Text(source.name, style=ui.CYAN), state,
-                          Text(detail, style=ui.DIM))
+            note = None if reason else getattr(source, "note", None)
+            if line:
+                line.append("   ")
+            line.append(source.name, style=ui.CYAN)
+            if reason:
+                line.append(f" n/a ({_first_clause(reason)})", style=ui.YELLOW)
+            elif note:
+                line.append(f" silent ({_first_clause(note)})", style=ui.YELLOW)
+            else:
+                line.append(" live", style=f"bold {ui.GREEN}")
+        return line
 
     def _redraw(self) -> None:
-        self._fill_sources_table()
+        self.query_one("#tel-sources", Static).update(self._sources_line())
         self._sync_cards()
         for metric, digits, bar in self._cards.values():
             value = self.live.latest(metric)
@@ -476,6 +349,13 @@ class TelemetryScreen(Screen):
         self.app.copy_to_clipboard(json.dumps(list(self.live.samples),
                                               indent=2))
         self.notify("Telemetry copied as JSON.")
+
+
+def _first_clause(reason: str) -> str:
+    """The head of a reason, for a one-line status. The full sentences ("no
+    OVMS log at ovms.log. This source reads the log `ovat serve` writes;
+    start a server first") wrapped the line over three rows."""
+    return reason.split(". ")[0].split("; ")[0].rstrip(".")
 
 
 def _card_id(metric: str) -> str:
