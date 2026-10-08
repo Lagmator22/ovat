@@ -458,6 +458,36 @@ def test_a_bare_name_is_found_a_couple_of_folders_down(tmp_path, monkeypatch):
     assert note and "sample.wav" in note
 
 
+def test_a_dropped_leading_folder_is_found_and_announced(tmp_path, monkeypatch):
+    """Qwen3.5 sent audio-multimodal/sample.wav for
+    examples/audio-multimodal/sample.wav on every engine (AI PC, round 2)."""
+    from ovat.tools.fuzzy import resolve_path
+
+    real = tmp_path / "examples" / "audio-multimodal" / "sample.wav"
+    real.parent.mkdir(parents=True)
+    real.write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+
+    path, note = resolve_path(os.path.join("audio-multimodal", "sample.wav"))
+    assert os.path.samefile(path, real)
+    assert note and "audio-multimodal" in note
+
+
+def test_a_missing_folder_only_matches_folders_with_that_name(
+        tmp_path, monkeypatch):
+    """The named folder still decides where: the same file name in some
+    other folder is not a match."""
+    from ovat.tools.fuzzy import resolve_path
+
+    other = tmp_path / "examples" / "unrelated" / "sample.wav"
+    other.parent.mkdir(parents=True)
+    other.write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+
+    requested = os.path.join("audio-multimodal", "sample.wav")
+    assert resolve_path(requested) == (requested, None)
+
+
 def test_a_miss_does_not_crawl_the_working_directory(tmp_path, monkeypatch):
     """The first version walked EVERYTHING under the cwd on every miss: 31.6 s
     for one call started from a home directory. A file buried deep in an

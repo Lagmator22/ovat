@@ -30,21 +30,36 @@ def _candidates(requested: str):
     them by extension and scores them, so this only decides WHERE to look.
     """
     folder = os.path.dirname(requested)
-    if folder:
-        # The model named a folder: trust it and look nowhere else. A typo in
-        # the FILENAME is the case worth rescuing; reaching into some other
-        # tree is how a different recording gets swapped in.
+    if folder and (os.path.isdir(folder) or os.path.isabs(folder)):
+        # The model named a folder that exists (or an absolute one): trust it
+        # and look nowhere else. A typo in the FILENAME is the case worth
+        # rescuing; reaching into some other tree is how a different
+        # recording gets swapped in.
         return _list_files(folder)
+    if folder:
+        # A relative folder that is not there. Measured on the AI PC: asked
+        # for examples/audio-multimodal/sample.wav, Qwen3.5 sent
+        # audio-multimodal/sample.wav on every engine and every arm, so the
+        # file was "not found" while it sat one folder down. Look only in
+        # folders whose path ENDS with the one named, within the same two
+        # levels as a bare name: the named folder still decides where.
+        tail = os.sep + os.path.normpath(folder)
+        return [path for root, files in _walk_two_levels()
+                if (os.sep + os.path.normpath(root)).endswith(tail)
+                for path in files]
     # A bare name ("sample.wav") says nothing about where, so look a fixed
     # two levels under the working directory: enough for
     # examples/audio-multimodal/sample.wav, nowhere near a whole home folder.
-    found = []
+    return [path for _root, files in _walk_two_levels() for path in files]
+
+
+def _walk_two_levels():
+    """(folder, [its file paths]) for the cwd and two levels below it."""
     for root, dirs, files in os.walk("."):
         depth = 0 if root == "." else root.count(os.sep)
         dirs[:] = [d for d in dirs
                    if not d.startswith(".") and d not in _SKIP and depth < 2]
-        found.extend(os.path.join(root, name) for name in files)
-    return found
+        yield root, [os.path.join(root, name) for name in files]
 
 
 #: Folders that hold thousands of files and never a user's input.
