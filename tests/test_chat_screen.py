@@ -1828,3 +1828,18 @@ def test_the_ovms_engine_keeps_the_configs_cap_unless_told_otherwise():
     engine.max_new_tokens = 300                    # /tokens 300
     assert agent.llm.max_tokens == 300
 
+
+def test_reasoning_before_a_lone_closing_tag_goes_in_the_fold():
+    """Qwen3.5's template opens <think> in the PROMPT, so a thinking reply is
+    "reasoning </think> answer". The answer was right, but the reasoning was
+    thrown away, so /thinking on showed nothing (AI PC hands-on test)."""
+    reasoning, answer = chat_screen.split_thinking(
+        "The bat is 1.00 more, so 2x + 1.00 = 1.10.\n</think>\n\n"
+        "The ball costs 0.05.")
+    assert reasoning.startswith("The bat is 1.00 more")
+    assert answer == "The ball costs 0.05."
+
+
+def test_an_answer_with_no_tags_has_no_reasoning():
+    assert chat_screen.split_thinking("Just the answer.") == ("", "Just the answer.")
+

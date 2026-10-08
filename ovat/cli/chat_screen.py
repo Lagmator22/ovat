@@ -91,7 +91,7 @@ SESSIONS_DIR = "sessions"
 # strip_thinking lives in ui.py, not here: the plain CLI needs it too and
 # this module imports textual. One copy, per the single-source-of-truth
 # rule -- two would drift the moment a new tag spelling turned up.
-from ovat.cli.ui import strip_thinking, _THINK_BLOCK, _THINK_OPEN
+from ovat.cli.ui import strip_thinking, _THINK_BLOCK, _THINK_CLOSE, _THINK_OPEN
 
 
 def split_thinking(text: str) -> tuple:
@@ -107,6 +107,15 @@ def split_thinking(text: str) -> tuple:
     unclosed = _THINK_OPEN.search(remainder)
     if unclosed:
         reasoning.append(remainder[unclosed.start():])
+    else:
+        # A DANGLING </think>: Qwen3/3.5's chat template opens the block in
+        # the PROMPT, so the reply is "reasoning </think> answer" with no
+        # opening tag. strip_thinking already drops that reasoning from the
+        # answer; it was dropped from here too, so /thinking on showed
+        # nothing for a model that had just reasoned at length.
+        closing = _THINK_CLOSE.search(remainder)
+        if closing and remainder[:closing.start()].strip():
+            reasoning.append(remainder[:closing.start()])
     return "\n".join(reasoning).strip(), strip_thinking(text)
 
 
