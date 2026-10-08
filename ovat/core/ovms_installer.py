@@ -358,9 +358,11 @@ def install(root: str = DEFAULT_ROOT, version: str = OVMS_VERSION,
             force: bool = False, on_progress=None) -> tuple:
     """Put a usable OVMS under `root`. Returns (binary_path, what_happened).
 
-    what_happened is 'already-installed' or 'installed', so the CLI can say
-    which without re-deriving it. Idempotent by default: running this twice is
-    a no-op, which is what makes it safe to call from `serve` and from scripts.
+    what_happened is 'already-installed', 'installed', or
+    'installed-unverified' (the release published no checksum, so there was
+    nothing to check the archive against), so the CLI can say which without
+    re-deriving it. Idempotent by default: running this twice is a no-op,
+    which is what makes it safe to call from `serve` and from scripts.
 
     Raises RuntimeError on a checksum mismatch, and leaves nothing behind.
     """
@@ -411,4 +413,7 @@ def install(root: str = DEFAULT_ROOT, version: str = OVMS_VERSION,
         # tarfile preserves the executable bit, but a restrictive umask during
         # extraction can still land it non-executable.
         os.chmod(binary, os.stat(binary).st_mode | 0o111)
-    return binary, "installed"
+    # Installing without a checksum is allowed (see _expected_sha256), but it
+    # must not look the same as a verified install: both used to return
+    # "installed", so no caller could tell the user nothing was checked.
+    return binary, "installed" if expected else "installed-unverified"
