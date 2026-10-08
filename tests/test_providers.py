@@ -196,6 +196,83 @@ def test_the_vision_pipeline_is_built_with_those_properties(monkeypatch):
     assert seen["props"] == {"INFERENCE_PRECISION_HINT": "f32"}
 
 
+class _RecordingVLMPipe:
+    """Records what the vision provider hands VLMPipeline.generate."""
+
+    def __init__(self):
+        self.chat_open = False
+        self.calls = []
+
+    def start_chat(self):
+        self.chat_open = True
+
+    def finish_chat(self):
+        self.chat_open = False
+
+    def generate(self, prompt, **kwargs):
+        self.calls.append({"prompt": prompt, "kwargs": kwargs,
+                           "in_chat": self.chat_open})
+        return "A description."
+
+
+def _vision_provider(monkeypatch, model_path):
+    from ovat.providers import vlm_genai
+
+    pipe = _RecordingVLMPipe()
+    monkeypatch.setattr(vlm_genai.ov_genai, "VLMPipeline",
+                        lambda path, device, **props: pipe)
+    return vlm_genai.GenAIVLMProvider(model_path, "CPU"), pipe
+
+
+def _png(tmp_path):
+    from PIL import Image
+
+    path = tmp_path / "pixel.png"
+    Image.new("RGB", (4, 4), "blue").save(path)
+    return str(path)
+
+
+def test_a_unified_vision_model_describes_without_thinking(tmp_path,
+                                                           monkeypatch):
+    """Measured on the AI PC with Qwen3.5-4B on the GPU: the tool returned the
+    model's reasoning ("The user wants a description... 1. Identify") cut at
+    the 200-token cap, so the agent never got a description. Turning thinking
+    off in the chat template gave the description in 13-138 tokens (0.7-4.3 s)
+    instead of 255-452 tokens (8.3-13.9 s) for the reasoning to finish."""
+    import openvino_genai as ov_genai
+
+    provider, pipe = _vision_provider(monkeypatch, _unified_export(tmp_path))
+    provider.generate("Describe this image.", [_png(tmp_path)])
+
+    (call,) = pipe.calls
+    prompt = call["prompt"]
+    assert isinstance(prompt, ov_genai.ChatHistory), (
+        "a unified model was asked with a plain string, so its template "
+        "thinks first")
+    assert prompt.get_extra_context() == {"enable_thinking": False}
+    assert prompt.get_messages()[-1]["content"] == "Describe this image."
+    assert len(call["kwargs"]["images"]) == 1
+
+
+def test_a_plain_vision_model_keeps_its_chat_session_path(tmp_path,
+                                                          monkeypatch):
+    """Qwen2-VL has no thinking switch; its path must not change."""
+    folder = tmp_path / "Qwen2-VL-2B-Instruct-INT4"
+    folder.mkdir()
+    for name in ("openvino_language_model.xml",
+                 "openvino_text_embeddings_model.xml",
+                 "openvino_vision_embeddings_model.xml"):
+        (folder / name).write_text("")
+    (folder / "config.json").write_text(json.dumps({"model_type": "qwen2_vl"}))
+
+    provider, pipe = _vision_provider(monkeypatch, str(folder))
+    provider.generate("Describe this image.", [_png(tmp_path)])
+
+    (call,) = pipe.calls
+    assert call["prompt"] == "Describe this image."
+    assert call["in_chat"] is True
+
+
 # The generation cap: a number caps the answer, None means "until EOS".
 
 class _FakePipe:

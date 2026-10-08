@@ -21,12 +21,33 @@ class GenAIVLMProvider(VLMProvider):
     """Local vision-language model via openvino_genai.VLMPipeline."""
 
     def __init__(self, model_path: str, device: str = "CPU", max_new_tokens: int = 200):
+        from ovat.core.model_scout import identify_model
+
         self.pipe = ov_genai.VLMPipeline(model_path, device,
                                          **_precision_properties(device))
         self.max_new_tokens = max_new_tokens
+        # A unified export (Qwen3.5) is a THINKING model: its chat template
+        # opens a reasoning block, and the description only comes after it.
+        self.is_unified = identify_model(model_path)[0] == "unified"
 
     def generate(self, prompt: str, images: list[str]) -> str:
         tensors = [self._load_image(p) for p in images]   # paths -> tensors
+        if self.is_unified:
+            # Thinking OFF at the source, through the template's own switch
+            # (the way GenAILLMProvider passes model.enable_thinking).
+            # Measured on the AI PC, Qwen3.5-4B on the GPU, three describe
+            # calls: with thinking on, all three spent the 200-token cap on
+            # reasoning ("The user wants a description... 1. Identify") and
+            # returned no description; letting the reasoning finish took
+            # 255-452 tokens and 8.3-13.9 s before a closing </think>. Off,
+            # the description came in 13-138 tokens and 0.7-4.3 s. Stripping
+            # the reasoning afterwards (text.strip_thinking) only works once
+            # it has finished, so it would need that larger budget every call.
+            # A ChatHistory is stateless: no start_chat() around it.
+            history = ov_genai.ChatHistory([{"role": "user", "content": prompt}])
+            history.set_extra_context({"enable_thinking": False})
+            return str(self.pipe.generate(history, images=tensors,
+                                          max_new_tokens=self.max_new_tokens))
         # start_chat() applies the model's chat template, which gives clean
         # output and a proper stop. (It does NOT cure "!!!!": that is the f16
         # precision problem, see _precision_properties.)

@@ -87,6 +87,9 @@ as always `"stop"`.
 - `ovat/providers/retriever_memory.py`: in-memory vector store, the second
   Retriever implementation (proves the ABC is the right shape).
 - `ovat/providers/vlm_genai.py`: vision model, reached via `describe_image`.
+  A unified model (Qwen3.5) is asked with thinking OFF (ChatHistory +
+  `enable_thinking: False`): with it on, the 200-token cap was all reasoning
+  and no description. Plain VLMs (Qwen2-VL) keep the start_chat() path.
 
 ### core
 - `ovat/core/model_server.py`: OVMS lifecycle: build args, start (logs to
@@ -489,8 +492,6 @@ machine instead of the code.
 ## Open work (2026-10-08)
 
 On the AI PC:
-- `describe_image` returns the vision model's reasoning ("The user wants a
-  description... 1. Identify") as the tool result; strip it. Needs Qwen3.5.
 - Re-run the round-2 question set once on main with 2026.4.1 pinned, as a
   regression check after the October fixes.
 - The human checklists from both rounds (TUI: Esc/Ctrl-C tree kill,
