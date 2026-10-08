@@ -317,8 +317,8 @@ def test_the_sources_table_is_redrawn_every_tick_not_once():
     from ovat.cli import telemetry_screen
 
     redraw = inspect.getsource(telemetry_screen.TelemetryScreen._redraw)
-    assert "_fill_sources_table" in redraw, (
-        "the table is not refreshed on the redraw tick")
+    assert "_sources_line" in redraw, (
+        "the sources line is not refreshed on the redraw tick")
 
 
 def test_live_mode_returns_a_table_rather_than_printing_it():
