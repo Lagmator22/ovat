@@ -350,3 +350,52 @@ def test_unsupported_distros_are_warned_about(tmp_path, monkeypatch,
     assert (note is not None) is expect_note
     if expect_note:
         assert "ubuntu24" in note
+
+
+# Which release an installed binary is. A pin that only checks for the FILE
+# never reaches a machine that already has an older build.
+
+def test_the_version_is_read_from_the_binary(monkeypatch):
+    import subprocess
+
+    from ovat.core import ovms_installer
+
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"], seen["env"] = cmd, kw.get("env")
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout="OpenVINO Model Server 2026.2.1.1122f03bf\n"
+                           "OpenVINO backend 2026.2.1-21919\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert ovms_installer.binary_version("/x/ovms") == "2026.2.1"
+    assert seen["cmd"] == ["/x/ovms", "--version"]
+    assert seen["env"] is not None          # under ovms_env(), or Windows exits 53
+
+
+def test_a_commit_hash_is_not_read_as_a_patch_level(monkeypatch):
+    """An older AI PC build prints 2026.2.5e9dcfc46: release 2026.2, commit
+    5e9dcfc46. Reading it as 2026.2.5 would invent a release."""
+    import subprocess
+
+    from ovat.core import ovms_installer
+
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw:
+                        subprocess.CompletedProcess(
+                            cmd, 0, stdout="OpenVINO Model Server "
+                                           "2026.2.5e9dcfc46\n", stderr=""))
+    assert ovms_installer.binary_version("/x/ovms") == "2026.2"
+
+
+def test_an_unreadable_binary_has_no_version(monkeypatch):
+    import subprocess
+
+    from ovat.core import ovms_installer
+
+    def boom(cmd, **kw):
+        raise OSError("exec format error")
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert ovms_installer.binary_version("/x/ovms") is None
+

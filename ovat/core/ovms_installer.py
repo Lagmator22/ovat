@@ -20,6 +20,7 @@ ever edits PATH.
 """
 import hashlib
 import os
+import re
 import shutil
 import sys
 import tarfile
@@ -168,6 +169,35 @@ def installed_binary(root: str = DEFAULT_ROOT) -> str | None:
         if os.path.isfile(candidate):
             return candidate
     return None
+
+
+#: "OpenVINO Model Server 2026.2.1.1122f03bf" -> 2026.2.1. The third part
+#: must end at a dot, space or the end: an older build on the AI PC prints
+#: "2026.2.5e9dcfc46", where "5e9dcfc46" is a commit hash, not a patch level.
+_VERSION_LINE = re.compile(
+    r"OpenVINO Model Server\s+(\d+\.\d+(?:\.\d+(?=[.\s]|$))?)")
+
+
+def binary_version(binary: str, timeout: float = 15.0) -> str | None:
+    """The release an ovms binary reports, e.g. "2026.2.1", or None.
+
+    Asked of the binary itself, so it works for every install, including the
+    ones made before OVAT knew to record a version and the ones a user
+    unpacked by hand. Run under ovms_env(): measured on the AI PC, bare
+    `ovms --version` exits 53 with no output on Windows because it cannot
+    find its own DLLs, while under ovms_env() it prints the version.
+    """
+    import subprocess
+
+    from ovat.core.model_server import ovms_env
+    try:
+        done = subprocess.run([binary, "--version"], capture_output=True,
+                              text=True, timeout=timeout,
+                              env=ovms_env(binary))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    match = _VERSION_LINE.search(f"{done.stdout}\n{done.stderr}")
+    return match.group(1) if match else None
 
 
 def _expected_sha256(asset_url: str) -> str | None:

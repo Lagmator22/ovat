@@ -1336,6 +1336,48 @@ def test_setup_command_is_reachable_and_reports_what_it_did(monkeypatch):
     assert "PATH" in result.output
 
 
+def _existing_ovms(monkeypatch, version):
+    from ovat.cli import main as cli_main
+    from ovat.core import ovms_installer
+
+    monkeypatch.setattr(cli_main.sys, "platform", "linux")
+    monkeypatch.setattr(ovms_installer, "asset_for_platform",
+                        lambda version=None: ("ovms_test.tar.gz", "file:///x"))
+    monkeypatch.setattr(ovms_installer, "installed_binary",
+                        lambda root=None: "/home/u/.ovat/ovms/bin/ovms")
+    monkeypatch.setattr(ovms_installer, "binary_version", lambda b: version)
+
+    def no_download(**kw):
+        raise AssertionError("setup must not download without --force")
+
+    monkeypatch.setattr(ovms_installer, "install", no_download)
+
+
+def test_setup_says_when_the_installed_ovms_is_not_the_pinned_one(monkeypatch):
+    """Checking only that a binary existed meant the 2026.4.1 pin never
+    reached a machine that already had 2026.2.1: "already installed"."""
+    from ovat.core import ovms_installer
+
+    _existing_ovms(monkeypatch, "2026.2.1")
+    result = runner.invoke(app, ["setup"])
+    flat = " ".join(result.output.split())
+    assert result.exit_code == 0, result.output
+    assert "OVMS 2026.2.1 is installed" in flat
+    assert f"pins {ovms_installer.OVMS_VERSION}" in flat
+    assert "ovat setup --force" in flat
+    assert "already installed" not in flat
+
+
+def test_setup_says_already_installed_only_for_the_pinned_build(monkeypatch):
+    from ovat.core import ovms_installer
+
+    _existing_ovms(monkeypatch, ovms_installer.OVMS_VERSION)
+    result = runner.invoke(app, ["setup"])
+    flat = " ".join(result.output.split())
+    assert result.exit_code == 0, result.output
+    assert f"OVMS {ovms_installer.OVMS_VERSION} is already installed" in flat
+
+
 def test_setup_says_nothing_to_do_on_macos_and_exits_zero(monkeypatch):
     """Not an error. An unsupported platform is a fact to report, and exiting
     1 would fail any script that runs setup unconditionally."""
