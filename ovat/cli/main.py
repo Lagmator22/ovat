@@ -307,6 +307,7 @@ def run(
     # name comes from the CONFIG; see ENGINE_LABELS for why this is not a
     # conditional expression any more.
     rprint(f"[dim]engine:[/dim] [bold]{esc(_engine_label(cfg.agent.type))}[/bold]")
+    _warn_if_index_is_stale(cfg)
 
     # If a server log is readable, say something about the KV cache BEFORE the
     # run rather than explaining it afterwards. A full cache is the leading
@@ -466,6 +467,22 @@ def _close_out_run(cfg, agent, collector, telemetry_path, trace_path,
         _write_trace(trace_path, cfg, agent, peak_rss_mb=peak_rss_mb,
                      error=error)
     close_agent(agent)
+
+
+def _warn_if_index_is_stale(cfg) -> None:
+    """Say so when answers would come from an old copy of the documents."""
+    if cfg.rag is None:
+        return
+    from ovat.rag.indexer import stale_sources
+    stale = stale_sources(cfg.rag.retriever.db_path)
+    if not stale:
+        return
+    shown = ", ".join(stale[:3]) + (f" and {len(stale) - 3} more"
+                                    if len(stale) > 3 else "")
+    rprint(f"[yellow]{len(stale)} indexed document(s) changed since "
+           f"`ovat index` ran:[/yellow] {esc(shown)}. [dim]Answers may "
+           f"quote the old text; re-run[/dim] [bold]ovat index[/bold] "
+           f"[dim]on that folder.[/dim]")
 
 
 def _report_telemetry_file(path: str, sink) -> bool:
@@ -838,6 +855,7 @@ def chat(
                f"{esc(model_path)}:[/red] {esc(exc)}")
         raise typer.Exit(code=1)
 
+    _warn_if_index_is_stale(cfg)
     # finally: the retriever owns a SQLite connection; close it even if the
     # model call raises, so the index file is always flushed and unlocked.
     try:
@@ -862,7 +880,7 @@ def index(
     chunks. After this, `ovat run` can answer questions from those documents.
     """
     from ovat.agent.factory import build_rag
-    from ovat.rag.indexer import index_folder, iter_text_files
+    from ovat.rag.indexer import index_folder, iter_text_files, record_index
 
     cfg = _load_config(config)
     if cfg.rag is None:
@@ -940,6 +958,7 @@ def index(
         # Close the vector store so every chunk is flushed to the .db file and
         # its lock is released, even when indexing fails halfway.
         retriever.close()
+    record_index(cfg.rag.retriever.db_path, summary["indexed"])
     rprint(f"[green]Indexed[/green] {summary['chunks']} chunks "
            f"from {summary['files']} files.")
 

@@ -126,7 +126,7 @@ def test_index_folder_then_search_returns_chunk_with_citation(tmp_path):
 
     retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384, db_path=":memory:")
     summary = index_folder(str(tmp_path), retriever, size=512, overlap=0)
-    assert summary == {"files": 2, "chunks": 2}
+    assert (summary["files"], summary["chunks"]) == (2, 2)
 
     hits = search_docs_impl("python is great for ai", top_k=1, retriever=retriever)
     assert hits[0]["text"] == "python is great for ai"
@@ -265,7 +265,8 @@ def test_index_folder_still_works_with_no_callback(tmp_path):
     (tmp_path / "a.md").write_text("content", encoding="utf-8")
     retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384,
                                            db_path=":memory:")
-    assert index_folder(str(tmp_path), retriever) == {"files": 1, "chunks": 1}
+    summary = index_folder(str(tmp_path), retriever)
+    assert (summary["files"], summary["chunks"]) == (1, 1)
 
 
 # Indexing the same folder twice must not duplicate it
@@ -519,3 +520,72 @@ def test_an_unknown_backend_names_the_ones_that_exist():
         build_retriever(cfg, embedder=FakeEmbedder())
     assert "sqlite-vec" in str(caught.value)
     assert "memory" in str(caught.value)
+
+
+# A stale index: answers from an old copy of the documents, with no warning.
+# On the AI PC the NPU example quoted a claim the docs had dropped weeks before.
+
+class _NullRetriever:
+    def add(self, chunks, sources=None):
+        pass
+
+
+def test_an_edited_document_makes_the_index_stale(tmp_path):
+    import os
+
+    from ovat.rag.indexer import index_folder, record_index, stale_sources
+
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("the npu cannot do tool calling", encoding="utf-8")
+    (docs / "b.md").write_text("unchanged", encoding="utf-8")
+    db = str(tmp_path / "index.db")
+
+    summary = index_folder(str(docs), _NullRetriever())
+    record_index(db, summary["indexed"])
+    assert stale_sources(db) == []
+
+    (docs / "a.md").write_text("the npu can do tool calling", encoding="utf-8")
+    later = os.path.getmtime(docs / "a.md") + 60
+    os.utime(docs / "a.md", (later, later))
+    stale = stale_sources(db)
+    assert len(stale) == 1 and stale[0].endswith("a.md")
+
+
+def test_a_deleted_document_is_stale_and_an_old_index_says_nothing(tmp_path):
+    from ovat.rag.indexer import index_folder, record_index, stale_sources
+
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "gone.md").write_text("x", encoding="utf-8")
+    db = str(tmp_path / "index.db")
+    record_index(db, index_folder(str(docs), _NullRetriever())["indexed"])
+    (docs / "gone.md").unlink()
+    assert [s for s in stale_sources(db) if s.endswith("gone.md")]
+
+    # An index from before the manifest existed: nothing to compare against.
+    assert stale_sources(str(tmp_path / "older.db")) == []
+
+
+def test_run_warns_when_answers_would_come_from_old_text(monkeypatch, tmp_path):
+    from typer.testing import CliRunner
+
+    from ovat.cli import main as cli_main
+    from ovat.rag import indexer
+
+    class Agent:
+        tools, max_iterations = {}, 5
+        last_trace = {"totals": {"failed": False}}
+
+        def run(self, text):
+            return "ok"
+
+    monkeypatch.setattr(cli_main, "build_agent", lambda cfg, **k: Agent())
+    monkeypatch.setattr(indexer, "stale_sources", lambda db: ["docs/a.md"])
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\nrag:\n  retriever:\n"
+                      "    db_path: x.db\n", encoding="utf-8")
+    result = CliRunner().invoke(cli_main.app, ["run", str(config), "-i", "hi"])
+    flat = " ".join(result.output.split())
+    assert "changed since `ovat index` ran" in flat and "docs/a.md" in flat
+
