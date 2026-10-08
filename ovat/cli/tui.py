@@ -531,6 +531,10 @@ class _UpdatesPanel(Static):
         self.update(_startup_updates(self.content_size.width))
 
 
+#: The running-command spinner. Braille dots, like most terminal spinners.
+_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
 #: Below this many rows the masthead is hidden. It is a fixed 17 rows, and
 #: under 24 it pushed the input line off the screen: at 83x23 there was
 #: nowhere to type. A screen without its logo still works; one without its
@@ -1115,8 +1119,17 @@ class OvatTUI(App):
         self._busy = True
         # The placeholder doubles as the status line: while a command runs
         # (serve can sit silent for two minutes) the empty prompt says so.
-        self.query_one("#prompt", Input).placeholder = \
-            "running…  Esc cancels  ·  output streams above"
+        # It is LIVE now: a spinner, the elapsed time and the newest output
+        # line, redrawn ten times a second, so a long silent step reads as
+        # working rather than hung (the owner asked for what Claude Code's
+        # own terminal shows). The placeholder, not a new row: the launcher
+        # is laid out to fit 80x24 exactly (see #masthead).
+        self._run_started = time.monotonic()
+        self._run_cmd = cmd
+        self._last_line = ""
+        self._spin = 0
+        self._tick_status()
+        self._status_timer = self.set_interval(0.1, self._tick_status)
         # Width the CHILD is told to render at. Taken from the log's own
         # content box minus the scrollbar, not from the app width: once
         # output overflows, Textual's scrollbar OVERLAYS the last two
@@ -1154,8 +1167,27 @@ class OvatTUI(App):
 
         threading.Thread(target=_force, daemon=True).start()
 
+    def _tick_status(self) -> None:
+        """Redraw the running-command line: spinner, time, latest output."""
+        if not self._busy:
+            return
+        self._spin = (self._spin + 1) % len(_SPINNER)
+        elapsed = time.monotonic() - self._run_started
+        cmd = self._run_cmd if len(self._run_cmd) <= 40 \
+            else self._run_cmd[:39] + "…"
+        latest = f"  ·  {self._last_line[:60]}" if self._last_line else ""
+        # The leading space is for the cursor: in an empty input it sits on
+        # column 0 and would hide the spinner.
+        self.query_one("#prompt", Input).placeholder = (
+            f" {_SPINNER[self._spin]} running {cmd}  ·  {elapsed:.0f}s"
+            f"{latest}  ·  Esc cancels")
+
     def _mark_idle(self) -> None:
         self._busy = False
+        timer = getattr(self, "_status_timer", None)
+        if timer is not None:
+            timer.stop()
+            self._status_timer = None
         self.query_one("#prompt", Input).placeholder = \
             "Run any command (e.g. ovat doctor)  ·  type / for shortcuts"
 
@@ -1184,14 +1216,20 @@ class OvatTUI(App):
                 # iter_display_lines also tames \r progress bars (pip, tqdm)
                 # that would otherwise stall then flood the append-only log.
                 for line in shell.iter_display_lines(proc.stdout):
-                    self.call_from_thread(log.write, Text.from_ansi(line))
+                    text = Text.from_ansi(line)
+                    if text.plain.strip():
+                        self._last_line = text.plain.strip()
+                    self.call_from_thread(log.write, text)
             finally:
                 if proc.stdout:
                     proc.stdout.close()
                 code = proc.wait()
                 self._proc = None
             color = ui.GREEN if code == 0 else ui.RED
-            self.call_from_thread(log.write, Text(f"[exit {code}]", style=color))
+            took = time.monotonic() - self._run_started
+            self.call_from_thread(log.write,
+                                  Text(f"[exit {code} · {took:.1f}s]",
+                                       style=color))
         finally:
             # Always reopen the gate, even when spawn failed; otherwise one
             # typo'd command would lock the TUI forever.

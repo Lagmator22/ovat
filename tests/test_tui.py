@@ -236,6 +236,33 @@ def test_placeholder_shows_running_state_and_restores():
     _run(scenario())
 
 
+def test_the_running_status_is_live_and_reports_the_time():
+    """The owner asked for what Claude Code's own terminal shows: a running
+    command's line should MOVE (spinner, elapsed time, newest output), not
+    sit on a fixed "running..." while serve is silent for minutes."""
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            inp = app.query_one("#prompt", Input)
+            inp.value = py_command(
+                "import time;print('step one', flush=True);time.sleep(30)")
+            await pilot.press("enter")
+            await pilot.pause(1.5)
+            first = inp.placeholder
+            await pilot.pause(1.2)
+            second = inp.placeholder
+            assert first != second, "the status line did not move"
+            assert "step one" in second           # the newest output line
+            assert "s  ·" in second                # elapsed time
+            app._cancel_running()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            log_text = "\n".join(str(line.text) for line in
+                                 app.query_one("#output", RichLog).lines)
+            assert "s]" in log_text                # [exit N · 1.2s]
+    _run(scenario())
+
+
 def test_running_a_real_command_streams_into_the_log():
     async def scenario():
         app = OvatTUI()
