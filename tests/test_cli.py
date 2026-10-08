@@ -1881,6 +1881,33 @@ def test_telemetry_does_not_claim_a_file_it_could_not_write(tmp_path):
     assert not target.exists()
     assert "telemetry written to" not in flat
     assert "could not write" in flat
+    # And it is a failure: a script checking the exit code would otherwise
+    # go on to read a file that does not exist (AI PC, round 1).
+    assert result.exit_code == 1
+
+
+def test_telemetry_once_writes_its_snapshot_to_out(tmp_path):
+    """Only the clock loop recorded to the file, so --once --out wrote
+    nothing and printed nothing about it."""
+    import json
+
+    out = tmp_path / "once.jsonl"
+    result = runner.invoke(app, ["telemetry", "--once", "--out", str(out)])
+    assert result.exit_code == 0, result.output
+    lines = out.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    assert "system.cpu_pct" in json.loads(lines[0])
+    assert "telemetry written to" in " ".join(result.output.split())
+
+
+def test_telemetry_once_says_intel_is_not_sampled(monkeypatch):
+    """--once never starts Intel UT; without a line saying so, its missing
+    rows read as idle hardware."""
+    monkeypatch.setattr("ovat.telemetry.sources.IntelHardwareSource",
+                        _StartedButSilent)
+    result = runner.invoke(app, ["telemetry", "--once"])
+    assert result.exit_code == 0, result.output
+    assert "intel not sampled by --once" in " ".join(result.output.split())
 
 
 def test_run_telemetry_does_not_claim_a_file_it_could_not_write(monkeypatch,
