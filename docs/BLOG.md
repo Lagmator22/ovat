@@ -181,25 +181,31 @@ ovat setup
 ```
 
 That is the whole install. `ovat setup` works out which operating system you
-are on - and on Linux, which distribution - downloads the matching OpenVINO
+are on (and on Linux, which distribution), downloads the matching OpenVINO
 Model Server archive, checks its SHA-256, and unpacks it into `~/.ovat/ovms`,
 a folder OVAT already searches. **Nothing is added to your `PATH` and no
-environment variable is needed.** Run it once per machine; running it again is
-a no-op.
+environment variable is needed.** Run it once per machine.
+
+It installs OVMS 2026.4.1, the version OVAT is tested against. That pin was
+measured, not picked for being newest: on 15 tool-calling questions through
+all four engines, 2026.4.1 answered 56 of 60 correctly against 42 of 60 for
+2026.2.1, and its GPU server peaked at 4.9 GB instead of 17.3 GB. If an older
+OVMS is already installed, `ovat setup` and `ovat doctor` say so, and
+`ovat setup --force` replaces it.
 
 On macOS it tells you there is nothing to install, because Intel publishes
-Windows and Linux x86-64 builds only, and points you at `ovat chat` - which
+Windows and Linux x86-64 builds only, and points you at `ovat chat`, which
 runs a model locally with no server at all.
 
-> **Why a subcommand and not the wheel?** The archive is 126–185 MB, Linux
+> **Why a subcommand and not the wheel?** The archive is 126 to 185 MB, Linux
 > needs three different builds that cannot be chosen when a wheel is built,
-> and macOS has no build at all - so bundling it would charge every Mac user
+> and macOS has no build at all, so bundling it would charge every Mac user
 > ~180 MB for a binary that cannot run. This is the same shape as
 > `playwright install`.
 
 If you would rather unpack it yourself, the README has the manual steps. One
 warning if you do: take the **`python_on`** build. The C++-only `python_off`
-package cannot do tool calling, and the failure is silent - the agent answers
+package cannot do tool calling, and the failure is silent: the agent answers
 normally and simply never calls a tool.
 
 Then:
@@ -264,6 +270,10 @@ The `sources:` line is the point. Retrieval is easy to fake and hard to trust, s
 OVAT prints the paths **itself**, from the tool result, not by asking the model
 to remember to cite them. Models comply most of the time, which is exactly the
 sort of "most of the time" that ruins a demo.
+
+The index also remembers when it read each file. Edit a document afterwards
+and the next `ovat run` or `ovat chat` names it in a warning, because an old
+index answers just as confidently from text that is no longer there.
 
 The config that does this is fifteen lines:
 
@@ -394,10 +404,10 @@ model and OVMS-with-tools without leaving the conversation.
 
 The constraint that shaped it is worth stating, because it is a constraint
 rather than a feature: **the CLI must work with no TUI installed.** `textual`
-and `pyfiglet` live in the `[tui]` extra only, module-level `import textual` is
-permitted in exactly six files, and a test reads the source and fails the build
-if a seventh appears. The same rule keeps LangChain, LlamaIndex and the Agents
-SDK out of a plain CLI import.
+and `pyfiglet` live in the `[tui]` extra only, a module-level `import textual`
+appears only in the TUI's own files, and a test fails the build if the CLI's
+entry point imports it or a command stops working without it. The same rule
+keeps LangChain, LlamaIndex and the Agents SDK out of a plain CLI import.
 
 That is easy to say and easy to break -- one top-level import in the wrong module
 and a base install crashes on startup. And the dev test suite cannot catch it,
@@ -514,6 +524,18 @@ tools:
 
 OVAT launches the server, asks what tools it advertises, and hands them to the
 agent exactly like built-ins. The agent cannot tell the difference.
+
+An MCP server starts with only a few of your environment variables, so a
+server you did not write cannot read every secret in your shell. If one needs
+more, list them under `env:`, and `${VAR}` is filled in from your shell:
+
+```yaml
+  - name: my_api_tool
+    type: mcp_stdio
+    command: ["python", "my_api_tool.py"]
+    env:
+      API_TOKEN: ${MY_TOKEN}
+```
 
 The door swings both ways: OVAT's own tools are MCP servers too, so
 `python -m ovat.tools.transcribe` gives any MCP-aware agent OpenVINO Whisper.
