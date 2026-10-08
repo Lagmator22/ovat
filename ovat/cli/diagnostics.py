@@ -171,7 +171,20 @@ def check_ovms_serving(config_binary: str | None = None) -> Check:
         managed = os.path.normcase(os.path.abspath(path)).startswith(
             os.path.normcase(os.path.abspath(DEFAULT_ROOT)))
         origin = "managed by 'ovat setup'" if managed else "manual install"
-        return Check("OVMS serving", OK, f"ovms via {how} [{origin}]: {path}")
+        # And which RELEASE: a pin only helps if the running build matches
+        # it. 2026.2.1 is measurably worse than the 2026.4.1 pin (42 vs 56 of
+        # 60 answers on the AI PC), and nothing else would say it is there.
+        from ovat.core.ovms_installer import OVMS_VERSION, binary_version
+        have = binary_version(path)
+        if have and have != OVMS_VERSION:
+            fix = ("upgrade with 'ovat setup --force'" if managed else
+                   "run 'ovat setup' for the pinned build")
+            return Check("OVMS serving", WARN,
+                         f"ovms {have} via {how} [{origin}], but OVAT pins "
+                         f"{OVMS_VERSION}; {fix}: {path}")
+        release = f" {have}" if have else ""
+        return Check("OVMS serving", OK,
+                     f"ovms{release} via {how} [{origin}]: {path}")
     # One actionable line beats four options: `ovat setup` asks nothing of the
     # user and edits no PATH.
     return Check("OVMS serving", WARN,

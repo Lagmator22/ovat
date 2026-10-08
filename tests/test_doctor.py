@@ -99,6 +99,28 @@ def test_ovms_serving_reports_a_config_supplied_binary(monkeypatch, tmp_path):
     assert "config" in check.detail and str(exe) in check.detail
 
 
+def test_doctor_warns_when_ovms_is_not_the_pinned_build(monkeypatch, tmp_path):
+    """A pin only helps if the running build matches it; 2026.2.1 answered
+    42/60 against the pin's 56/60 on the AI PC, and nothing said so."""
+    from ovat.cli import diagnostics
+    from ovat.core import ovms_installer
+    monkeypatch.setattr(diagnostics.sys, "platform", "linux")
+    import ovat.core.ovms_locator as locator
+    (tmp_path / locator._EXE).write_text("")
+
+    monkeypatch.setattr(ovms_installer, "binary_version", lambda b: "2026.2.1")
+    check = diagnostics.check_ovms_serving(str(tmp_path))
+    assert check.status == WARN
+    assert "2026.2.1" in check.detail
+    assert ovms_installer.OVMS_VERSION in check.detail
+
+    monkeypatch.setattr(ovms_installer, "binary_version",
+                        lambda b: ovms_installer.OVMS_VERSION)
+    check = diagnostics.check_ovms_serving(str(tmp_path))
+    assert check.status == OK
+    assert ovms_installer.OVMS_VERSION in check.detail
+
+
 def test_device_routing_check_shows_the_layer9_table():
     from ovat.cli.diagnostics import check_device_routing
     check = check_device_routing()

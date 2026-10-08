@@ -1206,8 +1206,24 @@ def setup(
 
     existing = ovms_installer.installed_binary(root)
     if existing and not force:
-        rprint(f"[green]OVMS is already installed[/green] → {esc(existing)}")
-        rprint("[dim]Re-download with[/dim] [bold]ovat setup --force[/bold]")
+        # The version, not just the file. Checking only that a binary existed
+        # meant a new pin never reached anyone: after the move to 2026.4.1,
+        # every machine that already had 2026.2.1 was told "already
+        # installed" and kept the build the pin was moved away from.
+        pinned = ovms_version or ovms_installer.OVMS_VERSION
+        have = ovms_installer.binary_version(existing)
+        if have == pinned:
+            rprint(f"[green]OVMS {esc(have)} is already installed[/green] → "
+                   f"{esc(existing)}")
+            rprint("[dim]Re-download with[/dim] [bold]ovat setup --force"
+                   "[/bold]")
+        else:
+            found = f"OVMS {have}" if have else "an OVMS of unknown version"
+            rprint(f"[yellow]{esc(found)} is installed[/yellow] → "
+                   f"{esc(existing)}, but this OVAT pins "
+                   f"[bold]{esc(pinned)}[/bold].")
+            rprint("[dim]Replace it with[/dim] [bold]ovat setup --force"
+                   "[/bold]")
         return
 
     rprint(f"  download : [bold]{esc(asset)}[/bold]")
