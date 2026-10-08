@@ -432,6 +432,131 @@ def test_intel_ut_writes_into_a_scratch_folder_and_cleans_it_up(monkeypatch,
     assert not os.path.exists(out_dir), "the trace directory was left behind"
 
 
+def test_intel_ut_is_asked_to_collect_for_longer_than_one_second(monkeypatch,
+                                                                tmp_path):
+    """`--continuous` alone collects for UT's default duration, ONE second.
+
+    UT's own AGENTS.md: "-t <sec> ... Seconds to collect for system-wide
+    analysis when no -a is given (must be a positive integer)", default 1.
+    Measured on the AI PC: without -t, ut printed "UT EXAMPLE RUNNING FOR 1
+    SECOND(S)" and exited, so the hardware source died a second after start;
+    with -t 86400 it was still running and printing after 12 s.
+    """
+    from ovat.telemetry.sources import IntelHardwareSource
+
+    class FakeProc:
+        stdout = None
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            return 0
+
+    captured = {}
+
+    def fake_popen(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return FakeProc()
+
+    monkeypatch.setattr("ovat.telemetry.sources.subprocess.Popen", fake_popen)
+    source = IntelHardwareSource()
+    source.binary = str(tmp_path / "ut")
+    monkeypatch.setattr("ovat.telemetry.sources.sys.platform", "win32")
+    source.start()
+    try:
+        cmd = captured["cmd"]
+        assert "-t" in cmd, "ut collects for one second without -t"
+        assert int(cmd[cmd.index("-t") + 1]) >= 3600
+    finally:
+        source.stop()
+
+
+# Lines copied VERBATIM from ut-tool-ext-v0.2.0-beta1.1 on the AI PC
+# (LunarLake, 2026-10-07), `ut --continuous -t 30 --enable socwatch,level-zero
+# --sampling-interval 500`. The NPU ones were captured while OVMS generated on
+# the NPU. Duration is nanoseconds: measured, it doubled with the sampling
+# interval (507 ms -> 1006 ms) and equals the gap between Timestamps.
+UT_PKG = ("Metric:                 PKG-PWR | PID:        0 | Process:          "
+          "            | Entity: Package_0 Power | Descriptor: Power | Value: "
+          "4738.83 mJ | Timestamp: 1791386264570075600 | Duration: 524996100")
+UT_PKG_FIRST = ("Metric:                 PKG-PWR | PID:        0 | Process:    "
+                "                  | Entity: Package_0 Power | Descriptor: Power "
+                "| Value: 0.00 mJ | Timestamp: 1791386254669176600 | Duration: "
+                "57200")
+UT_VCCGT = ("Metric:           PMT-VCCGT-PWR | PID:        0 | Process:          "
+            "            | Entity:  VCCGT-PWR | Descriptor: VCCGT-PWR | Value: "
+            "3638.00 mJ | Timestamp: 1791386255120116500 | Duration: 450997100")
+UT_NPU_PWR = ("Metric:             PMT-NPU-PWR | PID:        0 | Process:        "
+              "              | Entity:  NPU-PWR | Descriptor: NPU-PWR | Value: "
+              "301.45 mJ | Timestamp: 1791387914309565400 | Duration: 451393200")
+UT_NPU_BW = ("Metric:              PMT-NPU-BW | PID:        0 | Process:         "
+             "             | Entity:  NPU-READS-WRITES | Descriptor: "
+             "NPU-READS-WRITES | Value: 24817571840.00 bytes | Timestamp: "
+             "1791387913858174600 | Duration: 451301500")
+UT_IGFX = ("Metric:      PMT-HW-IGFX-PSTATE | PID:        0 | Process:           "
+           "           | Entity: IGFX | Descriptor:  | Value: 1950.00 MHz | "
+           "Timestamp: 1791386254669195900 | Duration: 76500")
+
+
+def test_ut_metric_lines_become_named_readings():
+    """UT's continuous text, as this build prints it. The old fallback split
+    on the first colon, read "Metric" as the name and dropped every line."""
+    from ovat.telemetry.sources import IntelHardwareSource as I
+
+    # energy over its window is power: mJ / ms = W
+    assert I._parse_metric_line(UT_PKG) == {
+        "pkg_power_w": pytest.approx(4738.83 / 524.9961, abs=1e-3)}
+    assert I._parse_metric_line(UT_VCCGT) == {
+        "vccgt_power_w": pytest.approx(3638.00 / 450.9971, abs=1e-3)}
+    assert I._parse_metric_line(UT_NPU_PWR) == {
+        "npu_power_w": pytest.approx(301.45 / 451.3932, abs=1e-3)}
+    # bytes over the window is bandwidth, in GB/s
+    assert I._parse_metric_line(UT_NPU_BW) == {
+        "npu_bw_gbs": pytest.approx(24817571840 / 0.4513015 / 1e9, abs=1e-3)}
+    # a frequency is already a rate
+    assert I._parse_metric_line(UT_IGFX) == {"igfx_pstate_mhz": 1950.0}
+
+
+def test_a_ut_reading_over_no_real_window_is_absent_not_zero():
+    """Each counter's first line covers ~57 us and reads 0.00 mJ. As watts that
+    is a confident 0.0, which reads as an idle chip. Absent is not zero."""
+    from ovat.telemetry.sources import IntelHardwareSource as I
+
+    assert I._parse_metric_line(UT_PKG_FIRST) == {}
+
+
+def test_ut_lines_that_are_not_metrics_are_ignored():
+    from ovat.telemetry.sources import IntelHardwareSource as I
+
+    for line in ("Note: --sampling-interval overrides sampling intervals in "
+                 "config files for all collectors (500 ms).",
+                 "Successfully configured 2 out of 2 collectors",
+                 "-" * 74, "UT EXAMPLE RUNNING FOR 30 SECOND(S)",
+                 "OK, stopping collection thread", "UT STOPPED"):
+        assert I._parse_metric_line(line) == {}
+
+
+def test_a_running_ut_feeds_its_metrics_through_sample(monkeypatch):
+    """End to end through the reader thread, with the real line shape."""
+    import time
+
+    script = ("import sys, time\n"
+              f"print({UT_PKG!r}); print({UT_NPU_PWR!r})\n"
+              "sys.stdout.flush(); time.sleep(30)\n")
+    source = _started_ut(monkeypatch, script)
+    try:
+        got = {}
+        deadline = time.monotonic() + 5
+        while len(got) < 2 and time.monotonic() < deadline:
+            got.update(source.sample())
+            time.sleep(0.05)
+        assert set(got) == {"pkg_power_w", "npu_power_w"}
+        assert source.note is None, "a source producing numbers is not silent"
+    finally:
+        source.stop()
+
+
 def test_a_source_that_is_live_but_silent_is_reported():
     """Three states, not two: unavailable, live-and-producing, live-and-silent.
 
@@ -1186,9 +1311,9 @@ def _started_ut(monkeypatch, child_code):
 
 
 def test_a_silent_ut_does_not_block_sampling(monkeypatch):
-    """Continuous UT writes binary trace files and nothing on stdout -- the
-    source's own docstring says so. sample() called stdout.readline(), which
-    blocks until a line arrives, i.e. forever. Collector samples sources one
+    """A UT that prints nothing for a while (it does print, but not
+    necessarily often). sample() called stdout.readline(), which blocks
+    until a line arrives, possibly forever. Collector samples sources one
     after another on ONE thread, so CPU, NPU and the KV cache all stopped
     updating after the first tick on any machine with UT installed."""
     import threading

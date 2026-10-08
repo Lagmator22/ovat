@@ -950,6 +950,45 @@ def test_telemetry_names_the_sources_that_cannot_run_here():
     assert result.exit_code == 0        # the table renders either way
 
 
+class _StartedButSilent:
+    """Like the real Intel source: no note until it has been started, then
+    "no reading yet" (on the AI PC ut needs ~1.3 s to its first reading, or
+    6.4 s when the previous ut was killed)."""
+
+    name = "intel"
+    unavailable = None
+
+    def __init__(self, *args, **kwargs):
+        self._started = False
+
+    def start(self):
+        self._started = True
+
+    def sample(self):
+        return {}
+
+    def stop(self):
+        self._started = False
+
+    @property
+    def note(self):
+        return "running, no reading parsed yet" if self._started else None
+
+
+def test_telemetry_says_when_a_started_source_produced_nothing(monkeypatch):
+    """The "live but silent" lines were printed BEFORE the collector started
+    any source. The Intel source only has something to say once it is
+    running, so the line could never appear: measured on the AI PC, a short
+    run showed no Intel rows and no sentence saying why."""
+    monkeypatch.setattr("ovat.telemetry.sources.IntelHardwareSource",
+                        _StartedButSilent)
+    result = runner.invoke(app, ["telemetry", "--seconds", "0.3",
+                                 "--interval", "0.1"])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "intel live but silent: running, no reading parsed yet" in flat
+
+
 def test_telemetry_exits_nonzero_when_nothing_can_be_measured(monkeypatch):
     """Printing an empty table and exiting 0 would look like a machine doing
     nothing."""

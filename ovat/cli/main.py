@@ -1510,8 +1510,8 @@ def telemetry(
     file_sink = JSONFileSink(out) if out else None
     sink = FanOutSink(live, file_sink) if out else live
     # NPUSource before IntelHardwareSource: it reads the driver's own busy
-    # counter and produces an actual percentage, where UT's continuous mode
-    # prints `Metric: ... | Value:` text that OVAT does not parse yet.
+    # counter and produces an actual percentage, which UT's continuous mode
+    # does not report (it gives power, bandwidth and frequency).
     # OVMSLogSource carries the KV cache figure, which is the number the
     # undecoded-tool-call explanation rests on and the only one that has to be
     # captured in the same window as the failure it explains.
@@ -1530,8 +1530,10 @@ def telemetry(
     # And the third state: started, but producing nothing. Without this the
     # table just has no Intel rows, which reads as idle hardware rather than
     # unreadable hardware -- the same "absent is not zero" rule the token
-    # counts follow.
-    for name, note in collector.notes.items():
+    # counts follow. Some sources know this before they start (ovms: no log
+    # line yet); the rest are asked again at the end, below.
+    shown = dict(collector.notes)
+    for name, note in shown.items():
         rprint(f"[yellow]{esc(name)}[/yellow] live but silent: "
                f"[dim]{esc(note)}[/dim]")
     if not collector.available:
@@ -1571,7 +1573,17 @@ def telemetry(
     except KeyboardInterrupt:
         pass
     finally:
+        # Asked again while every source is still RUNNING. The Intel source
+        # only has something to say once started (on the AI PC ut's first
+        # reading takes ~1.3 s, or 6.4 s right after a killed ut, and it may
+        # have exited), so the line above, printed before start(), could
+        # never show it.
+        late = {name: note for name, note in collector.notes.items()
+                if shown.get(name) != note}
         collector.stop()
+        for name, note in late.items():
+            rprint(f"[yellow]{esc(name)}[/yellow] live but silent: "
+                   f"[dim]{esc(note)}[/dim]")
         _print_cache_type(cache_source)
         if out:
             sink.close()

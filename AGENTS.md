@@ -359,9 +359,18 @@ Do not "improve" any of these without reading the reason first.
 - **Intel UT (ut-tool-ext-v0.2.0-beta1.1) rejects `--continuous` with
   `--output`** and exits within a second; the hardware source was dead from
   dade76f until Oct 2026. It now runs with its cwd set to a scratch folder.
-  Continuous mode PRINTS text (`Metric: PKG-PWR | ... | Value: 1568.97 mJ`)
-  that OVAT does not parse yet; a parser needs one full captured line from
-  the AI PC first.
+  `--continuous` alone also STOPS after one second (`-t` defaults to 1);
+  OVAT passes `-t 86400`. Continuous mode prints `Metric: NAME | ... |
+  Value: N unit | Timestamp: T | Duration: D` lines, parsed by
+  `_parse_metric_line` (tests use captured lines verbatim). Duration is
+  nanoseconds by MEASUREMENT, not from UT's docs. Only socwatch produces
+  data in this mode; names stay UT's own (vccgt_power_w, not gpu_power_w)
+  because UT does not document which rail powers what. A ut started right
+  after a KILLED ut takes 6.4 s to its first reading instead of ~1.3 s
+  (measured 5/5 each way). OVAT's stop() has to kill it: UT documents no
+  graceful stop, and Ctrl-Break crashes it (exit 0xC0000409). An early exit
+  after the first line (exit 11 once) was seen 3 times on 2026-10-07 and
+  did not reproduce in 76 starts later the same day; cause not determined.
 
 ### TUI
 - **`#masthead` height stays 17.** At 18 the TUI HANGS at 80x24.
@@ -444,7 +453,8 @@ machine instead of the code.
 On the AI PC, measurement first:
 - `ovat bench --repeat 5` A/B for each unmeasured knob above, then decide
   defaults.
-- Capture one full Intel UT `--continuous` line, then write the parser.
+- Intel UT: the rare early exit after the first line (exit 11) is still
+  unexplained (see Measurement landmines).
 - `enable_thinking: false` on a unified Qwen3.5 through local `/chat`.
 - Upgrade the pinned OVMS (2026.2.1 -> current, 2026.4.1 at the time of
   writing) and re-measure `tool_parser: auto`.
