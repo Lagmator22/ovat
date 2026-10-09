@@ -270,7 +270,7 @@ as always `"stop"`.
     Python beginner; C++ analogies land well. He decides who writes the
     code: when he asks for fixes, write them; when he asks to learn, guide.
 11. **Rollback points**: tags `v0.2.0-w5-6-midterm`, `pre-tui-repair`,
-    `v0.2.0-w7-8-complete`, and the release tags `v1.0.0` to `v1.1.1`. Cut a
+    `v0.2.0-w7-8-complete`, and the release tags `v1.0.0` to `v1.2.0`. Cut a
     new tag before anything risky.
 12. **Merge only on a fully green CI.** Wait ~30 s for checks to register,
     then `if gh pr checks N --watch; then gh pr merge N --merge; fi`. A loop
