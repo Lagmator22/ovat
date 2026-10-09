@@ -206,6 +206,7 @@ class TelemetryScreen(Screen):
 
     def on_mount(self) -> None:
         self._cards: dict = {}
+        self._rebuilding = False
         self._rows: set = set()
         numbers = self.query_one("#tel-live-table", DataTable)
         numbers.add_column("Source", key="source")
@@ -242,9 +243,17 @@ class TelemetryScreen(Screen):
                 line.append(" live", style=f"bold {ui.GREEN}")
         return line
 
-    async def _redraw(self) -> None:
+    def _redraw(self) -> None:
         self.query_one("#tel-sources", Static).update(self._sources_line())
-        await self._sync_cards()
+        # The card rebuild awaits a removal, so it runs as a WORKER. It used
+        # to be awaited right here, inside the timer callback, and closing
+        # the page mid-await raised CancelledError out of the timer: the
+        # suite failed on that, intermittently, on the Linux CI runners.
+        # Textual cancels a screen's workers cleanly when it goes away.
+        if (not self._rebuilding
+                and [m for m, _, _ in self._wanted_cards()] != list(self._cards)):
+            self._rebuilding = True
+            self.run_worker(self._sync_cards(), group="cards", exclusive=True)
         for metric, digits, bar in self._cards.values():
             value = self.live.latest(metric)
             if value is None:
@@ -267,15 +276,27 @@ class TelemetryScreen(Screen):
         and POWER never appeared (AI PC). When the ranking changes, the row
         is rebuilt in the new order.
         """
-        wanted = [entry for entry in _PREFERRED
-                  if self.live.latest(entry[0]) is not None][:MAX_CARDS]
+        try:
+            await self._rebuild_cards()
+        finally:
+            self._rebuilding = False
+
+    def _wanted_cards(self) -> list:
+        """The best-ranked metrics that have data, at most MAX_CARDS."""
+        return [entry for entry in _PREFERRED
+                if self.live.latest(entry[0]) is not None][:MAX_CARDS]
+
+    async def _rebuild_cards(self) -> None:
+        wanted = self._wanted_cards()
         if [entry[0] for entry in wanted] == list(self._cards):
             return
         row = self.query_one("#tel-numbers", Horizontal)
+        # Emptied first, so a redraw tick during the await does not update
+        # cards that are being removed.
+        self._cards = {}
         # AWAITED: removal is asynchronous, and the rebuilt cards reuse the
         # same ids, so mounting before it finishes raises DuplicateIds.
         await row.remove_children()
-        self._cards = {}
         for metric, label, unit in wanted:
             # Built first, mounted once: mounting a card and then its
             # children has a window where card.parent is unset, and Textual

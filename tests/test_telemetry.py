@@ -1246,7 +1246,7 @@ def test_a_headline_card_is_built_before_it_is_mounted():
 
     from ovat.cli import telemetry_screen
 
-    body = inspect.getsource(telemetry_screen.TelemetryScreen._sync_cards)
+    body = inspect.getsource(telemetry_screen.TelemetryScreen._rebuild_cards)
     assert "card.mount(" not in body, (
         "children are mounted into the card after it is mounted; build the "
         "card with its children instead")
