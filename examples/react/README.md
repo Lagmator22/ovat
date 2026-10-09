@@ -88,9 +88,9 @@ engine except `native` needs its own extra:
   is defined once and works identically on all four; a second hand-kept
   registry is how a tool ends up working on one engine and crashing on
   another.
-- **Today only `native` records token counts per turn.** OVMS returns token
-  usage on every reply, but the other engines do not read it yet, so they show
-  a dash in that column, which means "unknown", not zero.
+- **Every engine records token counts.** OVMS returns token usage on every
+  reply; `native` records it per turn, the other three per run. A dash in
+  that column means the server sent none, "unknown", not zero.
 - **The LlamaIndex and OpenAI Agents engines run their own event loop** and
   refuse to start inside one that is already running. That is on purpose, not
   a limitation to work around.

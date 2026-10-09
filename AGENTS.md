@@ -19,15 +19,16 @@ the moment one exists, this file silently stops loading.
 workflow.yml ──load_workflow()──> WorkflowConfig (pydantic, STRICT)
       └─build_agent()──> {LLM provider + tools + optional RAG retriever}
              └─> ONE of four engines, all exposing .run(text) -> text:
-                   native         AgentLoop (loop.py), the only one that
-                                  records per-turn tokens
+                   native         AgentLoop (loop.py), the only one with
+                                  a per-turn trace
                    react          LangChain
                    llamaindex     LlamaIndex FunctionAgent
                    openai-agents  OpenAI Agents SDK
                     └─> the reply carries tool_calls ─> run tool ─> loop
                         the reply carries none ─> answer
-                        (trace in agent.last_trace; framework engines
-                         set agent.last_failed instead)
+                        (agent.last_trace on all four: per-turn on native,
+                         run totals on the framework engines, which also
+                         set agent.last_failed)
 ```
 
 The loop dispatches on the PAYLOAD (does the message carry tool calls), not
@@ -47,6 +48,8 @@ as always `"stop"`.
 - `ovat/agent/factory.py`: config -> wired agent. Tool registry
   (`BUILTIN_TOOL_SCHEMAS` + builders), `mcp_stdio` hookup, `build_llm`,
   `close_agent`.
+- `ovat/agent/usage.py`: `framework_trace()`, the framework engines'
+  last_trace in the native totals shape, and `sum_known` (absent is not zero).
 - `ovat/agent/arg_models.py`: derives per-framework argument models from
   each tool's SCHEMA. Pydantic only, no framework imports. EVERY engine
   derives from here; a hand-kept second registry is how a tool ended up
@@ -56,6 +59,8 @@ as always `"stop"`.
   have BOTH is_chat_model and is_function_calling_model set, or it calls an
   endpoint OVMS does not serve / silently degrades to plain chat. Passes
   `max_iterations` to `run()` (LlamaIndex's own default is 20).
+  `streaming=False`: streamed replies carry usage only with
+  `stream_options`, which OVMS documents for continuous batching only.
 - `ovat/agent/openai_agents_agent.py`: `agent.type: openai-agents`. Three
   things stop it phoning OpenAI instead of OVMS: an explicit AsyncOpenAI
   client on the /v3 base URL, OpenAIChatCompletionsModel (not the default
