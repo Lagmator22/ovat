@@ -20,7 +20,7 @@ Written for OVAT 1.1.1, OVMS 2026.4.1 and openvino-genai 2026.4 or newer.
 **Start here**
 - [1. Glossary](#1-glossary)
 - [2. What OVAT is](#2-what-ovat-is)
-- [3. The whole system, one diagram](#3-the-whole-system-one-diagram)
+- [3. The system in two views](#3-the-system-in-two-views)
 - [4. Design principles](#4-design-principles)
 - [5. Required and optional parts](#5-required-and-optional-parts)
 
@@ -115,55 +115,72 @@ What is in scope, and what is not:
 
 ---
 
-## 3. The whole system, one diagram
+## 3. The system in two views
 
-The animated diagram above follows one request. This one is the full map,
-including the parts a single request does not touch.
+Two diagrams: what the parts are (a stack), and what happens during one run
+(a sequence).
+
+### 3a. The stack
+
+**Diagram: the OVAT stack.** What this shows: the parts of OVAT from the
+interfaces at the top to the hardware at the bottom, which parts are optional,
+and where telemetry reads its numbers.
 
 ```mermaid
 %%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart TD
-    User["User<br/>CLI or TUI"] -->|"1. run or chat"| CLI["OVAT CLI and TUI<br/>Typer, Textual"]
-    CLI -->|"2. load"| Config["workflow.yml<br/>WorkflowConfig<br/>strict pydantic"]
-    Config -->|"3. build"| Factory["Agent factory<br/>factory.py"]
-    Factory -->|"4. pick 1 of 4"| Engines
-
-    subgraph Engines ["Agent engines"]
-        Native["Native loop<br/>loop.py"]
-        LangChain["LangChain<br/>react"]
-        LlamaIndex["LlamaIndex"]
-        OpenAIAgents["OpenAI<br/>Agents SDK"]
+flowchart TB
+    subgraph Interfaces ["1. Interfaces"]
+        direction LR
+        CLI["ovat CLI<br/>cli/main.py"]
+        TUI["Terminal UI<br/>[tui] extra"]
+    end
+    subgraph Config ["2. Configuration"]
+        direction LR
+        YAML["workflow.yml"] --> Schema["WorkflowConfig<br/>strict schema"] --> Factory["Agent factory<br/>factory.py"]
+    end
+    subgraph Engines ["3. Agent engines"]
+        direction LR
+        Native["native<br/>loop.py"]
+        LangChain["react<br/>LangChain"]
+        LlamaIndex["llamaindex<br/>LlamaIndex"]
+        OpenAIAgents["openai-agents<br/>Agents SDK"]
+    end
+    subgraph PT ["4. Providers and tools"]
+        direction LR
+        LLMP["LLM provider<br/>OVMS or GenAI"]
+        RAG["Embeddings and<br/>retriever"]
+        Builtin["Built-in tools<br/>search_docs, transcribe,<br/>describe_image"]
+        MCP["MCP client<br/>external servers"]
+    end
+    subgraph Serving ["5. Serving and runtime"]
+        direction LR
+        OVMS["OVMS server<br/>/v3, decodes<br/>tool calls"]
+        GenAI["openvino_genai<br/>in-process,<br/>no server"]
+    end
+    subgraph HW ["6. Hardware"]
+        direction LR
+        CPU["Intel CPU"]
+        GPU["Intel GPU"]
+        NPU["Intel NPU"]
+    end
+    subgraph Tel ["Telemetry, alongside the stack"]
+        direction TB
+        Sources["Sources<br/>run trace, system,<br/>process, NPU,<br/>OVMS log, Intel UT"] --> Sinks["Sinks<br/>JSON Lines,<br/>TUI page"]
+    end
+    subgraph Opt ["Optional, outside OVAT"]
+        Plano["plano gateway<br/>OpenTelemetry<br/>spans"]
     end
 
-    Engines -->|"5. call the LLM"| Providers
-    Engines <-->|"6. run tools"| Tools
-
-    subgraph Providers ["Providers"]
-        GenAI["GenAI provider<br/>openvino_genai<br/>in-process"]
-        OVMS["OVMS provider<br/>OpenAI SDK<br/>to /v3"]
-    end
-
-    subgraph Tools ["Tools"]
-        Builtin["Builtin tools<br/>search_docs<br/>transcribe<br/>describe_image"]
-        MCP["MCP stdio client<br/>any external<br/>server"]
-    end
-
-    subgraph Gateway ["Optional"]
-        Plano["plano gateway<br/>and id bridge<br/>OTel spans"]
-    end
-
-    OVMS <--> Plano
-    GenAI --> Hardware["Intel CPU<br/>Arc GPU, NPU"]
-    OVMS --> Hardware
-
-    subgraph Telemetry ["Telemetry"]
-        Sources["Sources<br/>AgentTrace<br/>ProcessMemory<br/>System, NPU<br/>IntelHardware<br/>OVMSLog"]
-        Sinks["Sinks<br/>JSONFile<br/>LiveBuffer<br/>FanOut"]
-        Sources -->|"collector<br/>polls"| Sinks
-    end
-
-    Engines -.->|"7. sampled<br/>during the run"| Sources
-    Hardware -.-> Sources
+    Interfaces --> Config
+    Config --> Engines
+    Engines --> PT
+    PT --> Serving
+    Serving --> HW
+    LLMP -.-> Plano
+    Plano -.-> OVMS
+    Engines -.-> Sources
+    Serving -.-> Sources
+    HW -.-> Sources
 
     classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
     classDef config fill:#FFC107,stroke:#9A6700,color:#1F2328
@@ -172,14 +189,89 @@ flowchart TD
     classDef tool fill:#3DD68C,stroke:#1A7F37,color:#0F141A
     classDef telemetry fill:#7A8CA0,stroke:#57606A,color:#0F141A
     classDef hw fill:#57606A,stroke:#8C959F,color:#FFFFFF
-    class User,CLI cli
-    class Config config
+    class CLI,TUI cli
+    class YAML,Schema config
     class Factory,Native,LangChain,LlamaIndex,OpenAIAgents engine
-    class GenAI,OVMS,Plano backend
+    class LLMP,RAG,OVMS,GenAI,Plano backend
     class Builtin,MCP tool
     class Sources,Sinks telemetry
-    class Hardware hw
+    class CPU,GPU,NPU hw
+    style TUI stroke-dasharray:5 4,stroke-width:2px
+    style MCP stroke-dasharray:5 4,stroke-width:2px
+    style Plano stroke-dasharray:5 4,stroke-width:2px
 ```
+
+How to read it:
+
+- **Boxes** are parts of the system, grouped into layers. Each layer uses the
+  one below it.
+- **Solid arrow:** always part of the path. It points from the caller to what
+  it calls. Where two solid paths leave one box, a run takes one of them: the
+  LLM provider talks either to OVMS or to `openvino_genai`.
+- **Dotted arrow:** an optional path, used only when that part is installed or
+  configured, or a measurement that telemetry reads.
+- **Dashed border:** an optional part (the TUI, MCP servers, plano).
+- **Colours** follow the role: blue for interfaces, yellow for configuration,
+  purple for the agent, light blue for model backends, green for tools, slate
+  for telemetry, dark grey for hardware.
+- **Telemetry is drawn last, but it is not a layer.** It sits alongside the
+  stack and reads from the engines, the model server and the hardware.
+
+### 3b. One agent run, step by step
+
+**Diagram: the sequence of one `ovat run`.** What this shows: the calls made,
+in order, from the command line to the answer, including the loop in which the
+model asks for tools.
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "actorBkg": "#0068B5", "actorTextColor": "#FFFFFF", "actorBorder": "#00C7FD", "signalColor": "#57606A", "signalTextColor": "#1F2328", "labelBoxBkgColor": "#FFC107", "labelBoxBorderColor": "#9A6700", "labelTextColor": "#1F2328", "loopTextColor": "#1F2328", "noteBkgColor": "#D0D7DE", "noteBorderColor": "#8C959F", "noteTextColor": "#1F2328"}}}%%
+sequenceDiagram
+    actor User
+    box rgba(0,104,181,0.10) OVAT
+        participant CLI as ovat CLI<br/>cli/main.py
+        participant Config as Config<br/>workflow.py
+        participant Factory as Agent factory<br/>factory.py
+        participant Engine as Agent engine<br/>e.g. loop.py
+        participant Tool as Tool<br/>built-in, or MCP<br/>over stdio
+    end
+    box rgba(0,199,253,0.15) Model server
+        participant OVMS as OVMS<br/>/v3
+    end
+
+    User->>CLI: ovat run workflow.yml -i "question"
+    CLI->>Config: _load_config() calls load_workflow()
+    Config-->>CLI: WorkflowConfig, or one sentence on error
+    CLI->>Factory: build_agent(config)
+    Factory-->>CLI: agent: engine + LLM provider + tools
+    CLI->>Engine: agent.run(question)
+    loop at most agent.max_iterations rounds
+        Engine->>OVMS: chat completion: history + tool schemas
+        OVMS-->>Engine: reply
+        alt the reply carries tool calls
+            Engine->>Tool: run it with the parsed arguments
+            Tool-->>Engine: result, or an "Error: ..." string
+            Note over Engine: add the result to history,<br/>then ask the model again
+        else no tool calls
+            Note over Engine: the reply is the answer,<br/>so the loop ends
+        end
+    end
+    Engine-->>CLI: answer, and the trace on the native loop
+    opt if --trace
+        CLI->>CLI: write the trace JSON
+    end
+    CLI-->>User: answer, sources line, exit code 0 or 1
+```
+
+How to read it:
+
+- **Columns** are the parts involved; time runs from top to bottom.
+- **Solid arrow:** a call. **Dotted arrow:** the value that comes back.
+- **loop:** repeated, at most `agent.max_iterations` times. **alt:** each
+  round takes one of the two branches. **opt:** happens only when the flag is
+  given.
+- The engine in the middle can be any of the four. The native loop calls OVMS
+  through `OVMSLLMProvider`; the framework engines use their own
+  OpenAI-compatible client, pointed at the same `/v3` URL.
 
 ---
 
