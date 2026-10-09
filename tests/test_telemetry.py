@@ -158,7 +158,7 @@ def test_the_agent_source_says_why_it_has_nothing():
     class NoTrace:
         last_trace = None
 
-    assert "native loop" in AgentTraceSource(NoTrace()).unavailable
+    assert "does not record a trace" in AgentTraceSource(NoTrace()).unavailable
 
 
 def test_the_agent_source_drops_unknown_values_rather_than_zeroing_them():

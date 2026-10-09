@@ -15,7 +15,10 @@ works against it without any special glue.
 I import langchain lazily inside the build function. That keeps `import ovat`
 cheap and lets someone who only uses the native loop skip the heavy install.
 """
+import time
+
 from ovat.agent.arg_models import args_model_from_schema
+from ovat.agent.usage import framework_trace
 from ovat.providers.backend import LLMBackend
 from ovat.config.workflow import WorkflowConfig
 
@@ -40,6 +43,22 @@ def _wrap_tools(tools: dict) -> list:
     return wrapped
 
 
+def _usage_per_call(messages: list) -> list:
+    """(prompt, completion) tokens for each model reply among `messages`.
+
+    ChatOpenAI copies the server's `usage` block onto each AIMessage as
+    usage_metadata (input_tokens / output_tokens), and leaves it None when
+    the reply carried none. None stays None: absent is not zero.
+    """
+    calls = []
+    for message in messages:
+        if getattr(message, "type", None) != "ai":
+            continue
+        usage = getattr(message, "usage_metadata", None) or {}
+        calls.append((usage.get("input_tokens"), usage.get("output_tokens")))
+    return calls
+
+
 def _build_chat_model(config: WorkflowConfig):
     """Build a ChatOpenAI pointed at OVMS. Construction makes no network call."""
     from langchain_openai import ChatOpenAI
@@ -59,8 +78,9 @@ class LangChainAgent:
     """Adapter so a LangChain agent looks exactly like my native AgentLoop."""
 
     def __init__(self, graph, tools: dict, max_iterations: int,
-                 system_prompt: str | None):
+                 system_prompt: str | None, engine_name: str = "react"):
         self._graph = graph
+        self.engine_name = engine_name
         # I keep the original tools dict so `ovat run --dry-run` can print the
         # tool names the same way it does for the native loop.
         self.tools = tools
@@ -78,16 +98,20 @@ class LangChainAgent:
         # the native loop's max_iterations.
         self._recursion_limit = max_iterations * 2 + 1
         # True when the last run() could not answer. The framework engines
-        # keep no trace, so this is how `ovat run` and bench learn that a run
-        # failed: the failure sentence below is otherwise just text, and a
+        # keep no per-turn flags, so this is how `ovat run` and bench learn
+        # that a run failed: the failure sentence below is otherwise just text, and a
         # capped run exited 0 like a good one.
         self.last_failed = False
+        # The run trace, in the native loop's shape: what the last run()
+        # cost. Empty until a run has finished.
+        self.last_trace: dict = {}
 
     def run(self, user_message: str) -> str:
         """Run the LangChain agent for one message and return the final text."""
         from langgraph.errors import GraphRecursionError
 
         self.last_failed = False
+        started = time.monotonic()
         try:
             result = self._graph.invoke(
                 {"messages": [*self._messages, ("user", user_message)]},
@@ -98,8 +122,20 @@ class LangChainAgent:
             # question with a half-finished exchange.
             # Same wording as the native loop so the two engines fail alike.
             self.last_failed = True
+            # The graph raised before handing back any messages, so what the
+            # run cost is unknown, not zero.
+            self.last_trace = framework_trace(self.engine_name, None, None,
+                                              True, started)
             return (f"Error: I reached my max of {self.max_iterations} steps "
                     f"without a final answer.")
+        # Everything after the history and this question is what the run
+        # added: one AIMessage per model call, one ToolMessage per tool that
+        # actually ran.
+        new = result["messages"][len(self._messages) + 1:]
+        self.last_trace = framework_trace(
+            self.engine_name, _usage_per_call(new),
+            sum(1 for m in new if getattr(m, "type", None) == "tool"),
+            False, started)
         # The graph returns the FULL message list (input plus everything new),
         # so storing it back is the whole memory update.
         self._messages = result["messages"]
@@ -128,4 +164,5 @@ def build_react_agent(config: WorkflowConfig, tools: dict,
         kwargs["system_prompt"] = config.agent.system_prompt
     graph = create_agent(chat, _wrap_tools(tools), **kwargs)
     return LangChainAgent(graph, tools, config.agent.max_iterations,
-                          config.agent.system_prompt)
+                          config.agent.system_prompt,
+                          engine_name=config.agent.type)

@@ -32,9 +32,11 @@ contract. Inferring a second one is how the two drift apart.
 import asyncio
 import inspect
 import json
+import time
 
 from ovat.text import strip_code_fence
 from ovat.agent.arg_models import json_schema_for_tool
+from ovat.agent.usage import framework_trace
 from ovat.providers.backend import LLMBackend
 from ovat.config.workflow import WorkflowConfig
 
@@ -113,12 +115,40 @@ def _model_settings(config: WorkflowConfig):
                          extra_body=extra or None, **kwargs)
 
 
+def _trace_parts(run) -> tuple[list, int]:
+    """(per-call usage, tools run) from a RunResult or a RunErrorDetails.
+
+    Both carry raw_responses (one ModelResponse per model call) and
+    new_items (one ToolCallOutputItem per tool that actually ran).
+
+    The SDK's own running total, context_wrapper.usage, cannot tell
+    "no usage" from zero: when a reply has no usage block it records
+    Usage(requests=1) with every count 0 (openai_chatcompletions.py). So each
+    reply is read on its own, and one reporting no tokens at all counts as
+    unreported. A real reply always has prompt tokens, so this misreads
+    nothing OVMS sends.
+    """
+    from agents.items import ToolCallOutputItem
+
+    calls = []
+    for response in run.raw_responses:
+        usage = response.usage
+        if usage is None or not (usage.input_tokens or usage.output_tokens):
+            calls.append((None, None))
+        else:
+            calls.append((usage.input_tokens, usage.output_tokens))
+    ran = sum(isinstance(item, ToolCallOutputItem) for item in run.new_items)
+    return calls, ran
+
+
 class OpenAIAgentsAgent:
     """Adapter so an Agents SDK agent looks like my native AgentLoop."""
 
     def __init__(self, agent, tools: dict, max_iterations: int,
-                 system_prompt: str | None):
+                 system_prompt: str | None,
+                 engine_name: str = "openai-agents"):
         self._agent = agent
+        self.engine_name = engine_name
         self.tools = tools
         self.max_iterations = max_iterations
         self.system_prompt = system_prompt
@@ -129,6 +159,8 @@ class OpenAIAgentsAgent:
         self._input_items: list = []
         # True when the last run() could not answer; see LangChainAgent.
         self.last_failed = False
+        # What the last run() cost, in the native loop's shape.
+        self.last_trace: dict = {}
 
     def run(self, user_message: str) -> str:
         """Run for one message and return the final text.
@@ -152,6 +184,7 @@ class OpenAIAgentsAgent:
         from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
 
         self.last_failed = False
+        started = time.monotonic()
         try:
             result = asyncio.run(Runner.run(
                 self._agent,
@@ -161,11 +194,12 @@ class OpenAIAgentsAgent:
                 # same thing in both engines.
                 max_turns=self.max_iterations,
             ))
-        except MaxTurnsExceeded:
+        except MaxTurnsExceeded as exc:
             # History is left untouched: a failed run must not poison the next
             # question with a half-finished exchange.
             # Same wording as the native loop so every engine fails alike.
             self.last_failed = True
+            self._record(exc, started)
             return (f"Error: I reached my max of {self.max_iterations} steps "
                     f"without a final answer.")
         except ModelBehaviorError as exc:
@@ -175,13 +209,29 @@ class OpenAIAgentsAgent:
             # (openai-agents-python#2957). Uncaught, `ovat run` called this
             # "Error talking to OVMS" while the server was fine.
             self.last_failed = True
+            self._record(exc, started)
             available = ", ".join(self.tools) or "none"
             return (f"Error: the model broke the tool-calling contract and "
                     f"the run stopped: {exc}. Tools available: {available}. "
                     f"Naming them in agent.system_prompt usually helps; the "
                     f"native engine also recovers near-miss names itself.")
+        self._record(result, started)
         self._input_items = result.to_input_list()
         return str(getattr(result, "final_output", result) or "").strip()
+
+    def _record(self, outcome, started: float) -> None:
+        """Fill last_trace from a RunResult, or from a failure's run_data.
+
+        On a failure the SDK attaches what the run did before it stopped as
+        the exception's run_data, so a failed run still says what it cost.
+        When that is missing, the cost is unknown, not zero.
+        """
+        if isinstance(outcome, Exception):
+            outcome = getattr(outcome, "run_data", None)
+        calls, ran = (_trace_parts(outcome) if outcome is not None
+                      else (None, None))
+        self.last_trace = framework_trace(self.engine_name, calls, ran,
+                                          self.last_failed, started)
 
 
 def build_openai_agents_agent(config: WorkflowConfig, tools: dict,
@@ -207,4 +257,5 @@ def build_openai_agents_agent(config: WorkflowConfig, tools: dict,
         tools=_wrap_tools(tools),
     )
     return OpenAIAgentsAgent(agent, tools, config.agent.max_iterations,
-                             config.agent.system_prompt)
+                             config.agent.system_prompt,
+                             engine_name=config.agent.type)
