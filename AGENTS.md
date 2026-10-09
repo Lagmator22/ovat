@@ -159,7 +159,8 @@ as always `"stop"`.
   (subprocess layer, slash TEMPLATES, \r progress sampling, process-tree
   kill), `chat_screen.py` (in-process chat, streaming, sessions in
   `.ovat/sessions/`, `/engine` local <-> OVMS), `doctor_screen.py`,
-  `telemetry_screen.py` (live numbers, Digits + TabbedContent),
+  `telemetry_screen.py` (two tabs, Live and Help; a per-source status
+  line refreshed every tick; headline cards re-ranked each tick),
   `widgets.py` (PasteInput, ChatInput, SelectableRichLog), `editing.py`
   (InputHistory + clipboard, no textual), `theme.py`, `commands.py`
   (palette providers).
@@ -171,8 +172,16 @@ as always `"stop"`.
 - `docs/ARCHITECTURE.md` (layers 1-9, the design record the mentors asked
   for), `docs/BLOG.md`, `examples/` (minimal, rag, react, audio-multimodal,
   document-qa, document-qa-npu, plano).
+- `docs/assets/diagrams/`: 5 animated SVG diagrams, each as `-light` and
+  `-dark` picked with `<picture>` (core-flow, agent-loop, engines, devices,
+  rag). Their generator script is NOT in the repo; edit the SVGs directly.
+- The documentation site lives in its OWN repo, Lagmator22/ovat-navigate
+  (local folder ~/ovat_navigate, GitHub Pages:
+  https://lagmator22.github.io/ovat-navigate/). Never add its files here;
+  this repo only links to it. Static, strict CSP, nothing third-party.
 - `.github/workflows/tests.yml` (CI matrix, see History) and `publish.yml`
-  (PyPI, `workflow_dispatch` only).
+  (PyPI; fires on a published GitHub Release, or by hand via
+  `workflow_dispatch` when a release does not trigger it).
 
 ## HARD RULES: breaking these is how you nuke the codebase
 
@@ -220,7 +229,8 @@ as always `"stop"`.
    model (or human) can act on, never bare tracebacks in the CLI/TUI path. A
    run that FAILED must still exit non-zero, write its trace, and clean up.
 8. **Public writing** (commits, PRs, docs, README) is under the owner's name:
-   no em dashes, no padded AI-voice paragraphs, and never a
+   no em dashes, no mid dot (U+00B7) as a separator, very simple human
+   language, no padded AI-voice paragraphs, and never a
    `Co-Authored-By: Claude` trailer (it puts "claude" in GitHub's
    Contributors panel and is near-impossible to remove).
 9. **Verify against the primary source before you claim or build.** Read the
@@ -646,3 +656,11 @@ earned their place on the telemetry page.
   no-tools note on the local path; genai >= 2026.4; the sources line
   survives /thinking and /load; /thinking shows Qwen3.5's reasoning; small
   windows keep the prompt; no footer tooltips; stale-index warnings.
+- **Telemetry redesign, docs refresh and the site (PRs #62-#67)**: the
+  telemetry page went from four tabs to two with a live per-source status
+  line (it used to claim "intel live" while UT produced nothing), and the
+  POWER card now appears when UT's late first reading arrives; Intel UT is
+  documented by Intel for Windows 11 x64 on Core Ultra only. A running
+  command's status line moves (spinner, seconds, newest output). README,
+  ARCHITECTURE and the example READMEs were rewritten in plain language
+  with the animated diagrams, and the ovat-navigate site went live.
