@@ -219,13 +219,13 @@ ovat doctor workflow.yml     # confirm Python, devices, drivers, OVMS, config
 text, and it tells you the specific thing that is wrong:
 
 <div align="center">
-<img src="assets/ovat-doctor.svg" width="780px" alt="ovat doctor output: a table of checks with ok and warn statuses, each warning explaining what to do">
+<img src="assets/screens/doctor.png" width="720px" alt="ovat doctor on Windows with examples/rag/workflow.yml: twelve checks ok, including OpenVINO devices CPU, GPU and NPU, device routing, OVMS serving and OVMS reachable">
 </div>
 
-That is a real capture, on a Mac, which is why the OVMS row is a warning rather
-than an error: there is no macOS build, and the row says so and points at what
-to use instead. On an AI PC the same command adds `OpenVINO devices: CPU, GPU,
-NPU` and a `Device routing` row.
+That is a real capture on an Intel AI PC, with every row green. Note the
+`OpenVINO devices` and `Device routing` rows. On a Mac the OVMS row is a
+yellow warning instead of an error: there is no macOS build, and the row says
+so and points at what to use instead.
 
 Then a real run:
 
@@ -328,7 +328,7 @@ ovat bench examples/react/workflow.yml -i "What can you do?" --out report.json
 One question, every engine, one server, side by side:
 
 <div align="center">
-<img src="assets/ovat-bench-four-engines.gif" width="820px" alt="ovat bench running four engines against one OVMS server and printing a comparison table">
+<img src="assets/screens/bench-four-engines.png" width="820px" alt="ovat bench on examples/document-qa.yml: native, react, llamaindex and openai-agents all answer ok against one OVMS server. Only the native row has token and tool counts; the others show dashes.">
 </div>
 
 Build time, answer time, peak memory, token and tool-call counts. Two deliberate
@@ -394,7 +394,7 @@ full-screen terminal app: `pip install "ovat[tui]"`, then run `ovat` with no
 arguments.
 
 <div align="center">
-<img src="assets/ovat-tui-chat.gif" width="820px" alt="The OVAT terminal UI: a question, a streamed answer, and a foldable reasoning block">
+<img src="assets/screens/tui-chat-tools.png" width="820px" alt="The OVAT terminal UI chat answering one question with three tools: transcribe, describe_image and search_docs, after switching itself to OVMS">
 </div>
 
 Streaming answers with foldable reasoning, multi-line input with real paste and
