@@ -114,8 +114,10 @@ server and prints the results side by side:
 </div>
 
 Recorded on an Intel AI PC (LunarLake, Arc 140V GPU) serving Qwen3.5-4B-int4-ov.
-The dashes are on purpose. Only the native loop gets token counts back, and a
-number OVAT does not know stays a dash instead of turning into a misleading `0`.
+The dashes are on purpose. OVMS returns token usage on every reply, but today
+only the native loop records it; the three framework engines do not read
+OVMS's `usage` field yet (planned). A number OVAT does not know stays a dash
+instead of turning into a misleading `0`.
 
 ---
 
@@ -213,7 +215,7 @@ process (the model's memory lives there, not in OVAT). Rows that say "about"
 are estimates from the model's size. Measure your own with
 `ovat run --telemetry`. Loading needs 2.2 GB more than running does, and that
 peak decides whether a model fits, so 8 GB machines should start with the 0.8B
-model. [Where the memory actually goes](docs/ARCHITECTURE.md#measured-on-this-hardware-2026-08-12).
+model. [Where the memory actually goes](docs/ARCHITECTURE.md#telemetry).
 
 RAG (answering from your own documents) also needs an **embedder**, a small
 model that turns text into numbers. It is the one model you convert yourself:
@@ -337,9 +339,10 @@ ovat run workflow.yml -i "..." --openai-sdk         # or --openai-agents
 ovat bench workflow.yml -i "..." --out report.json  # all four, side by side
 ```
 
-`native` is OVAT's own loop. It needs nothing extra and is the only engine
-that records token counts per turn. The other three are LangChain, LlamaIndex
-and the OpenAI Agents SDK, each pointed at your local OVMS.
+`native` is OVAT's own loop. It needs nothing extra, and today it is the
+engine that records token counts per turn. The other three are LangChain,
+LlamaIndex and the OpenAI Agents SDK, each pointed at your local OVMS; they do
+not read OVMS's token usage yet.
 
 Three tools are built in:
 
@@ -386,7 +389,7 @@ model built for it: a channel-wise INT4 export (the `-int4-cw-ov` models), not
 the usual `-int4-ov`. [`examples/document-qa-npu.yml`](examples/document-qa-npu.yml)
 is a measured tool-calling run with `Qwen3-8B-int4-cw-ov` on a LunarLake NPU.
 The details are in
-[ARCHITECTURE.md, Layer 9](docs/ARCHITECTURE.md#layer-9-openvino-runtime-and-hardware).
+[ARCHITECTURE.md, Devices](docs/ARCHITECTURE.md#devices-and-the-openvino-runtime).
 
 ---
 
@@ -433,7 +436,7 @@ is `null`, never `0`. **A missing source says why**: on a Mac you see "Intel
 Unified Telemetry does not run on macOS", not a row of zeros. Note that
 `--trace` measures the *OVAT* process. With OVMS serving, the model lives in
 the OVMS process, so measure that one instead.
-[Why, and what that cost to learn](docs/ARCHITECTURE.md#layer-7-observability).
+[How telemetry works](docs/ARCHITECTURE.md#telemetry).
 
 ---
 
@@ -478,7 +481,8 @@ Rosetta, which is fine for small test models and slow for real ones.
 | | |
 | --- | --- |
 | [Docs site](https://lagmator22.github.io/ovat-navigate/) | A guided tour of the project and the codebase |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How OVAT is built: the nine layers, four engines, both ways to run a model, and why |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How OVAT is built: the parts, four engines, both ways to run a model, and the design principles |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Why: each design decision, the alternatives, and the measurement behind it |
 | [`docs/workflow_yaml_reference.md`](docs/workflow_yaml_reference.md) | Every `workflow.yml` field. Generated from the code |
 | [`docs/BLOG.md`](docs/BLOG.md) | A walkthrough: what OVAT is and how to use it |
 | [`examples/`](examples/) | Four runnable use cases |

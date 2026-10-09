@@ -11,7 +11,7 @@ agent into a config file, and runs the whole thing on your own hardware.*
 
 ## Contents
 
-1. [The problem: most of an agent is plumbing](#1-the-problem-most-of-an-agent-is-plumbing)
+1. [The problem: every local agent starts with the same plumbing](#1-the-problem-every-local-agent-starts-with-the-same-plumbing)
 2. [What OVAT gives you](#2-what-ovat-gives-you)
 3. [Why OpenVINO and OVMS](#3-why-openvino-and-ovms)
 4. [Install and first run](#4-install-and-first-run)
@@ -27,30 +27,23 @@ agent into a config file, and runs the whole thing on your own hardware.*
 
 ---
 
-## 1. The problem: most of an agent is plumbing
+## 1. The problem: every local agent starts with the same plumbing
 
 An "AI agent" is a simple idea: a model that can call your functions. Ask it
 about a file, and instead of guessing, it calls `search_docs` and reads the
 answer back to you.
 
-**The thing worth changing is not how much code that takes -- it is that it
-takes code at all.** Building an agent should be a matter of stating what you
-want: this model, on this device, with these tools and this system prompt.
-Instead it means picking an orchestration framework, learning its API, wiring a
-model server to it, and rewriting the same loop each time you change your mind
-about any of those.
+Building one that runs on your own machine is where it gets long. Today every
+local agent means hand-writing the same pieces: the loop that sends the
+conversation to the model and runs the tools it asks for, a JSON schema for
+every tool, retries and error handling for when the model or a tool gets it
+wrong, and the setup that starts a model server on the right device. Change the
+framework, the model or the device, and a good part of that code changes too.
 
-OVAT makes those choices **configuration**. The framework is one word in a YAML
-file, and swapping it changes nothing else -- not your tools, not your prompt,
-not a line of Python. That is the difference: you spend your attention on the
-tools, the prompt and the model, and none of it on the machinery underneath.
-
-Here is the machinery you would otherwise own.
-
-The idea is simple. The code is not. Here is the smallest honest version of a
-tool-calling agent against a local model server:
+Here is the smallest version of that loop, against a local model server:
 
 ```python
+import json
 from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v3", api_key="not-needed")
 
@@ -79,13 +72,20 @@ while True:                                            # the loop, by hand
                          "content": str(result)})
 ```
 
-That is already a screenful with the interesting parts removed. Still missing: an
-iteration cap so a confused model cannot loop forever, error handling so a
+That is already a screenful with the interesting parts removed. Still missing:
+an iteration cap so a confused model cannot loop forever, error handling so a
 failing tool does not kill the run, session history if you want a second turn,
 device selection, and starting the model server in the first place.
 
-None of that is your product. Every project writes it, every copy diverges, and
-none of it is where the value is.
+None of that is your product. Every project writes it, and every copy ends up
+a little different.
+
+**What OVAT changes: one YAML file and one command.** You state what you want
+(this model, on this device, with these tools and this system prompt) and OVAT
+builds the agent. The framework is one word in that file, and swapping it
+changes nothing else: not your tools, not your prompt, not a line of Python.
+Your attention goes to the tools, the prompt and the model, and none of it to
+the machinery underneath.
 
 ---
 
@@ -154,22 +154,41 @@ device, which parser, which tools, when to start and stop. That gap is where a
 toolkit belongs, the same way `kubectl` wraps the Kubernetes API rather than
 replacing it.
 
-OpenVINO matters for the other half: **low-bit weights (INT4, INT8) that actually fit**.
-A 4B-parameter model in INT4 is a 3.5 GB download and runs on an integrated GPU.
-That is the difference between "you need a datacentre" and "you need a laptop".
+OpenVINO is the other half. It is what gets top performance out of AI
+workloads on an Intel AI PC, across its CPU, GPU and NPU. Compressing a model's
+weights to INT8 or INT4 is one of the techniques it uses to make a model fit
+and run faster: Qwen3.5-4B with INT4 weights is a 3.5 GB download and runs on
+an integrated GPU. That is the difference between "you need a datacentre" and
+"you need a laptop".
 
-OVAT auto-detects what you have via `openvino.Core().get_available_devices()` and
-routes accordingly:
+OVAT detects what you have via `openvino.Core().get_available_devices()` and
+suggests a device for each kind of model. This is OVAT's default routing
+suggestion, the one `ovat init` and `ovat doctor` show:
 
-| Model type | Goes to | Why |
+| Model type | OVAT suggests | Why |
 | --- | --- | --- |
-| LLM | GPU | dynamic shapes, KV cache, tool calling |
+| LLM | GPU if present | works with every export; dynamic shapes, KV cache |
 | Embeddings | NPU if present | small, static shape, low power |
 | Whisper | CPU | small enough that CPU latency is fine |
 | Anything, no accelerator | CPU | always works |
 
-One caveat worth knowing up front, because it is easy to lose an afternoon to:
-**an agent defaults to GPU, and the NPU needs a model built for it.** No accelerator executes tools -- the device generates text, and the agent loop parses the tool call out of it and runs the Python function itself. The NPU serves LLMs perfectly well, including tool-calling ones. What it will not do is compile a *group-quantised* export: it needs channel-wise symmetric INT4, which is why OpenVINO publishes a separate [`-int4-cw-ov` family](https://huggingface.co/collections/OpenVINO/llms-optimized-for-npu). Point OVMS at a stock `-int4-ov` model with `--target_device NPU` and you get `[NPU_VCL] Compilation failed (0x78000004)` before a single token, which reads like a broken device and is really a mismatched file. GPU is the default because it is correct for every export.
+It is a suggestion, not a rule. Any model can run on any device (CPU, GPU or
+NPU), and nothing ties an LLM to the GPU. In `workflow.yml`, `model.device`
+defaults to `CPU`; `ovat init` writes the suggested device instead, and
+whatever you set there wins. No device runs tools, either: the device
+generates text, and the agent loop reads the tool call out of it and runs the
+Python function itself.
+
+**Where the models come from.** OpenVINO publishes models already converted
+and optimised for its CPU, GPU and NPU targets on Hugging Face, in the
+[OpenVINO organisation](https://huggingface.co/OpenVINO). Some are tuned for
+one device, such as the
+[LLMs optimized for NPU](https://huggingface.co/collections/OpenVINO/llms-optimized-for-npu)
+collection, and many run well on more than one. For serving an LLM on the NPU
+through OVMS today, the export OVAT has measured working is the channel-wise
+INT4 one (the `-int4-cw-ov` models): `Qwen3-8B-int4-cw-ov` ran a tool-calling
+agent on a LunarLake NPU, while a stock `-int4-ov` export did not compile
+there.
 
 ---
 
@@ -312,8 +331,9 @@ agent:
   type: react        # native | react | llamaindex | openai-agents
 ```
 
-- **`native`**. OVAT's own loop. No extra dependencies, and the only engine that
-  records per-turn token counts.
+- **`native`**. OVAT's own loop. No extra dependencies, and today the engine
+  that records per-turn token counts. OVMS returns token usage on every reply;
+  the other three engines do not read it yet.
 - **`react`**. LangChain, `create_agent` + `ChatOpenAI` pointed at OVMS
 - **`llamaindex`**. LlamaIndex `FunctionAgent` + `OpenAILike`
 - **`openai-agents`**, the OpenAI Agents SDK, against a local server
@@ -409,7 +429,7 @@ appears only in the TUI's own files, and a test fails the build if the CLI's
 entry point imports it or a command stops working without it. The same rule
 keeps LangChain, LlamaIndex and the Agents SDK out of a plain CLI import.
 
-That is easy to say and easy to break -- one top-level import in the wrong module
+That is easy to say and easy to break. One top-level import in the wrong module
 and a base install crashes on startup. And the dev test suite cannot catch it,
 because the dev extra installs everything, so CI has a separate job that does a
 bare install and asserts that importing the CLI pulls in none of them.
@@ -486,7 +506,8 @@ ovat run workflow.yml -i "..." --trace trace.json
   ],
   "totals": {"turns": 2, "latency_s": 4.01, "prompt_tokens": 2792,
              "completion_tokens": 102, "tool_calls": 1,
-             "undecoded_tool_call": false, "empty_answer": false}
+             "undecoded_tool_call": false, "empty_answer": false,
+             "truncated": false, "failed": false}
 }
 ```
 
@@ -499,10 +520,10 @@ stays unknown**, a server that reports no token counts produces `null`, never
 Unified Telemetry does not run on macOS"* rather than showing zeros, because a
 missing sensor and an idle one look identical in a graph.
 
-For deeper observability there is an optional
-[plano](https://github.com/katanemo/plano) gateway integration that turns every
-request into an OpenTelemetry span, with no OTEL dependency added to OVAT.
-See [`examples/plano/`](../examples/plano/).
+OVAT itself has no OpenTelemetry exporter. If you want per-request
+OpenTelemetry spans, the optional [plano](https://github.com/katanemo/plano)
+gateway produces them. It runs in front of OVMS, outside OVAT. See
+[`examples/plano/`](../examples/plano/).
 
 ---
 
@@ -567,7 +588,8 @@ ovat doctor workflow.yml
 If `doctor` is green, you are four commands from a working local agent.
 
 - **Repository**, <https://github.com/Lagmator22/ovat>
-- **Architecture**, [`docs/ARCHITECTURE.md`](ARCHITECTURE.md), the nine layers and why each exists
+- **Architecture**, [`docs/ARCHITECTURE.md`](ARCHITECTURE.md), how the parts fit together
+- **Design decisions**, [`docs/DECISIONS.md`](DECISIONS.md), why each part works the way it does
 - **Examples**, [`examples/`](../examples/), four runnable use cases
 - **OpenVINO Model Server**, <https://docs.openvino.ai/2026/model-server/ovms_what_is_openvino_model_server.html>
 

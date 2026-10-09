@@ -80,7 +80,7 @@ class AgentLoop:
         self.engine_name = engine_name
         # Each agent owns one conversation memory.
         self.session = Session(system_prompt=system_prompt)
-        # Layer 7 (observability): after every run() this holds what happened:
+        # Layer 7 (telemetry): after every run() this holds what happened:
         # per-turn latency, token usage (OVMS reports it on each response),
         # and every tool call with its duration. `ovat run --trace` dumps it.
         self.last_trace: dict = {}

@@ -22,8 +22,9 @@ class AgentTraceSource(TelemetrySource):
     """The numbers the native loop already records, as a source.
 
     `loop.py` has filled `last_trace` since W9; this exposes it through the
-    contract so the JSON file, an OTLP exporter and the TUI page all read one
-    thing instead of three.
+    contract so any sink (a JSON file, the live TUI page; an OTLP exporter
+    would be another sink, none exists yet) reads one thing instead of each
+    keeping its own copy.
     """
 
     name = "agent"

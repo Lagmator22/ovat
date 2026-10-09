@@ -1,16 +1,18 @@
 # ovat/telemetry/base.py
-"""Layer 7 contracts: where measurements come FROM, and where they GO.
+"""Layer 7 telemetry contracts: where numbers come FROM, and where they GO.
 
 Telemetry has two independent axes, exactly like the LLM providers did, and
 for exactly the same reason: getting it wrong once already cost this project a
 real bug (four engines each holding their own copy of a setting).
 
   SOURCE  where a measurement comes from
-          the agent's own run trace, this process's memory, Intel's hardware
-          profiler, a plano gateway's OTel spans
+          the agent's own run trace, this process's memory, the NPU counter,
+          OVMS's log, Intel's hardware profiler
 
   SINK    where it goes
-          a JSON file, an OTLP collector, the live TUI page
+          any sink: a JSON file, the live TUI page. An OTLP exporter would be
+          another sink; none exists yet. Per-request OpenTelemetry spans come
+          only from the optional plano gateway, outside OVAT.
 
 Two sockets, not one, because the two vary independently: any source can feed
 any sink. Wiring N sources to M sinks directly is N*M pieces of code that must
