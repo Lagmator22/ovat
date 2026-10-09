@@ -215,7 +215,7 @@ process (the model's memory lives there, not in OVAT). Rows that say "about"
 are estimates from the model's size. Measure your own with
 `ovat run --telemetry`. Loading needs 2.2 GB more than running does, and that
 peak decides whether a model fits, so 8 GB machines should start with the 0.8B
-model. [Where the memory actually goes](docs/ARCHITECTURE.md#observability).
+model. [Where the memory actually goes](docs/ARCHITECTURE.md#telemetry).
 
 RAG (answering from your own documents) also needs an **embedder**, a small
 model that turns text into numbers. It is the one model you convert yourself:
@@ -436,7 +436,7 @@ is `null`, never `0`. **A missing source says why**: on a Mac you see "Intel
 Unified Telemetry does not run on macOS", not a row of zeros. Note that
 `--trace` measures the *OVAT* process. With OVMS serving, the model lives in
 the OVMS process, so measure that one instead.
-[How telemetry works](docs/ARCHITECTURE.md#observability).
+[How telemetry works](docs/ARCHITECTURE.md#telemetry).
 
 ---
 

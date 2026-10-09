@@ -31,7 +31,7 @@ Written for OVAT 1.1.1, OVMS 2026.4.1 and openvino-genai 2026.4 or newer.
 - [Tools and MCP](#tools-and-mcp)
 - [Serving the model: OVMS](#serving-the-model-ovms)
 - [Devices and the OpenVINO runtime](#devices-and-the-openvino-runtime)
-- [Observability](#observability)
+- [Telemetry](#telemetry)
 - [Multi-agent orchestration (A2A): not implemented](#multi-agent-orchestration-a2a-not-implemented)
 
 **Cross-cutting**
@@ -156,7 +156,7 @@ flowchart TD
     GenAI --> Hardware["Intel CPU<br/>Arc GPU, NPU"]
     OVMS --> Hardware
 
-    subgraph Telemetry ["Observability"]
+    subgraph Telemetry ["Telemetry"]
         Sources["Sources<br/>AgentTrace<br/>ProcessMemory<br/>System, NPU<br/>IntelHardware<br/>OVMSLog"]
         Sinks["Sinks<br/>JSONFile<br/>LiveBuffer<br/>FanOut"]
         Sources -->|"collector<br/>polls"| Sinks
@@ -908,51 +908,74 @@ Why these choices: [DECISIONS.md, models and devices](DECISIONS.md#models-and-de
 
 ---
 
-## Observability
+## Telemetry
 
-**Files:** `telemetry/base.py`, `sources.py`, `sinks.py`, `collector.py`
+**Files:** `telemetry/base.py`, `sources.py`, `sinks.py`, `collector.py`, and
+the run trace in `agent/loop.py`
 
-Sources (where numbers come from) and sinks (where they go) are separate
-contracts, so any source feeds any sink.
+**What OVAT collects:**
+
+- **Machine and process metrics.** CPU per core, RAM and thread count
+  (`SystemSource`), and the OVAT process's resident memory
+  (`ProcessMemorySource`).
+- **NPU busy %.** `NPUSource`, from the driver's sysfs on Linux and the PDH
+  `GPU Engine` counter on Windows.
+- **KV cache.** Usage and cache type, read from `ovms.log` (`OVMSLogSource`)
+  wherever `ovat serve` writes it.
+- **Power and bandwidth.** Package and rail power, NPU power and bandwidth, and
+  GPU frequency, from Intel Unified Telemetry when it is installed
+  (`IntelHardwareSource`).
+- **The per-run agent trace** (`ovat run --trace`). Each turn's latency and
+  token counts, every tool call with its duration and sources, the failure
+  flags, and peak memory. `AgentTraceSource` also feeds the trace totals to
+  the live view.
+
+**What OVAT does not have:** an OpenTelemetry or OTLP exporter. OVAT's
+telemetry goes to a JSON Lines file or the live TUI page. Per-request
+OpenTelemetry spans are only available from the optional
+[plano gateway](#the-plano-gateway-optional), which runs outside OVAT. An OTLP
+exporter would be one more sink; none exists yet.
+
+**How it fits together.** Sources (where numbers come from) and sinks (where
+they go) are separate contracts, so any source feeds any sink. The `Collector`
+polls every source on its own thread, once a second by default, and hands
+each sample to the sink. The sinks are `JSONFileSink` (JSON Lines),
+`LiveBufferSink` (the TUI page) and `FanOutSink` (several at once).
 
 | Source | Reports | Available on |
 | --- | --- | --- |
 | `AgentTraceSource` | tokens per turn, latency, tool traces | the native loop today; the framework engines do not read OVMS's `usage` field yet |
 | `SystemSource` | CPU per core, RAM, thread count | all |
 | `ProcessMemorySource` | this process's resident memory | all |
-| `IntelHardwareSource` | GPU/NPU utilisation and power | Windows / Linux with Intel UT |
-| `NPUSource` | NPU utilisation | Linux (driver sysfs), Windows (PDH `GPU Engine`) |
+| `IntelHardwareSource` | power, NPU bandwidth, GPU frequency | Windows 11 on Core Ultra with Intel UT installed; tried on Linux if a UT binary is present |
+| `NPUSource` | NPU busy % | Linux (driver sysfs), Windows (PDH `GPU Engine`) |
 | `OVMSLogSource` | KV cache usage and type | wherever `ovat serve` writes `ovms.log` |
 
-Three rules this layer follows, because a measurement that lies is worse than a
-measurement that is missing:
+The numbers follow three rules:
 
-**Absent is not zero.** No token counts from the server means `null`, rendered as
-a dash. A `0` reads as "used no tokens", and a benchmark built on that number is
-quietly wrong.
+- **Absent is not zero.** No token counts from the server means `null`,
+  shown as a dash. A `0` would read as "used no tokens".
+- **An unavailable source says why.** On macOS the Intel row reads *"Intel
+  Unified Telemetry does not run on macOS"* rather than showing zeros, because
+  a missing sensor and an idle one look the same in a graph.
+- **Peak memory is sampled on a thread, during the run.** A single reading
+  afterwards misses the peak. Note the scope: `--trace` measures the **OVAT**
+  process. With OVMS serving, the model's memory lives in `ovms.exe` and must
+  be measured there. The trace *is* the right number for `ovat chat`, where the
+  model runs in-process.
 
-**An unavailable source says why.** On macOS the Intel row reads *"Intel Unified
-Telemetry does not run on macOS"* rather than showing zeros, because a missing
-sensor and an idle one look identical in a graph.
-
-**Peak RSS is sampled on a thread, during the run.** A single reading afterwards
-misses the peak entirely. Python has already freed the large allocations. Note
-the scope: `--trace` measures the **OVAT** process, so with OVMS serving, the
-model's memory lives in `ovms.exe` and must be measured there. The trace *is* the
-right number for `ovat chat`, where the model runs in-process.
-
-One source contract worth stating: `sample()` must not raise. `Collector`
-catches anyway, so one broken source cannot end the collection thread.
+`sample()` must not raise, and the `Collector` catches anyway, so one broken
+source cannot stop the others.
 
 **Where to see it.** `ovat telemetry` prints a live table (`--once` for one
 snapshot, `--out` to save JSON Lines) and says first which sources are not
-available here and why. The TUI's `/telemetry` page has two tabs. **Live**
+available here and why. `ovat run --telemetry file.jsonl` records the same
+numbers during one run. The TUI's `/telemetry` page has two tabs. **Live**
 holds number cards, a table with each metric's current, minimum, maximum and
 average, and a status line naming every source as live, silent, or not
-available (with the first clause of the reason). **Help** explains the
-numbers. The status line refreshes every tick; it used to be a separate tab
-filled once at start, which on the AI PC said "intel live" while Intel UT was
-producing nothing.
+available, refreshed every tick. **Help** explains the numbers.
+
+Why these choices: [DECISIONS.md, telemetry](DECISIONS.md#telemetry).
 
 ---
 
@@ -1184,7 +1207,7 @@ installs and runs.
 | Tools and MCP | ✅ complete | three built-ins, MCP client (with `tools[].env`) and server, announced fuzzy paths |
 | Serving | ✅ complete | `ovat setup` pinned to OVMS 2026.4.1 and version-aware, locator, stall budget, pidfile, identity check |
 | Devices | ✅ complete | device routing; a tool-calling agent run on the NPU, and its 2129-token cap measured |
-| Observability | ✅ complete | sources, sinks, JSON Lines, CLI and TUI pages. NPU utilisation reads on Windows (PDH) and Linux (sysfs) |
+| Telemetry | ✅ complete | sources, sinks, JSON Lines, CLI and TUI pages, run trace. NPU busy % reads on Windows (PDH) and Linux (sysfs). No OTLP exporter |
 | Multi-agent orchestration (A2A) | ❌ not implemented | out of scope |
 
 **Planned or open:**
@@ -1272,6 +1295,6 @@ what each part does instead; this table maps one to the other.
 | Layer 4: Provider abstraction | [Models, embeddings and search: the providers](#models-embeddings-and-search-the-providers) |
 | Layer 5: Tools and MCP | [Tools and MCP](#tools-and-mcp) |
 | Layer 6: Orchestration (A2A) | [Not implemented, out of scope](#multi-agent-orchestration-a2a-not-implemented) |
-| Layer 7: Observability | [Observability](#observability) |
+| Layer 7: Telemetry | [Telemetry](#telemetry) |
 | Layer 8: Deployment and serving | [Serving the model: OVMS](#serving-the-model-ovms) |
 | Layer 9: OpenVINO runtime and hardware | [Devices and the OpenVINO runtime](#devices-and-the-openvino-runtime) |
