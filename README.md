@@ -110,7 +110,7 @@ not the prompt, not a line of Python.
 server and prints the results side by side:
 
 <div align="center">
-<img src="docs/assets/screens/bench-four-engines.png" width="800px" alt="ovat bench on examples/document-qa.yml: native, react, llamaindex and openai-agents all answer ok, with build time, answer time, peak memory, token and tool counts. Only the native row has token and tool counts; the others show dashes.">
+<img src="docs/assets/screens/bench-tokens-all-four.png" width="800px" alt="ovat bench on examples/rag/workflow.yml on the Intel AI PC: native, react, llamaindex and openai-agents all answer ok, and every engine reports its tokens in and out and its tool calls.">
 </div>
 
 Recorded on an Intel AI PC (LunarLake, Arc 140V GPU) serving Qwen3.5-4B-int4-ov.
@@ -338,10 +338,10 @@ ovat run workflow.yml -i "..." --openai-sdk         # or --openai-agents
 ovat bench workflow.yml -i "..." --out report.json  # all four, side by side
 ```
 
-`native` is OVAT's own loop. It needs nothing extra, and today it is the
-engine that records token counts per turn. The other three are LangChain,
-LlamaIndex and the OpenAI Agents SDK, each pointed at your local OVMS; they do
-not read OVMS's token usage yet.
+`native` is OVAT's own loop and needs nothing extra. The other three are
+LangChain, LlamaIndex and the OpenAI Agents SDK, each pointed at your local
+OVMS. All four record the token counts OVMS sends back, so `ovat bench` and
+`ovat run --trace` show tokens for every engine.
 
 Three tools are built in:
 

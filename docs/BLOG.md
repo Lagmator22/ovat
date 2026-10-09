@@ -348,7 +348,7 @@ ovat bench examples/react/workflow.yml -i "What can you do?" --out report.json
 One question, every engine, one server, side by side:
 
 <div align="center">
-<img src="assets/screens/bench-four-engines.png" width="820px" alt="ovat bench on examples/document-qa.yml: native, react, llamaindex and openai-agents all answer ok against one OVMS server. Only the native row has token and tool counts; the others show dashes.">
+<img src="assets/screens/bench-tokens-all-four.png" width="820px" alt="ovat bench on examples/rag/workflow.yml on the Intel AI PC: native, react, llamaindex and openai-agents all answer ok, and every engine reports its tokens in and out and its tool calls.">
 </div>
 
 Build time, answer time, peak memory, token and tool-call counts. Two deliberate
