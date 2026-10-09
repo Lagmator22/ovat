@@ -114,8 +114,9 @@ server and prints the results side by side:
 </div>
 
 Recorded on an Intel AI PC (LunarLake, Arc 140V GPU) serving Qwen3.5-4B-int4-ov.
-The dashes are on purpose. Only the native loop gets token counts back, and a
-number OVAT does not know stays a dash instead of turning into a misleading `0`.
+The token dashes in that screenshot are from before the framework engines
+recorded usage; all four engines fill those columns now. A number OVAT does not
+know still stays a dash instead of turning into a misleading `0`.
 
 ---
 

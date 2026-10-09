@@ -93,7 +93,7 @@ flowchart TD
     Factory -->|"4. pick 1 of 4"| Engines
 
     subgraph Engines ["Agent engines, layers 2 and 3"]
-        Native["Native loop<br/>loop.py<br/>records tokens"]
+        Native["Native loop<br/>loop.py"]
         LangChain["LangChain<br/>react"]
         LlamaIndex["LlamaIndex"]
         OpenAIAgents["OpenAI<br/>Agents SDK"]
@@ -244,7 +244,7 @@ Four engines, selected by `agent.type`, all exposing the same `.run(text) -> str
 
 | `agent.type` | Library | Notes |
 | --- | --- | --- |
-| `native` | none | OVAT's own loop; the only one that traces tokens |
+| `native` | none | OVAT's own loop; the only one with a per-turn trace |
 | `react` | LangChain | `create_agent` + `ChatOpenAI` |
 | `llamaindex` | LlamaIndex | `FunctionAgent` + `OpenAILike` |
 | `openai-agents` | OpenAI Agents SDK | `OpenAIChatCompletionsModel` |
@@ -530,7 +530,7 @@ contracts, so any source feeds any sink.
 
 | Source | Reports | Available on |
 | --- | --- | --- |
-| `AgentTraceSource` | tokens per turn, latency, tool traces | engines with a native loop |
+| `AgentTraceSource` | tokens, latency, tool calls (per turn on the native loop, per run on the others) | all four engines |
 | `SystemSource` | CPU per core, RAM, thread count | all |
 | `ProcessMemorySource` | this process's resident memory | all |
 | `IntelHardwareSource` | GPU/NPU utilisation and power | Windows / Linux with Intel UT |
@@ -541,7 +541,10 @@ Three rules this layer follows, because a measurement that lies is worse than a
 measurement that is missing:
 
 **Absent is not zero.** No token counts from the server means `null`, rendered as
-a dash. A `0` reads as "used no tokens", and a benchmark built on that number is
+a dash. All four engines record them now: the native loop per turn, the three
+framework engines per run, summed from what each framework kept (LangChain's
+`AIMessage.usage_metadata`, the `raw` reply on LlamaIndex's `AgentOutput`
+events, the Agents SDK's `RunResult.raw_responses`). A `0` reads as "used no tokens", and a benchmark built on that number is
 quietly wrong.
 
 **An unavailable source says why.** On macOS the Intel row reads *"Intel Unified
