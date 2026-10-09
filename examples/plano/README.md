@@ -17,28 +17,36 @@ work together, and the exact steps to run it on a Windows AI PC.
 ## How a request travels
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
 flowchart TD
-    subgraph Client ["Client (Windows host or WSL2)"]
-        OVAT["OVAT agent loop<br/>(ovat run workflow.yml)"]
+    subgraph Client ["Client: Windows host or WSL2"]
+        OVAT["OVAT agent loop<br/>ovat run workflow.yml"]
     end
 
     subgraph WSL2 ["WSL2 (Linux)"]
-        Plano["plano gateway<br/>(:8000 /v1/chat/completions)"]
-        Obs["plano trace view<br/>(planoai obs, :4317)"]
+        Plano["plano gateway<br/>:8000<br/>/v1/chat/completions"]
+        Obs["plano trace view<br/>planoai obs, :4317"]
     end
 
     subgraph WinHost ["Windows host"]
-        Bridge["OVMS id bridge<br/>(ovms_id_bridge.py, :8001)"]
-        OVMS["OpenVINO Model Server<br/>(:8002/v3/chat/completions on GPU)"]
+        Bridge["OVMS id bridge<br/>ovms_id_bridge.py<br/>:8001"]
+        OVMS["OpenVINO<br/>Model Server, GPU<br/>:8002<br/>/v3/chat/completions"]
     end
 
-    OVAT -->|"1. POST /v1/chat/completions"| Plano
-    Plano -->|"2. sends a trace span"| Obs
-    Plano -->|"3. forwards the request"| Bridge
+    OVAT -->|"1. POST<br/>/v1/chat/completions"| Plano
+    Plano -->|"2. sends a<br/>trace span"| Obs
+    Plano -->|"3. forwards<br/>the request"| Bridge
     Bridge -->|"4. calls OVMS"| OVMS
-    OVMS -->|"5. reply, with no top-level id"| Bridge
+    OVMS -->|"5. reply, with<br/>no top-level id"| Bridge
     Bridge -->|"6. adds an id"| Plano
-    Plano -->|"7. 200 OK and the answer"| OVAT
+    Plano -->|"7. 200 OK<br/>and the answer"| OVAT
+
+    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
+    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
+    classDef telemetry fill:#7A8CA0,stroke:#57606A,color:#0F141A
+    class OVAT cli
+    class Plano,Bridge,OVMS backend
+    class Obs telemetry
 ```
 
 The ports, and why each hop has the one it has:

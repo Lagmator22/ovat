@@ -85,48 +85,64 @@ The animated diagram above follows one request. This one is the full map,
 including the parts a single request does not touch.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
 flowchart TD
-    User["User: CLI or TUI"] -->|"1. run or chat"| CLI["OVAT CLI & TUI<br/>(Typer / Textual)"]
-    CLI -->|"2. load workflow.yml"| Config["WorkflowConfig<br/>(strict pydantic)"]
-    Config -->|"3. build wired agent"| Factory["Agent Factory<br/>(factory.py)"]
-    Factory -->|"4. pick 1 of 4 engines"| Engines
+    User["User<br/>CLI or TUI"] -->|"1. run or chat"| CLI["OVAT CLI and TUI<br/>Typer, Textual"]
+    CLI -->|"2. load"| Config["workflow.yml<br/>WorkflowConfig<br/>strict pydantic"]
+    Config -->|"3. build"| Factory["Agent factory<br/>factory.py"]
+    Factory -->|"4. pick 1 of 4"| Engines
 
-    subgraph Engines ["Layer 2/3. Agent engines"]
-        Native["Native loop (loop.py)<br/>the only engine that traces tokens"]
-        LangChain["LangChain (react)"]
+    subgraph Engines ["Agent engines, layers 2 and 3"]
+        Native["Native loop<br/>loop.py<br/>records tokens"]
+        LangChain["LangChain<br/>react"]
         LlamaIndex["LlamaIndex"]
-        OpenAIAgents["OpenAI Agents SDK"]
+        OpenAIAgents["OpenAI<br/>Agents SDK"]
     end
 
-    Engines -->|"5. call the LLM provider"| Providers
-    Engines <-->|"6. execute tools"| Tools
+    Engines -->|"5. call the LLM"| Providers
+    Engines <-->|"6. run tools"| Tools
 
-    subgraph Providers ["Layer 4. Providers"]
-        GenAI["GenAI provider<br/>openvino_genai, in-process"]
-        OVMS["OVMS provider<br/>OpenAI SDK → /v3"]
+    subgraph Providers ["Providers, layer 4"]
+        GenAI["GenAI provider<br/>openvino_genai<br/>in-process"]
+        OVMS["OVMS provider<br/>OpenAI SDK<br/>to /v3"]
     end
 
-    subgraph Tools ["Layer 5. Tools"]
-        Builtin["Builtin:<br/>search_docs, transcribe, describe_image"]
-        MCP["MCP stdio client<br/>(any external server)"]
+    subgraph Tools ["Tools, layer 5"]
+        Builtin["Builtin tools<br/>search_docs<br/>transcribe<br/>describe_image"]
+        MCP["MCP stdio client<br/>any external<br/>server"]
     end
 
     subgraph Gateway ["Optional"]
-        Plano["plano gateway + id bridge<br/>OpenTelemetry spans"]
+        Plano["plano gateway<br/>and id bridge<br/>OTel spans"]
     end
 
-    OVMS <--> Gateway
-    GenAI --> Hardware["Intel CPU / Arc GPU / NPU"]
+    OVMS <--> Plano
+    GenAI --> Hardware["Intel CPU<br/>Arc GPU, NPU"]
     OVMS --> Hardware
 
-    subgraph Telemetry ["Layer 7. Observability"]
-        Sources["Sources<br/>AgentTrace, ProcessMemory, System<br/>IntelHardware, NPU, OVMSLog"]
-        Sinks["Sinks<br/>JSONFile, LiveBuffer, FanOut"]
-        Sources -->|"collector ticks ~0.5s"| Sinks
+    subgraph Telemetry ["Observability, layer 7"]
+        Sources["Sources<br/>AgentTrace<br/>ProcessMemory<br/>System, NPU<br/>IntelHardware<br/>OVMSLog"]
+        Sinks["Sinks<br/>JSONFile<br/>LiveBuffer<br/>FanOut"]
+        Sources -->|"collector<br/>polls"| Sinks
     end
 
-    Engines -.->|"7. sampled DURING the run"| Sources
+    Engines -.->|"7. sampled<br/>during the run"| Sources
     Hardware -.-> Sources
+
+    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
+    classDef config fill:#FFC107,stroke:#9A6700,color:#1F2328
+    classDef engine fill:#7A45F0,stroke:#A98BFF,color:#FFFFFF
+    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
+    classDef tool fill:#3DD68C,stroke:#1A7F37,color:#0F141A
+    classDef telemetry fill:#7A8CA0,stroke:#57606A,color:#0F141A
+    classDef hw fill:#57606A,stroke:#8C959F,color:#FFFFFF
+    class User,CLI cli
+    class Config config
+    class Factory,Native,LangChain,LlamaIndex,OpenAIAgents engine
+    class GenAI,OVMS,Plano backend
+    class Builtin,MCP tool
+    class Sources,Sinks telemetry
+    class Hardware hw
 ```
 
 ---
@@ -175,16 +191,26 @@ A typo like `max_iteration` for `max_iterations` fails immediately and by name,
 rather than quietly leaving the default in charge.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
 flowchart LR
     YAML["workflow.yml"] --> Load["_load_config()<br/>the ONLY loader"]
-    Load --> Parse["yaml.safe_load(f) or {}"]
+    Load --> Parse["yaml.safe_load(f)<br/>or {}"]
     Parse --> Validate["WorkflowConfig<br/>extra=forbid"]
-    Validate --> Derive["@model_validator<br/>fill tool_parser from model name"]
+    Validate --> Derive["@model_validator<br/>fills tool_parser<br/>from model name"]
     Derive --> Factory["build_agent()"]
 
     Load -.->|"missing file"| Msg1["one sentence"]
     Load -.->|"bad YAML"| Msg2["one sentence"]
     Load -.->|"schema error"| Msg3["one sentence"]
+
+    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
+    classDef config fill:#FFC107,stroke:#9A6700,color:#1F2328
+    classDef engine fill:#7A45F0,stroke:#A98BFF,color:#FFFFFF
+    classDef fail fill:#FF5C5C,stroke:#B42318,color:#0F141A
+    class YAML,Parse,Validate,Derive config
+    class Load cli
+    class Factory engine
+    class Msg1,Msg2,Msg3 fail
 ```
 
 `_load_config` is the only place allowed to call `load_workflow`, because it
@@ -262,20 +288,34 @@ asked for, report the results back, and repeat.
 The same loop as a decision chart, with every exit:
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
 flowchart TD
-    Start["user message"] --> Ask["1. ASK<br/>POST history + tool menu"]
-    Ask --> Read{"2. READ<br/>reply carries tool calls?"}
-    Read -->|"no"| Label{"finish_reason says tool_calls?"}
-    Label -->|"yes, but none sent"| ErrA["report; do not re-ask"]
-    Label -->|"no"| Check{"content usable?"}
+    Start["user message"] --> Ask["1. ASK<br/>POST history<br/>and tool menu"]
+    Ask --> Read{"2. READ<br/>tool calls<br/>in the reply?"}
+    Read -->|"no"| Label{"finish_reason<br/>says tool_calls?"}
+    Label -->|"yes, but<br/>none sent"| ErrA["report it,<br/>do not re-ask"]
+    Label -->|"no"| Check{"content<br/>usable?"}
     Read -->|"yes"| Act["3. ACT<br/>run each tool"]
     Act --> Report["4. REPORT<br/>append tool results"]
-    Report --> Cap{"iterations left?"}
+    Report --> Cap{"iterations<br/>left?"}
     Cap -->|"yes"| Ask
     Cap -->|"no"| ErrB["report the cap"]
-    Check -->|"markup left in it"| ErrC["undecoded_tool_call"]
-    Check -->|"nothing but reasoning"| ErrD["empty_answer"]
+    Check -->|"markup<br/>left in it"| ErrC["undecoded_tool_call"]
+    Check -->|"only<br/>reasoning"| ErrD["empty_answer"]
     Check -->|"real answer"| Done["answer + trace"]
+
+    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
+    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
+    classDef tool fill:#3DD68C,stroke:#1A7F37,color:#0F141A
+    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
+    classDef ok fill:#1A7F37,stroke:#3DD68C,color:#FFFFFF
+    classDef fail fill:#FF5C5C,stroke:#B42318,color:#0F141A
+    class Start cli
+    class Ask backend
+    class Read,Label,Check,Cap,Report step
+    class Act tool
+    class ErrA,ErrB,ErrC,ErrD fail
+    class Done ok
 ```
 
 Exit when a reply carries no tool calls. The decision is made on the payload, not on `finish_reason`, because OVMS documents NPU serving labelling a decoded tool call as `stop`. `max_iterations` guarantees termination. Every
@@ -315,22 +355,31 @@ Four ABCs, `LLMProvider`, `EmbeddingsProvider`, `RetrieverProvider`,
 Swapping a backend is a YAML edit, not a code change.
 
 ```mermaid
-flowchart TD
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
+flowchart LR
     subgraph LLM ["LLMProvider"]
-        OVMSLLM["OVMSLLMProvider<br/>OpenAI SDK → /v3<br/>DOES tool calling"]
-        GenAILLM["GenAILLMProvider<br/>openvino_genai, in-process<br/>no tool calling"]
+        OVMSLLM["OVMSLLMProvider<br/>OpenAI SDK to /v3<br/>DOES tool calling"]
+        GenAILLM["GenAILLMProvider<br/>openvino_genai<br/>in-process<br/>no tool calling"]
     end
     subgraph Emb ["EmbeddingsProvider"]
-        GenAIEmb["GenAIEmbeddingsProvider<br/>local TextEmbeddingPipeline"]
-        OVMSEmb["OVMSEmbeddingsProvider<br/>/v3/embeddings"]
+        GenAIEmb["GenAIEmbeddings<br/>Provider<br/>local TextEmbedding<br/>Pipeline"]
+        OVMSEmb["OVMSEmbeddings<br/>Provider<br/>/v3/embeddings"]
     end
     subgraph Ret ["RetrieverProvider"]
-        SQLite["SQLiteVecRetrieverProvider<br/>sqlite-vec, persists to disk"]
-        Memory["InMemoryRetrieverProvider<br/>numpy, nothing on disk"]
+        SQLite["SQLiteVecRetriever<br/>Provider<br/>sqlite-vec,<br/>saved to disk"]
+        Memory["InMemoryRetriever<br/>Provider<br/>numpy,<br/>nothing on disk"]
     end
     subgraph VLM ["VLMProvider"]
         GenAIVLM["GenAIVLMProvider<br/>VLMPipeline"]
     end
+
+    LLM ~~~ Emb
+    Ret ~~~ VLM
+
+    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
+    class OVMSLLM,OVMSEmb backend
+    class GenAILLM,GenAIEmb,GenAIVLM backend
+    class SQLite,Memory backend
 ```
 
 **How to add an LLM backend.** Implement `LLMProvider` (one method, `chat`),
@@ -393,13 +442,21 @@ a co-located `SCHEMA` that is **the** contract, a FastMCP wrapper, and
 `mcp.run()` under `__main__` so it also works as a standalone MCP server.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
 flowchart TD
     Need["agent needs a tool"] --> Type{"type?"}
-    Type -->|"builtin"| B["schema from SCHEMA<br/>function bound by the factory"]
-    Type -->|"mcp_stdio"| M["MCPStdioServer<br/>launch, list_tools, call_tool"]
+    Type -->|"builtin"| B["schema from SCHEMA<br/>function bound<br/>by the factory"]
+    Type -->|"mcp_stdio"| M["MCPStdioServer<br/>launch, list_tools,<br/>call_tool"]
     B --> Loop["agent loop"]
     M --> Loop
-    M -.->|"same shape"| Note["the loop cannot tell them apart"]
+    M -.->|"same shape"| Note["the loop cannot<br/>tell them apart"]
+
+    classDef engine fill:#7A45F0,stroke:#A98BFF,color:#FFFFFF
+    classDef tool fill:#3DD68C,stroke:#1A7F37,color:#0F141A
+    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
+    class Need,Loop engine
+    class Type,Note step
+    class B,M tool
 ```
 
 **The MCP client is sync-over-async, carefully.** The `mcp` SDK is async
@@ -551,19 +608,36 @@ and choosing it gives an agent that answers fluently and silently never calls a
 tool.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
 flowchart TD
     S["ovat setup"] --> P{"platform"}
-    P -->|darwin| M["explain: no macOS build, exit 0"]
-    P -->|win32| W["ovms_windows_..._python_on.zip"]
-    P -->|linux| L["read /etc/os-release →<br/>ubuntu22, ubuntu24 or redhat"]
-    L -->|unknown distro| WARN["warn, then try ubuntu24"]
+    P -->|darwin| M["explain: no macOS<br/>build, exit 0"]
+    P -->|win32| W["ovms_windows_...<br/>_python_on.zip"]
+    P -->|linux| L["read /etc/os-release:<br/>ubuntu22, ubuntu24<br/>or redhat"]
+    L -->|unknown distro| WARN["warn, then<br/>try ubuntu24"]
     W --> DL["download"]
     L --> DL
     WARN --> DL
-    DL --> SHA{"SHA-256 matches?"}
-    SHA -->|no| STOP["refuse, install nothing"]
-    SHA -->|yes| EX["extract: flatten the archive's ovms/ wrapper,<br/>force the owner's write bit on every member"]
-    EX --> R["~/.ovat/ovms/bin/ovms"]
+    DL --> SUM{".sha256<br/>published?"}
+    SUM -->|no| UNV["no check; reported<br/>installed-unverified"]
+    SUM -->|yes| SHA{"SHA-256<br/>matches?"}
+    SHA -->|no| STOP["refuse,<br/>install nothing"]
+    SHA -->|yes| EX["extract: flatten the<br/>ovms/ wrapper, make<br/>every member<br/>owner-writable"]
+    UNV --> EX
+    EX --> R["~/.ovat/ovms<br/>bin/ovms on Linux<br/>ovms.exe on Windows"]
+
+    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
+    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
+    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
+    classDef ok fill:#1A7F37,stroke:#3DD68C,color:#FFFFFF
+    classDef fail fill:#FF5C5C,stroke:#B42318,color:#0F141A
+    classDef warn fill:#FFC107,stroke:#9A6700,color:#1F2328,stroke-dasharray:4 3
+    class S cli
+    class P,SUM,SHA,L,DL,EX step
+    class W backend
+    class M,WARN,UNV warn
+    class STOP fail
+    class R ok
 ```
 
 **Why this is not part of `pip install`.** The archive is 126 to 185 MB, Linux
@@ -632,17 +706,31 @@ export OVAT_OVMS=/path/to/ovms        # or set model.ovms_binary in the YAML
 ### Starting it: `ovat serve`
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
 flowchart TD
     Serve["ovat serve"] --> Locate["find_ovms()"]
-    Locate -->|"config → OVAT_OVMS → PATH → known dirs"| Found{"found?"}
+    Locate -->|"config, OVAT_OVMS,<br/>PATH, known dirs"| Found{"found?"}
     Found -->|"no, and a TTY"| Offer["offer ovat setup"]
-    Found -->|"no, and no TTY"| Refuse["refuse, download nothing"]
-    Found -->|"yes"| Env["ovms_env()<br/>PATH + PYTHONHOME + LD_LIBRARY_PATH"]
-    Env --> Spawn["Popen, logs to a FILE"]
-    Spawn --> Wait["wait_until_ready()<br/>STALL budget, no deadline"]
-    Wait -->|"health 200"| Ready["ready; pid in ovms.pid"]
-    Wait -->|"process exited"| Dead["report; point at the log"]
-    Wait -->|"no progress 300s"| Stall["say it is still running"]
+    Found -->|"no, and no TTY"| Refuse["refuse,<br/>download nothing"]
+    Found -->|"yes"| Env["ovms_env()<br/>PATH, PYTHONHOME,<br/>LD_LIBRARY_PATH"]
+    Env --> Spawn["Popen,<br/>logs to a FILE"]
+    Spawn --> Wait["wait_until_ready()<br/>STALL budget,<br/>no deadline"]
+    Wait -->|"health 200"| Ready["ready;<br/>pid in ovms.pid"]
+    Wait -->|"process exited"| Dead["report;<br/>point at the log"]
+    Wait -->|"no progress<br/>for 300 s"| Stall["say it is<br/>still running"]
+
+    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
+    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
+    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
+    classDef ok fill:#1A7F37,stroke:#3DD68C,color:#FFFFFF
+    classDef fail fill:#FF5C5C,stroke:#B42318,color:#0F141A
+    classDef warn fill:#FFC107,stroke:#9A6700,color:#1F2328,stroke-dasharray:4 3
+    class Serve cli
+    class Locate,Found,Env,Wait step
+    class Spawn backend
+    class Offer,Stall warn
+    class Refuse,Dead fail
+    class Ready ok
 ```
 
 **The locator searches `./ovms` first**, because that is where the README's own
@@ -710,17 +798,29 @@ set. A device written in `workflow.yml` always wins.
 The same table as a chart:
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
 flowchart TD
     Start["ovat startup"] --> Detect{"devices?"}
-    Detect -->|"CPU only"| CPUOnly["everything → CPU<br/>(macOS / dev laptop)"]
-    Detect -->|"CPU + GPU"| NoNPU["emb → CPU<br/>LLM → GPU"]
-    Detect -->|"CPU + GPU + NPU"| Full["emb → NPU<br/>LLM → GPU<br/>whisper → CPU"]
+    Detect -->|"CPU only"| CPUOnly["everything on CPU<br/>macOS, dev laptop"]
+    Detect -->|"CPU + GPU"| NoNPU["embeddings: CPU<br/>LLM: GPU<br/>whisper: CPU"]
+    Detect -->|"CPU + GPU + NPU"| Full["embeddings: NPU<br/>LLM: GPU<br/>whisper: CPU"]
 
-    Full --> Limits["To serve an LLM on the NPU"]
-    Limits --> L1["needs a -int4-cw-ov export"]
-    Limits --> L2["prompt capped: set --max_prompt_len"]
-    Limits --> L3["no batching or beam search"]
-    Limits --> L4["KV cache settings ignored"]
+    Full --> Limits["To serve an LLM<br/>on the NPU"]
+    Limits --> L1["needs a<br/>-int4-cw-ov export"]
+    Limits --> L2["prompt capped:<br/>set --max_prompt_len"]
+    Limits --> L3["no batching or<br/>beam search"]
+    Limits --> L4["KV cache<br/>settings ignored"]
+
+    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
+    classDef config fill:#FFC107,stroke:#9A6700,color:#1F2328
+    classDef hw fill:#57606A,stroke:#8C959F,color:#FFFFFF
+    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
+    classDef warn fill:#FFC107,stroke:#9A6700,color:#1F2328,stroke-dasharray:4 3
+    class Start cli
+    class Detect step
+    class CPUOnly,NoNPU,Full hw
+    class Limits config
+    class L1,L2,L3,L4 warn
 ```
 
 | Model type | Device | Why |
@@ -781,12 +881,20 @@ carry
 has the plain `openvino_model.xml` that marks a text LLM.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
 flowchart TD
-    F["model folder"] --> C{"openvino_vision_*.xml present?"}
-    C -->|"no"| L["kind = llm → LLMPipeline"]
-    C -->|"yes"| M{"model_type in _UNIFIED_TYPES?"}
-    M -->|"no, qwen2_vl, internvl_chat, phi3_v"| V["kind = vlm → vision only"]
-    M -->|"yes, qwen3_5"| U["kind = unified → VLMPipeline<br/>answers to BOTH filters"]
+    F["model folder"] --> C{"openvino_vision_*.xml<br/>or openvino_language<br/>_model.xml present?"}
+    C -->|"no"| L["other checks:<br/>whisper, embeddings,<br/>llm: LLMPipeline"]
+    C -->|"yes"| M{"model_type in<br/>_UNIFIED_TYPES?"}
+    M -->|"no: qwen2_vl,<br/>internvl_chat, phi3_v"| V["kind = vlm<br/>vision only"]
+    M -->|"yes: qwen3_5,<br/>qwen3_6"| U["kind = unified<br/>VLMPipeline, answers<br/>to BOTH filters"]
+
+    classDef config fill:#FFC107,stroke:#9A6700,color:#1F2328
+    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
+    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
+    class F config
+    class C,M step
+    class L,V,U backend
 ```
 
 | Decision | Why |
@@ -841,14 +949,24 @@ All four end with the agent answering fluently while having called nothing, whic
 is the hardest kind of broken to notice. Each is now detected and named.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
 flowchart TD
-    Reply["a reply with no tool_calls"] --> Q0{"finish_reason?"}
-    Q0 -->|"length"| T["truncated<br/>cut at max_tokens; the markup is a FRAGMENT"]
-    Q0 -->|"stop"| Q1{"markup still in it?"}
-    Q1 -->|"yes"| A["undecoded_tool_call<br/>parser did not match; markup survived"]
-    Q1 -->|"no"| Q2{"anything left after reasoning?"}
-    Q2 -->|"no"| B["empty_answer<br/>parser SWALLOWED the reply"]
+    Reply["a reply with<br/>no tool_calls"] --> Q1{"tool markup<br/>still in it?"}
+    Q1 -->|"yes"| Q0{"finish_reason<br/>is length?"}
+    Q0 -->|"yes"| T["cut at max_tokens:<br/>the markup is a<br/>FRAGMENT (truncated)"]
+    Q0 -->|"no"| A["undecoded_tool_call<br/>the server did not<br/>decode the markup"]
+    Q1 -->|"no"| Q2{"anything left<br/>after reasoning?"}
+    Q2 -->|"no"| B["empty_answer<br/>parser SWALLOWED<br/>the reply"]
     Q2 -->|"yes"| C["a real answer"]
+
+    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
+    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
+    classDef ok fill:#1A7F37,stroke:#3DD68C,color:#FFFFFF
+    classDef fail fill:#FF5C5C,stroke:#B42318,color:#0F141A
+    class Reply backend
+    class Q0,Q1,Q2 step
+    class T,A,B fail
+    class C ok
 ```
 
 | Mode | Symptom | Detected by |
@@ -895,11 +1013,19 @@ turns every request into an OpenTelemetry span, **with no OTEL dependency added
 to OVAT**. It is observability as configuration.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
 flowchart LR
-    OVAT["ovat run<br/>ovms_url → :8000/v1"] --> Plano["plano (Envoy)<br/>:8000<br/>OTEL spans"]
+    OVAT["ovat run<br/>ovms_url:<br/>:8000/v1"] --> Plano["plano (Envoy)<br/>:8000<br/>OTel spans"]
     Plano --> Bridge["ovms_id_bridge.py<br/>:8001"]
-    Bridge --> OVMS["OVMS :8002/v3<br/>(model.ovms_port)"]
-    Plano -.-> Obs["planoai obs<br/>latency, TTFT, tokens"]
+    Bridge --> OVMS["OVMS :8002/v3<br/>model.ovms_port"]
+    Plano -.-> Obs["planoai obs<br/>latency, TTFT,<br/>tokens"]
+
+    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
+    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
+    classDef telemetry fill:#7A8CA0,stroke:#57606A,color:#0F141A
+    class OVAT cli
+    class Plano,Bridge,OVMS backend
+    class Obs telemetry
 ```
 
 Three problems had to be solved, and each answer is recorded in the config's
