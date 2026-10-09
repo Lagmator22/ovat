@@ -152,9 +152,8 @@ class TelemetryScreen(Screen):
         super().__init__()
         self.live = LiveBufferSink()
         # No agent source. It could only ever say "n/a" here: an agent exists
-        # solely inside the chat screen's OVMS engine, only the native loop
-        # fills last_trace at all, and a row that is permanently unavailable
-        # teaches the reader to ignore the whole table. Per-run agent numbers
+        # solely inside the chat screen's OVMS engine, and a row that is
+        # permanently unavailable teaches the reader to ignore the whole table. Per-run agent numbers
         # live in `ovat run --trace`, which is where they belong.
         self.collector = Collector(
             [SystemSource(),

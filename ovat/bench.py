@@ -11,11 +11,11 @@ deserves its own tests, not a place inside a typer command body.
 
 Two measurement honesty notes, both of which shape the output:
 
-  * Token counts come from OVMS's usage field, which only the NATIVE loop
-    records (it owns its own request loop; the frameworks own theirs and do
-    not hand the usage back). So tokens are reported where they are known and
-    left explicitly unknown elsewhere, never zero. A zero would read as "this
-    engine used no tokens", which is false.
+  * Token counts come from OVMS's usage field, which every engine records
+    in agent.last_trace (the framework adapters read it back from their
+    frameworks; see ovat/agent/usage.py). Where a server sent none, tokens
+    stay explicitly unknown, never zero. A zero would read as "this engine
+    used no tokens", which is false.
   * Peak RSS is SAMPLED on a background thread, not read once at the end. A
     single reading after the run misses the peak entirely, because Python has
     usually already freed the big allocations by then, and the whole point of
@@ -160,8 +160,8 @@ def benchmark_engine(config, engine: str, question: str,
         # says_nothing() fallback below scored it ok.
         failure = row["answer"] or "the engine reported a failure."
     elif says_nothing(row.get("answer") or ""):
-        # Fallback for the three framework engines, which keep no trace at all:
-        # there, an empty answer is the only evidence available.
+        # Fallback for the three framework engines, whose traces carry no
+        # empty_answer flag: there, an empty answer is the only evidence.
         failure = "the engine returned no answer (reply was empty)."
 
     if failure is not None:

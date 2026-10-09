@@ -328,3 +328,54 @@ def test_the_llamaindex_adapter_flags_a_capped_run_as_failed():
     assert agent.last_failed is True
     agent.run("q")
     assert agent.last_failed is False
+
+
+# Token usage: the same totals the native loop records
+
+def test_llamaindex_records_token_usage_from_every_model_call():
+    """Each AgentOutput event carries the OpenAI reply as `raw`, usage
+    included. The adapter used to read none of it, so bench showed a dash
+    for llamaindex while OVMS had sent the numbers on every reply.
+
+    The fake answers only unstreamed calls, so this also pins
+    streaming=False: streamed, OVMS sends usage only when stream_options
+    asks for it, and documents that for continuous-batching servables only
+    (not the NPU)."""
+    from tests.conftest import ANSWER, scripted_framework_agent
+
+    agent, calls = scripted_framework_agent("llamaindex", [(10, 4), (25, 6)])
+    assert agent.run("q") == ANSWER
+    assert calls == ["x"]
+    assert agent.last_trace["engine"] == "llamaindex"
+    totals = agent.last_trace["totals"]
+    assert totals["prompt_tokens"] == 35
+    assert totals["completion_tokens"] == 10
+    assert totals["tool_calls"] == 1
+    assert totals["turns"] == 2
+    assert totals["failed"] is False
+
+
+def test_llamaindex_leaves_tokens_unknown_when_the_server_sends_no_usage():
+    from tests.conftest import scripted_framework_agent
+
+    agent, _ = scripted_framework_agent("llamaindex", None)
+    agent.run("q")
+    totals = agent.last_trace["totals"]
+    assert totals["prompt_tokens"] is None
+    assert totals["completion_tokens"] is None
+    assert totals["tool_calls"] == 1
+
+
+def test_the_usage_is_read_from_a_reply_object_as_well_as_a_dict():
+    """FunctionAgent's early-stopping path hands over the reply object
+    rather than its model_dump()."""
+    from types import SimpleNamespace
+    from ovat.agent.llamaindex_agent import _usage_of
+
+    reply = SimpleNamespace(usage=SimpleNamespace(prompt_tokens=7,
+                                                  completion_tokens=3))
+    assert _usage_of(reply) == (7, 3)
+    assert _usage_of({"usage": {"prompt_tokens": 7,
+                                "completion_tokens": 3}}) == (7, 3)
+    assert _usage_of({"usage": None}) == (None, None)
+    assert _usage_of(None) == (None, None)

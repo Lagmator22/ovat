@@ -7,6 +7,7 @@ machine with no OVMS.
 """
 import time
 
+import pytest
 from typer.testing import CliRunner
 
 from ovat.bench import benchmark, benchmark_engine
@@ -192,9 +193,9 @@ def test_an_unreachable_server_still_reports_how_long_it_waited():
 
 
 def test_tokens_are_absent_rather_than_zero_when_unknown():
-    """Only the native loop records OVMS's usage field. A zero would read as
-    "this engine used no tokens", which is a false claim, so unknown stays
-    None and the table prints a dash."""
+    """An engine that recorded no usage leaves the row's tokens unknown. A
+    zero would read as "this engine used no tokens", which is a false claim,
+    so unknown stays None and the table prints a dash."""
     row = benchmark_engine(_config(), "react", "q",
                            build_agent=lambda cfg: _Agent())
     assert row["prompt_tokens"] is None
@@ -209,6 +210,42 @@ def test_tokens_are_reported_when_the_engine_recorded_them():
     assert row["prompt_tokens"] == 120
     assert row["completion_tokens"] == 45
     assert row["tool_calls"] == 2
+
+
+FRAMEWORKS = [("react", "langchain"), ("llamaindex", "llama_index.core"),
+              ("openai-agents", "agents")]
+
+
+@pytest.mark.parametrize("engine,package", FRAMEWORKS)
+def test_framework_engines_fill_the_token_columns(engine, package):
+    """Every engine now hands bench the native loop's totals, so the row is
+    filled with no special case for any engine. Before, react, llamaindex
+    and openai-agents showed dashes while OVMS sent usage on every reply."""
+    pytest.importorskip(package)
+    from tests.conftest import scripted_framework_agent
+
+    agent, _ = scripted_framework_agent(engine, [(10, 4), (25, 6)])
+    row = benchmark_engine(_config(), engine, "q",
+                           build_agent=lambda cfg: agent)
+    assert row["ok"] is True, row["error"]
+    assert row["prompt_tokens"] == 35
+    assert row["completion_tokens"] == 10
+    assert row["tool_calls"] == 1
+
+
+@pytest.mark.parametrize("engine,package", FRAMEWORKS)
+def test_framework_engines_leave_tokens_unknown_without_usage(engine,
+                                                               package):
+    pytest.importorskip(package)
+    from tests.conftest import scripted_framework_agent
+
+    agent, _ = scripted_framework_agent(engine, None)
+    row = benchmark_engine(_config(), engine, "q",
+                           build_agent=lambda cfg: agent)
+    assert row["ok"] is True, row["error"]
+    assert row["prompt_tokens"] is None
+    assert row["completion_tokens"] is None
+    assert row["tool_calls"] == 1
 
 
 def test_peak_memory_is_sampled_during_the_run_not_read_after_it():

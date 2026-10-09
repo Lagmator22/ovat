@@ -19,9 +19,10 @@ from ovat.telemetry.base import TelemetrySource
 
 
 class AgentTraceSource(TelemetrySource):
-    """The numbers the native loop already records, as a source.
+    """The numbers an engine records in `last_trace`, as a source.
 
-    `loop.py` has filled `last_trace` since W9; this exposes it through the
+    `loop.py` has filled `last_trace` since W9, and the framework engines fill
+    the same totals (ovat/agent/usage.py); this exposes them through the
     contract so the JSON file, an OTLP exporter and the TUI page all read one
     thing instead of three.
     """
@@ -56,8 +57,7 @@ class AgentTraceSource(TelemetrySource):
             return ("open /chat, switch to /engine ovms and ask something; "
                     "the local engine is retrieval, not an agent loop")
         if getattr(agent, "last_trace", None) is None:
-            return ("this engine does not record per-turn data; only the "
-                    "native loop does")
+            return "this engine does not record a trace"
         return None
 
 

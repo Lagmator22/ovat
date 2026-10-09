@@ -387,7 +387,8 @@ def run(
     # failures as the answer text (the model needs to read them), so without
     # this the CLI printed "Error: ..." and reported success.
     #
-    # Two sources, because only the native loop keeps a trace. The framework
+    # Two sources, because only the native loop flags failures in its trace.
+    # The framework
     # adapters flag their own failures in last_failed; reading the trace
     # alone let a capped llamaindex run exit 0 (measured on the AI PC).
     failed = bool((getattr(agent, "last_trace", None) or {})
@@ -429,7 +430,8 @@ def run(
     # the model's own "Source:" line appeared in most and not all -- and the
     # citation is the entire point of the RAG example. `ovat chat` already
     # prints this separately; `ovat run` now matches it.
-    # getattr, not agent.last_trace: only the native loop has that attribute.
+    # getattr, not agent.last_trace: an agent built outside the factory may
+    # not have that attribute. Only the native loop records per-turn sources.
     # The three framework engines do not, so a bare access raises AttributeError
     # and takes the whole run down -- which is exactly what it did before this
     # line was written defensively.
@@ -702,9 +704,10 @@ def _write_trace(path: str, cfg, agent, peak_rss_mb=None,
                  error: str | None = None) -> None:
     """Dump the run trace (Layer 7) as JSON: what the run cost, measured.
 
-    The native loop fills agent.last_trace as it works. The framework engines
-    own their own request loops and do not hand per-turn data back, so their
-    trace says so rather than writing empty numbers.
+    The native loop fills agent.last_trace turn by turn; the framework
+    engines fill its totals when a run ends (ovat/agent/usage.py). A run
+    that raised before any totals existed says so rather than writing empty
+    numbers.
 
     The engine name comes from the CONFIG, not from a literal. It used to be
     hardcoded "react", which was true when react was the only framework
@@ -721,9 +724,8 @@ def _write_trace(path: str, cfg, agent, peak_rss_mb=None,
 
     trace_data = getattr(agent, "last_trace", None) or {
         "engine": cfg.agent.type,
-        "note": ("per-turn tracing is only wired for the native loop; this "
-                 "engine owns its own request loop and does not report "
-                 "token usage back"),
+        "note": ("this engine recorded no totals: the run stopped before "
+                 "the engine could report them"),
     }
     trace_data = dict(trace_data)                  # never mutate the agent's copy
     trace_data["model"] = cfg.model.name
@@ -1772,7 +1774,7 @@ def bench(
     rows, footnotes = [], []
     for row in report["results"]:
         # A dash, never a zero: "unknown" and "none" are different claims, and
-        # only the native loop records token usage.
+        # a server that sends no usage block leaves the tokens unknown.
         def cell(key):
             value = row[key]
             return "-" if value is None else str(value)
@@ -1826,9 +1828,8 @@ def bench(
     if any(not r["ok"] for r in report["results"]) and not out:
         rprint("[dim]Pass --out report.json for the full error text.[/dim]")
     if any(r["ok"] and r["prompt_tokens"] is None for r in report["results"]):
-        rprint("[dim]Token counts come from OVMS's usage field, which only "
-               "the native loop records; the frameworks own their own request "
-               "loops and do not hand it back.[/dim]")
+        rprint("[dim]Token counts come from the server's usage field; a dash "
+               "means the server sent none for that engine's replies.[/dim]")
     # Peak MB is only comparable between rows because each engine now runs in
     # its OWN process. RSS is a whole-process number, so when they shared one,
     # every row inherited what the rows above it had allocated: measured on
