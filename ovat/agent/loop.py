@@ -21,6 +21,7 @@ import json
 import time
 
 from ovat.agent.session import Session
+from ovat.agent.usage import sum_known
 from ovat.text import (looks_like_undecoded_tool_call, says_nothing,
                        strip_code_fence)
 from ovat.providers.base import LLMProvider
@@ -156,14 +157,8 @@ class AgentLoop:
 
         def _total(key: str):
             """Sum a per-turn count, or None if NO turn reported one.
-
-            Absent is not zero. A server that never sends a usage block
-            would otherwise produce "prompt_tokens": 0, which reads as "this
-            run used no tokens" rather than "nobody told us", and a
-            benchmark built on that number would be quietly wrong.
-            """
-            known = [t[key] for t in turns if t[key] is not None]
-            return sum(known) if known else None
+            Absent is not zero; see ovat/agent/usage.py."""
+            return sum_known(t[key] for t in turns)
 
         def _finish(answer: str) -> str:
             self.last_trace["totals"] = {

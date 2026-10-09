@@ -114,10 +114,9 @@ server and prints the results side by side:
 </div>
 
 Recorded on an Intel AI PC (LunarLake, Arc 140V GPU) serving Qwen3.5-4B-int4-ov.
-The dashes are on purpose. OVMS returns token usage on every reply, but today
-only the native loop records it; the three framework engines do not read
-OVMS's `usage` field yet (planned). A number OVAT does not know stays a dash
-instead of turning into a misleading `0`.
+The token dashes in that screenshot are from before the framework engines
+read OVMS's `usage` field; all four engines fill those columns now. A number
+OVAT does not know still stays a dash instead of turning into a misleading `0`.
 
 ---
 

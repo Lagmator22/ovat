@@ -331,9 +331,9 @@ agent:
   type: react        # native | react | llamaindex | openai-agents
 ```
 
-- **`native`**. OVAT's own loop. No extra dependencies, and today the engine
-  that records per-turn token counts. OVMS returns token usage on every reply;
-  the other three engines do not read it yet.
+- **`native`**. OVAT's own loop. No extra dependencies, and the only engine
+  that records token counts per turn. OVMS returns token usage on every reply,
+  and the other three engines record it per run.
 - **`react`**. LangChain, `create_agent` + `ChatOpenAI` pointed at OVMS
 - **`llamaindex`**. LlamaIndex `FunctionAgent` + `OpenAILike`
 - **`openai-agents`**, the OpenAI Agents SDK, against a local server

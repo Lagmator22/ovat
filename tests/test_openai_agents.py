@@ -195,6 +195,7 @@ def test_the_agents_engine_remembers_earlier_turns(monkeypatch):
 
     class Result:
         final_output = "an answer"
+        raw_responses, new_items = [], []
 
         def __init__(self, given):
             self._given = given
@@ -307,3 +308,67 @@ def test_a_made_up_tool_name_is_a_model_error_not_a_crash(monkeypatch):
     assert "OVMS" not in answer
     assert agent.last_failed is True
     assert agent._input_items == []          # a failed run poisons nothing
+
+
+# Token usage: the same totals the native loop records
+
+def test_openai_agents_records_token_usage_from_every_model_call():
+    """Each ModelResponse in raw_responses carries that reply's usage. The
+    adapter used to read none of it, so bench showed a dash for
+    openai-agents while OVMS had sent the numbers on every reply."""
+    from tests.conftest import ANSWER, scripted_framework_agent
+
+    agent, calls = scripted_framework_agent("openai-agents",
+                                            [(10, 4), (25, 6)])
+    assert agent.run("q") == ANSWER
+    assert calls == ["x"]
+    assert agent.last_trace["engine"] == "openai-agents"
+    totals = agent.last_trace["totals"]
+    assert totals["prompt_tokens"] == 35
+    assert totals["completion_tokens"] == 10
+    assert totals["tool_calls"] == 1
+    assert totals["turns"] == 2
+    assert totals["failed"] is False
+
+
+def test_openai_agents_leaves_tokens_unknown_when_the_server_sends_no_usage():
+    """The SDK records a reply without usage as Usage(requests=1) with every
+    count 0. Summing that would print 0/0, a claim nobody made."""
+    from tests.conftest import scripted_framework_agent
+
+    agent, _ = scripted_framework_agent("openai-agents", None)
+    agent.run("q")
+    totals = agent.last_trace["totals"]
+    assert totals["prompt_tokens"] is None
+    assert totals["completion_tokens"] is None
+    assert totals["tool_calls"] == 1
+
+
+def test_a_capped_agents_run_still_reports_what_it_cost(monkeypatch):
+    """The SDK attaches the run so far to the exception as run_data."""
+    import agents
+    from agents.exceptions import MaxTurnsExceeded, RunErrorDetails
+    from agents.items import ModelResponse
+    from agents.usage import Usage
+
+    tools, _ = _tools()
+
+    async def capped(agent, input_items, max_turns=None):
+        exc = MaxTurnsExceeded("too many")
+        exc.run_data = RunErrorDetails(
+            input=input_items, new_items=[],
+            raw_responses=[ModelResponse(output=[], response_id=None,
+                                         usage=Usage(requests=1,
+                                                     input_tokens=9,
+                                                     output_tokens=2))],
+            last_agent=None, context_wrapper=None,
+            input_guardrail_results=[], output_guardrail_results=[])
+        raise exc
+
+    monkeypatch.setattr(agents.Runner, "run", capped)
+    agent = OpenAIAgentsAgent(object(), tools, 3, None)
+    agent.run("q")
+    totals = agent.last_trace["totals"]
+    assert totals["failed"] is True
+    assert (totals["prompt_tokens"], totals["completion_tokens"]) == (9, 2)
+    assert totals["tool_calls"] == 0

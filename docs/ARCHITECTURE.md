@@ -444,9 +444,14 @@ engines, and all four use the same OVMS server, model and tools.
 | `llamaindex` | LlamaIndex | `FunctionAgent` + `OpenAILike` |
 | `openai-agents` | OpenAI Agents SDK | `OpenAIChatCompletionsModel` |
 
-**Token counts.** OVMS returns token usage on every reply. The native loop
-records it per turn today. The three framework engines do not read OVMS's
-`usage` field yet, so their token cells show a dash; reading it is planned.
+**Token counts.** OVMS returns token usage on every reply, and all four
+engines record it. The native loop records it per turn. The three framework
+engines record run totals in the same `last_trace` shape (`agent/usage.py`),
+summed from what each framework kept: LangChain's `AIMessage.usage_metadata`,
+the `raw` reply on LlamaIndex's `AgentOutput` events (the engine sends
+unstreamed requests, because a streamed OVMS reply carries usage only when
+`stream_options` asks for it), and the Agents SDK's `RunResult.raw_responses`.
+A reply with no usage leaves the cell a dash.
 
 **Every engine derives its tool arguments from the same `SCHEMA`.** That is
 what `arg_models.py` is for: it turns each tool's `SCHEMA` dict into the
@@ -1036,7 +1041,7 @@ each sample to the sink. The sinks are `JSONFileSink` (JSON Lines),
 
 | Source | Reports | Available on |
 | --- | --- | --- |
-| `AgentTraceSource` | tokens per turn, latency, tool traces | the native loop today; the framework engines do not read OVMS's `usage` field yet |
+| `AgentTraceSource` | tokens, latency, tool calls | all four engines (per turn on the native loop, per run on the others) |
 | `SystemSource` | CPU per core, RAM, thread count | all |
 | `ProcessMemorySource` | this process's resident memory | all |
 | `IntelHardwareSource` | power, NPU bandwidth, GPU frequency | Windows 11 on Core Ultra with Intel UT installed; tried on Linux if a UT binary is present |
@@ -1304,7 +1309,6 @@ installs and runs.
 
 **Planned or open:**
 
-- Token counts for the three framework engines (reading OVMS's `usage` field).
 - OVMS 2026.4.1 measured on Linux, and GPU/NPU verification on Linux, which
   WSL2 cannot give (no `/dev/dri`).
 - GPU utilisation without Intel UT.

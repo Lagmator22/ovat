@@ -119,3 +119,154 @@ def reply(finish_reason: str, content=None, tool_calls=None) -> dict:
         "tool_calls": tool_calls,
         "raw": None,
     }
+
+
+# The three framework engines on a scripted model, for the token-usage tests.
+#
+# Each fake replies twice, the way OVMS does on a one-tool question: first a
+# call to add_note, then the answer. `usage` is one (prompt, completion) pair
+# per reply, or None for a server that sends no usage block. Shared here so
+# the engine test files and test_bench drive the very same scripts. Every
+# framework import is inside a function: the frameworks are optional and
+# this file is loaded by every test.
+
+ANSWER = "noted and answered"
+
+
+def note_tools() -> tuple[dict, list]:
+    """One tool shaped like a real OVAT tool, and the list of its calls."""
+    calls = []
+
+    def add_note(text: str) -> str:
+        calls.append(text)
+        return f"noted {text}"
+
+    tools = {"add_note": {"function": add_note, "schema": {
+        "type": "function", "function": {
+            "name": "add_note", "description": "Record a note.",
+            "parameters": {"type": "object",
+                           "properties": {"text": {"type": "string"}},
+                           "required": ["text"]}}}}}
+    return tools, calls
+
+
+def _react_agent(config, tools, usage):
+    from langchain_core.language_models.fake_chat_models import (
+        GenericFakeChatModel)
+    from langchain_core.messages import AIMessage
+
+    from ovat.agent.langchain_agent import build_react_agent
+
+    class ToolModel(GenericFakeChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    def meta(i):
+        if usage is None:
+            return None
+        p, c = usage[i]
+        return {"input_tokens": p, "output_tokens": c,
+                "total_tokens": p + c}
+
+    replies = iter([
+        AIMessage(content="", usage_metadata=meta(0),
+                  tool_calls=[{"name": "add_note", "args": {"text": "x"},
+                               "id": "c1"}]),
+        AIMessage(content=ANSWER, usage_metadata=meta(1)),
+    ])
+    return build_react_agent(config, tools, llm=ToolModel(messages=replies))
+
+
+def _llamaindex_agent(config, tools, usage):
+    from llama_index.core.base.llms.types import ChatMessage, ChatResponse
+    from llama_index.core.llms import MockFunctionCallingLLM
+    from llama_index.core.llms.llm import ToolSelection
+    from pydantic import PrivateAttr
+
+    from ovat.agent.llamaindex_agent import build_llamaindex_agent
+
+    def raw(i):
+        # What OpenAILike hands over: the reply's model_dump(), whose
+        # "usage" is None when the server sent none.
+        if usage is None:
+            return {"usage": None}
+        p, c = usage[i]
+        return {"usage": {"prompt_tokens": p, "completion_tokens": c,
+                          "total_tokens": p + c}}
+
+    class ScriptedLLM(MockFunctionCallingLLM):
+        _replies: list = PrivateAttr(default_factory=list)
+
+        async def achat(self, messages, **kwargs):
+            return self._replies.pop(0)
+
+    llm = ScriptedLLM(is_chat_model=True)
+    llm._replies = [
+        ChatResponse(message=ChatMessage(
+            role="assistant", content="",
+            additional_kwargs={"tool_calls": [ToolSelection(
+                tool_id="c1", tool_name="add_note",
+                tool_kwargs={"text": "x"})]}), raw=raw(0)),
+        ChatResponse(message=ChatMessage(role="assistant", content=ANSWER),
+                     raw=raw(1)),
+    ]
+    return build_llamaindex_agent(config, tools, llm=llm)
+
+
+def _openai_agents_agent(config, tools, usage):
+    from agents.items import ModelResponse
+    from agents.models.interface import Model
+    from agents.usage import Usage
+    from openai.types.responses import (ResponseFunctionToolCall,
+                                        ResponseOutputMessage,
+                                        ResponseOutputText)
+
+    from ovat.agent.openai_agents_agent import build_openai_agents_agent
+
+    def use(i):
+        # What OpenAIChatCompletionsModel records for a reply with no usage
+        # block: one request, every count zero.
+        if usage is None:
+            return Usage(requests=1)
+        p, c = usage[i]
+        return Usage(requests=1, input_tokens=p, output_tokens=c,
+                     total_tokens=p + c)
+
+    outputs = [
+        [ResponseFunctionToolCall(type="function_call", call_id="c1",
+                                  name="add_note",
+                                  arguments='{"text": "x"}')],
+        [ResponseOutputMessage(
+            id="m1", type="message", role="assistant", status="completed",
+            content=[ResponseOutputText(type="output_text", text=ANSWER,
+                                        annotations=[])])],
+    ]
+
+    class ScriptedModel(Model):
+        def __init__(self):
+            self._i = 0
+
+        async def get_response(self, *args, **kwargs):
+            i, self._i = self._i, self._i + 1
+            return ModelResponse(output=outputs[i], usage=use(i),
+                                 response_id=None)
+
+        def stream_response(self, *args, **kwargs):
+            raise NotImplementedError
+
+    return build_openai_agents_agent(config, tools, model=ScriptedModel())
+
+
+def scripted_framework_agent(engine: str, usage):
+    """Build `engine` on a model that calls add_note once, then answers.
+
+    Returns (agent, calls): `calls` lists every add_note that really ran.
+    """
+    from ovat.config.workflow import WorkflowConfig
+
+    config = WorkflowConfig(model={"name": "test-model"},
+                            agent={"type": engine})
+    tools, calls = note_tools()
+    build = {"react": _react_agent, "llamaindex": _llamaindex_agent,
+             "openai-agents": _openai_agents_agent}[engine]
+    return build(config, tools, usage), calls

@@ -26,8 +26,10 @@ llama_index is imported lazily inside the build function so `import ovat` stays
 cheap and someone using only the native loop never pays for the install.
 """
 import asyncio
+import time
 
 from ovat.agent.arg_models import args_model_from_schema
+from ovat.agent.usage import framework_trace
 from ovat.providers.backend import LLMBackend
 from ovat.config.workflow import WorkflowConfig
 
@@ -79,12 +81,31 @@ def _build_llm(config: WorkflowConfig):
     )
 
 
+def _usage_of(raw) -> tuple:
+    """(prompt, completion) tokens from one AgentOutput's `raw` reply.
+
+    FunctionAgent hands the OpenAI reply over as a dict (model_dump) on the
+    normal path and as the reply object on its early-stopping path, so both
+    are read. A reply without a usage block gives (None, None).
+    """
+    usage = (raw.get("usage") if isinstance(raw, dict)
+             else getattr(raw, "usage", None))
+    if usage is None:
+        return None, None
+    if not isinstance(usage, dict):
+        usage = {"prompt_tokens": getattr(usage, "prompt_tokens", None),
+                 "completion_tokens": getattr(usage, "completion_tokens",
+                                              None)}
+    return usage.get("prompt_tokens"), usage.get("completion_tokens")
+
+
 class LlamaIndexAgent:
     """Adapter so a LlamaIndex FunctionAgent looks like my native AgentLoop."""
 
     def __init__(self, agent, tools: dict, max_iterations: int,
-                 system_prompt: str | None):
+                 system_prompt: str | None, engine_name: str = "llamaindex"):
         self._agent = agent
+        self.engine_name = engine_name
         # The original tools dict is kept so `ovat run --dry-run` can print the
         # tool names the same way it does for the native loop.
         self.tools = tools
@@ -96,6 +117,12 @@ class LlamaIndexAgent:
         self._history: list = []
         # True when the last run() could not answer; see LangChainAgent.
         self.last_failed = False
+        # What the last run() cost, in the native loop's shape. _arun fills
+        # the counts below as the workflow's events arrive, so a run that
+        # fails part way still reports the calls it made.
+        self.last_trace: dict = {}
+        self._calls: list = []
+        self._tools_ran = 0
 
     def run(self, user_message: str) -> str:
         """Run the agent for one message and return the final text.
@@ -119,6 +146,8 @@ class LlamaIndexAgent:
         from llama_index.core.workflow.errors import WorkflowRuntimeError
 
         self.last_failed = False
+        self._calls, self._tools_ran = [], 0
+        started = time.monotonic()
         try:
             return asyncio.run(self._arun(user_message))
         except WorkflowRuntimeError as exc:
@@ -131,6 +160,10 @@ class LlamaIndexAgent:
             self.last_failed = True
             return (f"Error: I reached my max of {self.max_iterations} steps "
                     f"without a final answer.")
+        finally:
+            self.last_trace = framework_trace(
+                self.engine_name, self._calls, self._tools_ran,
+                self.last_failed, started)
 
     def _remember(self, user_message: str, answer: str) -> None:
         from llama_index.core.base.llms.types import ChatMessage, MessageRole
@@ -146,9 +179,23 @@ class LlamaIndexAgent:
         #
         # max_iterations is passed, not left to LlamaIndex's default of 20:
         # agent.max_iterations was otherwise ignored on this engine alone.
-        response = await self._agent.run(user_message,
-                                         chat_history=list(self._history),
-                                         max_iterations=self.max_iterations)
+        handler = self._agent.run(user_message,
+                                  chat_history=list(self._history),
+                                  max_iterations=self.max_iterations)
+        # The workflow's event stream is where the usage is: one AgentOutput
+        # per model call (its `raw` is the OpenAI reply, usage included) and
+        # one ToolCallResult per tool that actually ran. A test double that
+        # returns a plain coroutine has no stream, and records nothing.
+        if hasattr(handler, "stream_events"):
+            from llama_index.core.agent.workflow import (AgentOutput,
+                                                         ToolCallResult)
+
+            async for event in handler.stream_events():
+                if isinstance(event, AgentOutput):
+                    self._calls.append(_usage_of(event.raw))
+                elif isinstance(event, ToolCallResult):
+                    self._tools_ran += 1
+        response = await handler
         # FunctionAgent returns a response object whose str() is the answer.
         # Reading .response first keeps the text clean when the object grows
         # extra repr detail, which it has done between releases.
@@ -188,6 +235,14 @@ def build_llamaindex_agent(config: WorkflowConfig, tools: dict,
         tools=_wrap_tools(tools),
         llm=llm if llm is not None else _build_llm(config),
         system_prompt=config.agent.system_prompt,
+        # One plain request per model call, like the other three engines.
+        # Streamed, a reply carries usage only when stream_options asks for
+        # it, and OVMS documents that option for continuous-batching
+        # servables only and usage as not working for streaming on stateful
+        # ones (the NPU). Unstreamed, every reply carries it. Nothing here
+        # reads the stream token by token: run() waits for the whole answer.
+        streaming=False,
     )
     return LlamaIndexAgent(agent, tools, config.agent.max_iterations,
-                           config.agent.system_prompt)
+                           config.agent.system_prompt,
+                           engine_name=config.agent.type)

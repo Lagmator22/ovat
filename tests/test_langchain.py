@@ -216,3 +216,78 @@ def test_the_adapter_flags_its_own_failure_and_clears_it_on_success():
     assert agent.last_failed is True
     agent.run("second")
     assert agent.last_failed is False
+
+
+# Token usage: the same totals the native loop records
+
+def test_react_records_token_usage_from_every_model_call():
+    """ChatOpenAI puts OVMS's usage block on each AIMessage as
+    usage_metadata. The adapter used to read none of it, so bench showed a
+    dash for react while OVMS had sent the numbers on every reply."""
+    from tests.conftest import ANSWER, scripted_framework_agent
+
+    agent, calls = scripted_framework_agent("react", [(10, 4), (25, 6)])
+    assert agent.run("q") == ANSWER
+    assert calls == ["x"]
+    assert agent.last_trace["engine"] == "react"
+    totals = agent.last_trace["totals"]
+    assert totals["prompt_tokens"] == 35          # 10 + 25, both calls
+    assert totals["completion_tokens"] == 10      # 4 + 6
+    assert totals["tool_calls"] == 1              # the tool that really ran
+    assert totals["turns"] == 2
+    assert totals["failed"] is False
+
+
+def test_react_leaves_tokens_unknown_when_the_server_sends_no_usage():
+    """Absent is not zero: a 0 would read as "this run used no tokens"."""
+    from tests.conftest import scripted_framework_agent
+
+    agent, _ = scripted_framework_agent("react", None)
+    agent.run("q")
+    totals = agent.last_trace["totals"]
+    assert totals["prompt_tokens"] is None
+    assert totals["completion_tokens"] is None
+    assert totals["tool_calls"] == 1
+
+
+def test_react_counts_only_this_runs_messages_not_the_replayed_history():
+    """The graph returns the WHOLE conversation, history included, so
+    summing every AIMessage would bill run 2 for run 1's tokens too."""
+    def ai(p, c):
+        return AIMessage(content="a", usage_metadata={
+            "input_tokens": p, "output_tokens": c, "total_tokens": p + c})
+
+    class Graph:
+        def __init__(self):
+            self.cost = iter([(10, 1), (20, 2)])
+
+        def invoke(self, state, config=None):
+            from langchain_core.messages import HumanMessage
+            history = [m if not isinstance(m, tuple) else
+                       HumanMessage(content=m[1]) for m in state["messages"]]
+            return {"messages": [*history, ai(*next(self.cost))]}
+
+    agent = LangChainAgent(Graph(), tools={}, max_iterations=5,
+                           system_prompt=None)
+    agent.run("first")
+    agent.run("second")
+    assert agent.last_trace["totals"]["prompt_tokens"] == 20
+    assert agent.last_trace["totals"]["completion_tokens"] == 2
+
+
+def test_a_capped_react_run_reports_its_cost_as_unknown_not_zero():
+    """The graph raises before handing any messages back."""
+    from langgraph.errors import GraphRecursionError
+
+    class Runaway:
+        def invoke(self, *args, **kwargs):
+            raise GraphRecursionError("recursion limit reached")
+
+    agent = LangChainAgent(Runaway(), tools={}, max_iterations=2,
+                           system_prompt=None)
+    agent.run("spin")
+    totals = agent.last_trace["totals"]
+    assert totals["failed"] is True
+    assert totals["prompt_tokens"] is None
+    assert totals["tool_calls"] is None
+    assert totals["turns"] is None
