@@ -13,6 +13,8 @@ Build a tool-calling AI agent on an Intel AI PC from one YAML file and one comma
 [![Python](https://img.shields.io/pypi/pyversions/ovat)](https://pypi.org/project/ovat/)
 [![License](https://img.shields.io/pypi/l/ovat)](LICENSE)
 
+<a href="https://lagmator22.github.io/ovat-navigate/#demo"><img src="docs/assets/screens/demo-preview.jpg" width="720px" alt="Play the 6 minute OVAT demo video on the docs site. The still shows the OVAT terminal UI launcher with a play button."></a>
+
 </div>
 
 ```bash
@@ -108,7 +110,7 @@ not the prompt, not a line of Python.
 server and prints the results side by side:
 
 <div align="center">
-<img src="docs/assets/ovat-bench-four-engines.gif" width="800px" alt="ovat bench comparing native, react, llamaindex and openai-agents on one Intel AI PC">
+<img src="docs/assets/screens/bench-four-engines.png" width="800px" alt="ovat bench on examples/document-qa.yml: native, react, llamaindex and openai-agents all answer ok, with build time, answer time, peak memory, token and tool counts. Only the native row has token and tool counts; the others show dashes.">
 </div>
 
 Recorded on an Intel AI PC (LunarLake, Arc 140V GPU) serving Qwen3.5-4B-int4-ov.
@@ -237,10 +239,11 @@ ovat serve workflow.yml --stop                # 7. shut it down
 ```
 
 `ovat doctor` is the fastest way to find out what is wrong. It checks the
-machine and the config together, and every yellow row says what to do:
+machine and the config together, and every yellow row says what to do. Here
+it is on an Intel AI PC, all green:
 
 <div align="center">
-<img src="docs/assets/ovat-doctor.svg" width="760px" alt="ovat doctor output on macOS: eight checks ok, one warning explaining that OVMS does not run on macOS">
+<img src="docs/assets/screens/doctor.png" width="720px" alt="ovat doctor on Windows with examples/rag/workflow.yml: twelve checks ok, including OpenVINO devices CPU, GPU and NPU, device routing, OVMS serving, the embeddings model and OVMS reachable">
 </div>
 
 **Step 5 takes a while the first time**, because it downloads the model.
@@ -395,8 +398,12 @@ switches between the local model and OVMS-with-tools in the middle of a
 conversation:
 
 <div align="center">
-<img src="docs/assets/ovat-tui-chat.gif" width="800px" alt="The OVAT terminal UI answering a question with streaming output and a foldable reasoning block">
+<img src="docs/assets/screens/tui-chat-tools.png" width="800px" alt="The OVAT terminal UI chat. The local model cannot start because the workflow has no rag: section, so the chat switches to OVMS. One question then uses three tools: transcribe, describe_image and search_docs.">
 </div>
+
+One question, three tools. The workflow had no `rag:` block, so the chat
+switched itself to OVMS, and `search_docs` answered with a `[stub]` result
+(that is what it does without an index).
 
 The CLI never needs it. `textual` and `pyfiglet` come only with the `[tui]`
 extra, and a test makes sure a plain install imports neither of them, nor
@@ -416,6 +423,10 @@ ovat telemetry --once                                  # one snapshot
 In the TUI, `/telemetry` opens a page with two tabs. **Live** shows the
 numbers and a status line for every source (live, silent, or not available
 here, with the reason). **Help** explains what each number means.
+
+<div align="center">
+<img src="docs/assets/screens/telemetry-live.png" width="760px" alt="The TUI telemetry page on an Intel AI PC: cards for NPU, KV cache, system RAM, OVAT memory and OVAT CPU, a table of live numbers including Intel power rows, and a status line showing system, process, npu, ovms and intel all live">
+</div>
 
 Two rules the numbers follow. **Unknown stays unknown**: a missing token count
 is `null`, never `0`. **A missing source says why**: on a Mac you see "Intel
