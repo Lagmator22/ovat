@@ -88,11 +88,12 @@ engine except `native` needs its own extra:
   is defined once and works identically on all four; a second hand-kept
   registry is how a tool ends up working on one engine and crashing on
   another.
-- **Only `native` records token counts per turn.** The other engines show a
-  dash in that column, which means "unknown", not zero.
-- **The framework engines run their own event loop** and refuse to start
-  inside one that is already running. That is on purpose, not a limitation to
-  work around.
+- **Today only `native` records token counts per turn.** OVMS returns token
+  usage on every reply, but the other engines do not read it yet, so they show
+  a dash in that column, which means "unknown", not zero.
+- **The LlamaIndex and OpenAI Agents engines run their own event loop** and
+  refuse to start inside one that is already running. That is on purpose, not
+  a limitation to work around.
 - **`max_iterations` is a real safety cap.** A model that keeps calling tools
   without converging stops there instead of looping forever.
 - **No `rag:` block here**, so `search_docs` answers in stub mode and this

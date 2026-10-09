@@ -23,8 +23,9 @@ an agent prompt grows every round.
 
 The `agent.type` field selects one of four engines: native, react,
 llamaindex, or openai-agents. All four read the same workflow file and expose
-the same tools, so switching between them is a one-word edit. Only the native
-engine records per-turn token counts.
+the same tools, so switching between them is a one-word edit. Today only the
+native engine records per-turn token counts: OVMS returns token usage on every
+reply, and the three framework engines do not read it yet.
 
 ## Unknown is not zero
 
