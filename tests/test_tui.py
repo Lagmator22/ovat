@@ -980,7 +980,7 @@ def test_the_page_shows_sources_that_cannot_run_here_with_the_reason():
     _run(scenario())
 
 
-def test_a_running_but_silent_source_says_so_on_the_live_tab():
+def test_a_running_but_silent_source_says_so_on_the_live_tab(monkeypatch):
     """The Sources table was filled once, before any source started, so on
     the AI PC it read "intel live, sampling" while UT produced nothing."""
     from textual.widgets import Static
@@ -1006,12 +1006,9 @@ def test_a_running_but_silent_source_says_so_on_the_live_tab():
     async def scenario():
         app = OvatTUI()
         async with app.run_test() as pilot:
-            original = telemetry_screen.IntelHardwareSource
-            telemetry_screen.IntelHardwareSource = Silent
-            try:
-                screen = telemetry_screen.TelemetryScreen()
-            finally:
-                telemetry_screen.IntelHardwareSource = original
+            monkeypatch.setattr(telemetry_screen, "IntelHardwareSource",
+                                Silent)
+            screen = telemetry_screen.TelemetryScreen()
             app.push_screen(screen)
             await pilot.pause(0.7)
             line = str(screen.query_one("#tel-sources", Static).content)
