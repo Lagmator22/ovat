@@ -14,6 +14,7 @@ a one-line YAML edit, not a code change.
 """
 import os
 
+from ovat.agent.events import EventBus, observed
 from ovat.agent.loop import AgentLoop
 from ovat.config.workflow import WorkflowConfig
 from ovat.providers.backend import LLMBackend
@@ -292,6 +293,18 @@ def build_tools(config: WorkflowConfig,
     return tools
 
 
+def observe_tools(tools: dict, bus: EventBus) -> dict:
+    """The same tools, each function wrapped to report to `bus`.
+
+    Kept apart from build_tools on purpose: build_tools decides WHAT the
+    tools are, this decides how they are watched. All four engines call
+    tools[name]["function"], so this one step gives every engine tool events
+    and a cancel check (see ovat/agent/events.py).
+    """
+    return {name: {**spec, "function": observed(name, spec["function"], bus)}
+            for name, spec in tools.items()}
+
+
 # Every engine the factory can build. Named here so the error message, the
 # config docs and the dispatch below cannot drift apart.
 AGENT_TYPES = ("native", "react", "llamaindex", "openai-agents")
@@ -337,12 +350,17 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False):
     # Collected so close_agent() can shut the subprocesses down. Without an
     # owner they survive until the interpreter exits.
     mcp_servers: list = []
-    tools = build_tools(config, retriever=retriever, servers=mcp_servers)
+    # One bus per agent: the TUI and the A2A server subscribe to it, and its
+    # `stop` flag is how either of them cancels a run.
+    events = EventBus()
+    tools = observe_tools(
+        build_tools(config, retriever=retriever, servers=mcp_servers), events)
 
     agent_type = config.agent.type
     def _own(agent):
-        """Hand the agent its subprocesses so close_agent() can find them."""
+        """Hand the agent its subprocesses and its event bus."""
         agent.mcp_servers = mcp_servers
+        agent.events = events
         return agent
 
     if agent_type == "native":
@@ -352,6 +370,7 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False):
             system_prompt=config.agent.system_prompt,
             max_iterations=config.agent.max_iterations,
             engine_name=agent_type,
+            stop=events.stop,
         ))
     # Each framework is imported INSIDE its branch so the native path never
     # pays the import cost of a framework it does not use, and so a machine
