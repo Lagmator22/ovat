@@ -46,9 +46,10 @@ def session_lines(info: dict) -> list[Text]:
     model.append(info.get("device", "?"), style=f"bold {ui.CYAN}")
     model.append(f"  ·  {info.get('engine', '?')} engine", style=ui.DIM)
     if info.get("provider") == "genai":
-        model.append("  ·  local, no tools", style=ui.DIM)
+        model.append("  ·  in-process", style=ui.DIM)
 
-    tools = info.get("tools", [])
+    # `delegate` is how subagents are reached, not a tool of its own.
+    tools = [t for t in info.get("tools", []) if t["kind"] != "subagent"]
     subs = info.get("subagents", [])
     counts = Text(style=ui.DIM)
     counts.append(f"{len(tools)} tool{'s' if len(tools) != 1 else ''}")
@@ -80,7 +81,7 @@ class Banner(Horizontal):
     Banner #info { width: 1fr; height: auto; padding-top: 1; }
     Banner .line { height: 1; width: 100%; }
     Banner .gap { height: 1; }
-    Banner #counts { height: auto; }
+    Banner #counts, Banner #model { height: auto; }
     """
 
     def __init__(self, animate: bool = True, **kwargs) -> None:

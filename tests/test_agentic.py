@@ -262,3 +262,25 @@ def test_the_hardware_line_leaves_out_what_is_unknown():
     assert format_reading(reading) == "CPU 12%  ·  RAM 50%"
     monitor = HardwareMonitor([Src("npu", {"utilization": 41.0})])
     assert format_reading(monitor.sample()) == "NPU 41%"
+
+
+def test_a_local_model_folder_is_shown_by_its_name():
+    cfg = WorkflowConfig(model={"name": "models/OpenVINO/Qwen3.5-0.8B-int4-ov",
+                                "provider": "genai"})
+    info = s.describe_agent(cfg, Agent(), "w.yml")
+    assert info["model"] == "Qwen3.5-0.8B-int4-ov"
+
+
+def test_ask_subagent_shows_the_reply_without_the_models_framing():
+    class WithSubagent(Agent):
+        def __init__(self):
+            super().__init__()
+            self.tools["delegate"] = {
+                "kind": "subagent", "permission": "allow",
+                "function": lambda agent, task:
+                    f"[Answer from subagent {agent}]\n42"}
+    session, sink, _ = _session(WithSubagent)
+    session.start()
+    sink.wait_for(s.Ready)
+    session.ask_subagent("helper", "7*6")
+    assert sink.wait_for(s.TurnDone).answer == "42"

@@ -288,6 +288,8 @@ stops, and Ctrl-C stops it early. `--max-tokens N` sets a cap.
 | `ovat bench <config> -i "..."` | One question through several engines, side by side. `--repeat N` |
 | `ovat telemetry` | Live CPU, memory and Intel hardware numbers. `--once` for one snapshot |
 | `ovat tui` | The full-screen terminal app, same as `ovat` with no arguments |
+| `ovat agent [config]` | The chat-first agent TUI: live tools, subagents, approvals, `!` shell |
+| `ovat a2a serve\|card\|call\|token` | Offer a workflow to other agents over A2A, or ask one |
 
 `ovat <command> --help` lists every option.
 
@@ -301,6 +303,7 @@ stops, and Ctrl-C stops it early. `--max-tokens N` sets a cap.
 | **ReAct** | [`examples/react/`](examples/react/) | The same agent through LangChain, and all four engines compared |
 | **Audio + vision** | [`examples/audio-multimodal/`](examples/audio-multimodal/) | Transcribe a `.wav`, describe an image |
 | **OpenTelemetry** | [`examples/plano/`](examples/plano/) | Request traces through the plano AI gateway |
+| **Agent, subagents, A2A** | [`examples/agent/`](examples/agent/) | `ovat agent` with a local, an A2A and a cloud subagent |
 
 Each folder has its own README with the exact commands.
 
@@ -407,9 +410,18 @@ One question, three tools. The workflow had no `rag:` block, so the chat
 switched itself to OVMS, and `search_docs` answered with a `[stub]` result
 (that is what it does without an index).
 
+**`ovat agent`** is the newer, chat-first TUI. The conversation is the whole
+screen: the Intel mark at the top, one line per answer that folds all its
+tool calls (and a subagent's progress) into a live summary, an approval
+panel when a tool wants to send data off the machine, `!` to run a shell
+command, `/` for commands, and a bar with the model, device and live CPU,
+NPU and RAM. Workflows can name **subagents**: another OVAT workflow, an
+agent reached over A2A, or a model behind any OpenAI-compatible API.
+[`examples/agent/`](examples/agent/) has the commands.
+
 The CLI never needs it. `textual` and `pyfiglet` come only with the `[tui]`
 extra, and a test makes sure a plain install imports neither of them, nor
-LangChain, LlamaIndex or the Agents SDK.
+LangChain, LlamaIndex, the Agents SDK or the A2A SDK.
 
 ---
 

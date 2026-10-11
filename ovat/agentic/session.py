@@ -106,7 +106,9 @@ def describe_agent(config, agent, workflow: str) -> dict:
     return {
         "workflow": workflow,
         "name": Path(workflow).stem if workflow else "",
-        "model": config.model.name,
+        # A local model is named by its folder; show the folder's name.
+        "model": Path(config.model.name.replace("\\", "/")).name
+        or config.model.name,
         "device": config.model.device,
         "provider": config.model.provider,
         "engine": config.agent.type,
@@ -240,8 +242,12 @@ class AgentSession:
             self.busy = True
 
         def run():
-            fn = tools["delegate"]["function"]
-            return fn(agent=name, task=task)
+            answer = tools["delegate"]["function"](agent=name, task=task)
+            # The "[Answer from subagent ...]" line frames the reply for a
+            # MODEL; a person who asked directly just wants the reply.
+            if answer.startswith("[Answer from subagent") and "\n" in answer:
+                return answer.split("\n", 1)[1]
+            return answer
         return self._spawn(self._turn, f"/ask {name} {task}", run)
 
     def _turn(self, text: str, run=None) -> None:
