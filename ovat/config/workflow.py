@@ -25,6 +25,9 @@ The YAML I am parsing looks like this:
       type: native
       max_iterations: 10
 """
+import re
+from typing import Literal
+
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -325,12 +328,40 @@ class ToolConfig(StrictModel):
     model: str | None = None
     device: str | None = None       # CPU, GPU or NPU; unset asks DeviceManager
 
+    # type: a2a, another agent reached over A2A and used as ONE tool. The
+    # model sends it a message and reads its reply. One tool per remote
+    # agent, not per skill: an A2A request has no field that picks a skill.
+    url: str | None = None          # its base URL; the Agent Card is read there
+    # The NAME of the environment variable holding the bearer token, never
+    # the token itself: a workflow is a file people share and commit.
+    token_env: str | None = None
+    timeout: float | None = Field(default=None, gt=0)   # unset: 900 s
+    description: str | None = None  # replaces the card's text in the menu
+
     @model_validator(mode="after")
     def _env_needs_a_subprocess(self):
         """A builtin runs inside this process, where an env would do nothing."""
         if self.env and self.type != "mcp_stdio":
             raise ValueError("env only applies to type: mcp_stdio tools, "
                              "which run as their own process")
+        return self
+
+    @model_validator(mode="after")
+    def _a2a_fields_belong_to_a2a(self):
+        """url and friends mean nothing to a builtin, so say so by name."""
+        a2a_only = {"url": self.url, "token_env": self.token_env,
+                    "timeout": self.timeout, "description": self.description}
+        if self.type != "a2a":
+            used = [k for k, v in a2a_only.items() if v is not None]
+            if used:
+                raise ValueError(f"{', '.join(used)} only apply to "
+                                 f"type: a2a tools")
+            return self
+        if not self.url or not self.url.startswith(("http://", "https://")):
+            raise ValueError("a type: a2a tool needs url: http(s)://host:port, "
+                             "the address of the other agent")
+        if self.token_env is not None:
+            _check_env_name(self.token_env, "token_env")
         return self
 
 
@@ -405,6 +436,78 @@ class RagConfig(StrictModel):
     chunk: ChunkConfig = Field(default_factory=ChunkConfig)
 
 
+# What an environment variable name looks like. Anything else in a field
+# that wants a NAME is almost certainly a pasted secret.
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _check_env_name(value: str, field: str) -> None:
+    if not _ENV_NAME.fullmatch(value):
+        raise ValueError(
+            f"{field} takes the NAME of an environment variable (like "
+            f"OVAT_A2A_TOKEN), not a token. Put the token in that variable, "
+            f"so it never sits in a file people share.")
+
+
+class A2ASkillConfig(StrictModel):
+    """One skill advertised on the Agent Card. The spec requires tags."""
+
+    id: str
+    name: str
+    description: str
+    tags: list[str] = Field(default_factory=lambda: ["ovat"], min_length=1)
+    examples: list[str] = Field(default_factory=list)
+
+
+class A2AServerConfig(StrictModel):
+    """How `ovat a2a serve` shows this workflow to other agents.
+
+    Every default is the safe one: this machine only, a token always,
+    file names (not paths) in citations, and a log of every answer that
+    leaves. Loosening any of them is a line someone has to write.
+    """
+
+    name: str | None = None              # card name; default: the file stem
+    # The card is PUBLIC. Never defaults to the system prompt, which can hold
+    # private instructions.
+    description: str | None = None
+    skills: list[A2ASkillConfig] | None = None   # None: one per exposed tool
+    host: str = "127.0.0.1"
+    port: int = Field(default=9100, gt=0, lt=65536)
+    public_url: str | None = None        # what the card says, behind a tunnel
+    # caller name -> NAME of the env var holding that caller's token. Empty:
+    # one generated token in .ovat/a2a/token, for a caller named "local".
+    tokens: dict[str, str] = Field(default_factory=dict)
+    # None: the safe default set (no tool that takes a file path, no MCP
+    # tool). A list names exactly which tools a remote caller may trigger.
+    expose_tools: list[str] | None = None
+    expose_sources: Literal["names", "full", "none"] = "names"
+    max_message_chars: int = Field(default=8000, gt=0)
+    max_queue: int = Field(default=4, ge=0)
+    rate_limit_per_min: int = Field(default=30, gt=0)
+    # One OVMS on one iGPU serves everyone, and a CPU run was measured at
+    # 1056 s, so the default is long rather than tidy.
+    task_timeout_s: float = Field(default=900.0, gt=0)
+    max_contexts: int = Field(default=16, gt=0)
+    max_turns_per_context: int = Field(default=20, gt=0)
+    max_hops: int = Field(default=3, ge=1)
+    audit_log: str | None = ".ovat/a2a/audit.jsonl"   # None: no log
+
+    @model_validator(mode="after")
+    def _tokens_are_variable_names(self):
+        for caller, env in self.tokens.items():
+            if not caller:
+                raise ValueError("a2a.server.tokens: a caller name is empty")
+            _check_env_name(env, f"a2a.server.tokens.{caller}")
+        return self
+
+
+class A2AConfig(StrictModel):
+    """Agent2Agent settings. Only `ovat a2a serve` reads `server`."""
+
+    server: A2AServerConfig = Field(default_factory=A2AServerConfig)
+
+
 class WorkflowConfig(StrictModel):
     """The whole workflow: one model, some tools, one agent, optional RAG."""
 
@@ -429,6 +532,10 @@ class WorkflowConfig(StrictModel):
     # local drive and a shared network folder. OVAT_MODELS still works and is
     # appended after these, so nothing that works today stops working.
     model_search_paths: list[str] = Field(default_factory=list)
+
+    # Agent2Agent: how `ovat a2a serve` exposes this workflow. None: the
+    # workflow is not meant to be served (it still can be, with defaults).
+    a2a: A2AConfig | None = None
 
 
 def load_workflow(path: str) -> WorkflowConfig:
