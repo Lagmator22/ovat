@@ -44,6 +44,14 @@ QUIT_CONFIRM_S = 2.0
 ENGINES = ("native", "react", "llamaindex", "openai-agents")
 
 
+class HardwareReading(Message):
+    """A CPU / NPU / RAM reading, taken on a worker thread."""
+
+    def __init__(self, reading: dict) -> None:
+        super().__init__()
+        self.reading = reading
+
+
 class SessionEvent(Message):
     """One report from the AgentSession, carried to the UI thread."""
 
@@ -101,7 +109,7 @@ class OvatAgentApp(App):
     def __init__(self, workflow: str | None = None, *,
                  session_factory=s.AgentSession, animate: bool = True,
                  history_file: Path | None = HISTORY_FILE,
-                 cwd: str | None = None) -> None:
+                 cwd: str | None = None, hardware=True) -> None:
         super().__init__()
         self._workflow = workflow
         self._session_factory = session_factory
@@ -116,6 +124,10 @@ class OvatAgentApp(App):
         self._panel: ApprovalPanel | None = None
         self._last_quit_press = 0.0
         self._turn_started = 0.0
+        # True: the real monitor; False: none; anything else: a fake (tests).
+        self._hardware_choice = hardware
+        self._hardware = None
+        self._reading: dict = {}
 
     # ---- layout ------------------------------------------------------------
 
@@ -136,10 +148,35 @@ class OvatAgentApp(App):
         self.session.start()
         self._update_bar()
         self.query_one(InputBox).area.focus()
+        if self._hardware_choice is True:
+            from ovat.agentic.hardware import HardwareMonitor
+            self._hardware = HardwareMonitor()
+        elif self._hardware_choice:
+            self._hardware = self._hardware_choice
+        if self._hardware is not None:
+            self.set_interval(2.0, self._sample_hardware)
+
+    def _sample_hardware(self) -> None:
+        monitor = self._hardware
+
+        def take():
+            try:
+                self.post_message(HardwareReading(monitor.sample()))
+            except Exception:
+                pass
+        import threading
+        threading.Thread(target=take, daemon=True,
+                         name="ovat-hardware").start()
+
+    def on_hardware_reading(self, message: HardwareReading) -> None:
+        self._reading = message.reading
+        self._update_bar()
 
     def on_unmount(self) -> None:
         if self.session is not None:
             self.session.close()
+        if self._hardware is not None:
+            self._hardware.close()
 
     def _from_session(self, event) -> None:
         """Called on worker threads. post_message is the thread-safe door."""
@@ -191,6 +228,10 @@ class OvatAgentApp(App):
         if self.session and self.session.broker.auto_approve:
             bar.append("  ·  ", style=ui.DIM)
             bar.append("yolo", style=f"bold {ui.YELLOW}")
+        if self._reading:
+            from ovat.agentic.hardware import format_reading
+            bar.append("  ·  ", style=ui.DIM)
+            bar.append(format_reading(self._reading), style=ui.CYAN)
         self.query_one("#bottom-bar", Static).update(bar)
 
     # ---- what the session reports -------------------------------------------

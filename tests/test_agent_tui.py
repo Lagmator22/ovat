@@ -115,14 +115,14 @@ async def _until(pilot, check, timeout=5.0):
         await pilot.pause(0.05)
 
 
-def _app(session_holder=None):
+def _app(session_holder=None, hardware=False):
     def factory(workflow, sink, cwd=None):
         fake = FakeSession(workflow, sink, cwd)
         if session_holder is not None:
             session_holder.append(fake)
         return fake
     return OvatAgentApp("w.yml", session_factory=factory, animate=False,
-                        history_file=None)
+                        history_file=None, hardware=hardware)
 
 
 async def _type(pilot, text):
@@ -340,3 +340,21 @@ def test_no_widget_reuses_a_textual_private_name():
         mine = set(re.findall(r"self\.(_[a-z_]+)\s*=",
                               path.read_text(encoding="utf-8")))
         assert not mine & taken, (path, sorted(mine & taken))
+
+
+def test_the_bar_shows_a_live_hardware_reading_without_inventing_one():
+    class Monitor:
+        def sample(self):
+            return {"cpu": 23.4, "ram": 61.0}     # no NPU on this machine
+
+        def close(self):
+            pass
+
+    async def go():
+        app = _app(hardware=Monitor())
+        async with app.run_test(size=(140, 30)) as pilot:
+            await _until(pilot, lambda: "CPU 23%" in str(
+                app.query_one("#bottom-bar").render()), timeout=6)
+            bar = str(app.query_one("#bottom-bar").render())
+            assert "RAM 61%" in bar and "NPU" not in bar
+    run(go())

@@ -242,3 +242,23 @@ def test_the_agentic_layer_never_imports_textual():
     pattern = re.compile(r"^\s*(import|from)\s+textual\b", re.M)
     for path in src.glob("*.py"):
         assert not pattern.search(path.read_text(encoding="utf-8")), path
+
+
+def test_the_hardware_line_leaves_out_what_is_unknown():
+    from ovat.agentic.hardware import HardwareMonitor, format_reading
+
+    class Src:
+        def __init__(self, name, values, unavailable=None):
+            self.name, self.values, self.unavailable = name, values, unavailable
+
+        def sample(self):
+            return self.values
+
+    monitor = HardwareMonitor([Src("system", {"cpu_pct": 12.0,
+                                              "ram_used_pct": 50.0}),
+                               Src("npu", {}, unavailable="no NPU")])
+    reading = monitor.sample()
+    assert reading == {"cpu": 12.0, "ram": 50.0}
+    assert format_reading(reading) == "CPU 12%  ·  RAM 50%"
+    monitor = HardwareMonitor([Src("npu", {"utilization": 41.0})])
+    assert format_reading(monitor.sample()) == "NPU 41%"
