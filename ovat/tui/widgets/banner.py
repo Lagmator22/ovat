@@ -92,10 +92,10 @@ class Banner(Horizontal):
 
     def compose(self):
         if self._play_intro:
-            # Imported here: cli/tui.py is the launcher module, and only the
-            # animation is shared, not anything else of it.
-            from ovat.cli.tui import _StartupIntelAnimation
-            yield _StartupIntelAnimation(columns=MARK_COLUMNS, id="mark")
+            # The still, settled mark: the intro screen already played the
+            # animation full size (widgets/intro.py).
+            from ovat.tui.widgets.intro import static_mark
+            yield static_mark(MARK_COLUMNS, id="mark")
         else:
             yield Static("", id="mark")
         with Vertical(id="info"):

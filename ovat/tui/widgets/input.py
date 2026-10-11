@@ -118,6 +118,11 @@ class InputArea(TextArea):
     async def _on_key(self, event: events.Key) -> None:
         popup = self._box.popup
         key = event.key
+        if key == "backspace" and not self.text and self._box.bash:
+            event.prevent_default()
+            event.stop()
+            self._box.set_bash(False)          # back to a normal prompt
+            return
         if key in ("ctrl+j", "shift+enter"):
             event.prevent_default()
             event.stop()
@@ -190,6 +195,9 @@ class InputBox(Vertical):
         self._history = history if history is not None else (
             load_history(history_file) if history_file else InputHistory())
         self.popup = CompletionPopup()
+        # Bash mode: the typed "!" is taken out of the text and shown as
+        # the purple prompt glyph instead, so it appears once.
+        self.bash = False
         self.area = InputArea(self, placeholder="Ask anything, /command, "
                                                 "or !shell command")
 
@@ -201,21 +209,33 @@ class InputBox(Vertical):
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         text = self.area.text
-        bash = text.startswith("!")
+        if text.startswith("!") and not self.bash:
+            self.set_bash(True)
+            self.area.text = text[1:]          # fires Changed again
+            self.area.move_cursor(self.area.document.end)
+            return
+        self.popup.show_for("" if self.bash else text)
+
+    def set_bash(self, on: bool) -> None:
+        self.bash = on
         row = self.query_one("#input-row")
-        row.set_class(bash, "bash")
-        self.query_one("#glyph", Static).update("!" if bash else "›")
-        row.border_title = "bash mode" if bash else ""
-        self.popup.show_for(text)
+        row.set_class(on, "bash")
+        self.query_one("#glyph", Static).update("!" if on else "›")
+        row.border_title = ("bash mode  ·  backspace leaves" if on
+                            else getattr(self, "_title", ""))
 
     def set_text(self, text: str) -> None:
+        if self.bash and not text.startswith("!"):
+            self.set_bash(False)
         self.area.text = text
         self.area.move_cursor(self.area.document.end)
 
     def submit(self) -> None:
-        text = self.area.text
-        if not text.strip():
+        text = ("!" + self.area.text) if self.bash else self.area.text
+        if not text.strip() or text.strip() == "!":
             return
+        if self.bash:
+            self.set_bash(False)
         self._history.add(text)
         if self._history_file:
             save_history_entry(text.strip(), self._history_file)
@@ -241,6 +261,7 @@ class InputBox(Vertical):
             self.set_text(value)
 
     def set_title(self, title: str) -> None:
+        self._title = title
         row = self.query_one("#input-row")
         if not row.has_class("bash"):
             row.border_title = title

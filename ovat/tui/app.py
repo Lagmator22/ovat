@@ -145,9 +145,13 @@ class OvatAgentApp(App):
         self.theme = OVAT_THEME.name
         self.session = self._session_factory(
             self._workflow, self._from_session, cwd=self._cwd)
-        self.session.start()
+        self.session.start()            # builds while the intro plays
         self._update_bar()
         self.query_one(InputBox).area.focus()
+        if self._play_intro:
+            from ovat.tui.widgets.intro import IntroScreen
+            self.push_screen(IntroScreen(), callback=lambda _: self.query_one(
+                InputBox).area.focus())
         if self._hardware_choice is True:
             from ovat.agentic.hardware import HardwareMonitor
             self._hardware = HardwareMonitor()

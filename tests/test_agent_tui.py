@@ -374,3 +374,37 @@ def test_an_answer_that_lands_while_the_app_closes_is_ignored():
                              .SessionEvent(s.TurnDone("late", 1.0)))
             await pilot.pause(0.1)
     run(go())
+
+
+def test_bang_switches_to_bash_mode_and_shows_the_bang_once():
+    async def go():
+        app = _app()
+        async with app.run_test(size=(110, 30)) as pilot:
+            box = app.query_one(InputBox)
+            await pilot.press("!")
+            await _until(pilot, lambda: box.bash)
+            assert box.area.text == ""                # the typed ! is gone
+            await _type(pilot, "ls")
+            assert box.area.text == "ls"
+            await pilot.press("backspace", "backspace", "backspace")
+            await _until(pilot, lambda: not box.bash)  # empty + backspace
+    run(go())
+
+
+def test_the_intro_plays_full_size_then_any_key_opens_the_chat():
+    from ovat.tui.widgets.intro import IntroScreen, mark_size
+
+    assert mark_size(80, 24)[1] <= 20 and mark_size(200, 60)[0] == 96
+
+    async def go():
+        app = OvatAgentApp("w.yml", session_factory=lambda w, sink, cwd=None:
+                           FakeSession(w, sink, cwd), history_file=None,
+                           hardware=False)
+        async with app.run_test(size=(110, 40)) as pilot:
+            await _until(pilot, lambda: isinstance(app.screen, IntroScreen))
+            await pilot.pause(0.3)
+            await pilot.press("x")
+            await _until(pilot, lambda: not isinstance(app.screen,
+                                                       IntroScreen))
+            assert app.query_one(InputBox).area.has_focus
+    run(go())
