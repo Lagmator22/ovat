@@ -65,7 +65,8 @@ def test_dev_extra_includes_every_optional_agent_framework():
     extras = metadata["project"]["optional-dependencies"]
 
     dev_dependencies = set(extras["dev"])
-    for framework_extra in ("langchain", "llamaindex", "openai-agents"):
+    for framework_extra in ("langchain", "llamaindex", "openai-agents",
+                            "a2a"):
         assert set(extras[framework_extra]) <= dev_dependencies
 
 

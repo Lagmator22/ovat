@@ -148,7 +148,8 @@ jobs:
                   code = (
                       "import ovat.cli.main, sys;"
                       "bad=[m for m in ('textual','pyfiglet','langchain',"
-                      "'llama_index','agents') if m in sys.modules];"
+                      "'llama_index','agents','a2a','google.protobuf') "
+                      "if m in sys.modules];"
                       "print('leaked:', bad);"
                       "sys.exit(1 if bad else 0)"
                   )
@@ -157,7 +158,7 @@ jobs:
             - name: Every command still answers without the extras
               run: |
                   ovat --version
-                  for c in run chat index init models setup serve doctor telemetry bench; do
+                  for c in run chat index init models setup serve doctor telemetry bench a2a; do
                       printf '%-10s ' "$c"
                       ovat $c --help > /dev/null && echo ok || { echo FAIL; exit 1; }
                   done
