@@ -25,8 +25,7 @@ from typing import Callable, Protocol
 
 from ovat.a2a.audit import AuditLog
 from ovat.a2a.policy import Admission, Ask
-from ovat.agent.events import (REMOTE_STATUS, TOOL_ENDED, TOOL_STARTED,
-                               Event)
+from ovat.agent.events import TOOL_STARTED, Event, describe
 from ovat.agent.factory import close_agent
 from ovat.config.workflow import A2AServerConfig
 
@@ -58,20 +57,6 @@ class Task:
     text: str
     hops: int = 0
     chain: list[str] = field(default_factory=list)
-
-
-def describe(event: Event) -> str | None:
-    """The one line a remote caller sees for an event, or None to skip it."""
-    d = event.data
-    if event.type == TOOL_STARTED:
-        return f"calling {d.get('name')}"
-    if event.type == TOOL_ENDED:
-        if d.get("status") == "ok":
-            return f"{d.get('name')} done in {d.get('duration_s')} s"
-        return f"{d.get('name')} {d.get('status')}"
-    if event.type == REMOTE_STATUS:
-        return f"{d.get('agent')}: {d.get('text')}"
-    return None
 
 
 def public_event(event: Event) -> dict:

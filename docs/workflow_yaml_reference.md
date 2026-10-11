@@ -15,7 +15,7 @@ by name rather than silently leaving a default in charge.
 
 ## `(top level)`
 
-The five sections, plus one setting.
+The six sections, plus one setting.
 
 | Field | Type | Default | Constraints | Purpose |
 | --- | --- | --- | --- | --- |
@@ -25,6 +25,7 @@ The five sections, plus one setting.
 | `rag` | section \| null | `null` | - | Vector search for `search_docs`. Omit and the tool answers in a documented stub mode. |
 | `model_search_paths` | list[string] | empty | - | Extra folders to scan for local model exports. Searched first, ahead of `OVAT_MODELS`, `./models` and `~/models`, so a workflow that says where its models live wins over the shell. |
 | `a2a` | section \| null | `null` | - | How `ovat a2a serve` offers this workflow to other agents. Omit to serve with safe defaults. |
+| `subagents` | list[section] | empty | - | Specialists the agent may hand a whole task to, through one `delegate` tool. Used by `ovat agent`. |
 
 ## `model`
 
@@ -72,6 +73,7 @@ One entry per tool. `tools:` is a LIST.
 | `token_env` | string \| null | `null` | - | NAME of the environment variable holding the bearer token for that agent. Never the token itself. |
 | `timeout` | float \| null | `null` | > 0 | Seconds to wait for the other agent's answer. Unset: 900. |
 | `description` | string \| null | `null` | - | What the model is told this agent does. Unset: built from the agent's card. |
+| `permission` | allow \| ask \| deny \| null | `null` | - | `allow`, `ask` (a person says yes first; with nobody to ask, as in `ovat run`, it does not run) or `deny`. Unset: `ask` for an `a2a` tool on another machine, `allow` otherwise. |
 
 ## `agent`
 
@@ -111,6 +113,43 @@ How a document is sliced before embedding.
 | --- | --- | --- | --- | --- |
 | `size` | integer | `512` | - | Characters per chunk before embedding. |
 | `overlap` | integer | `64` | - | Characters shared with the next chunk, so meaning is not cut in half at a boundary. |
+
+## `subagents`
+
+One specialist per entry. `subagents:` is a LIST.
+
+| Field | Type | Default | Constraints | Purpose |
+| --- | --- | --- | --- | --- |
+| `name` | string | **required** | - | Short id: lowercase letters, digits, `-`, `_`. |
+| `description` | string | **required** | - | What it is good at. The main model reads this to choose it. |
+| `workflow` | string \| null | `null` | - | Another OVAT workflow file, run in-process with a fresh conversation per task. |
+| `api` | section \| null | `null` | - | A model behind an OpenAI-compatible API, such as a cloud provider. Its data leaves this machine. |
+| `a2a` | section \| null | `null` | - | Another agent reached over A2A. |
+| `system_prompt` | string \| null | `null` | - | Instructions for an `api` subagent. |
+| `permission` | allow \| ask \| deny \| null | `null` | - | `allow`, `ask` or `deny`. Unset: `ask` for `api` and for `a2a` off this machine, `allow` otherwise. |
+
+## `subagents.api`
+
+A subagent behind an OpenAI-compatible API.
+
+| Field | Type | Default | Constraints | Purpose |
+| --- | --- | --- | --- | --- |
+| `base_url` | string | **required** | - | The API's base URL, e.g. `https://api.mistral.ai/v1`. |
+| `model` | string | **required** | - | Model name at that API. |
+| `api_key_env` | string \| null | `null` | - | NAME of the environment variable holding the API key. |
+| `max_tokens` | integer | `2048` | > 0 | Longest answer it may write. |
+| `temperature` | float | `0.0` | >= 0 | Sampling temperature. |
+| `timeout` | float | `300.0` | > 0 | Seconds to wait for its answer. |
+
+## `subagents.a2a`
+
+A subagent reached over A2A.
+
+| Field | Type | Default | Constraints | Purpose |
+| --- | --- | --- | --- | --- |
+| `url` | string | **required** | - | The agent's base URL. |
+| `token_env` | string \| null | `null` | - | NAME of the environment variable holding its bearer token. |
+| `timeout` | float | `900.0` | > 0 | Seconds to wait for its answer. |
 
 ## `a2a`
 

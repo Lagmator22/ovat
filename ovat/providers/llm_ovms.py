@@ -33,11 +33,15 @@ class OVMSLLMProvider(LLMProvider):
                  max_tokens: int | None = DEFAULT_MAX_TOKENS,
                  temperature: float = 0.0,
                  sampling: dict | None = None,
-                 extra_body: dict | None = None):
+                 extra_body: dict | None = None,
+                 api_key: str = "not-needed"):
         # api_key is required by the SDK but ignored by OVMS, any string works.
+        # A real one is passed only for a cloud subagent (ovat/agentic), which
+        # reuses this class because any OpenAI-compatible API speaks the same
+        # protocol.
         # timeout caps each request; the SDK default (~600s) would freeze the
         # CLI for ten minutes on a hung server before erroring.
-        self.client = OpenAI(base_url=base_url, api_key="not-needed",
+        self.client = OpenAI(base_url=base_url, api_key=api_key,
                              timeout=timeout)
         self.model = model
         # None still means "do not send the field, let the server decide",

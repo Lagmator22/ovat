@@ -114,6 +114,10 @@ PURPOSE = {
                           "Unset: 900.",
     ("tools", "description"): "What the model is told this agent does. "
                               "Unset: built from the agent's card.",
+    ("tools", "permission"): "`allow`, `ask` (a person says yes first; "
+                             "with nobody to ask, as in `ovat run`, it does "
+                             "not run) or `deny`. Unset: `ask` for an `a2a` "
+                             "tool on another machine, `allow` otherwise.",
 
     ("agent", "type"): "Which engine runs the tool loop: `native` (built in), "
                        "`react` (LangChain), `llamaindex`, or "
@@ -198,6 +202,35 @@ PURPOSE = {
                                    "one.",
     ("a2a.server.skills", "examples"): "Example requests.",
 
+    ("(top level)", "subagents"): "Specialists the agent may hand a whole "
+                                  "task to, through one `delegate` tool. "
+                                  "Used by `ovat agent`.",
+    ("subagents", "name"): "Short id: lowercase letters, digits, `-`, `_`.",
+    ("subagents", "description"): "What it is good at. The main model "
+                                  "reads this to choose it.",
+    ("subagents", "workflow"): "Another OVAT workflow file, run "
+                               "in-process with a fresh conversation per "
+                               "task.",
+    ("subagents", "api"): "A model behind an OpenAI-compatible API, such as "
+                          "a cloud provider. Its data leaves this machine.",
+    ("subagents", "a2a"): "Another agent reached over A2A.",
+    ("subagents", "system_prompt"): "Instructions for an `api` subagent.",
+    ("subagents", "permission"): "`allow`, `ask` or `deny`. Unset: `ask` "
+                                 "for `api` and for `a2a` off this machine, "
+                                 "`allow` otherwise.",
+    ("subagents.api", "base_url"): "The API's base URL, e.g. "
+                                   "`https://api.mistral.ai/v1`.",
+    ("subagents.api", "model"): "Model name at that API.",
+    ("subagents.api", "api_key_env"): "NAME of the environment variable "
+                                      "holding the API key.",
+    ("subagents.api", "max_tokens"): "Longest answer it may write.",
+    ("subagents.api", "temperature"): "Sampling temperature.",
+    ("subagents.api", "timeout"): "Seconds to wait for its answer.",
+    ("subagents.a2a", "url"): "The agent's base URL.",
+    ("subagents.a2a", "token_env"): "NAME of the environment variable "
+                                    "holding its bearer token.",
+    ("subagents.a2a", "timeout"): "Seconds to wait for its answer.",
+
     ("(top level)", "model_search_paths"): "Extra folders to scan for local "
                                            "model exports. Searched first, "
                                            "ahead of `OVAT_MODELS`, "
@@ -207,13 +240,18 @@ PURPOSE = {
 }
 
 SECTIONS = [
-    ("(top level)", w.WorkflowConfig, "The five sections, plus one setting."),
+    ("(top level)", w.WorkflowConfig, "The six sections, plus one setting."),
     ("model", w.ModelConfig, "Which model to run, where, and how to reach it."),
     ("tools", w.ToolConfig, "One entry per tool. `tools:` is a LIST."),
     ("agent", w.AgentConfig, "Which engine drives the tool loop."),
     ("rag.embeddings", w.EmbeddingsConfig, "Turning text into vectors."),
     ("rag.retriever", w.RetrieverConfig, "Where those vectors are kept."),
     ("rag.chunk", w.ChunkConfig, "How a document is sliced before embedding."),
+    ("subagents", w.SubagentConfig,
+     "One specialist per entry. `subagents:` is a LIST."),
+    ("subagents.api", w.SubagentAPIConfig,
+     "A subagent behind an OpenAI-compatible API."),
+    ("subagents.a2a", w.SubagentA2AConfig, "A subagent reached over A2A."),
     ("a2a", w.A2AConfig, "Agent2Agent. Needs `pip install 'ovat[a2a]'`."),
     ("a2a.server", w.A2AServerConfig,
      "How `ovat a2a serve` offers this workflow. Safe by default."),

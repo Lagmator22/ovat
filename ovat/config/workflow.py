@@ -338,6 +338,12 @@ class ToolConfig(StrictModel):
     timeout: float | None = Field(default=None, gt=0)   # unset: 900 s
     description: str | None = None  # replaces the card's text in the menu
 
+    # Whether the tool may run: allow, ask (a person says yes first; with
+    # nobody to ask, as in `ovat run`, that means no), or deny. Unset: ask
+    # for anything that sends data off this machine (an a2a tool on another
+    # host), allow for the rest, so existing workflows behave as before.
+    permission: Literal["allow", "ask", "deny"] | None = None
+
     @model_validator(mode="after")
     def _env_needs_a_subprocess(self):
         """A builtin runs inside this process, where an env would do nothing."""
@@ -449,6 +455,78 @@ def _check_env_name(value: str, field: str) -> None:
             f"so it never sits in a file people share.")
 
 
+class SubagentAPIConfig(StrictModel):
+    """A model behind any OpenAI-compatible API (a cloud provider, a remote
+    OVMS, vLLM, Ollama ...). It sees only the task text it is sent."""
+
+    base_url: str                   # e.g. https://api.mistral.ai/v1
+    model: str
+    # NAME of the environment variable holding the API key, never the key.
+    api_key_env: str | None = None
+    max_tokens: int = Field(default=2048, gt=0)
+    temperature: float = Field(default=0.0, ge=0)
+    timeout: float = Field(default=300.0, gt=0)
+
+    @model_validator(mode="after")
+    def _key_is_a_variable_name(self):
+        if self.api_key_env is not None:
+            _check_env_name(self.api_key_env, "api_key_env")
+        if not self.base_url.startswith(("http://", "https://")):
+            raise ValueError("api.base_url must start with http:// or https://")
+        return self
+
+
+class SubagentA2AConfig(StrictModel):
+    """Another agent reached over A2A (OVAT or not)."""
+
+    url: str
+    token_env: str | None = None
+    timeout: float = Field(default=900.0, gt=0)
+
+    @model_validator(mode="after")
+    def _check(self):
+        if not self.url.startswith(("http://", "https://")):
+            raise ValueError("a2a.url must start with http:// or https://")
+        if self.token_env is not None:
+            _check_env_name(self.token_env, "token_env")
+        return self
+
+
+_SUBAGENT_NAME = re.compile(r"[a-z][a-z0-9_-]{0,31}")
+
+
+class SubagentConfig(StrictModel):
+    """A specialist the agent can hand a whole task to (the `delegate` tool).
+
+    Exactly one of `workflow`, `api` or `a2a` says where it runs. Each task
+    starts a fresh conversation: the subagent sees the task text, not this
+    chat, which keeps both contexts small.
+    """
+
+    name: str
+    description: str                # what the main model reads to choose it
+    workflow: str | None = None     # another OVAT workflow, run in-process
+    api: SubagentAPIConfig | None = None
+    a2a: SubagentA2AConfig | None = None
+    system_prompt: str | None = None    # for `api` subagents
+    # Unset: ask for api, and for a2a off this machine; allow otherwise.
+    permission: Literal["allow", "ask", "deny"] | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_place(self):
+        if not _SUBAGENT_NAME.fullmatch(self.name):
+            raise ValueError(
+                f"subagent name {self.name!r}: lowercase letters, digits, "
+                f"- and _, starting with a letter")
+        places = [k for k in ("workflow", "api", "a2a")
+                  if getattr(self, k) is not None]
+        if len(places) != 1:
+            raise ValueError(
+                f"subagent {self.name} needs exactly one of workflow, api or "
+                f"a2a (found: {', '.join(places) or 'none'})")
+        return self
+
+
 class A2ASkillConfig(StrictModel):
     """One skill advertised on the Agent Card. The spec requires tags."""
 
@@ -536,6 +614,18 @@ class WorkflowConfig(StrictModel):
     # Agent2Agent: how `ovat a2a serve` exposes this workflow. None: the
     # workflow is not meant to be served (it still can be, with defaults).
     a2a: A2AConfig | None = None
+
+    # Specialists the agent may hand a task to. When this list is not empty
+    # the agent gets one extra tool, `delegate`, naming them.
+    subagents: list[SubagentConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _subagent_names_are_unique(self):
+        names = [s.name for s in self.subagents]
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        if dupes:
+            raise ValueError(f"subagent names must be unique: {', '.join(dupes)}")
+        return self
 
 
 def load_workflow(path: str) -> WorkflowConfig:

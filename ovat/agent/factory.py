@@ -18,6 +18,7 @@ import os
 
 from ovat.agent.events import EventBus, observed
 from ovat.agent.loop import AgentLoop
+from ovat.agent.permissions import default_permission
 from ovat.config.workflow import WorkflowConfig
 from ovat.providers.backend import LLMBackend
 from ovat.providers.base import (EmbeddingsProvider, LLMProvider,
@@ -320,6 +321,7 @@ def build_tools(config: WorkflowConfig,
                 "schema": BUILTIN_TOOL_SCHEMAS[tool_cfg.name],
                 "function": builders[tool_cfg.name](tool_cfg),
                 "kind": "builtin",
+                "_entry": tool_cfg,
             }
         elif tool_cfg.type == "mcp_stdio":
             if not tool_cfg.command:
@@ -338,14 +340,33 @@ def build_tools(config: WorkflowConfig,
                     "schema": openai_schema_from_mcp_tool(remote),
                     "function": _make_mcp_caller(server, remote.name),
                     "kind": "mcp_stdio",
+                    "_entry": tool_cfg,
                 }
         elif tool_cfg.type == "a2a":
-            tools[tool_cfg.name] = _make_a2a_tool(tool_cfg, servers, events)
+            tools[tool_cfg.name] = {**_make_a2a_tool(tool_cfg, servers, events),
+                                    "_entry": tool_cfg}
         else:
             raise ValueError(
                 f"Unsupported tool type '{tool_cfg.type}' for '{tool_cfg.name}'. "
                 f"Supported: builtin, mcp_stdio, a2a."
             )
+    # Every tool from THIS config entry gets its permission: an mcp_stdio
+    # entry's applies to each tool its server advertises.
+    for tool_cfg in config.tools:
+        default = default_permission(tool_cfg.type, tool_cfg.url)
+        for spec in tools.values():
+            if spec.get("_entry") is tool_cfg:
+                spec["permission"] = tool_cfg.permission or default
+    for spec in tools.values():
+        spec.pop("_entry", None)
+        spec.setdefault("permission", "allow")
+    if config.subagents:
+        from ovat.agent.subagents import make_delegate_tool
+        if "delegate" in tools:
+            raise ValueError("a tool named 'delegate' clashes with the tool "
+                             "subagents: adds; rename it.")
+        tools["delegate"] = make_delegate_tool(
+            config.subagents, events if events is not None else EventBus())
     return tools
 
 
@@ -357,7 +378,9 @@ def observe_tools(tools: dict, bus: EventBus) -> dict:
     tools[name]["function"], so this one step gives every engine tool events
     and a cancel check (see ovat/agent/events.py).
     """
-    return {name: {**spec, "function": observed(name, spec["function"], bus)}
+    return {name: {**spec, "function": observed(
+                name, spec["function"], bus,
+                spec.get("permission", "allow"))}
             for name, spec in tools.items()}
 
 
