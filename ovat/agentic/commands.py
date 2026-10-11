@@ -66,12 +66,12 @@ def _subsequence(needle: str, hay: str) -> bool:
     return all(ch in it for ch in needle)
 
 
-def complete(prefix: str, limit: int = 8) -> list[Command]:
+def complete(prefix: str, limit: int | None = None) -> list[Command]:
     """Commands matching what was typed after "/": prefix matches first,
     then names containing the letters in order ("tl" finds "tools")."""
     needle = prefix.lstrip("/").split(" ")[0].lower()
     if not needle:
-        return list(COMMANDS[:limit])
+        return list(COMMANDS)[:limit]
     starts = [c for c in COMMANDS
               if c.name.startswith(needle)
               or any(a.startswith(needle) for a in c.aliases)]

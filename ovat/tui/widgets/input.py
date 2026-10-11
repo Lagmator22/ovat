@@ -21,7 +21,8 @@ from rich.text import Text
 from textual import events
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import Static, TextArea
+from textual.widgets import OptionList, Static, TextArea
+from textual.widgets.option_list import Option
 
 from ovat.agentic import commands
 from ovat.cli import ui
@@ -53,58 +54,67 @@ def save_history_entry(text: str, path: Path = HISTORY_FILE) -> None:
         pass                     # history is a convenience, never an error
 
 
-class CompletionPopup(Static):
-    """Slash commands matching what is typed, with what each does."""
+class CompletionPopup(OptionList, can_focus=False):
+    """Every slash command matching what is typed, in a box (Mistral Vibe's
+    shape): the mouse hovers and clicks rows, the wheel scrolls, and a
+    scrollbar shows there is more. It never takes the focus, so typing
+    carries on in the input while it is open."""
 
     DEFAULT_CSS = """
-    CompletionPopup { height: auto; width: 100%; display: none;
-                      padding: 0 1; }
+    CompletionPopup { height: auto; max-height: 12; width: 100%;
+                      display: none; border: round $foreground 35%;
+                      background: $background; padding: 0 1;
+                      scrollbar-size-vertical: 1;
+                      scrollbar-color: $secondary 60%; }
     CompletionPopup.shown { display: block; }
+    CompletionPopup > .option-list--option-highlighted {
+        background: $secondary 35%; text-style: bold; }
+    CompletionPopup > .option-list--option-hover {
+        background: $secondary 15%; }
     """
 
     def __init__(self, **kwargs) -> None:
-        super().__init__("", **kwargs)
+        super().__init__(**kwargs)
         self.items: list[commands.Command] = []
-        self.index = 0
+
+    @staticmethod
+    def _row(command: commands.Command, width: int) -> Text:
+        label = f"/{command.name}" + (f" {command.usage}" if command.usage
+                                      else "")
+        row = Text(no_wrap=True, overflow="ellipsis")
+        row.append(label.ljust(width), style=f"bold {ui.PURPLE}")
+        row.append(command.help, style=ui.DIM)
+        return row
 
     def show_for(self, text: str) -> None:
         wanted = (text.startswith("/") and " " not in text
                   and "\n" not in text)
-        self.items = commands.complete(text) if wanted else []
-        self.index = 0
+        self.items = commands.complete(text, limit=None) if wanted else []
+        self.clear_options()
+        if self.items:
+            width = max(len(c.name) + len(c.usage) for c in commands.COMMANDS) + 4
+            self.add_options([Option(self._row(c, width), id=c.name)
+                              for c in self.items])
+            self.highlighted = 0
         self.set_class(bool(self.items), "shown")
-        self._draw()
 
     def move(self, delta: int) -> None:
         if self.items:
-            self.index = (self.index + delta) % len(self.items)
-            self._draw()
+            self.highlighted = ((self.highlighted or 0) + delta) % len(self.items)
 
     @property
     def shown(self) -> bool:
         return bool(self.items)
 
     def selected(self) -> commands.Command | None:
-        return self.items[self.index] if self.items else None
+        if not self.items or self.highlighted is None:
+            return None
+        return self.items[self.highlighted]
 
     def hide(self) -> None:
         self.items = []
+        self.clear_options()
         self.remove_class("shown")
-
-    def _draw(self) -> None:
-        out = Text()
-        width = max((len(c.name) + len(c.usage) for c in self.items),
-                    default=0) + 3
-        for i, c in enumerate(self.items):
-            if i:
-                out.append("\n")
-            label = f"/{c.name}" + (f" {c.usage}" if c.usage else "")
-            selected = i == self.index
-            out.append(label.ljust(width),
-                       style=f"bold reverse {ui.PURPLE}" if selected
-                       else f"bold {ui.PURPLE}")
-            out.append("  " + c.help, style="italic" if selected else ui.DIM)
-        self.update(out)
 
 
 class InputArea(TextArea):
@@ -215,6 +225,14 @@ class InputBox(Vertical):
             self.area.move_cursor(self.area.document.end)
             return
         self.popup.show_for("" if self.bash else text)
+
+    def on_option_list_option_selected(
+            self, event: OptionList.OptionSelected) -> None:
+        """A click on a completion row: same as Enter on it."""
+        event.stop()
+        self.popup.highlighted = event.option_index
+        self.accept_completion(run=True)
+        self.area.focus()
 
     def set_bash(self, on: bool) -> None:
         self.bash = on

@@ -391,20 +391,44 @@ def test_bang_switches_to_bash_mode_and_shows_the_bang_once():
     run(go())
 
 
-def test_the_intro_plays_full_size_then_any_key_opens_the_chat():
-    from ovat.tui.widgets.intro import IntroScreen, mark_size
+def test_the_intro_plays_then_any_key_opens_the_chat_and_ready_is_kept():
+    # On the AI PC the agent finished building while the intro (then a
+    # separate screen) was on top, its Ready report was dropped, and the
+    # banner said "loading the agent" forever.
+    from ovat.tui.widgets.intro import IntroOverlay, mark_size
 
-    assert mark_size(80, 24)[1] <= 20 and mark_size(200, 60)[0] == 96
+    assert mark_size(80, 24)[1] <= 19 and mark_size(200, 60)[0] == 84
 
     async def go():
         app = OvatAgentApp("w.yml", session_factory=lambda w, sink, cwd=None:
                            FakeSession(w, sink, cwd), history_file=None,
                            hardware=False)
-        async with app.run_test(size=(110, 40)) as pilot:
-            await _until(pilot, lambda: isinstance(app.screen, IntroScreen))
+        async with app.run_test(size=(150, 40)) as pilot:
+            await _until(pilot, lambda: app.query(IntroOverlay))
+            assert app.query_one("#chat").display is False
             await pilot.pause(0.3)
             await pilot.press("x")
-            await _until(pilot, lambda: not isinstance(app.screen,
-                                                       IntroScreen))
+            await _until(pilot, lambda: not app.query(IntroOverlay))
+            assert app.query_one("#chat").display is True
             assert app.query_one(InputBox).area.has_focus
+            banner = str(app.query_one(Banner)._model.render())
+            assert "Qwen3.5" in banner and "loading" not in banner
+    run(go())
+
+
+def test_every_command_is_in_the_popup_and_a_click_runs_it():
+    async def go():
+        app = _app()
+        async with app.run_test(size=(110, 40)) as pilot:
+            await pilot.press("/")
+            popup = app.query_one(CompletionPopup)
+            await _until(pilot, lambda: popup.shown)
+            names = [c.name for c in popup.items]
+            assert "doctor" in names and "telemetry" in names
+            assert len(names) == len(__import__(
+                "ovat.agentic.commands", fromlist=["x"]).COMMANDS)
+            popup.highlighted = 0
+            popup.action_select()          # what a click on the row does
+            await _until(pilot, lambda: app.query(Notice))
+            assert "Commands" in str(app.query_one(Notice).render())
     run(go())

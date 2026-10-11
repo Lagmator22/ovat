@@ -90,7 +90,9 @@ class OvatAgentApp(App):
 
     CSS = """
     Screen { background: $background; layout: vertical; }
-    #chat { height: 1fr; width: 100%; padding: 0 1; scrollbar-size: 1 1; }
+    #chat { height: 1fr; width: 100%; padding: 0 1; overflow-y: scroll;
+            scrollbar-size-vertical: 1; scrollbar-color: $secondary 60%;
+            scrollbar-background: $background; }
     #messages { height: auto; width: 100%; }
     #loading-area { height: auto; width: 100%; padding: 0 1; }
     #bottom { height: auto; width: 100%; padding: 0 1; }
@@ -117,6 +119,7 @@ class OvatAgentApp(App):
         self._history_file = history_file
         self._cwd = cwd or os.getcwd()
         self.session = None
+        self._chat_screen = None        # set in on_mount
         self._loading: LoadingLine | None = None
         self._group: ToolGroup | None = None
         self._shell_block: ShellBlock | None = None
@@ -132,26 +135,40 @@ class OvatAgentApp(App):
     # ---- layout ------------------------------------------------------------
 
     def compose(self):
-        with VerticalScroll(id="chat"):
+        if self._play_intro:
+            from ovat.tui.widgets.intro import IntroOverlay
+            yield IntroOverlay(id="intro")
+        with VerticalScroll(id="chat", classes="chat-part"):
             yield Banner(animate=self._play_intro, id="banner")
             yield Vertical(id="messages")
-        yield Vertical(id="loading-area")
-        with Vertical(id="bottom"):
+        yield Vertical(id="loading-area", classes="chat-part")
+        with Vertical(id="bottom", classes="chat-part"):
             yield InputBox(history_file=self._history_file, id="input-box")
-        yield Static("", id="bottom-bar")
+        yield Static("", id="bottom-bar", classes="chat-part")
+
+    def on_intro_overlay_finished(self, message) -> None:
+        for intro in self._chat_screen.query("#intro"):
+            intro.remove()
+        for part in self._chat_screen.query(".chat-part"):
+            part.display = True
+        self._chat_screen.query_one(InputBox).area.focus()
 
     def on_mount(self) -> None:
+        # Every lookup goes through the MAIN screen: while /doctor or
+        # /telemetry is open, the app's own query would search that screen
+        # and the agent's reports would find no widgets to draw on.
+        self._chat_screen = self.screen
         self.register_theme(OVAT_THEME)
         self.theme = OVAT_THEME.name
         self.session = self._session_factory(
             self._workflow, self._from_session, cwd=self._cwd)
         self.session.start()            # builds while the intro plays
         self._update_bar()
-        self.query_one(InputBox).area.focus()
         if self._play_intro:
-            from ovat.tui.widgets.intro import IntroScreen
-            self.push_screen(IntroScreen(), callback=lambda _: self.query_one(
-                InputBox).area.focus())
+            for part in self._chat_screen.query(".chat-part"):
+                part.display = False
+        else:
+            self._chat_screen.query_one(InputBox).area.focus()
         if self._hardware_choice is True:
             from ovat.agentic.hardware import HardwareMonitor
             self._hardware = HardwareMonitor()
@@ -173,7 +190,7 @@ class OvatAgentApp(App):
                          name="ovat-hardware").start()
 
     def on_hardware_reading(self, message: HardwareReading) -> None:
-        if not self.is_running or not self.screen.query("#bottom-bar"):
+        if not self.is_running or not self._chat_screen.query("#bottom-bar"):
             return
         self._reading = message.reading
         self._update_bar()
@@ -192,11 +209,11 @@ class OvatAgentApp(App):
 
     @property
     def _messages(self) -> Vertical:
-        return self.query_one("#messages", Vertical)
+        return self._chat_screen.query_one("#messages", Vertical)
 
     def _add(self, widget) -> None:
         self._messages.mount(widget)
-        self.query_one("#chat", VerticalScroll).scroll_end(animate=False)
+        self._chat_screen.query_one("#chat", VerticalScroll).scroll_end(animate=False)
 
     def note(self, text, level: str = "info") -> None:
         self._add(Notice(text, level))
@@ -204,7 +221,7 @@ class OvatAgentApp(App):
     def _start_loading(self, status: str = "Thinking") -> None:
         self._stop_loading()
         self._loading = LoadingLine(status)
-        self.query_one("#loading-area").mount(self._loading)
+        self._chat_screen.query_one("#loading-area").mount(self._loading)
 
     def _stop_loading(self) -> None:
         if self._loading is not None:
@@ -238,7 +255,7 @@ class OvatAgentApp(App):
             from ovat.agentic.hardware import format_reading
             bar.append("  ·  ", style=ui.DIM)
             bar.append(format_reading(self._reading), style=ui.CYAN)
-        self.query_one("#bottom-bar", Static).update(bar)
+        self._chat_screen.query_one("#bottom-bar", Static).update(bar)
 
     # ---- what the session reports -------------------------------------------
 
@@ -246,7 +263,7 @@ class OvatAgentApp(App):
         # A worker can finish while the app is closing (Ctrl-C as an answer
         # lands). By then the widgets are gone; drawing would raise
         # NoMatches on the way out. Seen on the Windows test run.
-        if not self.is_running or not self.screen.query("#bottom-bar"):
+        if not self.is_running or not self._chat_screen.query("#bottom-bar"):
             return
         event = message.event
         handler = getattr(self, f"_on_{type(event).__name__}", None)
@@ -254,13 +271,13 @@ class OvatAgentApp(App):
             handler(event)
 
     def _on_Ready(self, event: s.Ready) -> None:
-        self.query_one(Banner).show_session(event.info)
+        self._chat_screen.query_one(Banner).show_session(event.info)
         engine = event.info.get("engine", "")
-        self.query_one(InputBox).set_title(f"{engine}")
+        self._chat_screen.query_one(InputBox).set_title(f"{engine}")
         self._update_bar()
 
     def _on_BuildFailed(self, event: s.BuildFailed) -> None:
-        self.query_one(Banner).show_problem("see below")
+        self._chat_screen.query_one(Banner).show_problem("see below")
         self.note(event.text, "error")
         self._update_bar()
 
@@ -305,9 +322,9 @@ class OvatAgentApp(App):
         if self._loading is not None:
             self._loading.pause()
             self._loading.set_status("Waiting for your approval")
-        self.query_one(InputBox).display = False
+        self._chat_screen.query_one(InputBox).display = False
         self._panel = ApprovalPanel(request)
-        self.query_one("#bottom").mount(self._panel)
+        self._chat_screen.query_one("#bottom").mount(self._panel)
         self._panel.focus()
 
     def on_approval_panel_decided(self, message: ApprovalPanel.Decided) -> None:
@@ -321,7 +338,7 @@ class OvatAgentApp(App):
         if self._approvals:
             self._show_next_approval()
             return
-        box = self.query_one(InputBox)
+        box = self._chat_screen.query_one(InputBox)
         box.display = True
         box.area.focus()
 
@@ -344,7 +361,7 @@ class OvatAgentApp(App):
     def _on_ShellLine(self, event: s.ShellLine) -> None:
         if self._shell_block is not None:
             self._shell_block.add_line(event.text)
-            self.query_one("#chat", VerticalScroll).scroll_end(animate=False)
+            self._chat_screen.query_one("#chat", VerticalScroll).scroll_end(animate=False)
 
     def _on_ShellDone(self, event: s.ShellDone) -> None:
         if self._shell_block is not None:
@@ -362,7 +379,7 @@ class OvatAgentApp(App):
         if self._panel is not None:
             self._panel.remove()
             self._panel = None
-            box = self.query_one(InputBox)
+            box = self._chat_screen.query_one(InputBox)
             box.display = True
             box.area.focus()
 
@@ -378,7 +395,7 @@ class OvatAgentApp(App):
             return
         if self.session.busy:
             # Give the question back instead of losing it.
-            self.query_one(InputBox).set_text(text)
+            self._chat_screen.query_one(InputBox).set_text(text)
             self.note("Still working on the last one; esc stops it.", "warn")
             return
         self._add(UserMessage(text))
@@ -473,7 +490,7 @@ class OvatAgentApp(App):
         if engine not in ENGINES:
             self.note(f"Engines: {', '.join(ENGINES)}", "warn")
             return
-        self.query_one(Banner).display = True
+        self._chat_screen.query_one(Banner).display = True
         self.note(f"Switching to the {engine} engine…")
         self.session.start(engine)
 
@@ -516,7 +533,7 @@ class OvatAgentApp(App):
             self.note("Usage: /workflow path/to/workflow.yml", "warn")
             return
         self.session.switch_workflow(path)
-        self.query_one(Banner).display = True
+        self._chat_screen.query_one(Banner).display = True
 
     def _sessions_dir(self) -> Path:
         return Path(self._cwd) / ".ovat" / "sessions"
@@ -576,7 +593,7 @@ class OvatAgentApp(App):
                 self._loading.set_status("Interrupting")
 
     def action_toggle_tools(self) -> None:
-        groups = list(self.query(ToolGroup))
+        groups = list(self._chat_screen.query(ToolGroup))
         if groups:
             groups[-1].toggle()
 
@@ -587,7 +604,7 @@ class OvatAgentApp(App):
             self.screen.clear_selection()
             self.notify("Copied the selection.", timeout=2)
             return
-        area = self.query_one(InputBox).area
+        area = self._chat_screen.query_one(InputBox).area
         if area.has_focus and area.selected_text:
             self.copy_to_clipboard(area.selected_text)
             self.notify("Copied.", timeout=2)
