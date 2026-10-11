@@ -588,9 +588,13 @@ Code and docs:
 - A docs / codebase-navigation site and an API reference.
 - Stress tests. GPU/NPU on Linux (hardware-blocked, above).
 
-Scoped OUT by the owner, so do not re-propose: A2A orchestration (Layer 6),
-OVMS Docker integration tests, and any audit of or comparison against
-another vendor's agent toolkit. "Use every Textual widget" is not a goal:
+Back IN scope (owner, 2026-10-10): A2A (Layer 6), on the `feat/a2a`
+branch. The layering rule for it is in the A2A section of the map above:
+only `ovat/a2a/sdk/` may import `a2a`. Studying other agent TUIs (Mistral
+Vibe, OpenCode and others) for IDEAS is allowed; copying their code is not.
+
+Scoped OUT by the owner, so do not re-propose: OVMS Docker integration
+tests. "Use every Textual widget" is not a goal:
 Sparkline, Tree and MODES were tried or rejected; Digits and TabbedContent
 earned their place on the telemetry page.
 
