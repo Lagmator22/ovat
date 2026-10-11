@@ -32,7 +32,7 @@ Written for OVAT 1.1.1, OVMS 2026.4.1 and openvino-genai 2026.4 or newer.
 - [Serving the model: OVMS](#serving-the-model-ovms)
 - [Devices and the OpenVINO runtime](#devices-and-the-openvino-runtime)
 - [Telemetry](#telemetry)
-- [Multi-agent orchestration (A2A): not implemented](#multi-agent-orchestration-a2a-not-implemented)
+- [Agent2Agent (A2A)](#agent2agent-a2a)
 
 **Cross-cutting**
 - [Model selection, and why "unified" is its own kind](#model-selection-and-why-unified-is-its-own-kind)
@@ -1076,15 +1076,73 @@ Why these choices: [DECISIONS.md, telemetry](DECISIONS.md#telemetry).
 
 ---
 
-## Multi-agent orchestration (A2A): not implemented
+## Agent2Agent (A2A)
 
-**Status: not implemented, and out of scope for this project.** The GSoC
-proposal listed agent-to-agent (A2A) orchestration as a stretch goal, and the
-core toolkit works without it. There is no A2A code in OVAT.
+**Status: server, client tool and CLI built; the TUI part is next.** Needs
+`pip install "ovat[a2a]"`. The A2A spec is v1.0; the SDK is `a2a-sdk` 1.2.
 
-The shape the proposal sketched was a minimal A2A server: an Agent Card at
-`/.well-known/agent.json` and JSON-RPC 2.0 `message/send`, sharing only query
-text with other agents, never retrieved documents.
+A2A lets agents ask each other questions over HTTP. Each agent publishes a
+public Agent Card at `/.well-known/agent-card.json` that says what it can
+do, and takes messages with the JSON-RPC method `SendMessage`. OVAT does
+both sides:
+
+- **`ovat a2a serve workflow.yml`** offers a workflow to other agents.
+- **A `type: a2a` tool** lets a workflow ask another agent, OVAT or not.
+- **`ovat a2a card`** prints the card a workflow would serve, and which
+  tools it would expose, without starting anything. **`ovat a2a call`**
+  asks an agent one question from the shell.
+
+```yaml
+tools:
+  - name: team_docs
+    type: a2a
+    url: http://127.0.0.1:9100
+    token_env: OVAT_A2A_TOKEN      # the NAME of a variable, never the token
+```
+
+**What stays on the machine.** Documents, the index, the model, the system
+prompt, tool arguments and full file paths. **What leaves:** the question,
+the answer, source FILE NAMES, tool names and the run's token counts and
+timings. The answer is made from private data and a model can quote a
+document, so anything a served workflow has indexed should be treated as
+readable by every token holder. Every answer that leaves is written to
+`.ovat/a2a/audit.jsonl`.
+
+**Safe by default.** Listens on 127.0.0.1 only. A bearer token always,
+even there, because a web page can reach a loopback port too; the
+server also refuses a request whose Host header is not its own. Listening
+elsewhere needs `public_url` and TLS, or an explicit `--allow-plain-http`.
+Tools that take a file path, MCP tools and `a2a` tools are not exposed
+unless listed in `a2a.server.expose_tools`, and an unexposed tool is not
+just left off the card: the served agent is built without it. Limits on
+message size, queue, rate, run time, conversations, turns and hops (so two
+agents cannot call each other forever).
+
+**How it is built** (`ovat/a2a/`):
+
+| Layer | Files | Imports the SDK? |
+| --- | --- | --- |
+| OVAT's A2A logic | `protocol.py`, `exposure.py`, `card.py`, `policy.py`, `tokens.py`, `audit.py`, `service.py`, `serving.py` | no |
+| The SDK adapter | `sdk/server.py`, `sdk/client.py` | yes, the only place |
+
+The SDK released four versions in the two weeks this was designed, and its
+1.0 moved every type to protobuf. So OVAT's own logic talks to the SDK
+only through two small interfaces: `service.Reporter` on the server side
+and `protocol.RemoteReply` / `PeerError` on the client side. An SDK
+upgrade is a change to `sdk/` alone, and a test fails if anything else
+imports it.
+
+**Live progress for every engine.** All four engines call the same tool
+functions, so the factory wraps each one once (`ovat/agent/events.py`).
+The wrapper reports `tool_started` / `tool_ended` on the agent's event bus
+and checks a cancel flag. The server turns those events into A2A
+`WORKING` updates ("calling search_docs"); tool arguments are never sent.
+The TUI's live tool cards are planned on the same bus.
+
+**One model, many callers.** One OVMS on one iGPU is the bottleneck, so
+tasks take turns behind one lock, and a waiting caller is told how many
+are ahead. Each conversation (caller plus context id) gets its own agent,
+so callers never share memory.
 
 ---
 
@@ -1305,7 +1363,7 @@ installs and runs.
 | Serving | ✅ complete | `ovat setup` pinned to OVMS 2026.4.1 and version-aware, locator, stall budget, pidfile, identity check |
 | Devices | ✅ complete | device routing; a tool-calling agent run on the NPU, and its 2129-token cap measured |
 | Telemetry | ✅ complete | sources, sinks, JSON Lines, CLI and TUI pages, run trace. NPU busy % reads on Windows (PDH) and Linux (sysfs). No OTLP exporter |
-| Multi-agent orchestration (A2A) | ❌ not implemented | out of scope |
+| Agent2Agent (A2A) | 🟡 in progress | server, `type: a2a` tool and CLI built and tested over a real socket; TUI panel next; not yet run on the AI PC |
 
 **Planned or open:**
 
@@ -1390,7 +1448,7 @@ what each part does instead; this table maps one to the other.
 | Layer 3: Agent core | [Agent engines, the native loop](#the-native-loop) |
 | Layer 4: Provider abstraction | [Models, embeddings and search: the providers](#models-embeddings-and-search-the-providers) |
 | Layer 5: Tools and MCP | [Tools and MCP](#tools-and-mcp) |
-| Layer 6: Orchestration (A2A) | [Not implemented, out of scope](#multi-agent-orchestration-a2a-not-implemented) |
+| Layer 6: Orchestration (A2A) | [Agent2Agent (A2A)](#agent2agent-a2a) |
 | Layer 7: Telemetry | [Telemetry](#telemetry) |
 | Layer 8: Deployment and serving | [Serving the model: OVMS](#serving-the-model-ovms) |
 | Layer 9: OpenVINO runtime and hardware | [Devices and the OpenVINO runtime](#devices-and-the-openvino-runtime) |

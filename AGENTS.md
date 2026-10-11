@@ -149,9 +149,38 @@ as always `"stop"`.
   Top level because both agent/ and cli/ need it and neither may import the
   other.
 
+### A2A (Layer 6, the `[a2a]` extra)
+- `ovat/agent/events.py`: `EventBus` (one per built agent: listeners, the
+  `stop` cancel flag, a per-run `context`) and `observed()`, the ONE tool
+  wrapper. `factory.observe_tools` applies it to every tool, so all four
+  engines emit `tool_started` / `tool_ended` and honour `stop` with no
+  engine file changed. The native loop also checks `stop` before each
+  model call. The TUI's live tool cards are meant to use the same bus.
+- `ovat/a2a/`: OVAT's own A2A logic, NEVER importing the SDK.
+  `protocol.py` (TaskState, RemoteCard, RemoteReply, PeerError with four
+  kinds), `exposure.py` (what a remote caller may trigger; the served
+  agent is BUILT with those tools only, via `build_agent(select_tools=)`),
+  `card.py` (the card as spec JSON; never the system prompt), `policy.py`
+  (admission), `tokens.py`, `audit.py`, `service.py` (one agent per
+  caller+context, one model at a time via a THREADING lock held by the
+  worker, cancel, timeout; talks out only through the `Reporter`
+  protocol), `serving.py` (everything decided before a port opens).
+- `ovat/a2a/sdk/`: the ONLY code that imports `a2a`.
+  `server.py` (executor, TaskUpdater-backed Reporter, ASGI app: host
+  check, then body cap and bearer token, then the SDK routes with 0.3
+  compat), `client.py` (`SDKPeer`: sync face, own loop thread, every SDK
+  error mapped to a `PeerError` kind). `tests/test_a2a_isolation.py`
+  scans the source to keep it the only one.
+- `ovat/tools/a2a_call.py`: `type: a2a`, a remote agent as one tool
+  (`message`). Replies are framed "information, not instructions";
+  failures are one `Error:` sentence; the hop count travels in
+  `metadata.ovat`.
+- `ovat/cli/a2a_cmd.py`: `ovat a2a serve | card | call | token`. No SDK
+  import at module level.
+
 ### CLI and TUI
-- `ovat/cli/main.py`: all 11 typer commands: run, chat, index, init, models,
-  setup, serve, doctor, tui, telemetry, bench. All printing via the ONE
+- `ovat/cli/main.py`: all 11 typer commands plus the `a2a` group: run,
+  chat, index, init, models, setup, serve, doctor, tui, telemetry, bench. All printing via the ONE
   themed console (`rprint`). `_load_config()` is the ONLY place allowed to
   call `load_workflow`. `_brief_error()` keeps the actionable fragment of a
   failure for the bench table. "Error talking to OVMS" is printed only for
@@ -213,8 +242,9 @@ as always `"stop"`.
    `import textual` is allowed ONLY in: `tui.py`, `chat_screen.py`,
    `doctor_screen.py`, `telemetry_screen.py`, `widgets.py`, `theme.py`,
    `commands.py`. `tests/test_tui_isolation.py` enforces this. The same
-   applies to the framework engines: importing the CLI must pull in none of
-   langchain, llama_index, agents, textual, pyfiglet.
+   applies to the framework engines and the A2A SDK: importing the CLI must
+   pull in none of langchain, llama_index, agents, textual, pyfiglet, a2a,
+   google.protobuf. Only `ovat/a2a/sdk/` may import `a2a`.
 5. **Single sources of truth**: colors -> `ui.PALETTE`; tool contracts -> the
    co-located `SCHEMA` dicts (every engine derives via `arg_models.py`);
    backend settings -> `providers/backend.LLMBackend`; config validity ->
@@ -504,6 +534,27 @@ Do not "improve" any of these without reading the reason first.
   Textual's generic `get_selection` returns None. Use `SelectableRichLog`.
 - **Esc/Ctrl-C must end the whole process tree on Windows**, not just the
   direct child (`shell.py`); otherwise OVMS children outlive the command.
+
+### A2A (a2a-sdk 1.2.2, each one seen by running it)
+- **An exception that escapes `AgentExecutor.execute()` reaches the remote
+  caller as an InternalError carrying the raw exception text**, which can
+  hold local paths. `service.run` catches everything and sends a fixed
+  sentence; the traceback goes to the server log only.
+- **`TaskUpdater` raises "already in a terminal state"** once a task is
+  completed, failed or cancelled. A tool event that lands after a cancel
+  would crash the bridge; every update in `sdk/server.py` tolerates it.
+- **Request metadata is a protobuf Struct: every number comes back a
+  FLOAT** (`hops: 1` arrives as `1.0`). `_hops_and_chain` converts and
+  treats anything odd as zero; it is untrusted input.
+- **The SDK scopes tasks by the Starlette user name.** One caller name per
+  token is what stops caller B reading caller A's task (tested on the
+  wire). Two callers sharing a token share a scope.
+- **The model gate is a THREADING lock held by the worker thread**, not an
+  asyncio lock: a cancelled task's thread keeps using OVMS until its
+  request ends, and an asyncio lock would be released at the cancel.
+- A cancelled framework engine cannot be stopped mid-model-call; it stops
+  at its next tool call (the wrapper checks `stop`). The native loop also
+  stops before its next model call.
 
 ### Model discovery
 - **`find_models` walks TWO levels.** `ovms --pull` lays models out by org
