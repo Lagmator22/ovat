@@ -169,6 +169,8 @@ class OvatAgentApp(App):
                          name="ovat-hardware").start()
 
     def on_hardware_reading(self, message: HardwareReading) -> None:
+        if not self.is_running or not self.screen.query("#bottom-bar"):
+            return
         self._reading = message.reading
         self._update_bar()
 
@@ -237,6 +239,11 @@ class OvatAgentApp(App):
     # ---- what the session reports -------------------------------------------
 
     def on_session_event(self, message: SessionEvent) -> None:
+        # A worker can finish while the app is closing (Ctrl-C as an answer
+        # lands). By then the widgets are gone; drawing would raise
+        # NoMatches on the way out. Seen on the Windows test run.
+        if not self.is_running or not self.screen.query("#bottom-bar"):
+            return
         event = message.event
         handler = getattr(self, f"_on_{type(event).__name__}", None)
         if handler is not None:

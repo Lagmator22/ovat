@@ -358,3 +358,19 @@ def test_the_bar_shows_a_live_hardware_reading_without_inventing_one():
             bar = str(app.query_one("#bottom-bar").render())
             assert "RAM 61%" in bar and "NPU" not in bar
     run(go())
+
+
+def test_an_answer_that_lands_while_the_app_closes_is_ignored():
+    # The Windows run: the fake turn finished during shutdown and drawing
+    # the bar raised NoMatches. A late report must be dropped, not crash.
+    async def go():
+        holder = []
+        app = _app(holder)
+        async with app.run_test(size=(110, 30)) as pilot:
+            await _until(pilot, lambda: holder)
+            app.query_one("#bottom-bar").remove()
+            await pilot.pause(0.05)
+            app.post_message(__import__("ovat.tui.app", fromlist=["x"])
+                             .SessionEvent(s.TurnDone("late", 1.0)))
+            await pilot.pause(0.1)
+    run(go())
