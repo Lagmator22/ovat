@@ -69,7 +69,34 @@ class Admission:
                                          handled this request upstream
           ask.turns >= max_turns_per_context
         and self._record(ask.caller) counts a message against the rate.
+
+        Order: loop protection first, so a runaway chain of agents is always
+        named for what it is; then what the message itself is; then whether
+        there is room for it. Only ACCEPTED messages count against the rate:
+        an honest caller who sent one message too long has not used up a
+        slot of their minute.
         """
-        # TODO(human): decide the order of the checks, and whether a REFUSED
-        # message counts against the caller's rate (where _record goes).
-        raise NotImplementedError
+        s = self.s
+        if self.server_id in ask.chain:
+            return ("this request already passed through this agent (a "
+                    "cycle between agents), so it was not answered again")
+        if ask.hops >= s.max_hops:
+            return (f"the request came through {ask.hops} agents already; "
+                    f"the limit is {s.max_hops} (a2a.server.max_hops)")
+        if not ask.text.strip():
+            return "the message was empty"
+        if len(ask.text) > s.max_message_chars:
+            return (f"message longer than {s.max_message_chars} characters "
+                    f"(a2a.server.max_message_chars)")
+        if ask.turns >= s.max_turns_per_context:
+            return (f"this conversation reached {s.max_turns_per_context} "
+                    f"messages (a2a.server.max_turns_per_context); start a "
+                    f"new one")
+        if ask.queued >= s.max_queue:
+            return (f"{ask.queued} tasks are already waiting for the model "
+                    f"(a2a.server.max_queue); try again shortly")
+        if self._rate_exceeded(ask.caller):
+            return (f"more than {s.rate_limit_per_min} messages in a minute "
+                    f"(a2a.server.rate_limit_per_min)")
+        self._record(ask.caller)
+        return None
