@@ -79,3 +79,18 @@ def test_the_cli_never_pulls_in_a_tui_only_module(monkeypatch, tmp_path):
     assert runner.invoke(app, ["init", str(target)]).exit_code == 0
     assert runner.invoke(app, ["doctor", str(target)]).exit_code == 0
     assert runner.invoke(app, ["--help"]).exit_code == 0
+
+
+def test_the_agent_tui_is_optional_too(monkeypatch, tmp_path):
+    """`ovat agent` is the new TUI; without textual it prints the hint, and
+    nothing else on the CLI path imports it."""
+    _no_tui(monkeypatch)
+    for name in ("ovat.tui", "ovat.tui.app"):
+        monkeypatch.setitem(sys.modules, name, None)
+    result = runner.invoke(app, ["agent"])
+    assert result.exit_code == 1
+    assert "ovat[tui]" in result.output
+    target = tmp_path / "workflow.yml"
+    assert runner.invoke(app, ["init", str(target)]).exit_code == 0
+    assert runner.invoke(app, ["doctor", str(target)]).exit_code == 0
+    assert runner.invoke(app, ["--help"]).exit_code == 0
