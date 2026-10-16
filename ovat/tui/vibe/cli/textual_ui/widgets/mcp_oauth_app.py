@@ -209,7 +209,7 @@ class MCPOAuthApp(Container):
         if self._auth_url_visible and self._auth_url:
             parts.append(self._auth_url)
             parts.append("")
-        parts.append("Once authenticated in your browser, return to Vibe")
+        parts.append("Once authenticated in your browser, return to OVAT")
         detail.update("\n".join(parts))
 
     def _set_help_text(self, text: str) -> None:

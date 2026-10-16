@@ -23,7 +23,7 @@ class ExternalEditor:
         subprocess.run([*parts, str(file_path)], check=check)
 
     def edit(self, initial_content: str = "") -> str | None:
-        fd, filepath = tempfile.mkstemp(suffix=".md", prefix="vibe_")
+        fd, filepath = tempfile.mkstemp(suffix=".md", prefix="ovat_")
         try:
             with os.fdopen(fd, "w") as f:
                 f.write(initial_content)

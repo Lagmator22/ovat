@@ -50,10 +50,12 @@ _FILTERED_EXCEPTION_NAMES: frozenset[str] = frozenset({
     "RealtimeTranscriptionException"
 })
 
-# Mistral-owned host: BackendError against it stays reported (it flags real
+# Host that owns the backend: BackendError against it stays reported (it flags real
 # API/inference faults). Errors from other endpoints are dropped — they are
 # usually the user's own provider config and can carry user data.
-_MISTRAL_ENDPOINT_HOST = "api.mistral.ai"
+# OVAT edit: OVAT does not report to Sentry; this host (Vibe: Mistral's API)
+# matches nothing, so no error is treated as OVAT's own.
+_MISTRAL_ENDPOINT_HOST = "api.ovat.invalid"
 
 
 def _is_third_party_backend_error(exc: BaseException) -> bool:

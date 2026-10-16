@@ -213,11 +213,9 @@ def _parse_no_proxy_host_rule(rule: str, scheme: str) -> tuple[str, int | None] 
 
 
 def get_user_agent(backend: str | None) -> str:
-    user_agent = f"Mistral-Vibe/{__version__}"
-    if backend == "mistral":
-        mistral_sdk_prefix = "mistral-client-python/"
-        user_agent = f"{mistral_sdk_prefix}{user_agent}"
-    return user_agent
+    # OVAT edit: Vibe also prefixed the Mistral SDK's name when the backend was
+    # Mistral's. OVAT has no such backend, so the argument is ignored.
+    return f"OVAT-TUI/{__version__}"
 
 
 def get_server_url_from_api_base(api_base: str) -> str | None:

@@ -15,13 +15,13 @@ from ovat.tui.vibe.app_server.protocol import AppServerResponseError
 STORE_REQUIRES_NEWER_READER_CODE = "store_requires_newer_reader"
 
 _UPGRADE_MESSAGE = (
-    "This session was created by a newer version of Vibe. "
-    "Restart with --check-upgrade to update Vibe, then resume this session."
+    "This session was created by a newer version of OVAT. "
+    "Update OVAT (pip install -U ovat), then resume this session."
 )
 
 
 def is_store_requires_newer_reader(error: BaseException) -> bool:
-    """Report whether a resume failed because the store needs a newer Vibe."""
+    """Report whether a resume failed because the store needs a newer OVAT."""
     if not isinstance(error, AppServerResponseError):
         return False
     data = error.error.data

@@ -7,7 +7,7 @@ def process_name() -> str:
     # Shown in Activity Monitor / ps / top so Vibe can be spotted and killed.
     # Concurrent instances are differentiated by the process manager's own PID
     # column, so the name itself stays clean.
-    return "Vibe CLI"
+    return "OVAT"
 
 
 def process_id_label() -> str:

@@ -23,6 +23,8 @@ __all__ = [
 ]
 
 
+# OVAT edit: there is no OVAT VS Code extension to promote, so the promo is off.
+PROMO_ENABLED = False
 MAX_SHOWN_COUNT = 10
 PROMO_START = datetime(2026, 5, 28, 16, 0, tzinfo=UTC)
 
@@ -30,6 +32,8 @@ PROMO_START = datetime(2026, 5, 28, 16, 0, tzinfo=UTC)
 def should_show_promo(
     state: VscodeExtensionPromoState | None, now: datetime | None = None
 ) -> bool:
+    if not PROMO_ENABLED:
+        return False
     current = now or datetime.now(UTC)
     if current < PROMO_START:
         return False

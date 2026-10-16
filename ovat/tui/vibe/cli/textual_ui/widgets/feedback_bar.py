@@ -30,7 +30,7 @@ class FeedbackBar(Widget):
     @staticmethod
     def _prompt_text() -> Text:
         text = Text()
-        text.append("How's your session with Vibe?  ")
+        text.append("How's your session with OVAT?  ")
         for key, label in FEEDBACK_RATING_KEYS.items():
             text.append(key, style="blue")
             text.append(f": {label}  ")

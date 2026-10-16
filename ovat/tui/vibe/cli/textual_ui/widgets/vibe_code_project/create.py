@@ -39,7 +39,7 @@ class VibeCodeProjectCreateApp(Vertical):
     def compose(self) -> ComposeResult:
         with Vertical(id="vibecodeprojectcreate-content"):
             yield NoMarkupStatic(
-                "Create Vibe Code Web project", classes="vibecodeprojectcreate-title"
+                "Create OVAT remote project", classes="vibecodeprojectcreate-title"
             )
             yield NoMarkupStatic(
                 f"Repository: {self._repo_label}", classes="vibecodeprojectcreate-repo"

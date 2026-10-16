@@ -8,8 +8,10 @@ from threading import Lock
 import keyring
 from keyring.errors import KeyringError, PasswordDeleteError
 
-_KEYRING_SERVICE = "ai.mistral.vibe"
-_LEGACY_KEYRING_SERVICES = ("vibe",)
+# OVAT edit: its own keyring service; Vibe's ("ai.mistral.vibe", "vibe") are never
+# read or written, so OVAT cannot touch an installed Mistral Vibe's API keys.
+_KEYRING_SERVICE = "ovat.tui"
+_LEGACY_KEYRING_SERVICES: tuple[str, ...] = ()
 _DISABLE_KEYRING_ENV_VAR = "VIBE_TEST_DISABLE_KEYRING"
 _cache_lock = Lock()
 _api_key_cache: dict[str, str | None] = {}

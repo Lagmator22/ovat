@@ -11,7 +11,6 @@ from textual.widgets import Static
 from ovat.tui.vibe import __version__
 from ovat.tui.vibe.app_server.config import ConfigView
 from ovat.tui.vibe.app_server.models import MCPSourceKind, MCPSourceStatus, MCPState
-from ovat.tui.vibe.cli.textual_ui.widgets.banner.petit_chat import CatVariant, PetitChat
 from ovat.tui.vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from ovat.tui.vibe.cli.textual_ui.widgets.spinner_text import SpinnerText
 
@@ -73,11 +72,11 @@ class Banner(Static):
 
     def compose(self) -> ComposeResult:
         with VerticalGroup(id="banner-container"):
-            yield PetitChat(animate=self._animated)
-
+            # OVAT edit: Vibe's cat mascot (petit_chat.py) is not shipped. OVAT's
+            # own banner (ovat/tui/widgets/banner.py) draws the chip mark.
             with Vertical(id="banner-info"):
                 with Horizontal(classes="banner-line"):
-                    yield NoMarkupStatic("Mistral Vibe", id="banner-brand")
+                    yield NoMarkupStatic("OVAT", id="banner-brand")
                     yield NoMarkupStatic(" ", classes="banner-spacer")
                     yield NoMarkupStatic(f"v{__version__} · ", classes="banner-meta")
                     yield SpinnerText(id="banner-model")
@@ -95,9 +94,6 @@ class Banner(Static):
     def watch_state(self) -> None:
         if not self.is_attached:
             return
-        # Sync the cat variant from the active model name.
-        chat = self.query_one(PetitChat)
-        chat.set_variant(CatVariant.from_model(self.state.model_display_name))
         widgets = {widget.id: widget for widget in self.query(NoMarkupStatic)}
         model = widgets.get("banner-model")
         counts = widgets.get("banner-meta-counts")
@@ -109,8 +105,8 @@ class Banner(Static):
         plan.update(self._format_plan())
 
     def freeze_animation(self) -> None:
-        if self._animated:
-            self.query_one(PetitChat).freeze_animation()
+        # OVAT edit: nothing animates here without the mascot.
+        return
 
     def set_state(  # noqa: PLR0913
         self,

@@ -20,7 +20,7 @@ class TeleportMessage(StatusMessage):
         if self._error:
             return f"Teleport failed: {self._error}"
         if self._final_url:
-            return f"Teleported to Vibe Code Web: {self._final_url}"
+            return f"Teleported to OVAT remote: {self._final_url}"
         return self._status
 
     def _make_text_widget(self) -> Static:
@@ -30,7 +30,7 @@ class TeleportMessage(StatusMessage):
         if not self._final_url or self._error:
             return content
         return Content("Teleported to ") + link_content(
-            "Vibe Code Web", self._final_url
+            "OVAT remote", self._final_url
         )
 
     def set_status(self, status: str) -> None:

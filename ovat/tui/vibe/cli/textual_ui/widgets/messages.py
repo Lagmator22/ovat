@@ -470,12 +470,14 @@ class UserCommandMessage(Static):
                 yield Markdown(self._content)
 
 
-VSCODE_EXTENSION_URI = "vscode:extension/mistralai.mistral-vibe-code"
-VSCODE_EXTENSION_LINK_LABEL = "VS Code extension"
-VSCODE_EXTENSION_PROMO_STANDALONE = f"We now have a [{VSCODE_EXTENSION_LINK_LABEL}]({VSCODE_EXTENSION_URI}) with a rich UI. Check it out!"
+# OVAT edit: Vibe promoted its VS Code extension here. OVAT has none, so the
+# promo is switched off (should_show_promo) and the text points at the docs.
+VSCODE_EXTENSION_URI = "https://lagmator22.github.io/ovat-navigate/"
+VSCODE_EXTENSION_LINK_LABEL = "OVAT documentation"
+VSCODE_EXTENSION_PROMO_STANDALONE = f"Read the [{VSCODE_EXTENSION_LINK_LABEL}]({VSCODE_EXTENSION_URI}) to see what OVAT can do."
 VSCODE_EXTENSION_PROMO_WHATS_NEW_SUFFIX = (
-    f"\n\n_Btw, we also have a new [{VSCODE_EXTENSION_LINK_LABEL}]"
-    f"({VSCODE_EXTENSION_URI}). Check it out!_"
+    f"\n\n_Btw, there is an [{VSCODE_EXTENSION_LINK_LABEL}]"
+    f"({VSCODE_EXTENSION_URI})._"
 )
 
 
@@ -521,7 +523,7 @@ class CustomToolsDeprecationMessage(Static):
         replacement = "a skill" if len(tool_names) == 1 else "skills"
         self._content = (
             "**Support for custom tools will be deprecated soon.** "
-            f"Ask Vibe to help replace yours ({names}) with {replacement}."
+            f"Ask OVAT to help replace yours ({names}) with {replacement}."
         )
 
     def compose(self) -> ComposeResult:
@@ -539,7 +541,7 @@ class InterruptMessage(Static):
         with Horizontal(classes="interrupt-container"):
             yield ExpandingBorder(classes="interrupt-border")
             yield NoMarkupStatic(
-                "Interrupted · What should Vibe do instead?",
+                "Interrupted · What should OVAT do instead?",
                 classes="interrupt-content",
             )
 

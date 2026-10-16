@@ -9,4 +9,11 @@ from pathlib import Path
 os.environ.setdefault("PYDANTIC_ERRORS_INCLUDE_URL", "0")
 
 VIBE_ROOT = Path(__file__).parent
-__version__ = "2.26.1"
+# OVAT edit: the version shown and compared by the update check is OVAT's own
+# (Vibe: "2.26.1").
+try:
+    from importlib.metadata import PackageNotFoundError, version as _version
+
+    __version__ = _version("ovat")
+except PackageNotFoundError:  # not installed, e.g. run from a plain checkout
+    __version__ = "0"

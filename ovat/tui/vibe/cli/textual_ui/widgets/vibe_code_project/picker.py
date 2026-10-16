@@ -383,7 +383,7 @@ class VibeCodeProjectPickerApp(Container):
         projects: list[VibeCodeProject],
         has_more: bool = False,
         include_unlink: bool = False,
-        title: str = "Select Vibe Code Web project",
+        title: str = "Select OVAT remote project",
         query: str = "",
         **kwargs: Any,
     ) -> None:

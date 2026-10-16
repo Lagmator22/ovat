@@ -184,7 +184,7 @@ class TrustFolderDialog(CenterMiddle):
                     (
                         f"Setting will be saved in: {self.settings_path}"
                         if self.settings_path is not None
-                        else "Setting will be saved in Vibe's trusted folder settings"
+                        else "Setting will be saved in OVAT's trusted folder settings"
                     ),
                     id="trust-dialog-save-info",
                     classes="trust-dialog-save-info",

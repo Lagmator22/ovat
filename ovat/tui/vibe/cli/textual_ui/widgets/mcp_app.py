@@ -507,7 +507,7 @@ class MCPApp(Container):
             option_list.add_option(
                 Option(
                     shortcut_hint(
-                        "Set up credentials in the Mistral dashboard, then press "
+                        "Set up credentials with the provider, then press "
                         f"{shortcut('r')} to refresh."
                     ),
                     disabled=True,

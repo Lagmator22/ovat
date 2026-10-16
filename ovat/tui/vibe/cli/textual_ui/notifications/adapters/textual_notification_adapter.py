@@ -101,7 +101,7 @@ class TextualNotificationAdapter:
         self._render()
 
     def set_default_title(self, title: str) -> None:
-        normalized = title.strip() or "Vibe"
+        normalized = title.strip() or "OVAT"
         if normalized == self._default_title:
             return
         self._default_title = normalized

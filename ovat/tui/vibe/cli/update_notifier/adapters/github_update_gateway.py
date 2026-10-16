@@ -38,7 +38,7 @@ class GitHubUpdateGateway(UpdateGateway):
 
         headers = {
             "Accept": "application/vnd.github+json",
-            "User-Agent": "mistral-vibe-update-notifier",
+            "User-Agent": "ovat-update-notifier",
         }
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"

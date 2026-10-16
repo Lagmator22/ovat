@@ -756,7 +756,7 @@ class VibeApp(App):  # noqa: PLR0904
                 self._app_server is not None
                 and self.config.experimental_enable_tab_status
             ),
-            default_title="Vibe",
+            default_title="OVAT",
         )
         self._interrupt_requested = False
         # A locally submitted turn is "in flight" from the moment the user hits
@@ -2486,7 +2486,7 @@ class VibeApp(App):  # noqa: PLR0904
         if self._vibe_code_project_picker.view is None:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    "Vibe Code project picker is not ready.",
+                    "Remote project picker is not ready.",
                     collapsed=self._tools_collapsed,
                 )
             )
@@ -2504,7 +2504,7 @@ class VibeApp(App):  # noqa: PLR0904
 
         await self._mount_and_scroll(
             UserCommandMessage(
-                f"Linked this repository to Vibe Code project **{project.name}**."
+                f"Linked this repository to remote project **{project.name}**."
             )
         )
         await self._switch_to_input_app()
@@ -2531,7 +2531,7 @@ class VibeApp(App):  # noqa: PLR0904
         if self._vibe_code_project_picker.view is None:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    "Vibe Code project picker is not ready.",
+                    "Remote project picker is not ready.",
                     collapsed=self._tools_collapsed,
                 )
             )
@@ -2607,7 +2607,7 @@ class VibeApp(App):  # noqa: PLR0904
         )
         self._vibe_code_project_picker.clear_teleport()
         await self._mount_and_scroll(
-            UserCommandMessage("Remote Vibe Code project link cleared.")
+            UserCommandMessage("Remote project link cleared.")
         )
         await self._switch_to_input_app()
 
@@ -3615,7 +3615,7 @@ class VibeApp(App):  # noqa: PLR0904
 
     async def _vibe_code_project_command(self, **_kwargs: Any) -> None:
         self._vibe_code_project_picker.clear_teleport()
-        await self._ensure_loading_widget("Loading Vibe Code projects", show_hint=False)
+        await self._ensure_loading_widget("Loading OVAT remote projects", show_hint=False)
         loading_widget = self._loading_widget
         try:
             view, _ = await self.app_server.resources.vibe_code.open_projects()
@@ -3634,7 +3634,7 @@ class VibeApp(App):  # noqa: PLR0904
     async def _resolve_vibe_code_project_for_teleport(
         self, prompt: str | None
     ) -> str | None:
-        await self._ensure_loading_widget("Loading Vibe Code projects", show_hint=False)
+        await self._ensure_loading_widget("Loading OVAT remote projects", show_hint=False)
         loading_widget = self._loading_widget
         try:
             view, project_id = await self.app_server.resources.vibe_code.open_projects(
@@ -3657,7 +3657,7 @@ class VibeApp(App):  # noqa: PLR0904
         if view.saved_project_link_cleared:
             await self._mount_and_scroll(
                 UserCommandMessage(
-                    "The saved Vibe Code project link points to a different "
+                    "The saved remote project link points to a different "
                     "repository remote. Pick the project to use for this repository."
                 )
             )
@@ -3681,7 +3681,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._vibe_code_project_picker.teleport_prompt = prompt
         await self._mount_and_scroll(
             UserCommandMessage(
-                "Saved Vibe Code project is no longer available. "
+                "Saved remote project is no longer available. "
                 "Pick the project to use for this repository."
             )
         )
@@ -4290,7 +4290,7 @@ class VibeApp(App):  # noqa: PLR0904
         if identity is None:
             await self._mount_and_scroll(
                 UserCommandMessage(
-                    "## Who am I\n\nNo Mistral account information is available."
+                    "## Who am I\n\nNo account information is available."
                 )
             )
             return
@@ -4930,7 +4930,7 @@ class VibeApp(App):  # noqa: PLR0904
                     UserCommandMessage(
                         "New conversation started.\n\n"
                         f"Previous session: `{short_old}`\n"
-                        f"To resume it later, run: `vibe --resume {short_old}`"
+                        f"To resume it later, run: `ovat agent --resume {short_old}`"
                     )
                 )
             else:
@@ -5163,7 +5163,7 @@ class VibeApp(App):  # noqa: PLR0904
                 projects=state.projects,
                 has_more=state.has_more,
                 include_unlink=context.saved_link is not None,
-                title="Vibe Code project",
+                title="Remote project",
             )
         )
 
@@ -6276,7 +6276,7 @@ class VibeApp(App):  # noqa: PLR0904
                 "⚠ Untrusted local config folders are being ignored:\n\n"
                 f"{folders}\n\n"
                 f'If you want them loaded, remove them from "untrusted" in '
-                f"{response.settings_path}, or ask Vibe to do it."
+                f"{response.settings_path}, or ask OVAT to do it."
             )
             await self._mount_and_scroll(WarningMessage(warning, show_border=False))
             await asyncio.to_thread(
@@ -6581,7 +6581,7 @@ class VibeApp(App):  # noqa: PLR0904
             return
         with self.suspend():
             rprint(
-                "Mistral Vibe has been suspended. Run [bold cyan]fg[/bold cyan] to bring Mistral Vibe back."
+                "OVAT has been suspended. Run [bold cyan]fg[/bold cyan] to bring OVAT back."
             )
             os.kill(os.getpid(), signal.SIGTSTP)
 
@@ -6662,7 +6662,7 @@ def run_textual_ui(
     async def run() -> SessionExitSummary | None:
         app_server = await start_app_server()
         effective_startup = startup or StartupOptions()
-        update_notifier = create_update_gateway("mistral-vibe")
+        update_notifier = create_update_gateway("ovat")
         vscode_extension_promo_repository = FileSystemVscodeExtensionPromoRepository()
         vscode_extension_promo = VscodeExtensionPromo(
             repository=vscode_extension_promo_repository,

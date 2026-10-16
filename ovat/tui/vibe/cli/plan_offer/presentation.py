@@ -8,8 +8,8 @@ def plan_offer_cta(account: AccountView | None) -> str | None:
         return None
     action = account.plan_offer
     if action.kind is AccountActionKind.SWITCH_API_KEY:
-        return f"### Switch to your [Vibe Pro API key]({action.url})"
-    return f"### Unlock more with Vibe - [Upgrade to Vibe Pro]({action.url})"
+        return f"### Switch to your [API key]({action.url})"
+    return f"### Unlock more - [Upgrade your plan]({action.url})"
 
 
 def plan_title(account: AccountView | None) -> str | None:

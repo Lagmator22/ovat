@@ -590,7 +590,7 @@ class SkillsBrowserApp(Container):
         if self._query:
             return Text(f"No skills match '{self._query}'")
         if not self._authenticated:
-            return Text("Sign in to Mistral to browse shared skills")
+            return Text("Sign in to browse shared skills")
         if not self._catalog_loaded:
             return Text("Could not load the shared skills catalog")
         return Text("No skills available")
@@ -873,7 +873,7 @@ class SkillsBrowserApp(Container):
         option_list.add_option(Option(globally, id="scope:global"))
         project = Text(no_wrap=True)
         project.append("  Project")
-        project.append("  committed to this project's .vibe/skills.toml", style="dim")
+        project.append("  committed to this project's .ovat/skills.toml", style="dim")
         option_list.add_option(Option(project, id="scope:project"))
         option_list.highlighted = 0
         self._update_preview()

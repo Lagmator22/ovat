@@ -181,9 +181,9 @@ async def get_update_if_available(
     return UpdateAvailability(latest_version=update.latest_version, should_notify=True)
 
 
-UPDATE_COMMANDS = ["uv tool upgrade mistral-vibe", "brew upgrade mistral-vibe"]
-FORCE_REINSTALL_COMMAND = "uv tool install --force mistral-vibe@latest"
-INSTALLED_VERSION_COMMAND = "vibe --version"
+UPDATE_COMMANDS = ["uv tool upgrade ovat", "pipx upgrade ovat"]
+FORCE_REINSTALL_COMMAND = "uv tool install --force ovat@latest"
+INSTALLED_VERSION_COMMAND = "ovat --version"
 
 
 async def do_update(latest_version: str) -> bool:

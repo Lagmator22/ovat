@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-DATA_RETENTION_URL = "https://chat.mistral.ai/work?profile_dialog=privacy"
+# OVAT edit: Vibe's text was Mistral's data-collection notice for its hosted
+# API, which does not apply here. OVAT's own wording.
+DATA_RETENTION_URL = "https://lagmator22.github.io/ovat-navigate/"
 
-DATA_RETENTION_MESSAGE = f"""## Your Data Helps Improve Mistral AI
+DATA_RETENTION_MESSAGE = f"""## Where your data goes
 
-At Mistral AI, we're committed to delivering the best possible experience. When you use Mistral models on our API, your interactions may be collected to improve our models, ensuring they stay cutting-edge, accurate, and helpful.
+OVAT sends your messages to the model endpoint you configure, and to any tool or remote agent you turn on.
 
-Manage your data settings [here]({DATA_RETENTION_URL})"""
+Read more [here]({DATA_RETENTION_URL})"""

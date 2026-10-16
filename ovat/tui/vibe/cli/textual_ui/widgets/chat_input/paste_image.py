@@ -165,7 +165,7 @@ async def handle_clipboard_image_paste(
 
 
 def write_clipboard_image(data: bytes) -> Path:
-    target_dir = Path(tempfile.gettempdir()) / "vibe-pasted-images"
+    target_dir = Path(tempfile.gettempdir()) / "ovat-pasted-images"
     target_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     path = target_dir / f"clipboard-{timestamp}.png"

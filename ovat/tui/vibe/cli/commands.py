@@ -134,18 +134,18 @@ class CommandRegistry:
             ),
             "whoami": Command(
                 aliases=frozenset(["/whoami"]),
-                description="Display the Mistral signed-in user, workspace, and plan",
+                description="Display the signed-in user, workspace, and plan",
                 handler="_show_whoami",
                 side_channel=True,
             ),
             "teleport": Command(
                 aliases=frozenset(["/teleport"]),
-                description="Teleport session to Vibe Code Web",
+                description="Teleport session to OVAT remote",
                 handler="_teleport_command",
             ),
             "remote-project": Command(
                 aliases=frozenset(["/remote-project"]),
-                description="Select the Vibe Code Web project for this repository",
+                description="Select the OVAT remote project for this repository",
                 handler="_vibe_code_project_command",
             ),
             "proxy-setup": Command(
@@ -199,7 +199,7 @@ class CommandRegistry:
             ),
             "leanstall": Command(
                 aliases=frozenset(["/leanstall"]),
-                description="Install the Lean 4 agent (leanstral)",
+                description="Install the Lean 4 agent",
                 handler="_install_lean",
             ),
             "unleanstall": Command(
@@ -217,7 +217,7 @@ class CommandRegistry:
                 description=(
                     "Fork the current conversation into a new resumable session, "
                     "leaving this session unchanged. Resume the copy with "
-                    "`vibe --resume <id>`."
+                    "`ovat agent --resume <id>`."
                 ),
                 handler="_branch_session",
             ),

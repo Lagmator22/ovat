@@ -782,7 +782,7 @@ class VibeCodeResource:
 
     def _require_picker_id(self) -> str:
         if self._picker_id is None:
-            raise RuntimeError("Vibe Code project picker is not open")
+            raise RuntimeError("Remote project picker is not open")
         return self._picker_id
 
     def reset(self) -> None:
