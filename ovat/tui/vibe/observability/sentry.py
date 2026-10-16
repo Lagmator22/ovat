@@ -223,7 +223,14 @@ def capture_sentry_exception(
     tags: dict[str, str] | None = None,
     extras: dict[str, Any] | None = None,
 ) -> None:
-    import sentry_sdk
+    # OVAT edit: sentry_sdk is not an OVAT dependency and nothing in OVAT
+    # starts it (the DSNs above are None), so without it there is nobody to
+    # report to. The copied app calls this from its error paths, where an
+    # ImportError would hide the error being reported.
+    try:
+        import sentry_sdk
+    except ImportError:
+        return
 
     if not sentry_sdk.is_initialized():
         return

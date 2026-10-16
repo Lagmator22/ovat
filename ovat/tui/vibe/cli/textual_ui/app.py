@@ -698,6 +698,8 @@ class VibeApp(App):  # noqa: PLR0904
         Binding("ctrl+backslash", "toggle_debug_console", "Debug Console", show=False),
     ]
 
+    # OVAT: what builds the banner; OvatAgentApp swaps in its own.
+    _banner_factory: Callable[..., Banner] = Banner
     _greeting_message: GreetingMessage | None = None
     _tui_displayed_monotonic: float | None = None
     _startup_telemetry_sent: bool = False
@@ -1105,7 +1107,7 @@ class VibeApp(App):  # noqa: PLR0904
         has_session = self._app_server is not None
         init = self._initial_config_response
         with ChatScroll(id="chat"):
-            self._banner = Banner(
+            self._banner = self._banner_factory(  # OVAT: a hook for OVAT's banner
                 config=self.config if has_session else (init.config if init else None),
                 skills_count=(
                     self.app_server.resources.runtime.custom_skills_count
