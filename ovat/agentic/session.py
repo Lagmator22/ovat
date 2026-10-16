@@ -114,6 +114,18 @@ def _brief(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {first}"[:400] if first else type(exc).__name__
 
 
+def _context_window(config) -> int:
+    from ovat.core.model_scout import read_context_window
+    m = config.model
+    if m.context_window:
+        return int(m.context_window)
+    if (m.device or "").upper() == "NPU":
+        return int(m.ovms_max_prompt_len or 4096)
+    roots = ([m.model_repository_path] if m.model_repository_path else []) + (
+        list(getattr(config, "model_search_paths", None) or []))
+    return read_context_window(m.name, roots)
+
+
 def describe_agent(config, agent, workflow: str) -> dict:
     """What the banner and the bottom bar show. Plain values only."""
     tools = getattr(agent, "tools", None) or {}
@@ -126,6 +138,7 @@ def describe_agent(config, agent, workflow: str) -> dict:
         "device": config.model.device,
         "provider": config.model.provider,
         "engine": config.agent.type,
+        "context_window": _context_window(config),
         "tools": [{"name": n, "kind": spec.get("kind", "builtin"),
                    "permission": spec.get("permission", "allow")}
                   for n, spec in tools.items()],

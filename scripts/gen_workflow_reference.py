@@ -90,6 +90,11 @@ PURPOSE = {
                                       "because OVMS's own NPU cap of 1024 is "
                                       "smaller than one agent turn; set it to "
                                       "go lower. Left to OVMS on CPU and GPU.",
+    ("model", "context_window"): "Model context window in tokens, shown by "
+                                 "the TUI context meter. Unset reads "
+                                 "`max_position_embeddings` from a local "
+                                 "model folder (or `ovms_max_prompt_len` on "
+                                 "`NPU`).",
 
     ("tools", "name"): "`search_docs`, `transcribe`, `describe_image`, or any "
                        "tool an MCP server advertises.",

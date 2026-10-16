@@ -1349,3 +1349,12 @@ def test_streamed_reasoning_and_answer_deltas_grow_in_the_transcript():
                 ReasoningMessage)._content
     run(go())
 
+
+def test_context_window_shows_percentage_in_the_bottom_bar():
+    async def go():
+        async with running(context_window=1000) as (app, pilot, fake, handle):
+            await say(pilot, "How many days?")
+            await until(pilot, lambda: "10%" in screen_text(app))
+    run(go())
+
+

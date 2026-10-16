@@ -365,7 +365,8 @@ class TurnManager:
                 active.turn.id,
                 cancelled=(status is PublicTurnStatus.INTERRUPTED
                            if cancelled is None else cancelled))
-            projector.stats_updated(ctx.stats.snapshot(), 0)
+            projector.stats_updated(ctx.stats.snapshot(),
+                                    int(ctx.info.get("context_window") or 0))
             projector.set_status({"type": "idle"})
         except Exception as exc:
             # Whatever went wrong, the turn still ends: a server that stays

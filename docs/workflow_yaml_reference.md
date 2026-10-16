@@ -56,6 +56,7 @@ Which model to run, where, and how to reach it.
 | `ovms_cache_size_gb` | integer \| null | `null` | > 0 | KV cache size in GB. Setting it also makes the cache **static** rather than dynamic. Whole numbers only. |
 | `ovms_max_prompt_len` | integer \| null | `null` | > 0 | Longest prompt OVMS accepts. On `NPU` an unset value becomes **4096**, because OVMS's own NPU cap of 1024 is smaller than one agent turn; set it to go lower. Left to OVMS on CPU and GPU. |
 | `ovms_tool_guided_generation` | boolean | `false` | - | Make OVMS hold each tool call to the tool's schema while generating. Read by `ovat serve`. |
+| `context_window` | integer \| null | `null` | > 0 | Model context window in tokens, shown by the TUI context meter. Unset reads `max_position_embeddings` from a local model folder (or `ovms_max_prompt_len` on `NPU`). |
 
 ## `tools`
 

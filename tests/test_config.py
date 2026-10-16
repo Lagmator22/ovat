@@ -717,3 +717,25 @@ def test_the_thinking_switch_reaches_every_ovms_engine():
 
 def test_thinking_left_unset_sends_no_template_kwargs():
     assert "extra_body" not in _native_request(WorkflowConfig(model={"name": "m"}))
+
+
+def test_context_window_is_read_from_config_or_local_model_folder(tmp_path):
+    import json
+
+    from ovat.agentic.session import describe_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    explicit = WorkflowConfig(model={"name": "m", "context_window": 32768})
+    assert describe_agent(explicit, object(), "w.yml")["context_window"] == 32768
+
+    npu = WorkflowConfig(model={"name": "m", "device": "NPU"})
+    assert describe_agent(npu, object(), "w.yml")["context_window"] == 4096
+
+    model_dir = tmp_path / "Qwen3.5-4B"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text(
+        json.dumps({"text_config": {"max_position_embeddings": 65536}}),
+        encoding="utf-8")
+    local = WorkflowConfig(model={"name": str(model_dir)})
+    assert describe_agent(local, object(), "w.yml")["context_window"] == 65536
+

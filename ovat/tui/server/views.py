@@ -104,9 +104,11 @@ class StatsBook:
 def config_view(info: dict, workflow: str | None) -> ConfigView:
     model = info.get("model") or (_stem(workflow) or "OVAT agent")
     levels = ["off"]
+    window = int(info.get("context_window") or 0)
     active = ModelConfigView(
         name=model, alias=model, thinking="off", supports_images=False,
-        display_name=model, max_context_length=None, thinking_levels=levels)
+        display_name=model, max_context_length=window or None,
+        thinking_levels=levels)
     # The copied models want an audio provider even with voice off. The
     # client name is a wire value from the same type the models use; taking
     # it from the type keeps the word out of OVAT's strings.
@@ -148,10 +150,11 @@ def config_view(info: dict, workflow: str | None) -> ConfigView:
 def runtime_snapshot(info: dict, workflow: str | None, active: str,
                      stats: AgentStatsSnapshot) -> RuntimeSnapshot:
     current, agents = agent_summaries(info, active)
+    window = int(info.get("context_window") or 0)
     return RuntimeSnapshot(
         config=config_view(info, workflow), active_agent=current,
         agents=agents, skills=[], tools=tool_summaries(info), stats=stats,
-        context_window=0, issues=[], hooks_count=0,
+        context_window=window, issues=[], hooks_count=0,
         connectors=ConnectorCounts(), mcp=MCPState(),
         bypass_tool_permissions=False, experimental_harness=False)
 

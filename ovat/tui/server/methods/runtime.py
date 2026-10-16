@@ -28,7 +28,9 @@ async def runtime_read(ctx, params: RuntimeReadParams):
 @routes.method("stats/read", StatsReadParams)
 async def stats_read(ctx, params: StatsReadParams):
     ctx.require_session(params.session_id)
-    return StatsReadResponse(stats=ctx.stats.snapshot(), context_window=0)
+    return StatsReadResponse(
+        stats=ctx.stats.snapshot(),
+        context_window=int(ctx.info.get("context_window") or 0))
 
 
 @routes.method("tools/list", ToolsListParams)

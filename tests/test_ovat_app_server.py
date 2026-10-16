@@ -95,6 +95,7 @@ class FakeSession:
     def __init__(self, workflow, sink, cwd=None, *, native=True,
                  answer="New hires get 20 days.", reasoning="",
                  answer_deltas=(), reasoning_deltas=(), delta_pause=0.06,
+                 context_window=0,
                  fail_build=None, hold_build=False, hold_turn=False,
                  approval=None, tool=True, shell_lines=("one", "two"),
                  shell_code=0, hold_shell=False, rebuild=False,
@@ -115,6 +116,7 @@ class FakeSession:
         self.answer_deltas = tuple(answer_deltas)
         self.reasoning_deltas = tuple(reasoning_deltas)
         self.delta_pause = delta_pause
+        self.context_window = context_window
         self.fail_build, self.tool, self.approval = fail_build, tool, approval
         self.shell_lines, self.shell_code = shell_lines, shell_code
         self.rebuild, self.failed = rebuild, failed
@@ -179,7 +181,8 @@ class FakeSession:
             # as the real session: the old agent is replaced only now
             self.agent = self.agent_class(self.native)
             self.info = dict(INFO, workflow=self.workflow,
-                             engine=engine or INFO["engine"])
+                             engine=engine or INFO["engine"],
+                             context_window=self.context_window)
             self.sink(s.Ready(self.info))
         return self._thread(go)
 
@@ -2010,4 +2013,25 @@ def test_streamed_reasoning_and_answer_deltas_become_incremental_history_patches
             assert any(any(op.op == "append" and op.path == "/content/0/text"
                            for op in u.patch) for u in updated)
     run(go())
+
+
+def test_context_window_is_published_in_runtime_and_stats_updates():
+    async def go():
+        async with served(context_window=32768) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            runtime = session.resources.runtime
+            await runtime.refresh()
+            assert runtime.context_window == 32768
+            assert (session.resources.config.current
+                    .active_model.max_context_length == 32768)
+            await session.enqueue("How many days?")
+            seen = await events_until(session, is_completed)
+            stats_ev = next(e for e in seen if isinstance(e, StatsUpdated))
+            assert stats_ev.params.context_window == 32768
+            assert stats_ev.params.stats.context_tokens == 100
+            stats = await session._connection.current.request(
+                "stats/read", {"sessionId": session.session_id})
+            assert stats["contextWindow"] == 32768
+    run(go())
+
 
