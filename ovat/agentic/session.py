@@ -23,6 +23,7 @@ from typing import Callable
 
 from ovat.agent.events import Event
 from ovat.agent.permissions import ApprovalBroker, ApprovalRequest
+from ovat.text import split_thinking
 
 
 # ---- what the session tells its front end ---------------------------------
@@ -62,6 +63,9 @@ class TurnDone:
     sources: list = field(default_factory=list)
     failed: bool = False
     cancelled: bool = False
+    # What a thinking model reasoned before it answered, kept apart so
+    # `answer` is only the answer. "" when it did not narrate.
+    reasoning: str = ""
 
 
 @dataclass(frozen=True)
@@ -272,11 +276,14 @@ class AgentSession:
             for key in ("prompt_tokens", "completion_tokens"):
                 if totals.get(key) is not None:
                     self.totals[key] += totals[key]
-        self.last_answer = answer or ""
+        # The agent's session keeps the raw reply; only what is SHOWN (and
+        # copied) is split, so the front end never has to know the tag shapes.
+        reasoning, answer = split_thinking(answer or "")
+        self.last_answer = answer
         with self._lock:
             self.busy = False
-        self._emit(TurnDone(answer or "", elapsed, totals,
-                            self._sources(trace), failed, cancelled))
+        self._emit(TurnDone(answer, elapsed, totals, self._sources(trace),
+                            failed, cancelled, reasoning))
 
     @staticmethod
     def _sources(trace: dict) -> list:
