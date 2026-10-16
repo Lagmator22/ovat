@@ -33,6 +33,19 @@ def test_search_docs_uses_real_retriever_when_given():
     assert out == [{"text": "match for python", "distance": 0.1}]
 
 
+def test_search_docs_gives_sources_with_forward_slashes_on_every_os():
+    """A Windows path printed inside a Python list shows every backslash
+    doubled, and the model copied that into its citation."""
+    class Windows:
+        def retrieve(self, query, top_k=5):
+            return [{"text": "t", "source": "examples\\rag\\docs\\a.md",
+                     "distance": 0.1}]
+
+    out = search_docs_impl("q", retriever=Windows())
+    assert out[0]["source"] == "examples/rag/docs/a.md"
+    assert "\\" not in str(out)
+
+
 def test_search_docs_reports_a_retrieval_failure_in_its_declared_shape():
     """A failing retriever must come back as a RESULT, not a different type.
 

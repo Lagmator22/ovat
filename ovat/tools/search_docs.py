@@ -44,7 +44,7 @@ def search_docs_impl(query: str, top_k: int = 5,
             "distance": 0.0,
         }]
     try:
-        return retriever.retrieve(query, top_k=top_k)
+        hits = retriever.retrieve(query, top_k=top_k)
     except Exception as exc:
         # The error is reported IN the declared shape, not as a bare string.
         # Returning a str here read fine on the native path, because
@@ -59,6 +59,11 @@ def search_docs_impl(query: str, top_k: int = 5,
             "source": None,
             "distance": 0.0,
         }]
+    # Forward slashes on every OS. The model sees these hits printed as a
+    # Python list, which doubles every backslash of a Windows path
+    # (examples\\rag\\docs\\x.md), and it copied that into its citation.
+    return [{**hit, "source": hit["source"].replace("\\", "/")}
+            if isinstance(hit.get("source"), str) else hit for hit in hits]
 
 
 # The OpenAI-style tool schema my agent loop shows the model. I keep it next to
