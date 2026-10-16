@@ -7,17 +7,13 @@ package only draws what the session reports. Needs the [tui] extra. The
 older launcher (`ovat tui`) is untouched and still the default for bare
 `ovat`.
 
-Two apps draw it. The default (agent_app.py) is the copied Vibe app running
-on OVAT's own app server (server/); `OVAT_AGENT_UI=classic` runs the first
-one (app.py) instead, unchanged, for as long as both are kept.
+Two apps draw it. The default (agent_app.py) is the copied terminal client
+in vibe/ (see NOTICE) running on OVAT's own app server (server/), which
+drives OVAT's agent; `OVAT_AGENT_UI=classic` runs the first one (app.py,
+OVAT's own) instead, for as long as both are kept.
 
 This file imports no UI toolkit, so importing `ovat.tui` is cheap and works
 without the [tui] extra; `runner()` is what needs it.
-
-Design reference: Mistral Vibe's TUI (Apache-2.0), studied for its layout
-and behaviour (banner in the transcript, a loading line above a borderless
-input, folding tool summaries, an approval panel in place of the input).
-The code here is OVAT's own.
 """
 import os
 from typing import Callable

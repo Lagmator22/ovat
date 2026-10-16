@@ -134,3 +134,16 @@ def test_openvino_genai_has_a_floor_that_loads_the_small_model():
         "openvino-genai")]
     assert genai == ["openvino-genai>=2026.4"], genai
 
+
+
+def test_the_copied_clients_license_ships_in_the_wheel():
+    """NOTICE points at ovat/tui/vibe/LICENSE; package-data must include it,
+    or the wheel ships the copied code without its license file."""
+    root = Path(__file__).parents[1]
+    metadata = tomllib.loads((root / "pyproject.toml").read_text(
+        encoding="utf-8"))
+    assert "tui/vibe/LICENSE" in metadata["tool"]["setuptools"][
+        "package-data"]["ovat"]
+    assert (root / "ovat" / "tui" / "vibe" / "LICENSE").is_file()
+    assert "ovat/tui/vibe/LICENSE" in (root / "NOTICE").read_text(
+        encoding="utf-8")

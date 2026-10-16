@@ -132,4 +132,5 @@ ovat = ["assets/*.gif", "assets/*.png",
         "tui/vibe/cli/textual_ui/*.tcss",
         "tui/vibe/cli/textual_ui/screens/*.tcss",
         "tui/vibe/cli/textual_ui/screens/config/*.tcss",
-        "tui/vibe/setup/trusted_folders/*.tcss"]
+        # Its license travels with the copied client (NOTICE points here).
+        "tui/vibe/LICENSE"]
