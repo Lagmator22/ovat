@@ -90,6 +90,15 @@ PURPOSE = {
                                       "because OVMS's own NPU cap of 1024 is "
                                       "smaller than one agent turn; set it to "
                                       "go lower. Left to OVMS on CPU and GPU.",
+    ("model", "ovms_bind_address"): "Address `ovat serve` makes OVMS listen "
+                                    "on. The default keeps it on this "
+                                    "machine; `0.0.0.0` opens it to the "
+                                    "network. `ovat serve --host` overrides "
+                                    "it.",
+    ("model", "ovms_api_key_env"): "Name of an environment variable holding "
+                                   "an API key (not the key itself). `ovat "
+                                   "serve` makes OVMS require it, and OVAT "
+                                   "sends it.",
 
     ("tools", "name"): "`search_docs`, `transcribe`, `describe_image`, or any "
                        "tool an MCP server advertises.",
