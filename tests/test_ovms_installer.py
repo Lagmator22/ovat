@@ -481,6 +481,9 @@ def test_a_hardlink_out_of_the_archive_is_refused(tmp_path, monkeypatch):
     secret = around / "outside.txt"
     secret.write_text("not yours", encoding="utf-8")
     secret.chmod(0o400)
+    # Read back, not assumed: Windows keeps only a read-only flag and
+    # reports 0o444 here.
+    mode = secret.stat().st_mode
     # A hardlink target is named from the ARCHIVE root: this is
     # <staging>/../outside.txt, a file next to the staging folder.
     archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
@@ -491,7 +494,7 @@ def test_a_hardlink_out_of_the_archive_is_refused(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="outside the install folder"):
         installer._extract(archive, str(into))
     assert not (into / "bin" / "evil").exists()
-    assert secret.stat().st_mode & 0o777 == 0o400      # not made writable
+    assert secret.stat().st_mode == mode               # not made writable
 
 
 def test_a_chain_of_links_that_each_look_inside_is_refused(tmp_path,
