@@ -351,8 +351,8 @@ class AgentSession:
         with self._lock:
             if not self.busy or not isinstance(self.agent, AgentLoop):
                 return False
-        self.agent.steer(text)
-        return True
+        # The loop itself refuses once it has decided its answer is final.
+        return self.agent.steer(text)
 
     def ask_subagent(self, name: str, task: str) -> threading.Thread | None:
         """`/ask name task`: straight to one subagent, no main model."""

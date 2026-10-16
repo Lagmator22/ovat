@@ -589,9 +589,32 @@ def test_steering_that_arrives_during_the_final_answer_is_not_lost():
         {"role": "user", "content": "also mention the date"}]
 
 
-def test_steering_left_over_from_a_finished_run_is_not_used_by_the_next():
+def test_steering_with_no_run_going_is_refused_and_not_kept():
     llm = FakeLLMProvider([reply("stop", content="one")])
     agent = AgentLoop(llm, tools={})
-    agent.steer("late")                 # nobody was running
+    assert agent.steer("late") is False         # nobody was running
     agent.run("a")
     assert [m["content"] for m in llm.calls[0]["messages"]] == ["a"]
+    assert agent.steer("after") is False        # and nobody is now
+
+
+def test_steering_after_the_answer_is_final_is_refused_not_dropped(
+        monkeypatch):
+    """Once the loop has decided its answer is final, a steer must come back
+    refused (the TUI then sends it as a new question), never be accepted
+    and then thrown away with the finished run."""
+    from ovat.agent import loop as loop_module
+    agent = None
+    answers = []
+    original = loop_module.looks_like_undecoded_tool_call
+
+    def steer_too_late(text):
+        # runs after the final-answer decision, before run() returns
+        answers.append(agent.steer("too late"))
+        return original(text)
+    monkeypatch.setattr(loop_module, "looks_like_undecoded_tool_call",
+                        steer_too_late)
+    llm = FakeLLMProvider([reply("stop", content="Done.")])
+    agent = AgentLoop(llm, tools={})
+    assert agent.run("hi") == "Done."
+    assert answers == [False] and len(llm.calls) == 1

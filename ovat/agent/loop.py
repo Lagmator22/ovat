@@ -119,16 +119,25 @@ class AgentLoop:
         # the top of an iteration, never between a tool call and its result.
         self._steering: list[str] = []
         self._steering_lock = threading.Lock()
+        # Open while a run can still take guidance. It closes, under the same
+        # lock, at the moment the loop decides it is done, so a message is
+        # either taken or refused, never accepted and then silently dropped.
+        self._steering_open = False
         # Layer 7 (telemetry): after every run() this holds what happened:
         # per-turn latency, token usage (OVMS reports it on each response),
         # and every tool call with its duration. `ovat run --trace` dumps it.
         self.last_trace: dict = {}
 
-    def steer(self, text: str) -> None:
+    def steer(self, text: str) -> bool:
         """Hand the running turn one more instruction. It joins the memory as
-        a user message before the NEXT model call."""
+        a user message before the NEXT model call. False when the run has
+        already decided it is done (or none is running): the caller then
+        sends the text as a new question instead."""
         with self._steering_lock:
+            if not self._steering_open:
+                return False
             self._steering.append(text)
+            return True
 
     def _take_steering(self) -> None:
         """Move waiting guidance into the memory. The bus hears where each
@@ -241,9 +250,9 @@ class AgentLoop:
 
     def run(self, user_message: str) -> str:
         """I run the full loop for one user message and return the final text."""
-        # Guidance left over from a run that ended first is not for this one.
         with self._steering_lock:
             self._steering.clear()
+            self._steering_open = True
         self.session.add_user(user_message)
 
         # The run trace (Layer 7). Built as the loop works; every exit path
@@ -262,6 +271,11 @@ class AgentLoop:
             return sum_known(t[key] for t in turns)
 
         def _finish(answer: str) -> str:
+            # No more guidance for this run. A run that ends some other way
+            # (cancelled, cut off, out of steps) drops what it had not used.
+            with self._steering_lock:
+                self._steering_open = False
+                self._steering.clear()
             self.last_trace["totals"] = {
                 "turns": len(turns),
                 "latency_s": round(time.monotonic() - run_started, 3),
@@ -349,8 +363,12 @@ class AgentLoop:
             if not tool_calls:
                 self.session.add_assistant(content=reply["content"])
                 # Guidance that arrived while the model was writing its
-                # answer is not dropped: ask again, now with it.
-                if self._steering:
+                # answer is not dropped: ask again, now with it. Checked and
+                # closed in one step, so nothing can slip in between.
+                with self._steering_lock:
+                    more = bool(self._steering)
+                    self._steering_open = more
+                if more:
                     continue
                 content = reply["content"] or ""
                 # A tool call the server could not decode arrives HERE, as
