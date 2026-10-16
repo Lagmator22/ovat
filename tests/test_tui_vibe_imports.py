@@ -60,6 +60,9 @@ NOT_COPIED: dict[str, str] = {
         "ovat.tui.vibe.utils.api_keys",
         "ovat.tui.vibe.utils.keyring",
         "ovat.tui.vibe.utils.http",
+        "ovat.tui.vibe.cli.terminal_detect",
+        "ovat.tui.vibe.cli.turn_summary",
+        "ovat.tui.vibe.setup.trusted_folders.trust_folder_dialog",
     )},
 }
 
