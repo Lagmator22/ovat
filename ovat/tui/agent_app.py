@@ -37,7 +37,7 @@ from textual.widgets import Static
 
 from ovat.agentic import session as s
 from ovat.cli.theme import OVAT_THEME
-from ovat.tui import agent_text
+from ovat.tui import agent_completion, agent_text
 from ovat.tui.agent_commands import OvatCommandRegistry
 from ovat.tui.server import OvatServerHandle, start_ovat_app_server
 from ovat.tui.vibe.app_server import AppServerSession
@@ -51,6 +51,8 @@ from ovat.tui.vibe.cli.textual_ui.app import (BottomApp, StartupOptions,
                                               VibeApp, _noop_narrator_manager,
                                               _noop_voice_manager,
                                               _run_app_with_cleanup)
+from ovat.tui.vibe.cli.textual_ui.widgets.chat_input import ChatInputContainer
+from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.completion_popup import CompletionPopup
 from ovat.tui.vibe.cli.textual_ui.count_format import format_count_markdown
 from ovat.tui.vibe.cli.textual_ui.widgets.messages import (
     ErrorMessage, SlashCommandMessage, UserCommandMessage, WarningMessage)
@@ -252,6 +254,18 @@ class OvatAgentApp(VibeApp):
             self._refresh_banner()
         if name in ("Ready", "BuildFailed", "TurnDone", "Notice"):
             self._update_bar()
+
+    # ---- the mouse in the completion popup -----------------------------------
+
+    def on_completion_popup_scrolled(
+            self, message: CompletionPopup.Scrolled) -> None:
+        agent_completion.scroll(self.query_one(ChatInputContainer),
+                                message.delta)
+
+    def on_completion_popup_picked(
+            self, message: CompletionPopup.Picked) -> None:
+        agent_completion.pick(self.query_one(ChatInputContainer),
+                              message.delta)
 
     # ---- a typo in a command is not a question for the model ------------------
 

@@ -516,6 +516,46 @@ def test_slash_lists_every_command_in_the_popup():
     run(go())
 
 
+def _highlighted(popup) -> int:
+    rows = list(popup.query("_CompletionRow"))
+    return next(i for i, r in enumerate(rows)
+                if r.has_class("completion-selected"))
+
+
+def test_the_wheel_moves_the_highlight_in_the_completion_popup():
+    from textual import events
+
+    async def go():
+        async with running(size=(120, 50)) as (app, pilot, fake, handle):
+            await pilot.press("/")
+            popup = app.query_one("#completion-popup")
+            await until(pilot, lambda: popup.styles.display == "block")
+            assert _highlighted(popup) == 0
+            popup.post_message(events.MouseScrollDown(
+                popup, 1, 1, 0, 1, 0, False, False, False))
+            await until(pilot, lambda: _highlighted(popup) == 1)
+            popup.post_message(events.MouseScrollUp(
+                popup, 1, 1, 0, -1, 0, False, False, False))
+            await until(pilot, lambda: _highlighted(popup) == 0)
+            await pilot.press("escape")
+    run(go())
+
+
+def test_a_click_on_a_row_of_the_completion_popup_chooses_it():
+    async def go():
+        async with running(size=(120, 50)) as (app, pilot, fake, handle):
+            await pilot.press("/")
+            popup = app.query_one("#completion-popup")
+            await until(pilot, lambda: popup.styles.display == "block")
+            rows = list(popup.query("_CompletionRow"))
+            label = str(rows[2].query_one(".completion-command").render())
+            await pilot.click(rows[2].query_one(".completion-command"))
+            box = app.query_one("#input-body")
+            await until(pilot, lambda: box.value.strip() == label.strip())
+            assert popup.styles.display == "none"
+    run(go())
+
+
 def test_an_unknown_command_suggests_a_near_one_and_is_not_sent_to_the_model():
     async def go():
         async with running() as (app, pilot, fake, handle):
