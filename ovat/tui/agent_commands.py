@@ -52,7 +52,8 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
             "connector_catalog/read"),
     "plugins": ("plugin_catalog/read",),
     "reload-plugins": ("plugin/reload",),
-    "todo": ("capability:a todo tool",),
+    # Reads the plan from the todo tool's TODO cards, client side.
+    "todo": (),
     "voice": (),
     "leanstall": ("agents/install",),
     "unleanstall": ("agents/uninstall",),
@@ -108,6 +109,10 @@ class OvatCommandRegistry(CommandRegistry):
         commands = {name: command
                     for name, command in super()._build_commands().items()
                     if vibe_command_works(name, served)}
+        # Vibe offers /todo only with its experimental harness; OVAT's todo
+        # tool is a plain workflow tool, so /todo is always there.
+        if "todo" in commands:
+            commands["todo"].is_available = None
         for c in ovat_commands.COMMANDS:
             aliases = frozenset({f"/{c.name}", *(f"/{a}" for a in c.aliases
                                                  if a.isalnum())})

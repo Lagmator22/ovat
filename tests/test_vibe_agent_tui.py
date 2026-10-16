@@ -579,6 +579,29 @@ def test_at_offers_the_subagents_before_any_file():
     run(go())
 
 
+def test_todo_opens_the_plan_the_todo_tool_wrote():
+    """/todo stayed hidden as "OVAT has no todo tool" after the todo tool
+    arrived. It needs no server method: it reads the plan from the TODO
+    cards the bridge already makes."""
+    from ovat.tui.vibe.cli.textual_ui.screens.todo_overlay import \
+        TodoOverlayScreen
+    todos = [{"id": "1", "content": "read the docs", "status": "in_progress",
+              "priority": "high"}]
+    tool = {"name": "todo", "arguments": {"action": "write", "todos": todos},
+            "display": {"kind": "todo", "action": "write", "todos": todos}}
+
+    async def go():
+        async with running(extra_tools=[tool]) as (app, pilot, fake, handle):
+            await say(pilot, "plan it")
+            await until(pilot, lambda: app.query(AssistantMessage)
+                        and not app._is_busy())
+            await say(pilot, "/todo")
+            await until(pilot, lambda: isinstance(app.screen,
+                                                  TodoOverlayScreen))
+            assert "read the docs" in screen_text(app)
+    run(go())
+
+
 def test_an_unknown_command_suggests_a_near_one_and_is_not_sent_to_the_model():
     async def go():
         async with running() as (app, pilot, fake, handle):
@@ -1480,7 +1503,7 @@ def test_the_registry_keeps_a_vibe_command_only_when_the_server_serves_it():
     assert set(registry.commands) & vibe == {
         "help", "clear", "copy", "exit", "status", "theme", "resume",
         "rewind", "rename", "branch", "log", "compact", "model", "thinking",
-        "reload", "config", "mcp", "voice"}
+        "reload", "config", "mcp", "voice", "todo"}
 
 
 def test_a_removed_command_would_only_have_ended_in_not_supported():

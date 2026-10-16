@@ -1297,8 +1297,10 @@ class VibeApp(App):  # noqa: PLR0904
         self._refresh_subagent_list()
 
     async def _complete_mount(self) -> None:
-        if self.app_server.resources.runtime.experimental_harness:
-            self._todo_tracker = TodoTracker()
+        # OVAT edit: upstream tracks todos only under its experimental
+        # harness. OVAT's todo tool is a plain workflow tool, so the plan is
+        # always tracked (the pinned row and /todo read it).
+        self._todo_tracker = TodoTracker()
         self.event_handler = EventHandler(
             mount_callback=self._mount_and_scroll,
             get_tools_collapsed=lambda: self._tools_collapsed,
