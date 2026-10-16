@@ -24,6 +24,8 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
+from uuid import uuid4
+
 from ovat.agent.events import (SUBAGENT_DONE, SUBAGENT_EVENT,
                                SUBAGENT_STARTED, TOOL_ENDED, Event)
 from ovat.tui.server.bridge import Bridge
@@ -49,7 +51,8 @@ from ovat.tui.vibe.app_server.models import (AgentStatsSnapshot,
                                              PublicSessionState, PublicTurn,
                                              PublicTurnQueue,
                                              RunningEffectState,
-                                             RunningSessionStatus, TokenUsage,
+                                             RunningSessionStatus,
+                                             TextContentBlock, TokenUsage,
                                              validate_history_entry)
 from ovat.tui.vibe.app_server.protocol import (ChildSessionUpdatedParams,
                                                HistoryEntryAddedParams,
@@ -237,6 +240,7 @@ class Projector:
             agent_name = event.data.get("agent") or "subagent"
             kind = event.data.get("kind", "workflow")
             active_turn = self.bridge.turn_id or f"turn-{call_id}"
+            task_text = event.data.get("task") or ""
             child_session = PublicChildSession(
                 id=child_id,
                 name=agent_name,
@@ -248,6 +252,14 @@ class Projector:
             self.child_sessions[child_id] = child_session
             self.child_histories[child_id] = []
             self.child_bridges[child_id] = Bridge(session_id=child_id)
+            if task_text:
+                stamp = now_ms()
+                self.child_histories[child_id].append(PublicMessageEntry(
+                    id=str(uuid4()), session_id=child_id,
+                    turn_id=active_turn, created_at=stamp, updated_at=stamp,
+                    generation_status=PublicEntryGenerationStatus.COMPLETED,
+                    role="user", content=[TextContentBlock(text=task_text)],
+                    source="turn_start"))
             self._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
                        child_session=child_session)
             return
@@ -296,6 +308,16 @@ class Projector:
                 self.child_sessions[child_id] = child
                 self._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
                            child_session=child)
+                answer_text = event.data.get("answer") or ""
+                if answer_text and child_id in self.child_histories:
+                    stamp = now_ms()
+                    active_turn = self.bridge.turn_id or f"turn-{call_id}"
+                    self.child_histories[child_id].append(PublicMessageEntry(
+                        id=str(uuid4()), session_id=child_id,
+                        turn_id=active_turn, created_at=stamp, updated_at=stamp,
+                        generation_status=PublicEntryGenerationStatus.COMPLETED,
+                        role="assistant", content=[TextContentBlock(text=answer_text)],
+                        source="agent_response"))
                 curr_usage = self.session.token_usage
                 base_in = curr_usage.input_tokens if curr_usage is not None else 0
                 base_out = curr_usage.output_tokens if curr_usage is not None else 0

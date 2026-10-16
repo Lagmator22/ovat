@@ -50,8 +50,11 @@ class RecordingIndicator(VoiceManagerListener, Static):
     def _poll_peak(self) -> None:
         if self._voice_manager.transcribe_state != TranscribeState.RECORDING:
             return
+        peak = self._voice_manager.peak
+        if not (0.0 <= peak <= 1.0):
+            peak = 0.0
         index = min(
-            int(self._voice_manager.peak * len(PEAK_BLOCKS)), len(PEAK_BLOCKS) - 1
+            int(peak * len(PEAK_BLOCKS)), len(PEAK_BLOCKS) - 1
         )
         # Frames are all one cell wide, no need for a relayout.
         self.update(PEAK_BLOCKS[index], layout=False)

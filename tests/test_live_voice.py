@@ -270,3 +270,36 @@ def test_voice_key_shows_live_words_then_finishes_without_duplication(monkeypatc
             await say(pilot, "/voice")
             await ui_until(pilot, lambda: not manager.is_enabled)
     asyncio.run(go())
+
+
+def test_clean_transcript_filters_hallucinations_and_exclamation_loops():
+    from ovat.agentic.voice import clean_transcript
+    assert clean_transcript("!!!!!!!!!!", 0.05) == ""
+    assert clean_transcript("! . !", 0.05) == ""
+    assert clean_transcript(" you", 0.005) == ""
+    assert clean_transcript("Thank you.", 0.01) == ""
+    assert clean_transcript("Thanks for watching.", 0.02) == ""
+    assert clean_transcript("Hello world", 0.005) == "Hello world"
+    assert clean_transcript("Thank you", 0.1) == "Thank you"
+
+
+def test_prompt_listener_updates_final_text_when_partial_was_seen():
+    class Input:
+        text = "before after"
+        def get_full_text(self):
+            return self.text
+        def get_cursor_offset(self):
+            return 7
+    class Prompt(Listener):
+        input_widget = Input()
+        def replace_input(self, text, cursor_offset):
+            self.text, self.cursor = text, cursor_offset
+    prompt = Prompt()
+    adapter = PromptListener(prompt)
+    adapter.on_transcribe_state_change(TranscribeState.RECORDING)
+    adapter.on_transcribe_partial("partial ")
+    assert prompt.text == "before partial after"
+    adapter.on_transcribe_text("final utterance ")
+    assert prompt.text == "before final utterance after"
+    assert prompt.cursor == len("before final utterance ")
+

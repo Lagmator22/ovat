@@ -181,6 +181,8 @@ class ChatTextArea(TextArea):
         self._app_has_focus: bool = True
         self._focus_relinquished: bool = False
         self._voice_manager = voice_manager
+        self._last_voice_action_time: float = 0.0
+        self._last_voice_error_time: float = 0.0
         self._last_keystroke_time: float = 0.0
         self._click_chain: int = 0
         self._chain_consumed: bool = False
@@ -556,24 +558,36 @@ class ChatTextArea(TextArea):
         if not self._voice_manager:
             return False
 
-        # Handle key pressed during audio recording
+        now = time.monotonic()
+
+        # Handle key pressed during audio recording or flushing
         if self._voice_manager.transcribe_state != TranscribeState.IDLE:
             event.prevent_default()
             event.stop()
             if event.key == "ctrl+c":  # Escape is handled in app.py
                 self._voice_manager.cancel_recording()
+                self._last_voice_action_time = now
             elif self._voice_manager.transcribe_state == TranscribeState.RECORDING:
+                # Debounce rapid Ctrl+R repeat events so holding Ctrl+R does not instantly stop recording
+                if event.key == "ctrl+r" and (now - self._last_voice_action_time) < 0.4:
+                    return True
                 await self._voice_manager.stop_recording()
+                self._last_voice_action_time = now
             return True
 
         # Handle audio record keybind
         if self._voice_manager.is_enabled and event.key == "ctrl+r":
             event.prevent_default()
             event.stop()
+            if (now - self._last_voice_action_time) < 0.4:
+                return True
+            self._last_voice_action_time = now
             try:
                 self._voice_manager.start_recording()
             except RecordingStartError as e:
-                self.notify(str(e), severity="warning", markup=False)
+                if (now - self._last_voice_error_time) > 1.0:
+                    self._last_voice_error_time = now
+                    self.notify(str(e), severity="warning", markup=False)
             return True
 
         return False

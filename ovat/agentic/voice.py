@@ -22,7 +22,24 @@ RATE = 16000
 BLOCK = 1600
 MAX_SECONDS = 30
 SILENCE_SECONDS = 0.8
-SILENCE_PEAK = 0.003
+SPEECH_PEAK = 0.015
+SILENCE_PEAK = 0.008
+
+WHISPER_HALLUCINATIONS = {
+    "you", "you.", "you!", "thank you", "thank you.", "thank you!",
+    "thanks for watching", "thanks for watching.", "bye", "bye.", "bye-bye."
+}
+
+
+def clean_transcript(text: str, peak: float) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    if set(cleaned) <= {"!", ".", " ", "?"}:
+        return ""
+    if cleaned.lower() in WHISPER_HALLUCINATIONS and peak < 0.035:
+        return ""
+    return cleaned
 
 
 def whisper_settings(config, cwd: str) -> tuple[str, str | None]:
@@ -132,6 +149,7 @@ class VoiceManager:
         if self._cancel.is_set():
             return
         block = np.asarray(data, dtype=np.float32).reshape(-1).copy()
+        block = np.nan_to_num(block, nan=0.0, posinf=0.0, neginf=0.0)
         peak = float(np.max(np.abs(block))) if block.size else 0.0
         with self._lock:
             # Stop collecting at the cap even if inference is still busy.
@@ -141,8 +159,11 @@ class VoiceManager:
             self._blocks.append(block)
             self._samples += block.size
             self._peak = peak
-            self._has_signal |= peak >= SILENCE_PEAK
-            self._silent = self._silent + block.size if peak < SILENCE_PEAK else 0
+            if peak >= SPEECH_PEAK:
+                self._has_signal = True
+                self._silent = 0
+            elif self._has_signal:
+                self._silent += block.size
 
     def start_recording(self, mode=RecordingMode.STREAM):
         if self._state != TranscribeState.IDLE or not self._enabled:
@@ -176,6 +197,12 @@ class VoiceManager:
             stream.close()
 
     def _decode(self, pipe, audio, cancel):
+        if audio is None or audio.size < 400:
+            return ""
+        audio = np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0)
+        peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+        if peak < SILENCE_PEAK:
+            return ""
         from ovat.tools.transcribe import WHISPER_LOCK
         with WHISPER_LOCK:
             if cancel.is_set():
@@ -185,7 +212,8 @@ class VoiceManager:
                                    language="<|en|>", return_timestamps=False,
                                    streamer=lambda _: cancel.is_set())
         texts = getattr(result, "texts", None)
-        return (texts[0] if texts else str(result)).strip()
+        raw = (texts[0] if texts else str(result)).strip()
+        return clean_transcript(raw, peak)
 
     async def _run(self, model, device):
         try:
@@ -211,7 +239,8 @@ class VoiceManager:
                     if self._cancel.is_set():
                         return
                     last_size = audio.size
-                    self._notify("on_transcribe_partial", text)
+                    if text:
+                        self._notify("on_transcribe_partial", text)
                 if final:
                     if not text and audio is not None and audio.size >= RATE * 0.2:
                         text = await asyncio.to_thread(self._decode, pipe, audio,

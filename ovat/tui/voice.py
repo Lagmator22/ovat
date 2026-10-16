@@ -35,7 +35,11 @@ class PromptListener:
             self.partial = True
 
     def on_transcribe_text(self, text):
-        if not self.partial:
+        replace = getattr(self.listener, "replace_input", None)
+        if replace is not None:
+            replace(self.prefix + text + self.suffix,
+                    cursor_offset=len(self.prefix) + len(text))
+        else:
             self.listener.on_transcribe_text(text)
 
     def on_voice_mode_change(self, enabled):
