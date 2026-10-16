@@ -466,17 +466,6 @@ class UserCommandMessage(Static):
                 yield Markdown(self._content)
 
 
-# OVAT edit: Vibe promoted its VS Code extension here. OVAT has none, so the
-# promo is switched off (should_show_promo) and the text points at the docs.
-VSCODE_EXTENSION_URI = "https://lagmator22.github.io/ovat-navigate/"
-VSCODE_EXTENSION_LINK_LABEL = "OVAT documentation"
-VSCODE_EXTENSION_PROMO_STANDALONE = f"Read the [{VSCODE_EXTENSION_LINK_LABEL}]({VSCODE_EXTENSION_URI}) to see what OVAT can do."
-VSCODE_EXTENSION_PROMO_WHATS_NEW_SUFFIX = (
-    f"\n\n_Btw, there is an [{VSCODE_EXTENSION_LINK_LABEL}]"
-    f"({VSCODE_EXTENSION_URI})._"
-)
-
-
 class WhatsNewMessage(Static):
     def __init__(self, content: str) -> None:
         super().__init__()
@@ -497,18 +486,6 @@ class GreetingMessage(Static):
 
     def compose(self) -> ComposeResult:
         yield NoMarkupStatic(f"Hello {self._username}, how can I help you?")
-
-
-class VscodeExtensionPromoMessage(Static):
-    def __init__(self, content: str = VSCODE_EXTENSION_PROMO_STANDALONE) -> None:
-        super().__init__()
-        self.add_class("vscode-extension-promo-message")
-        self._content = content
-
-    def compose(self) -> ComposeResult:
-        from textual.widgets import Markdown
-
-        yield Markdown(self._content)
 
 
 class CustomToolsDeprecationMessage(Static):

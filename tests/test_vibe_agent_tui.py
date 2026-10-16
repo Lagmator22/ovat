@@ -224,10 +224,12 @@ def test_the_banner_shows_only_the_workflow_file_name():
 
 def test_nothing_that_phones_home_or_nags_is_on():
     """No update check, no telemetry, no feedback prompt, no editor promo,
-    no what's-new from the app this was copied from, no notifications."""
+    no what's-new from the app this was copied from, no notifications. The
+    update check, the promo and the what's-new are not switched off but
+    gone from the copied app."""
     from ovat.tui.vibe.cli.textual_ui.widgets.feedback_bar import FeedbackBar
     from ovat.tui.vibe.cli.textual_ui.widgets.messages import (
-        GreetingMessage, VscodeExtensionPromoMessage, WhatsNewMessage)
+        GreetingMessage, WhatsNewMessage)
 
     async def go():
         async with running() as (app, pilot, fake, handle):
@@ -237,11 +239,10 @@ def test_nothing_that_phones_home_or_nags_is_on():
             assert not config.enable_telemetry
             assert not config.enable_notifications
             assert not config.show_greeting
-            assert app._update_notifier is None
-            assert app._vscode_extension_promo is None
-            assert not app._show_vscode_extension_promo
+            for gone in ("_check_update", "_check_and_show_whats_new",
+                         "_maybe_show_vscode_extension_promo"):
+                assert not hasattr(app, gone), gone
             assert not app.query(WhatsNewMessage)
-            assert not app.query(VscodeExtensionPromoMessage)
             assert not app.query(GreetingMessage)
             assert not app.query_one(FeedbackBar).display
             assert (await app.app_server.resources.feedback.should_show(

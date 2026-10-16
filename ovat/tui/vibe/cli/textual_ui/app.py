@@ -4,7 +4,7 @@ import asyncio
 from collections import deque
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import aclosing, suppress
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import auto
 from functools import partial
 import gc
@@ -126,9 +126,8 @@ from ovat.tui.vibe.cli.narrator_manager.narrator_manager_port import (
     NarratorManagerPort,
     NarratorState,
 )
-from ovat.tui.vibe.cli.plan_offer.presentation import plan_offer_cta, plan_title
+from ovat.tui.vibe.cli.plan_offer.presentation import plan_title
 from ovat.tui.vibe.cli.process_start import PROCESS_START_MONOTONIC, PROCESS_START_WALLCLOCK
-from ovat.tui.vibe.cli.terminal_detect import Terminal, detect_terminal
 from ovat.tui.vibe.cli.textual_ui._resume_errors import resume_failure_message
 from ovat.tui.vibe.cli.textual_ui.count_format import format_count_markdown
 from ovat.tui.vibe.cli.textual_ui.handlers.event_handler import EventHandler
@@ -190,7 +189,6 @@ from ovat.tui.vibe.cli.textual_ui.widgets.loading import (
 )
 from ovat.tui.vibe.cli.textual_ui.widgets.log_level_picker import LogLevelPickerApp
 from ovat.tui.vibe.cli.textual_ui.widgets.messages import (
-    VSCODE_EXTENSION_PROMO_WHATS_NEW_SUFFIX,
     AssistantMessage,
     CustomToolsDeprecationMessage,
     ErrorMessage,
@@ -203,9 +201,7 @@ from ovat.tui.vibe.cli.textual_ui.widgets.messages import (
     UserCommandMessage,
     UserMessage,
     UserMessageSeverity,
-    VscodeExtensionPromoMessage,
     WarningMessage,
-    WhatsNewMessage,
 )
 from ovat.tui.vibe.cli.textual_ui.widgets.model_picker import ModelOption, ModelPickerApp
 from ovat.tui.vibe.cli.textual_ui.widgets.narrator_status import NarratorStatus
@@ -244,27 +240,11 @@ from ovat.tui.vibe.cli.textual_ui.windowing import (
     sync_backfill_state,
 )
 from ovat.tui.vibe.cli.textual_ui.word_selection import WordSelectScreen
-from ovat.tui.vibe.cli.theme import resolve_auto_theme, resolve_theme, resolve_theme_name
-from ovat.tui.vibe.cli.update_notifier import (
-    UpdateCacheRepository,
-    UpdateError,
-    UpdateGateway,
-    create_update_gateway,
-    get_update_if_available,
-    load_whats_new_content,
-    mark_version_as_seen,
-    should_show_whats_new,
-)
+from ovat.tui.vibe.cli.theme import resolve_theme, resolve_theme_name
 from ovat.tui.vibe.cli.voice_manager import VoiceManagerPort
 from ovat.tui.vibe.cli.voice_manager.voice_manager_port import (
     TranscribeState,
     VoiceManagerListener,
-)
-from ovat.tui.vibe.cli.vscode_extension_promo import (
-    FileSystemVscodeExtensionPromoRepository,
-    VscodeExtensionPromo,
-    VscodeExtensionPromoState,
-    should_show_promo,
 )
 from ovat.tui.vibe.config_values import FALLBACK_THEME
 from ovat.tui.vibe.observability.logging import (
@@ -278,8 +258,6 @@ from ovat.tui.vibe.utils.cache_store import FileSystemCacheStore
 from ovat.tui.vibe.utils.paths import is_dangerous_directory
 from ovat.tui.vibe.utils.retry_prompt import build_retry_prompt
 from ovat.tui.vibe.utils.session_id import shorten_session_id
-
-_VSCODE_FAMILY_TERMINALS = {Terminal.VSCODE, Terminal.VSCODE_INSIDERS, Terminal.CURSOR}
 
 _RETRYABLE_TURN_ERROR_CODES = {
     TurnErrorCode.BACKEND_ERROR,
@@ -329,10 +307,6 @@ def is_progress_event(event: AppServerEvent) -> bool:
     return isinstance(
         entry, (PublicMessageEntry, PublicReasoningEntry, PublicEffectEntry)
     )
-
-
-def _is_vscode_family_terminal() -> bool:
-    return detect_terminal() in _VSCODE_FAMILY_TERMINALS
 
 
 class BottomApp(StrEnum):
@@ -685,13 +659,10 @@ class VibeApp(App):  # noqa: PLR0904
         app_server: AppServerSource,
         *,
         startup: StartupOptions | None = None,
-        update_notifier: UpdateGateway | None = None,
-        update_cache_repository: UpdateCacheRepository | None = None,
         current_version: str = CORE_VERSION,
         terminal_notifier: NotificationPort | None = None,
         voice_manager: VoiceManagerPort | None = None,
         narrator_manager: NarratorManagerPort | None = None,
-        vscode_extension_promo: VscodeExtensionPromo | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -765,15 +736,7 @@ class VibeApp(App):  # noqa: PLR0904
         self._history_widget_indices: WeakKeyDictionary[Widget, int] = (
             WeakKeyDictionary()
         )
-        self._update_notifier = update_notifier
-        self._update_cache_repository = update_cache_repository
         self._current_version = current_version
-        self._vscode_extension_promo = vscode_extension_promo
-        self._show_vscode_extension_promo = (
-            vscode_extension_promo is not None
-            and _is_vscode_family_terminal()
-            and should_show_promo(vscode_extension_promo.initial_state)
-        )
         self._configure_startup_options(startup)
         self._last_escape_time: float | None = None
         self._quit_manager = QuitManager(self)
@@ -783,7 +746,6 @@ class VibeApp(App):  # noqa: PLR0904
 
     def _init_cached_widgets(self) -> None:
         self._banner: Banner | None = None
-        self._whats_new_message: WhatsNewMessage | None = None
         self._cached_messages_area: Widget | None = None
         self._cached_subagent_transcripts: SubagentTranscripts | None = None
         self._cached_chat: ChatScroll | None = None
@@ -1527,7 +1489,6 @@ class VibeApp(App):  # noqa: PLR0904
         finally:
             self._refresh_command_registry()
             self._startup_command_availability_ready.set()
-        await self._check_and_show_whats_new()
         if (
             not self._show_resume_picker
             and self._resume_session_id is None
@@ -1535,7 +1496,6 @@ class VibeApp(App):  # noqa: PLR0904
         ):
             await self._show_custom_tools_deprecation_warning_after_initial_history()
         await self._show_greeting_message()
-        self._schedule_update_notification()
         self._refresh_banner()
         if self._show_resume_picker:
             return
@@ -1809,10 +1769,6 @@ class VibeApp(App):  # noqa: PLR0904
 
         if self._banner:
             self._banner.freeze_animation()
-
-        if self._whats_new_message:
-            await self._whats_new_message.remove()
-            self._whats_new_message = None
 
         if self._queue.paused:
             if not await self._try_side_channel_command(value, input_widget):
@@ -5446,8 +5402,6 @@ class VibeApp(App):  # noqa: PLR0904
         self._refresh_banner()
 
     async def _should_show_greeting(self) -> bool:
-        if self._whats_new_message:
-            return False
         if not self.config.show_greeting:
             return False
         try:
@@ -5718,65 +5672,6 @@ class VibeApp(App):  # noqa: PLR0904
                 "Failed to check for untrusted config folders", exc_info=True
             )
 
-    async def _record_vscode_extension_promo_shown(self) -> None:
-        if self._vscode_extension_promo is None:
-            return
-        previous_count = (
-            self._vscode_extension_promo.initial_state.shown_count
-            if self._vscode_extension_promo.initial_state is not None
-            else 0
-        )
-        try:
-            await self._vscode_extension_promo.repository.set(
-                VscodeExtensionPromoState(shown_count=previous_count + 1)
-            )
-        except Exception:
-            logger.warning(
-                "Failed to persist VSCode extension promo shown count", exc_info=True
-            )
-
-    async def _check_and_show_whats_new(self) -> None:
-        if self._update_cache_repository is None:
-            await self._maybe_show_vscode_extension_promo()
-            return
-
-        should_show = await should_show_whats_new(
-            self._current_version, self._update_cache_repository
-        )
-        if not should_show:
-            await self._maybe_show_vscode_extension_promo()
-            return
-
-        content = load_whats_new_content()
-        if content is not None:
-            body = content
-            plan_offer = plan_offer_cta(self.app_server.resources.account.current)
-            if plan_offer is not None:
-                body = f"{body}\n\n{plan_offer}"
-            if self._show_vscode_extension_promo:
-                body = f"{body}{VSCODE_EXTENSION_PROMO_WHATS_NEW_SUFFIX}"
-            whats_new_message = WhatsNewMessage(body)
-            if self._history_widget_indices:
-                whats_new_message.add_class("after-history")
-            try:
-                chat = self._chat_widget
-            except NoMatches:
-                # Post-ready startup runs in a worker that can resume after the
-                # DOM is gone (e.g. run_test teardown); skip this cosmetic message.
-                return
-            should_anchor = chat.is_at_bottom
-            await chat.mount(whats_new_message, after=self._messages_area)
-            self._whats_new_message = whats_new_message
-            if should_anchor:
-                chat.anchor()
-            if self._show_vscode_extension_promo:
-                self.run_worker(
-                    self._record_vscode_extension_promo_shown(), exclusive=False
-                )
-        else:
-            await self._maybe_show_vscode_extension_promo()
-        await mark_version_as_seen(self._current_version, self._update_cache_repository)
-
     async def _show_greeting_message(self) -> None:
         if not await self._should_show_greeting():
             return
@@ -5825,22 +5720,6 @@ class VibeApp(App):  # noqa: PLR0904
         self._greeting_message = None
         if greeting.parent:
             greeting.remove()
-
-    async def _maybe_show_vscode_extension_promo(self) -> None:
-        if not self._show_vscode_extension_promo:
-            return
-        promo_message = VscodeExtensionPromoMessage()
-        try:
-            chat = self._chat_widget
-        except NoMatches:
-            # Post-ready startup runs in a worker that can resume after the
-            # DOM is gone (e.g. run_test teardown); skip this cosmetic message.
-            return
-        should_anchor = chat.is_at_bottom
-        await chat.mount(promo_message, before=self._messages_area)
-        if should_anchor:
-            chat.anchor()
-        self.run_worker(self._record_vscode_extension_promo_shown(), exclusive=False)
 
     async def _refresh_account(self) -> None:
         try:
@@ -5927,27 +5806,6 @@ class VibeApp(App):  # noqa: PLR0904
             or self.app_server.resources.sessions.history_before_cursor is not None,
             remaining=self._history_backfill_remaining,
         )
-
-    def _schedule_update_notification(self) -> None:
-        if self._update_notifier is None or not self.config.enable_update_checks:
-            return
-
-        asyncio.create_task(self._check_update(), name="version-update-check")
-
-    async def _check_update(self) -> None:
-        if self._update_notifier is None or self._update_cache_repository is None:
-            return
-
-        try:
-            await get_update_if_available(
-                update_notifier=self._update_notifier,
-                current_version=self._current_version,
-                update_cache_repository=self._update_cache_repository,
-            )
-        except UpdateError as exc:
-            logger.warning("Update check failed", exc_info=exc)
-        except Exception as exc:
-            logger.debug("Update check failed", exc_info=exc)
 
     def _clipboard_notice_message(self, copy_result: ClipboardCopyResult) -> str:
         if copy_result.verified:
@@ -6062,81 +5920,3 @@ async def _run_app_with_cleanup(app: VibeApp) -> SessionExitSummary | None:
             sys.stderr.flush()
 
 
-def run_textual_ui(
-    start_app_server: AppServerBootstrap,
-    history_file: Path,
-    update_cache_repository: UpdateCacheRepository,
-    startup: StartupOptions | None = None,
-) -> SessionExitSummary | None:
-    resolve_auto_theme()
-
-    async def run() -> SessionExitSummary | None:
-        app_server = await start_app_server()
-        effective_startup = startup or StartupOptions()
-        update_notifier = create_update_gateway("ovat")
-        vscode_extension_promo_repository = FileSystemVscodeExtensionPromoRepository()
-        vscode_extension_promo = VscodeExtensionPromo(
-            repository=vscode_extension_promo_repository,
-            initial_state=await vscode_extension_promo_repository.get(),
-        )
-        if isinstance(app_server, AppServerHost):
-            from ovat.tui.vibe.cli.textual_ui.startup import (
-                _execute_session_open_plan,
-                resolve_session_open_plan,
-            )
-
-            host = app_server
-            plan = await resolve_session_open_plan(
-                host,
-                prompt_for_workspace_trust=effective_startup.prompt_for_workspace_trust,
-                autocopy_to_clipboard=effective_startup.autocopy_to_clipboard,
-                show_resume_picker=effective_startup.show_resume_picker,
-                initially_resuming=effective_startup.is_resuming_session,
-                resume_session_id=effective_startup.resume_session_id,
-            )
-            if plan is None:
-                return None
-            effective_startup = replace(
-                effective_startup,
-                show_resume_picker=(
-                    effective_startup.show_resume_picker and not plan.resumed
-                ),
-                is_resuming_session=plan.resumed,
-                prompt_for_workspace_trust=False,
-                startup_show_resume_picker=plan.showed_resume_picker,
-                startup_prompt_for_workspace_trust=plan.showed_trust_prompt,
-                resume_session_id=plan.resume_session_id,
-                continue_latest=plan.continue_latest,
-            )
-
-            async def _session_starter() -> AppServerSession:
-                try:
-                    return await _execute_session_open_plan(host, plan)
-                except BaseException:
-                    with suppress(BaseException):
-                        await host.close()
-                    raise
-
-            initial_config_response = await host.read_config()
-            app = VibeApp(
-                app_server=_session_starter,
-                history_file=history_file,
-                startup=effective_startup,
-                update_notifier=update_notifier,
-                update_cache_repository=update_cache_repository,
-                vscode_extension_promo=vscode_extension_promo,
-            )
-            app._initial_config_response = initial_config_response
-            app._mount_first = True
-        else:
-            app = VibeApp(
-                app_server=app_server,
-                history_file=history_file,
-                startup=effective_startup,
-                update_notifier=update_notifier,
-                update_cache_repository=update_cache_repository,
-                vscode_extension_promo=vscode_extension_promo,
-            )
-        return await _run_app_with_cleanup(app)
-
-    return asyncio.run(run())
