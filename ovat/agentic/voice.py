@@ -222,9 +222,12 @@ class VoiceManager:
             if cancel.is_set():
                 return ""
             # The upstream streamer supports short-form audio below 30 s.
+            # The penalty and the cap stop a "!!!!" loop on near silence;
+            # 224 tokens is more than 30 s of speech (about 90 words), so the
+            # cap never cuts real dictation short. Whisper's own limit is 448.
             result = pipe.generate(audio[:RATE * MAX_SECONDS - 1],
                                    language="<|en|>", return_timestamps=False,
-                                   repetition_penalty=1.2, max_new_tokens=128,
+                                   repetition_penalty=1.2, max_new_tokens=224,
                                    streamer=lambda _: cancel.is_set())
         texts = getattr(result, "texts", None)
         raw = (texts[0] if texts else str(result)).strip()
@@ -257,10 +260,7 @@ class VoiceManager:
                     if text:
                         self._notify("on_transcribe_partial", text)
                 if final:
-                    if (not text or (audio is not None and audio.size != last_size)) and audio is not None and audio.size >= RATE * 0.2:
-                        final_text = await asyncio.to_thread(self._decode, pipe, audio,
-                                                             self._cancel)
-                        text = final_text or text
+                    # The decode above already covered all of the audio.
                     if text:
                         self._notify("on_transcribe_text", text)
                     else:

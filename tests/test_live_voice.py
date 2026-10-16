@@ -369,3 +369,25 @@ def test_keys_pressed_while_recording_do_not_type_or_send(monkeypatch):
             await ui_until(pilot, lambda: manager.transcribe_state
                            == TranscribeState.IDLE)
     asyncio.run(go())
+
+
+def test_stopping_does_not_decode_the_same_audio_twice():
+    """Whisper is the slow part. When the last partial was empty, the final
+    flush decoded the same, unchanged audio a second time and got the same
+    nothing back."""
+    async def go():
+        recorder, calls = Recorder(), []
+
+        def generate(audio, **kw):
+            calls.append(audio.size)
+            return ""
+        manager = VoiceManager(lambda: ("m", None), recorder=recorder,
+                               pipeline=lambda *a: SimpleNamespace(
+                                   generate=generate), interval=0.01)
+        manager.start_recording()
+        recorder.send(seconds=0.5)
+        await until(lambda: calls)
+        await asyncio.sleep(0.05)       # loop ticks with no new audio
+        await manager.stop_recording()
+        assert calls == [8000]
+    asyncio.run(go())
