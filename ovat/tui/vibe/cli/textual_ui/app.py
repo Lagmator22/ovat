@@ -5,7 +5,7 @@ from collections import deque
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import aclosing, suppress
 from dataclasses import dataclass, replace
-from enum import StrEnum, auto
+from enum import auto
 from functools import partial
 import gc
 import os
@@ -37,7 +37,8 @@ from textual.worker import (
     WorkerState,
 )
 
-from vibe import __version__ as CORE_VERSION
+from ovat.tui.vibe._compat import StrEnum
+from ovat.tui.vibe import __version__ as CORE_VERSION
 from ovat.tui.vibe.app_server import (
     AppServerConnectionClosed,
     AppServerHost,
@@ -579,9 +580,9 @@ class _PickerState:
         return was_previewing
 
 
-type AppServerStarter = Callable[[], Awaitable[AppServerSession]]
-type AppServerSource = AppServerSession | AppServerStarter
-type AppServerBootstrap = Callable[[], Awaitable[AppServerHost | AppServerSession]]
+AppServerStarter = Callable[[], Awaitable[AppServerSession]]
+AppServerSource = AppServerSession | AppServerStarter
+AppServerBootstrap = Callable[[], Awaitable[AppServerHost | AppServerSession]]
 
 
 def _split_app_server_source(
@@ -3869,7 +3870,7 @@ class VibeApp(App):  # noqa: PLR0904
             and not self.app_server.turn_active
             and (self._agent_task is None or self._agent_task.done())
         ):
-            with suppress(TimeoutError):
+            with suppress(TimeoutError, asyncio.TimeoutError):
                 await asyncio.wait_for(self._turn_started_event.wait(), timeout=30.0)
             # The turn surfacing remounts the loading widget as "Generating";
             # re-apply the interrupting label to the fresh one.
@@ -5694,7 +5695,7 @@ class VibeApp(App):  # noqa: PLR0904
             return
         try:
             await asyncio.wait_for(self._interrupt_settled.wait(), timeout=30.0)
-        except TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             # Never wedge later submits on a window that failed to close: give up
             # waiting and let this and future submits proceed on current state.
             self._settle_interrupt()

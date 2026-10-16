@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import time
 
-from vibe import VIBE_ROOT
+from ovat.tui.vibe import VIBE_ROOT
 from ovat.tui.vibe.cli.update_notifier.ports.update_cache_repository import (
     UpdateCache,
     UpdateCacheRepository,

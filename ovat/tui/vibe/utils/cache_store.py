@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import threading
-import tomllib
 from typing import Any, Protocol
 
-import tomli_w
-
+from ovat.tui.vibe._compat import toml_dump, tomllib
 from ovat.tui.vibe.observability.logging import logger
 from ovat.tui.vibe.utils.vibe_home import get_vibe_home
 
@@ -61,7 +59,7 @@ class FileSystemCacheStore:
             try:
                 self._cache_path.parent.mkdir(parents=True, exist_ok=True)
                 with self._cache_path.open("wb") as f:
-                    tomli_w.dump(existing, f)
+                    toml_dump(existing, f)
             except OSError:
                 logger.debug(
                     "Failed to write cache file %s", self._cache_path, exc_info=True

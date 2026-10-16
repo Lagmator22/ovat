@@ -5,12 +5,12 @@ from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
 import re
-import tomllib
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from ovat.tui.vibe._compat import tomllib
 from ovat.tui.vibe.cli.update_notifier.ports.update_gateway import (
     Update,
     UpdateGateway,
@@ -126,7 +126,7 @@ class UvToolUpdateGateway(UpdateGateway):
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(), timeout=self._timeout
             )
-        except TimeoutError as exc:
+        except (TimeoutError, asyncio.TimeoutError) as exc:
             await _kill(process)
             raise UpdateGatewayError(
                 cause=UpdateGatewayCause.REQUEST_FAILED,

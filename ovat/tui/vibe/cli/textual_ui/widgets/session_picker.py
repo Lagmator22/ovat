@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, ClassVar, Literal
 
 from rich.text import Text
@@ -15,6 +15,7 @@ from textual.timer import Timer
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
+from ovat.tui.vibe._compat import UTC, fromisoformat
 from ovat.tui.vibe.app_server.models import PublicSession, SavedSessionSummary
 from ovat.tui.vibe.cli.textual_ui.shortcut_hints import SHORTCUT_STYLE, shortcut, shortcut_hint
 from ovat.tui.vibe.cli.textual_ui.widgets.navigable_option_list import NavigableOptionList
@@ -28,7 +29,7 @@ _SECONDS_PER_WEEK = 604800
 _PREVIEW_DEBOUNCE_SECONDS = 0.1
 _DELETE_FEEDBACK_STYLE = "bold"
 _DeleteStateKind = Literal["confirmation", "feedback", "pending"]
-type _PickerSession = PublicSession | SavedSessionSummary
+_PickerSession = PublicSession | SavedSessionSummary
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ def _session_datetime(timestamp: int | str | None) -> datetime | None:
         if isinstance(timestamp, int):
             return datetime.fromtimestamp(timestamp / 1000, UTC)
         if isinstance(timestamp, str):
-            parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            parsed = fromisoformat(timestamp)
             return (
                 parsed.replace(tzinfo=UTC)
                 if parsed.tzinfo is None

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from enum import StrEnum, auto
+from enum import auto
 from typing import ClassVar
 
 from textual import work
@@ -12,6 +12,7 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option, OptionDoesNotExist
 
+from ovat.tui.vibe._compat import StrEnum
 from ovat.tui.vibe.app_server.protocol import ConfigFieldKind, ConfigFieldWire, ConfigWriteOpWire
 from ovat.tui.vibe.app_server.resources import ConfigResource
 from ovat.tui.vibe.cli.textual_ui.constants import UNPINNED_ACTIVE_MODEL

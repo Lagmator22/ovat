@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from enum import StrEnum, auto
+from enum import auto
 from typing import Protocol
+
+from ovat.tui.vibe._compat import StrEnum
 
 
 class AudioFormat(StrEnum):

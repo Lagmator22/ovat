@@ -3,19 +3,24 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import suppress
+from typing import TypeVar
 
 from ovat.tui.vibe.app_server._model import ProtocolModel, validate_wire
 from ovat.tui.vibe.app_server.client import AppServerClient
 
 _EVENT_QUEUE_MAX_SIZE = 64
 
+EventT = TypeVar("EventT")
+ResultT = TypeVar("ResultT")
+ResponseT = TypeVar("ResponseT", bound=ProtocolModel)
 
-class BoundedEventQueue[EventT](asyncio.Queue[EventT]):
+
+class BoundedEventQueue(asyncio.Queue[EventT]):
     def __init__(self) -> None:
         super().__init__(maxsize=_EVENT_QUEUE_MAX_SIZE)
 
 
-def finish_event_queue[EventT](
+def finish_event_queue(
     events: asyncio.Queue[EventT], terminal_event: EventT
 ) -> None:
     while not events.empty():
@@ -23,7 +28,7 @@ def finish_event_queue[EventT](
     events.put_nowait(terminal_event)
 
 
-async def stream_until_complete[EventT, ResultT](
+async def stream_until_complete(
     events: asyncio.Queue[EventT],
     completion: asyncio.Task[ResultT],
     *,
@@ -54,7 +59,7 @@ async def stream_until_complete[EventT, ResultT](
                 await pending_event
 
 
-async def stream_request[EventT, ResponseT: ProtocolModel](
+async def stream_request(
     client: AppServerClient,
     method: str,
     params: ProtocolModel,

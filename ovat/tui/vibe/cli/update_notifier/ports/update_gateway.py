@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum, auto
+from enum import auto
 from typing import Protocol
+
+from ovat.tui.vibe._compat import StrEnum
 
 
 @dataclass(frozen=True, slots=True)

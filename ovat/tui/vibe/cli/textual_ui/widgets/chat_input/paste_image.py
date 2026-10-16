@@ -10,8 +10,7 @@ import subprocess
 import tempfile
 from typing import TYPE_CHECKING
 
-from humanize import naturalsize
-
+from ovat.tui.vibe._compat import naturalsize
 from ovat.tui.vibe.cli.constants import CLIPBOARD_IMAGE_PASTE_SUPPORTED_SYSTEM
 from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.text_area import ChatTextArea
 from ovat.tui.vibe.observability.logging import logger

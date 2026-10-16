@@ -299,7 +299,7 @@ class ConfigOptionList(NavigableOptionList):
             self.highlighted = clicked
 
 
-type EditResult = tuple[Any, str]
+EditResult = tuple[Any, str]
 
 
 def filter_field_views(

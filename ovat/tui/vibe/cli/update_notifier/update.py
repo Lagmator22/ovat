@@ -240,7 +240,7 @@ async def _terminate(process: asyncio.subprocess.Process) -> None:
         process.terminate()
     try:
         await asyncio.wait_for(process.wait(), timeout=2.0)
-    except TimeoutError:
+    except (TimeoutError, asyncio.TimeoutError):
         with suppress(ProcessLookupError):
             process.kill()
         await process.wait()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum, auto
+from enum import auto
 from typing import Any, ClassVar, Literal
 
 from rich.text import Text
@@ -13,6 +13,7 @@ from textual.message import Message
 from textual.widgets import Input, OptionList
 from textual.widgets.option_list import Option
 
+from ovat.tui.vibe._compat import StrEnum
 from ovat.tui.vibe.app_server.models import VibeCodePickerContext, VibeCodeProject
 from ovat.tui.vibe.cli.textual_ui.shortcut_hints import shortcut, shortcut_hint
 from ovat.tui.vibe.cli.textual_ui.widgets.navigable_option_list import NavigableOptionList
@@ -102,7 +103,7 @@ class ProjectPickerUnlinkItem:
         return "action:unlink"
 
 
-type ProjectPickerItem = (
+ProjectPickerItem = (
     ProjectPickerProjectItem
     | ProjectPickerCreateItem
     | ProjectPickerLoadMoreItem

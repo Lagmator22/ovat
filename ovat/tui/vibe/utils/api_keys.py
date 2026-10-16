@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
 import os
 
+from ovat.tui.vibe._compat import StrEnum
 from ovat.tui.vibe.utils.keyring import get_api_key_from_keyring
 
 

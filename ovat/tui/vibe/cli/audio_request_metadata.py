@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from vibe import __version__
+from ovat.tui.vibe import __version__
 from ovat.tui.vibe.utils.platform import get_platform_id, get_platform_version
 
-type RequestMetadataGetter = Callable[[], dict[str, str]]
+RequestMetadataGetter = Callable[[], dict[str, str]]
 
 
 def build_audio_request_metadata(

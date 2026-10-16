@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from humanize import naturaldelta
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Static
 
+from ovat.tui.vibe._compat import naturaldelta
 from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.text_area import (
     FEEDBACK_RATING_KEYS,
     FEEDBACK_SNOOZE_KEY,

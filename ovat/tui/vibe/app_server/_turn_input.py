@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import assert_never
 from urllib.parse import urlparse
 
+from ovat.tui.vibe._compat import assert_never
 from ovat.tui.vibe.app_server.models import (
     ContentBlock,
     FileImageSource,

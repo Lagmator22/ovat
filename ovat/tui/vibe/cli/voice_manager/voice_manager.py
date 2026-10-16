@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from asyncio import CancelledError, create_task, wait_for
+from asyncio import CancelledError, TimeoutError as AsyncioTimeoutError, create_task, wait_for
 import contextlib
 from typing import TYPE_CHECKING
 
@@ -146,7 +146,7 @@ class VoiceManager:
         if task is not None:
             try:
                 await wait_for(task, timeout=TRANSCRIPTION_DRAIN_TIMEOUT)
-            except TimeoutError:
+            except (TimeoutError, AsyncioTimeoutError):
                 logger.warning("Transcription task timed out, cancelling")
                 task.cancel()
                 self._on_audio_transcription_error("Transcription timed out")

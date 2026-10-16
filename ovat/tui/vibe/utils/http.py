@@ -13,7 +13,7 @@ import certifi
 import httpx
 import truststore
 
-from vibe import __version__
+from ovat.tui.vibe import __version__
 
 _use_system_trust_store = False
 

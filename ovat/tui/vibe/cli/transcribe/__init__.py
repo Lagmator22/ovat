@@ -12,10 +12,6 @@ from ovat.tui.vibe.cli.transcribe.transcribe_client_port import (
     TranscribeTextDelta,
 )
 
-if TYPE_CHECKING:
-    from ovat.tui.vibe.cli.transcribe.mistral_transcribe_client import MistralTranscribeClient
-
-
 def make_transcribe_client(
     provider: AudioProviderView, model: TranscribeModelConfigView
 ) -> TranscribeClientPort:
@@ -25,7 +21,6 @@ def make_transcribe_client(
 
 
 __all__ = [
-    "MistralTranscribeClient",
     "TranscribeClientPort",
     "TranscribeDone",
     "TranscribeError",
@@ -34,13 +29,3 @@ __all__ = [
     "TranscribeTextDelta",
     "make_transcribe_client",
 ]
-
-
-def __getattr__(name: str) -> object:
-    if name == "MistralTranscribeClient":
-        from ovat.tui.vibe.cli.transcribe.mistral_transcribe_client import (
-            MistralTranscribeClient,
-        )
-
-        return MistralTranscribeClient
-    raise AttributeError(name)

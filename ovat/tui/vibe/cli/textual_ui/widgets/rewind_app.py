@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import StrEnum, auto
+from enum import auto
 from typing import ClassVar
 
 from textual import events
@@ -11,6 +11,7 @@ from textual.content import Content
 from textual.message import Message
 from textual.widgets import Static
 
+from ovat.tui.vibe._compat import StrEnum
 from ovat.tui.vibe.cli.textual_ui.shortcut_hints import shortcut, shortcut_hint
 from ovat.tui.vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from ovat.tui.vibe.cli.textual_ui.widgets.vim_navigation import VimNavigationMixin
@@ -31,7 +32,7 @@ class _RewindPersistence(StrEnum):
     FORK = auto()
 
 
-type _RewindChoice = _RewindAction | _RewindPersistence
+_RewindChoice = _RewindAction | _RewindPersistence
 
 _MAX_OPTIONS = 2
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import StrEnum, auto
+from enum import auto
 import re
 
 from textual import errors, events
@@ -10,6 +10,7 @@ from textual.screen import Screen
 from textual.selection import SelectEnd, Selection, SelectState
 from textual.widget import Widget
 
+from ovat.tui.vibe._compat import StrEnum
 from ovat.tui.vibe.cli.textual_ui.widgets.collapsible import ClickWithoutDragMixin
 
 _WORD = re.compile(r"\w+")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import StrEnum, auto
+from enum import auto
 from typing import ClassVar, Protocol
 import webbrowser
 
@@ -15,6 +15,7 @@ from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 from textual.worker import Worker
 
+from ovat.tui.vibe._compat import StrEnum
 from ovat.tui.vibe.cli.clipboard import copy_text_to_clipboard
 from ovat.tui.vibe.cli.textual_ui.shortcut_hints import shortcut, shortcut_hint, with_status
 from ovat.tui.vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic

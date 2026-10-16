@@ -124,7 +124,7 @@ class _PublishedEvent:
     event: AppServerEvent
 
 
-type _QueuedEvent = _PublishedEvent | _StreamClosed
+_QueuedEvent = _PublishedEvent | _StreamClosed
 
 _EVENT_QUEUE_MAX_SIZE = 256
 

@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, Callable, Coroutine
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
 
+from ovat.tui.vibe._compat import task_cancelling
 from ovat.tui.vibe.app_server._model import ProtocolModel, validate_wire
 from ovat.tui.vibe.app_server.protocol import (
     AppServerResponseError,
@@ -23,12 +24,14 @@ from ovat.tui.vibe.app_server.protocol import (
 )
 from ovat.tui.vibe.app_server.transport import JsonRpcTransport
 
+ResultT = TypeVar("ResultT")
+
 
 class AppServerConnectionClosed(RuntimeError):
     pass
 
 
-type ServerMessage = Notification | ServerRequest
+ServerMessage = Notification | ServerRequest
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,10 +343,10 @@ class AppServerClient:
             )
 
 
-async def _await_cancelled_task[ResultT](task: asyncio.Task[ResultT]) -> None:
+async def _await_cancelled_task(task: asyncio.Task[ResultT]) -> None:
     try:
         await task
     except asyncio.CancelledError:
         current = asyncio.current_task()
-        if current is not None and current.cancelling():
+        if current is not None and task_cancelling(current):
             raise

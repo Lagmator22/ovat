@@ -83,7 +83,7 @@ from ovat.tui.vibe.app_server.protocol import (
 )
 from ovat.tui.vibe.app_server.review import ReviewOwner, ReviewTarget
 
-type ShellTimelineEvent = HistoryEntryAdded | HistoryEntryUpdated
+ShellTimelineEvent = HistoryEntryAdded | HistoryEntryUpdated
 
 
 class ShellResource:

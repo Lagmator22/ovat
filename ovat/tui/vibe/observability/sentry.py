@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from enum import StrEnum, auto
+from enum import auto
 import errno
 import platform
 import re
 from typing import TYPE_CHECKING, Any, cast
 
-from vibe import __version__
+from ovat.tui.vibe._compat import StrEnum
+from ovat.tui.vibe import __version__
 
 if TYPE_CHECKING:
     from sentry_sdk.types import Event, Hint
@@ -94,9 +95,13 @@ _PATH_RE = re.compile(
     r"(?:[^\s\"'`\\/]+(?:[ ]+[^\s\"'`\\/]+)*[\\/])+"
     r"([^\s\"'`\\/]+)"
 )
+# OVAT edit: the upstream pattern uses possessive quantifiers (``++``, ``*+``),
+# which Python only has from 3.11. ``(?=(X))\N`` is the same atomic group and
+# works on 3.10; the groups are only used inside this pattern.
 _HOME_RE = re.compile(
     r"(?<![\w\\/])(?:[A-Za-z]:[\\/]|~?[\\/])(?:Users|home)[\\/]"
-    r"[^\s\"'`\\/]++(?!(?:[ ]+[^\s\"'`\\/]+)*+[\\/][^\s\"'`\\/])"
+    r"(?=([^\s\"'`\\/]+))\1"
+    r"(?!(?=((?:[ ]+[^\s\"'`\\/]+)*))\2[\\/][^\s\"'`\\/])"
 )
 _FILTERED = "[Filtered]"
 
