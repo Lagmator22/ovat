@@ -84,6 +84,22 @@ def is_loopback(url: str) -> bool:
         return False
 
 
+def same_origin(url: str, configured: str) -> bool:
+    """True when `url` goes where `configured` points: same scheme, port
+    and host. localhost and 127.0.0.1 count as one host, because OVAT's own
+    card names 127.0.0.1 while a workflow may say localhost."""
+    a, b = urlsplit(url), urlsplit(configured)
+    if a.scheme != b.scheme:
+        return False
+    try:
+        if a.port != b.port:
+            return False
+    except ValueError:                  # a port that is not a number
+        return False
+    host_a, host_b = (a.hostname or "").lower(), (b.hostname or "").lower()
+    return host_a == host_b or (is_loopback(url) and is_loopback(configured))
+
+
 def peer_token(url: str, token_env: str | None,
                token_file: Path = DEFAULT_TOKEN_FILE,
                environ=os.environ) -> str:

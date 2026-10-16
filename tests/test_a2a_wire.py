@@ -228,6 +228,29 @@ def test_a_refused_token_is_one_plain_sentence_without_a_docs_link():
     assert error.detail == "the agent refused the token"
 
 
+def test_the_token_goes_only_to_the_address_it_was_configured_for():
+    """The SDK sends messages to the URL on the remote's Agent Card. The
+    token used to sit on the whole HTTP client, so a card naming another
+    host would have received it. It is now added per request, only for
+    the configured origin (two loopback names count as one)."""
+    import asyncio
+    peer = SDKPeer("http://localhost:9100/", token="secret", timeout=5)
+
+    def sent(url):
+        request = httpx.Request("POST", url)
+        asyncio.run(peer._add_token(request))
+        return request.headers.get("Authorization")
+    try:
+        assert sent("http://localhost:9100/") == "Bearer secret"
+        assert sent("http://127.0.0.1:9100/a2a/jsonrpc") == "Bearer secret"
+        for elsewhere in ("http://evil.example:9100/",
+                          "http://localhost:9101/",
+                          "https://localhost:9100/"):
+            assert sent(elsewhere) is None, elsewhere
+    finally:
+        peer.close()
+
+
 def test_nothing_listening_is_unreachable():
     peer = SDKPeer(f"http://127.0.0.1:{_free_port()}", token="t", timeout=5)
     try:

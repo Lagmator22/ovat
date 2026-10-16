@@ -28,6 +28,7 @@ from google.protobuf.json_format import MessageToDict
 
 from ovat.a2a.protocol import (PeerError, RemoteCard, RemoteReply,
                                RemoteSkill, TaskState)
+from ovat.a2a.tokens import same_origin
 
 # The SDK's enum names to OVAT's. Anything unknown is UNKNOWN, never a crash.
 _STATES = {
@@ -164,13 +165,19 @@ class SDKPeer:
             future.cancel()
             raise _peer_error(exc) from exc
 
+    async def _add_token(self, request: httpx.Request) -> None:
+        """Per request, not on the client: the SDK sends messages to the URL
+        on the remote's card, and a card naming another host must not
+        receive the token meant for this one."""
+        if self._token and same_origin(str(request.url), self.url):
+            request.headers["Authorization"] = f"Bearer {self._token}"
+
     async def _connect(self):
         if self._client is not None:
             return self._client
-        headers = ({"Authorization": f"Bearer {self._token}"}
-                   if self._token else {})
         self._http = httpx.AsyncClient(
-            headers=headers, timeout=httpx.Timeout(self._timeout, connect=10))
+            event_hooks={"request": [self._add_token]},
+            timeout=httpx.Timeout(self._timeout, connect=10))
         sdk_card = await A2ACardResolver(self._http, self.url).get_agent_card()
         self._card = _remote_card(sdk_card, self.url)
         self._client = await create_client(sdk_card, ClientConfig(
