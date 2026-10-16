@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from ovat.agent.events import ANSWER_DELTA, REASONING_DELTA, Event
+from ovat.agent.events import (ANSWER_DELTA, REASONING_DELTA, STEER_TAKEN,
+                               Event)
 from ovat.agent.permissions import ApprovalBroker, ApprovalRequest
 from ovat.text import split_thinking
 
@@ -58,6 +59,14 @@ class ReasoningDelta:
 @dataclass(frozen=True)
 class AnswerDelta:
     text: str
+
+
+@dataclass(frozen=True)
+class Steered:
+    """The native loop took a steering message into the model's memory, at
+    message number `index`."""
+    text: str
+    index: int
 
 
 @dataclass(frozen=True)
@@ -229,6 +238,9 @@ class AgentSession:
                 self._emit(AnswerDelta(e.data.get("text") or ""))
             elif e.type == REASONING_DELTA:
                 self._emit(ReasoningDelta(e.data.get("text") or ""))
+            elif e.type == STEER_TAKEN:
+                self._emit(Steered(e.data.get("text") or "",
+                                   int(e.data.get("index") or 0)))
             else:
                 self._emit(AgentActivity(e))
 
@@ -329,6 +341,18 @@ class AgentSession:
                 return None
             self.busy = True
         return self._spawn(self._turn, text)
+
+    def steer(self, text: str) -> bool:
+        """Give the running turn one more instruction (Ctrl+Enter). The native
+        loop reads it before its next model call. False when no turn runs or
+        the engine is not native: a framework engine has no step of its own
+        to slip it into."""
+        from ovat.agent.loop import AgentLoop
+        with self._lock:
+            if not self.busy or not isinstance(self.agent, AgentLoop):
+                return False
+        self.agent.steer(text)
+        return True
 
     def ask_subagent(self, name: str, task: str) -> threading.Thread | None:
         """`/ask name task`: straight to one subagent, no main model."""

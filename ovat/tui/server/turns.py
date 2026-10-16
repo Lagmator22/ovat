@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import uuid4
 
 from ovat.agentic import session as s
@@ -44,8 +44,12 @@ from ovat.tui.vibe.app_server.models import (JsonPatchOperation,
 from ovat.tui.vibe.app_server.protocol import (ProtocolErrorCode,
                                                TurnEnqueueParams,
                                                TurnEnqueueResponse,
+                                               TurnQueueSteerParams,
+                                               TurnQueueSteerResponse,
                                                TurnStartParams,
-                                               TurnStartResponse)
+                                               TurnStartResponse,
+                                               TurnSteerParams,
+                                               TurnSteerResponse)
 
 QUEUE_MAX = 32
 STREAM_FLUSH_SECONDS = 0.05
@@ -71,6 +75,9 @@ class _Active:
     answer_buf: str = ""
     reasoning_streamed: bool = False
     flush_handle: asyncio.TimerHandle | None = None
+    # Entry ids of steering messages the agent has not taken yet, oldest
+    # first: the loop takes them in the order they came.
+    steers: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -399,13 +406,102 @@ class TurnManager:
     # ---- interrupting ----------------------------------------------------------
 
     def interrupt(self, expected_turn_id: str) -> None:
+        self._require_active(expected_turn_id)
+        self.cancel_active()
+
+    def _require_active(self, expected_turn_id: str) -> _Active:
+        """Mirrors Vibe's `_handler._require_turn_route` and `_turns.
+        StaleTurnError` (same codes, same sentence, the active id in data)."""
         active = self.active
         if active is None:
             raise RpcError(ProtocolErrorCode.CONFLICT, "No active turn")
         if active.turn.id != expected_turn_id:
             raise RpcError(ProtocolErrorCode.STALE_TURN,
-                           f"The active turn is {active.turn.id}")
-        self.cancel_active()
+                           "Active turn does not match expectedTurnId",
+                           {"activeTurnId": active.turn.id})
+        return active
+
+    # ---- steering --------------------------------------------------------------
+
+    def steer(self, params: TurnSteerParams) -> TurnSteerResponse:
+        """`turn/steer`: one more instruction for the turn that is running.
+        Vibe's `_turns.steer` checks the turn, hands the text to the agent and
+        projects the user's message with source "turn_steer"; so does this,
+        before the response (the client waits for that entry)."""
+        self.ctx.require_session(params.session_id)
+        active = self._require_active(params.expected_turn_id)
+        text = _text_of(params.message)
+        self._steer(active, text, params.client_user_message_id,
+                    [b for b in params.message
+                     if isinstance(b, TextContentBlock)])
+        self._warn_if_dropped(params.message)
+        return TurnSteerResponse(last_event_id=self.ctx.projector.event_id)
+
+    def steer_queued(self, params: TurnQueueSteerParams
+                     ) -> TurnQueueSteerResponse:
+        """`session/turn/queue/steer`: a waiting prompt becomes steering for
+        the running turn. Vibe's own legacy server does not have this method
+        (its Unified Harness backend does, and moves the queue item into the
+        turn); the item's entry id becomes the steering entry's id, which is
+        what the client looks for."""
+        self.ctx.require_session(params.session_id)
+        active = self._require_active(params.expected_turn_id)
+        queued = next((q for q in self.queue
+                       if q.item.id == params.queue_item_id), None)
+        if queued is None:
+            raise RpcError(ProtocolErrorCode.NOT_FOUND,
+                           f"Queued turn not found: {params.queue_item_id}")
+        self._steer(active, queued.text, queued.entry_id, _blocks_of(queued))
+        self.queue.remove(queued)
+        if not self.queue:
+            self.paused = False
+        self._emit_queue()
+        return TurnQueueSteerResponse(
+            queue_item_id=params.queue_item_id, turn_id=active.turn.id,
+            last_event_id=self.ctx.projector.event_id)
+
+    def _steer(self, active: _Active, text: str, entry_id: str | None,
+               blocks: list) -> None:
+        ctx = self.ctx
+        projector = ctx.projector
+        # Only the native loop has a step to slip a message into.
+        if (ctx.agent.memory() is None
+                or _subagent_call(active.text, ctx.info) is not None):
+            engine = ctx.info.get("engine") or "this"
+            raise RpcError(
+                ProtocolErrorCode.NOT_STEERABLE,
+                f"Steering needs the native engine: the {engine} engine "
+                "(or a subagent) takes no new instruction in the middle of "
+                "a turn. Wait for the answer, or `/engine native`.")
+        if not text.strip():
+            raise RpcError(ProtocolErrorCode.INVALID_PARAMS,
+                           "Turn input is empty")
+        if not entry_id or projector.entry(entry_id) is not None:
+            entry_id = str(uuid4())
+        # Registered before the agent hears it: its report of taking the
+        # message is handled after this method, and looks the entry up.
+        active.steers.append(entry_id)
+        if not active.agent_started or not ctx.agent.steer(text):
+            active.steers.remove(entry_id)
+            # The wording the copied client treats as "the turn just ended".
+            raise RpcError(ProtocolErrorCode.CONFLICT, "No active turn")
+        # What the model writes from now on starts a new entry, after this one.
+        self.flush_deltas(close_entries=True)
+        stamp = now_ms()
+        projector.add_message(PublicMessageEntry(
+            id=entry_id, session_id=projector.session.id,
+            turn_id=active.turn.id, created_at=stamp, updated_at=stamp,
+            generation_status=PublicEntryGenerationStatus.COMPLETED,
+            role="user", content=blocks or [TextContentBlock(text=text)],
+            source="turn_steer"))
+
+    def on_steered(self, event: s.Steered) -> None:
+        """The loop took the oldest waiting steer: its message sits at
+        `event.index` in the model's memory, which is where a rewind to it
+        cuts (see saved.py)."""
+        active = self.active
+        if active is not None and active.steers:
+            self.ctx.anchors[active.steers.pop(0)] = event.index
 
     def cancel_active(self) -> None:
         active = self.active
@@ -499,11 +595,8 @@ class TurnManager:
         if self.active is not None or self.paused or not self.queue:
             return
         queued = self.queue.pop(0)
-        blocks = [TextContentBlock(text=b.text)
-                  for e in queued.item.entries
-                  if isinstance(e, TurnUserInputEntry)
-                  for b in e.content if isinstance(b, SessionTextContentBlock)]
-        _, begin = self._prepare(queued.text, queued.entry_id, blocks,
+        _, begin = self._prepare(queued.text, queued.entry_id,
+                                 _blocks_of(queued),
                                  queue_item_id=queued.item.id)
         self._emit_queue()
         begin()
@@ -523,6 +616,12 @@ class TurnManager:
                 active.flush_handle = None
             if active.task is not None:
                 active.task.cancel()
+
+
+def _blocks_of(queued: _Queued) -> list:
+    return [TextContentBlock(text=b.text)
+            for e in queued.item.entries if isinstance(e, TurnUserInputEntry)
+            for b in e.content if isinstance(b, SessionTextContentBlock)]
 
 
 def _replace_response(queue_item_id: str):

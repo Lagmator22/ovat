@@ -345,12 +345,6 @@ class OvatAgentApp(VibeApp):
     # code without it. Each does nothing here rather than end in "not
     # supported".
 
-    async def _steer_queued_now(self) -> bool:
-        """Ctrl+Enter, or Enter on an empty prompt, would push the waiting
-        prompts into the running turn. The agent takes a new instruction only
-        between turns: the queue runs them one after the other by itself."""
-        return False
-
     async def action_toggle_debug_console(self, **kwargs: Any) -> None:
         """Ctrl+Backslash: the console reads the server's log."""
 
