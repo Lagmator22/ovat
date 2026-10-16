@@ -284,3 +284,38 @@ def test_ask_subagent_shows_the_reply_without_the_models_framing():
     sink.wait_for(s.Ready)
     session.ask_subagent("helper", "7*6")
     assert sink.wait_for(s.TurnDone).answer == "42"
+
+
+@pytest.mark.parametrize("raw, reasoning, answer", [
+    ("<think>plan it</think>\n\nThe answer.", "<think>plan it</think>",
+     "The answer."),
+    # Qwen3/3.5 open the block in the PROMPT: only the closing tag is emitted.
+    ("plan it first\n</think>\n\nThe answer.", "plan it first", "The answer."),
+    ("plain answer", "", "plain answer"),
+])
+def test_the_turn_answer_carries_no_reasoning(raw, reasoning, answer):
+    """A thinking model's reasoning used to be drawn inside the answer."""
+    session, sink, _ = _session(lambda: Agent(raw))
+    session.start()
+    sink.wait_for(s.Ready)
+    session.ask("q")
+    done = sink.wait_for(s.TurnDone)
+    assert done.answer == answer
+    assert done.reasoning == reasoning
+    assert session.last_answer == answer, "/copy would copy the reasoning"
+
+
+def test_a_subagent_reply_loses_its_reasoning_too():
+    class WithSubagent(Agent):
+        def __init__(self):
+            super().__init__()
+            self.tools["delegate"] = {
+                "kind": "subagent", "permission": "allow",
+                "function": lambda agent, task:
+                    f"[Answer from subagent {agent}]\nhmm\n</think>42"}
+    session, sink, _ = _session(WithSubagent)
+    session.start()
+    sink.wait_for(s.Ready)
+    session.ask_subagent("helper", "7*6")
+    done = sink.wait_for(s.TurnDone)
+    assert done.answer == "42" and done.reasoning == "hmm"

@@ -50,7 +50,7 @@ CRITICAL_PCT = 95.0
 # 103 on a four-core machine is a normal burst, not an overload.
 _NOT_AN_ALARM = {"ovms.kv_cache_pct", "system.proc_cpu_pct"}
 # Table order: the sources most likely to explain a slow answer first.
-_SOURCE_ORDER = ("ovms", "npu", "intel", "process", "system")
+_SOURCE_ORDER = ("agent", "ovms", "npu", "intel", "process", "system")
 _COLUMNS = ("now", "min", "max", "mean")
 
 HELP = """[b]What the numbers are[/b]
@@ -176,12 +176,18 @@ class TelemetryView(Screen):
         Binding("question_mark", "toggle_help", "Help"),
     ]
 
-    def __init__(self, sources=None, refresh_s: float = REFRESH_S) -> None:
+    def __init__(self, sources=None, refresh_s: float = REFRESH_S,
+                 agent=None) -> None:
+        """`agent`: the running agent, or a callable returning it (the
+        session swaps its agent on /engine, so pass the callable). Without
+        one the page simply has no agent rows."""
         super().__init__(id="telemetry-view")
         self.live = LiveBufferSink()
-        self.collector = Collector(
-            _default_sources() if sources is None else sources,
-            self.live, interval_s=refresh_s)
+        sources = list(_default_sources() if sources is None else sources)
+        if agent is not None:
+            from ovat.telemetry.sources import AgentTraceSource
+            sources.append(AgentTraceSource(agent))
+        self.collector = Collector(sources, self.live, interval_s=refresh_s)
         self._refresh_s = refresh_s
         self._tiles: list = []
         self._rows: set = set()

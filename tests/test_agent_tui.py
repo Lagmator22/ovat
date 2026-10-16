@@ -606,6 +606,46 @@ def test_telemetry_is_opaque_and_fits_80x24(monkeypatch):
     run(go())
 
 
+def test_telemetry_shows_the_running_agents_own_numbers(monkeypatch):
+    """/telemetry left out the agent source on the grounds that no agent
+    existed on the launcher page. In `ovat agent` one does: the session's
+    agent has last_trace, and its totals must be on the page."""
+    from types import SimpleNamespace
+
+    from ovat.tui import telemetry
+    monkeypatch.setattr(telemetry, "_default_sources",
+                        lambda: _telemetry_sources())
+    holder = []
+
+    async def go():
+        app = _app(holder)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _until(pilot, lambda: holder)
+            holder[0].agent = SimpleNamespace(last_trace={"totals": {
+                "prompt_tokens": 120, "completion_tokens": 30, "turns": 2}})
+            await _type(pilot, "/telemetry")
+            await pilot.press("enter")
+            await _until(pilot, lambda: isinstance(app.screen,
+                                                    telemetry.TelemetryView))
+            view = app.screen
+            await _until(pilot, lambda: view.live.latest(
+                "agent.prompt_tokens") == 120)
+            assert view.live.latest("agent.completion_tokens") == 30
+            await _until(pilot, lambda: "agent live" in str(
+                view.query_one("#tel-sources").render()))
+    run(go())
+
+
+def test_telemetry_view_without_a_session_has_no_agent_source():
+    from ovat.tui import telemetry
+    names = [s.name for s in telemetry.TelemetryView().collector.sources]
+    assert "agent" not in names
+    agent = object()
+    names = [s.name for s in telemetry.TelemetryView(
+        agent=lambda: agent).collector.sources]
+    assert "agent" in names
+
+
 def test_telemetry_prints_whole_numbers_whole_and_flags_a_pinned_cpu():
     from ovat.tui import telemetry
     threads = telemetry.tile_text("THREADS", "", "system.threads", 4.0)

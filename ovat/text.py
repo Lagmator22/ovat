@@ -58,6 +58,32 @@ def strip_thinking(text: str) -> str:
     return cleaned.strip()
 
 
+def split_thinking(text: str) -> tuple:
+    """(reasoning, answer). Reasoning is "" when the model did not narrate.
+
+    The two halves want different rendering. An answer is markdown and should
+    be rendered as such; reasoning is wrapped in <think> tags, which markdown
+    reads as HTML and silently swallows, so showing it verbatim is the only
+    way /thinking on actually shows anything.
+    """
+    text = text or ""
+    reasoning = [match.group(0) for match in THINK_BLOCK.finditer(text)]
+    remainder = THINK_BLOCK.sub("", text)
+    unclosed = THINK_OPEN.search(remainder)
+    if unclosed:
+        reasoning.append(remainder[unclosed.start():])
+    else:
+        # A DANGLING </think>: Qwen3/3.5's chat template opens the block in
+        # the PROMPT, so the reply is "reasoning </think> answer" with no
+        # opening tag. strip_thinking already drops that reasoning from the
+        # answer; it was dropped from here too, so /thinking on showed
+        # nothing for a model that had just reasoned at length.
+        closing = THINK_CLOSE.search(remainder)
+        if closing and remainder[:closing.start()].strip():
+            reasoning.append(remainder[:closing.start()])
+    return "\n".join(reasoning).strip(), strip_thinking(text)
+
+
 def looks_like_undecoded_tool_call(text: str) -> bool:
     """Did a tool call end up in the ANSWER instead of being executed?
 
