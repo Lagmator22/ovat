@@ -64,7 +64,12 @@ from ovat.tui.vibe.app_server.protocol import (AppServerResponseError,
 
 T = 10.0                       # the longest any single wait may take
 
+MODELS = [{"id": "Qwen3.5-4B-int4-ov", "label": "Qwen3.5-4B-int4-ov"},
+          {"id": "Qwen3-8B-int4-ov", "label": "Qwen3-8B-int4-ov"}]
+
 INFO = {"workflow": "w.yml", "name": "w", "model": "Qwen3.5-4B-int4-ov",
+        "model_id": "Qwen3.5-4B-int4-ov", "models": MODELS,
+        "default_model_id": "Qwen3.5-4B-int4-ov", "thinking": None,
         "device": "GPU", "provider": "ovms", "engine": "native",
         "tools": [{"name": "search_docs", "kind": "builtin",
                    "permission": "allow"},
@@ -102,7 +107,7 @@ class FakeSession:
                  approval=None, tool=True, shell_lines=("one", "two"),
                  shell_code=0, hold_shell=False, rebuild=False,
                  failed=False, totals=None, start_raises=False,
-                 hold_start=False, compact_error=None):
+                 hold_start=False, compact_error=None, fail_pick=False):
         self.workflow, self.sink = workflow, sink
         self.compact_error = compact_error      # a model that cannot summarize
         self.compacts = []                      # the instructions it was given
@@ -154,6 +159,11 @@ class FakeSession:
         self.asked, self.subagent_calls = [], []
         self.steered = []
         self.engines = []
+        # /model and /thinking: every switch asked for, the model and the
+        # thinking switch the session runs now, and whether a switch fails.
+        self.picks = []
+        self.fail_pick = fail_pick
+        self.model_id, self.thinking = INFO["model_id"], None
         self.turn_count = 0
         self.approved = None
         self.closed = False
@@ -188,9 +198,35 @@ class FakeSession:
                 return
             # as the real session: the old agent is replaced only now
             self.agent = self.agent_class(self.native)
-            self.info = dict(INFO, workflow=self.workflow,
-                             engine=engine or INFO["engine"],
-                             context_window=self.context_window)
+            self.info = self._describe(engine)
+            self.sink(s.Ready(self.info))
+        return self._thread(go)
+
+    def _describe(self, engine=None):
+        return dict(INFO, workflow=self.workflow,
+                    engine=engine or INFO["engine"],
+                    context_window=self.context_window,
+                    model_id=self.model_id,
+                    model=self.model_id, thinking=self.thinking)
+
+    def switch_model(self, model=None, enable_thinking=None):
+        self.picks.append((model, enable_thinking))
+
+        def go():
+            self.build_gate.wait(T)
+            if self.fail_pick:
+                self.sink(s.BuildFailed("Could not build w.yml: no such "
+                                        "model"))
+                return
+            if model is not None:
+                self.model_id = model or INFO["default_model_id"]
+            if enable_thinking is not None:
+                self.thinking = enable_thinking
+            # as a real rebuild: the new agent remembers nothing until the
+            # server hands the old memory back
+            self.remembered = Session(system_prompt="be brief")
+            self.agent = self.agent_class(self.native)
+            self.info = self._describe()
             self.sink(s.Ready(self.info))
         return self._thread(go)
 
@@ -2533,4 +2569,192 @@ def test_a_save_that_fails_is_said_once_and_the_conversation_goes_on(
                     if isinstance(e, ServerWarning)]
             assert len(said) == 1 and "disk full" in said[0]
             assert _texts(session.history) == ["one", "two", "three"]
+    run(go())
+
+
+# ---- /model and /thinking (config/model/write) ----------------------------------
+
+def _config(session):
+    return session.resources.config.current
+
+
+def test_the_runtime_offers_the_models_the_session_can_switch_to():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            config = _config(session)
+            assert [m.alias for m in config.models] == [
+                "Qwen3.5-4B-int4-ov", "Qwen3-8B-int4-ov"]
+            assert config.active_model.alias == "Qwen3.5-4B-int4-ov"
+            assert not config.active_model_pinned
+            assert config.active_model.thinking_levels == ["off", "high"]
+            assert config.active_model.thinking == "off"
+    run(go())
+
+
+def test_no_setting_is_fixed_by_an_administrator():
+    """The /model picker asks which fields are fixed before it opens."""
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await session.resources.config.read_fields()
+            assert response.fields == [] and response.targets == []
+    run(go())
+
+
+def test_picking_a_model_builds_again_and_the_conversation_survives(
+        saved_sessions):
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await _ask(session, "two")
+            status = await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            assert status.name == "APPLIED"
+            assert fake.picks == [("Qwen3-8B-int4-ov", None)]
+            config = _config(session)
+            assert config.active_model.alias == "Qwen3-8B-int4-ov"
+            assert config.active_model_pinned
+            # the new agent remembers what the old one did, and the
+            # transcript is where it was
+            assert _remembered_questions(fake) == ["one", "two"]
+            assert _texts(session.history) == ["one", "two"]
+            await _ask(session, "three")
+            assert _remembered_questions(fake) == ["one", "two", "three"]
+    run(go())
+
+
+def test_the_rewind_points_stay_valid_after_a_model_switch(saved_sessions):
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await _ask(session, "two")
+            before = dict(handle._ctx.anchors)
+            assert len(before) == 2
+            await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            assert handle._ctx.anchors == before
+    run(go())
+
+
+def test_the_empty_alias_goes_back_to_the_workflows_own_model():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            await session.resources.config.write_model(model_alias="")
+            assert fake.picks[-1] == ("", None)
+            assert not _config(session).active_model_pinned
+            assert _config(session).active_model.alias == "Qwen3.5-4B-int4-ov"
+    run(go())
+
+
+def test_picking_the_model_already_running_builds_nothing():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.resources.config.write_model(
+                model_alias="Qwen3.5-4B-int4-ov", reasoning_effort="off")
+            assert fake.picks == []
+    run(go())
+
+
+def test_a_model_the_session_does_not_offer_is_refused_in_words():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.config.write_model(
+                    model_alias="nope")
+            assert err.value.error.code is ProtocolErrorCode.INVALID_PARAMS
+            assert "Unknown model: nope" in err.value.error.message
+            assert "Qwen3-8B-int4-ov" in err.value.error.message
+            assert fake.picks == []
+    run(go())
+
+
+def test_thinking_is_the_enable_thinking_switch():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.resources.config.set_thinking("high")
+            assert fake.picks == [(None, True)]
+            assert _config(session).active_model.thinking == "high"
+            await session.resources.config.set_thinking("off")
+            assert fake.picks[-1] == (None, False)
+            assert _config(session).active_model.thinking == "off"
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.config.set_thinking("max")
+            assert err.value.error.code is ProtocolErrorCode.INVALID_PARAMS
+    run(go())
+
+
+def test_a_switch_is_refused_while_a_turn_runs():
+    async def go():
+        async with served(hold_turn=True) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("slow")
+            await events_until(session, lambda e: isinstance(e, TurnStarted))
+            await poll(lambda: fake.busy)
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.config.write_model(
+                    model_alias="Qwen3-8B-int4-ov")
+            assert err.value.error.code is ProtocolErrorCode.CONFLICT
+            assert fake.picks == []
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_a_model_that_cannot_start_leaves_the_old_one_and_says_so():
+    async def go():
+        async with served(fail_pick=True) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.config.write_model(
+                    model_alias="Qwen3-8B-int4-ov")
+            assert "old one is still in use" in err.value.error.message
+            assert _config(session).active_model.alias == "Qwen3.5-4B-int4-ov"
+            assert handle.ready
+            # the old agent was never touched: still the same conversation
+            assert _remembered_questions(fake) == ["one"]
+            assert len(handle._ctx.anchors) == 1
+    run(go())
+
+
+def test_a_framework_engine_is_told_it_forgets_on_a_model_switch():
+    async def go():
+        async with served(native=False) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("one")
+            await events_until(session, is_completed)
+            await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            seen = await events_until(
+                session, lambda e: isinstance(e, ServerWarning))
+            assert "keeps its own memory" in next(
+                e.params.warning.message for e in seen
+                if isinstance(e, ServerWarning))
+    run(go())
+
+
+def test_reload_rebuilds_only_when_the_workflow_file_changed(tmp_path):
+    workflow = tmp_path / "w.yml"
+    workflow.write_text("model: {}\n")
+
+    async def go():
+        async with served(str(workflow)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await session.resources.config.reload()
+            assert fake.picks == []                  # nothing to read again
+            workflow.write_text("model: {name: other}\n")
+            os.utime(workflow, ns=(1, time.time_ns() + 10**9))
+            await session.resources.config.reload()
+            assert len(fake.picks) == 1
+            assert _remembered_questions(fake) == ["one"]
     run(go())

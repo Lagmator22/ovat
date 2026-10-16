@@ -480,7 +480,7 @@ def test_an_empty_bang_says_what_to_type():
 
 def test_help_lists_the_commands_and_keys_and_nothing_that_cannot_work():
     async def go():
-        async with running() as (app, pilot, fake, handle):
+        async with running(size=(120, 60)) as (app, pilot, fake, handle):
             await say(pilot, "/help")
             await until(pilot, lambda: len(app.query(UserCommandMessage)))
             await pilot.pause(0.3)
@@ -488,9 +488,10 @@ def test_help_lists_the_commands_and_keys_and_nothing_that_cannot_work():
             for name in [c.name for c in ovat_commands.COMMANDS
                          if c.name not in ("quit", "new")] + [
                              "clear", "exit", "status", "theme", "resume",
-                             "rewind", "rename", "branch", "log", "compact"]:
+                             "rewind", "rename", "branch", "log", "compact",
+                             "model", "thinking", "reload"]:
                 assert f"/{name}" in text, name
-            for gone in ("/teleport", "/mcp", "/model", "/config"):
+            for gone in ("/teleport", "/mcp", "/config", "/retry"):
                 assert gone not in text, gone
             assert "Ctrl+O" in text and "Shift+Tab" in text
             # /branch's own text has `ovat agent --resume <id>` in a code
@@ -1121,6 +1122,90 @@ def test_compact_summarizes_the_memory_and_marks_the_transcript():
     run(go())
 
 
+def test_model_picker_switches_the_model_and_the_conversation_is_kept():
+    from ovat.tui.vibe.cli.textual_ui.widgets.model_picker import \
+        ModelPickerApp
+
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await say(pilot, "first")
+            await until(pilot, lambda: fake.asked == ["first"]
+                        and not app._is_busy())
+            await say(pilot, "/model")
+            await until(pilot, lambda: app.query(ModelPickerApp))
+            # rows: Default, then the models in the order the server lists
+            await pilot.press("down", "down", "enter")
+            await until(pilot, lambda: fake.picks == [("Qwen3-8B-int4-ov",
+                                                       None)])
+            await until(pilot, lambda: "Qwen3-8B-int4-ov" in facts(app))
+            await until(pilot, lambda: "Qwen3-8B-int4-ov" in banner_text(app))
+            assert not app.query(ErrorMessage), [
+                e._error for e in app.query(ErrorMessage)]
+            # the model remembers the first question, and a second one runs
+            await say(pilot, "second")
+            await until(pilot, lambda: fake.asked == ["first", "second"]
+                        and not app._is_busy())
+            assert [m["content"] for m in fake.memory()
+                    if m["role"] == "user"] == ["first", "second"]
+    run(go())
+
+
+def test_model_picker_default_row_goes_back_to_the_workflows_model():
+    from ovat.tui.vibe.cli.textual_ui.widgets.model_picker import \
+        ModelPickerApp
+
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await fake_pick(app, pilot, ["down", "down", "enter"])
+            await until(pilot, lambda: "Qwen3-8B-int4-ov" in facts(app))
+            await say(pilot, "/model")
+            await until(pilot, lambda: app.query(ModelPickerApp))
+            await pilot.press("up", "up", "enter")      # the Default row
+            await until(pilot, lambda: fake.picks[-1] == ("", None))
+            await until(pilot, lambda: "Qwen3.5-4B-int4-ov" in facts(app))
+    run(go())
+
+
+async def fake_pick(app, pilot, keys):
+    await say(pilot, "/model")
+    await until(pilot, lambda: app.query("#modelpicker-app"))
+    await pilot.press(*keys)
+
+
+def test_thinking_picker_switches_thinking_and_the_bar_says_so():
+    from ovat.tui.vibe.cli.textual_ui.widgets.thinking_picker import \
+        ThinkingPickerApp
+
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await say(pilot, "first")
+            await until(pilot, lambda: fake.asked == ["first"]
+                        and not app._is_busy())
+            await say(pilot, "/thinking")
+            await until(pilot, lambda: app.query(ThinkingPickerApp))
+            await pilot.press("down", "enter")          # off -> high
+            await until(pilot, lambda: fake.picks == [(None, True)])
+            await until(pilot, lambda: "thinking" in facts(app))
+            assert [m["content"] for m in fake.memory()
+                    if m["role"] == "user"] == ["first"]
+            assert not app.query(ErrorMessage)
+    run(go())
+
+
+def test_reload_says_it_is_done_and_builds_nothing_when_the_file_is_the_same():
+    from ovat.tui.vibe.cli.textual_ui.widgets.reload_message import \
+        ReloadConfigMessage
+
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await say(pilot, "/reload")
+            await until(pilot, lambda: app.query(ReloadConfigMessage))
+            await pilot.pause(0.3)
+            assert not app.query(ErrorMessage)
+            assert fake.picks == []
+    run(go())
+
+
 def test_saved_conversations_rename_branch_log_and_resume_from_the_app(
         saved_sessions):
     from ovat.tui.vibe.cli.textual_ui.widgets.branch_created_message import \
@@ -1307,7 +1392,8 @@ def test_the_registry_keeps_a_vibe_command_only_when_the_server_serves_it():
     # what that comes to today (it grows when the server learns a method)
     assert set(registry.commands) & vibe == {
         "help", "clear", "copy", "exit", "status", "theme", "resume",
-        "rewind", "rename", "branch", "log", "compact"}
+        "rewind", "rename", "branch", "log", "compact", "model", "thinking",
+        "reload"}
 
 
 def test_a_removed_command_would_only_have_ended_in_not_supported():

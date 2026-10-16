@@ -101,14 +101,38 @@ class StatsBook:
                                else 0.0))
 
 
-def config_view(info: dict, workflow: str | None) -> ConfigView:
-    model = info.get("model") or (_stem(workflow) or "OVAT agent")
-    levels = ["off"]
+# What /thinking offers. Vibe's picker lists effort levels; a chat template has
+# one switch, enable_thinking, so the levels are its two positions: "off" is
+# False and anything else is True. The server maps back in methods/config.py.
+THINKING_OFF = "off"
+THINKING_ON = "high"
+THINKING_LEVELS = [THINKING_OFF, THINKING_ON]
+
+
+def model_choices(info: dict) -> tuple[list[ModelConfigView], ModelConfigView]:
+    """(the picker's models, the active one). The models are what the session
+    can switch to (info["models"], see ovat/agentic/models.py) as Vibe's
+    ModelConfigView list; the alias is the value `model.name` is set with and
+    the display name is what is shown. The running model is always in it."""
     window = int(info.get("context_window") or 0)
-    active = ModelConfigView(
-        name=model, alias=model, thinking="off", supports_images=False,
-        display_name=model, max_context_length=window or None,
-        thinking_levels=levels)
+    thinking = THINKING_ON if info.get("thinking") else THINKING_OFF
+    shown = info.get("model") or ""
+    current = info.get("model_id") or shown
+    listed = list(info.get("models") or [])
+    if all(m["id"] != current for m in listed):
+        listed.insert(0, {"id": current, "label": shown or current})
+    models = [ModelConfigView(
+        name=m["id"], alias=m["id"], thinking=thinking, supports_images=False,
+        display_name=m["label"], max_context_length=window or None,
+        thinking_levels=THINKING_LEVELS) for m in listed]
+    return models, next(m for m in models if m.alias == current)
+
+
+def config_view(info: dict, workflow: str | None) -> ConfigView:
+    info = {**info, "model": info.get("model")
+            or (_stem(workflow) or "OVAT agent")}
+    choices, active = model_choices(info)
+    default = info.get("default_model_id") or active.alias
     # The copied models want an audio provider even with voice off. The
     # client name is a wire value from the same type the models use; taking
     # it from the type keeps the word out of OVAT's strings.
@@ -116,8 +140,10 @@ def config_view(info: dict, workflow: str | None) -> ConfigView:
     provider = AudioProviderView(api_base="", api_key_env_var="",
                                  client=client)
     return ConfigView(
-        active_model=active, active_model_pinned=True, images_supported=False,
-        default_model_alias=model, default_agent=DEFAULT_PROFILE,
+        # Pinned when this session runs another model than the file names.
+        active_model=active, active_model_pinned=active.alias != default,
+        images_supported=False,
+        default_model_alias=default, default_agent=DEFAULT_PROFILE,
         # "auto" lets the app pick; the OVAT theme is the app's own to apply.
         theme="auto", log_level=None,
         disable_welcome_banner_animation=True, cursor_blink=True,
@@ -132,7 +158,7 @@ def config_view(info: dict, workflow: str | None) -> ConfigView:
         enable_telemetry=False, enable_system_trust_store=False,
         experimental_enable_tab_status=False,
         experimental_enable_registry_skills=False,
-        models=[active], transcribe_models=[], tts_models=[],
+        models=choices, transcribe_models=[], tts_models=[],
         transcription=TranscriptionConfigView(
             model=TranscribeModelConfigView(
                 name="", sample_rate=16000,

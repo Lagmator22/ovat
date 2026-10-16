@@ -26,7 +26,7 @@ from ovat.tui.vibe.cli.commands import Command, CommandRegistry
 VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "help": (),
     "config": ("config/fields/read", "config/write"),
-    "model": ("config/model/write",),
+    "model": ("config/fields/read", "config/model/write"),
     "skills": ("skills/installed",),
     "thinking": ("config/model/write",),
     "reload": ("config/reload",),
