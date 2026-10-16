@@ -39,6 +39,28 @@ NOT_COPIED: dict[str, str] = {
         "needs the mistralai package; OVAT has its own speech to text, or none",
     "ovat.tui.vibe.cli.tts.mistral_tts_client":
         "needs the mistralai package; OVAT has its own speech output, or none",
+    # Removed in B8: they reach Mistral's cloud, and OVAT never used them.
+    **{name: "Mistral cloud only; removed from the copied client" for name in (
+        "ovat.tui.vibe.observability.sentry",
+        "ovat.tui.vibe.cli.update_notifier",
+        "ovat.tui.vibe.cli.vscode_extension_promo",
+        "ovat.tui.vibe.cli.textual_ui.startup",
+        "ovat.tui.vibe.cli.textual_ui.widgets.teleport_message",
+        "ovat.tui.vibe.cli.textual_ui.widgets.vibe_code_project",
+        "ovat.tui.vibe.cli.textual_ui.widgets.plugins_app",
+        "ovat.tui.vibe.cli.textual_ui.widgets.voice_app",
+        "ovat.tui.vibe.cli.lazy_audio_managers",
+        "ovat.tui.vibe.cli.voice_manager.voice_manager",
+        "ovat.tui.vibe.cli.narrator_manager.narrator_manager",
+        "ovat.tui.vibe.cli.audio_player",
+        "ovat.tui.vibe.cli.audio_recorder",
+        "ovat.tui.vibe.cli.tts",
+        "ovat.tui.vibe.cli.transcribe",
+        "ovat.tui.vibe.utils.data_retention",
+        "ovat.tui.vibe.utils.api_keys",
+        "ovat.tui.vibe.utils.keyring",
+        "ovat.tui.vibe.utils.http",
+    )},
 }
 
 _CHILD = r"""

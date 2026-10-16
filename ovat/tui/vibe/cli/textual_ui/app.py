@@ -108,7 +108,6 @@ from ovat.tui.vibe.app_server.protocol import (
 )
 from ovat.tui.vibe.app_server.session import AppServerTurnError
 from ovat.tui.vibe.cli._process_title import process_id_label
-from ovat.tui.vibe.cli.audio_request_metadata import build_audio_request_metadata
 from ovat.tui.vibe.cli.clipboard import (
     NATIVE_COPY_HINT,
     ClipboardCopyResult,
@@ -116,11 +115,6 @@ from ovat.tui.vibe.cli.clipboard import (
     copy_text_to_clipboard,
 )
 from ovat.tui.vibe.cli.commands import Command, CommandContext, CommandRegistry
-from ovat.tui.vibe.cli.lazy_audio_managers import (
-    check_audio_available,
-    create_default_narrator_manager,
-    create_default_voice_manager,
-)
 from ovat.tui.vibe.cli.narrator_manager.narrator_manager_port import (
     NarratorManagerListener,
     NarratorManagerPort,
@@ -227,7 +221,6 @@ from ovat.tui.vibe.cli.textual_ui.widgets.tools import (
     ToolGroup,
     ToolResultMessage,
 )
-from ovat.tui.vibe.cli.textual_ui.widgets.voice_app import VoiceApp
 from ovat.tui.vibe.cli.textual_ui.windowing import (
     HISTORY_RESUME_TAIL_MESSAGES,
     LOAD_MORE_BATCH_SIZE,
@@ -331,7 +324,6 @@ class BottomApp(StrEnum):
     SkillsBrowser = auto()
     Rewind = auto()
     SessionPicker = auto()
-    Voice = auto()
 
 
 # Smooth per-notch wheel scroll duration. Kept short so consecutive notches chain
@@ -806,10 +798,10 @@ class VibeApp(App):  # noqa: PLR0904
         if self._client_dependencies_ready:
             return
         self._voice_manager = (
-            self._provided_voice_manager or self._make_default_voice_manager()
+            self._provided_voice_manager or _noop_voice_manager()
         )
         self._narrator_manager = (
-            self._provided_narrator_manager or self._make_default_narrator_manager()
+            self._provided_narrator_manager or _noop_narrator_manager()
         )
         self.commands = self._build_command_registry()
         self._loop_commands = ScheduledLoopCommands(
@@ -2211,39 +2203,6 @@ class VibeApp(App):  # noqa: PLR0904
             )
         )
 
-    async def _persist_voice_settings(
-        self,
-        changes: dict[str, str | bool],
-        previous_voice_enabled: bool,
-        audio_error: str | None,
-    ) -> None:
-        await self._persist_config_changes(changes)
-        voice_enabled = self.config.voice_mode_enabled
-        if voice_enabled != previous_voice_enabled:
-            try:
-                self._voice_manager.apply_enabled(voice_enabled)
-            except Exception as exc:
-                logger.warning("Failed to apply voice mode locally", exc_info=exc)
-                audio_error = str(exc)
-            self.app_server.resources.telemetry.record(
-                "vibe.voice_mode_toggled", {"enabled": voice_enabled}
-            )
-            message = (
-                "Voice mode enabled. Press **Ctrl+R** to start recording."
-                if voice_enabled
-                else "Voice mode disabled."
-            )
-            await self._mount_and_scroll(UserCommandMessage(message))
-        self._narrator_manager.sync()
-        self._refresh_command_registry()
-        if audio_error:
-            self.notify(
-                f"Audio setting saved, but audio is unavailable: {audio_error}",
-                severity="warning",
-                timeout=15,
-                markup=False,
-            )
-
     async def _remove_config_field(self, field: str) -> None:
         response = await self.app_server.resources.config.write(
             [ConfigWriteOpWire(op="remove", path=f"/{field}")],
@@ -2299,10 +2258,6 @@ class VibeApp(App):  # noqa: PLR0904
         self._subagent_loading_widget = loading
         await self._loading_area.mount(loading)
 
-    async def on_voice_app_config_closed(self, message: VoiceApp.ConfigClosed) -> None:
-        await self._handle_voice_settings_closed(message.changes)
-        await self._switch_to_input_app()
-
     def _apply_thinking_visibility(self) -> None:
         show = self.config.show_thinking_nodes
         for node in self._messages_area.query(ReasoningMessage):
@@ -2315,32 +2270,6 @@ class VibeApp(App):  # noqa: PLR0904
         # doesn't leave a stray blank line.
         for group in self._messages_area.query(ToolGroup):
             group.sync_visibility()
-
-    async def _handle_voice_settings_closed(
-        self, changes: dict[str, str | bool]
-    ) -> None:
-        if not changes:
-            await self._mount_and_scroll(
-                UserCommandMessage("Voice settings closed (no changes saved).")
-            )
-            return
-
-        previous_voice_enabled = self.config.voice_mode_enabled
-        audio_error = (
-            check_audio_available()
-            if changes.get("voice_mode_enabled") is True
-            or changes.get("narrator_enabled") is True
-            else None
-        )
-        await self._run_settings_update(
-            "voice settings",
-            partial(
-                self._persist_voice_settings,
-                changes,
-                previous_voice_enabled,
-                audio_error,
-            ),
-        )
 
     async def on_model_picker_app_model_selected(
         self, message: ModelPickerApp.ModelSelected
@@ -4493,24 +4422,6 @@ class VibeApp(App):  # noqa: PLR0904
         finally:
             self.exit(result=self._get_session_exit_summary())
 
-    def _make_default_voice_manager(self) -> VoiceManagerPort:
-        return create_default_voice_manager(
-            lambda: self.config,
-            self.app_server.resources.telemetry,
-            self._get_audio_request_metadata,
-        )
-
-    def _get_audio_request_metadata(self) -> dict[str, str]:
-        session = self.app_server.state.session
-        return build_audio_request_metadata(
-            session_id=session.id, parent_session_id=session.parent_session_id
-        )
-
-    async def _show_voice_settings(self, **kwargs: Any) -> None:
-        if self._current_bottom_app == BottomApp.Voice:
-            return
-        await self._switch_to_voice_app()
-
     async def _switch_from_input(self, widget: Widget, scroll: bool = False) -> None:
         bottom_container = self.query_one("#bottom-app-container")
         chat = self._chat_widget
@@ -4577,13 +4488,6 @@ class VibeApp(App):  # noqa: PLR0904
         self.call_after_refresh(widget.focus)
         if should_anchor or scroll:
             self.call_after_refresh(chat.anchor)
-
-    async def _switch_to_voice_app(self) -> None:
-        if self._current_bottom_app == BottomApp.Voice:
-            return
-
-        await self._mount_and_scroll(UserCommandMessage("Voice settings opened..."))
-        await self._switch_from_input(VoiceApp(self.config))
 
     async def _is_active_model_enforced(self) -> bool:
         from ovat.tui.vibe.cli.textual_ui.screens.config._common import ADMIN_LAYER
@@ -4714,7 +4618,6 @@ class VibeApp(App):  # noqa: PLR0904
             BottomApp.ConnectorAuth: _get_connector_auth_app_class(),
             BottomApp.MCPOAuth: _get_mcp_oauth_app_class(),
             BottomApp.Rewind: RewindApp,
-            BottomApp.Voice: VoiceApp,
             BottomApp.SkillsBrowser: SkillsBrowserApp,
         }
         try:
@@ -4724,14 +4627,6 @@ class VibeApp(App):  # noqa: PLR0904
             self.query_one(focus_widget_by_app[self._current_bottom_app]).focus()
         except Exception:
             pass
-
-    def _handle_voice_app_escape(self) -> None:
-        try:
-            voice_app = self.query_one(VoiceApp)
-            voice_app.action_close()
-        except Exception:
-            pass
-        self._last_escape_time = None
 
     def _handle_approval_app_escape(self) -> None:
         try:
@@ -5101,7 +4996,6 @@ class VibeApp(App):  # noqa: PLR0904
 
     def _try_interrupt_bottom_app_escape(self) -> bool:
         handlers = {
-            BottomApp.Voice: self._handle_voice_app_escape,
             BottomApp.MCP: lambda: self._handle_bottom_app_close_escape(
                 _get_mcp_app_class()
             ),
@@ -5876,16 +5770,6 @@ class VibeApp(App):  # noqa: PLR0904
         # Textual doesn't repaint after resuming from Ctrl+Z (SIGTSTP);
         # force a full layout refresh so the UI isn't garbled.
         self.refresh(layout=True)
-
-    def _make_default_narrator_manager(self) -> NarratorManagerPort:
-        return create_default_narrator_manager(
-            config_getter=lambda: self.config,
-            summary_generator=self.app_server.resources.narration,
-            telemetry_client=self.app_server.resources.telemetry,
-            request_metadata_getter=self._get_audio_request_metadata,
-        )
-
-
 
 async def _run_app_with_cleanup(app: VibeApp) -> SessionExitSummary | None:
     from ovat.tui.vibe.cli.stderr_guard import stderr_guard

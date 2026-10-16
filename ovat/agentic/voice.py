@@ -1,6 +1,7 @@
 """Local microphone dictation through the existing Whisper pipeline.
 
-The listener lifecycle mirrors Vibe's cli/voice_manager/voice_manager.py.
+It implements the copied client's VoiceManagerPort
+(ovat/tui/vibe/cli/voice_manager/voice_manager_port.py).
 Whisper takes a whole 16 kHz utterance, so a single worker re-decodes the
 growing buffer while capture continues. Only the newest partial is shown.
 No recording or transcript is sent to a service or written to disk.
