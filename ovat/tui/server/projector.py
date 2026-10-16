@@ -290,8 +290,13 @@ class Projector:
             if child_id in self.child_sessions:
                 child = self.child_sessions[child_id]
                 status_str = event.data.get("status", "ok")
-                status = (FailedSessionStatus() if status_str == "failed"
-                          else IdleSessionStatus())
+                answer_text = event.data.get("answer") or ""
+                if status_str == "failed":
+                    status = FailedSessionStatus(message=answer_text or "Subagent failed")
+                elif status_str == "cancelled":
+                    status = ArchivedSessionStatus()
+                else:
+                    status = IdleSessionStatus()
                 totals = event.data.get("totals") or {}
                 prompt_toks = totals.get("prompt_tokens") or 0
                 compl_toks = totals.get("completion_tokens") or 0
