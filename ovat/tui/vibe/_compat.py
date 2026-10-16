@@ -16,4 +16,10 @@ except ImportError:                      # Python 3.10
         def __str__(self) -> str:
             return str(self.value)
 
+try:
+    from datetime import UTC
+except ImportError:                      # Python 3.10
+    from datetime import timezone
+    UTC = timezone.utc
+
 from typing_extensions import Self, assert_never, override  # noqa: E402,F401

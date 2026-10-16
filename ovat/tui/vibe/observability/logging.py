@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
+
+from ovat.tui.vibe._compat import UTC
 from io import TextIOWrapper
 import logging
 from logging.handlers import RotatingFileHandler
