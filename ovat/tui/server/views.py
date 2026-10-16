@@ -27,7 +27,8 @@ from ovat.tui.vibe.app_server.models import (AgentStatsSnapshot, AgentSummary,
                                              ConnectorCounts, MCPState,
                                              SessionLogSummary, ToolSummary)
 from ovat.tui.vibe.app_server.protocol import (RuntimeSnapshot)
-from ovat.tui.vibe.config_values import (AudioClient, SpeechOutputFormat,
+from ovat.tui.vibe.config_values import (AUTO_THEME, AudioClient,
+                                         SpeechOutputFormat,
                                          TranscriptionEncoding)
 
 DEFAULT_PROFILE = "default"
@@ -128,7 +129,8 @@ def model_choices(info: dict) -> tuple[list[ModelConfigView], ModelConfigView]:
     return models, next(m for m in models if m.alias == current)
 
 
-def config_view(info: dict, workflow: str | None) -> ConfigView:
+def config_view(info: dict, workflow: str | None,
+                theme: str = AUTO_THEME) -> ConfigView:
     info = {**info, "model": info.get("model")
             or (_stem(workflow) or "OVAT agent")}
     choices, active = model_choices(info)
@@ -144,8 +146,9 @@ def config_view(info: dict, workflow: str | None) -> ConfigView:
         active_model=active, active_model_pinned=active.alias != default,
         images_supported=False,
         default_model_alias=default, default_agent=DEFAULT_PROFILE,
-        # "auto" lets the app pick; the OVAT theme is the app's own to apply.
-        theme="auto", log_level=None,
+        # "auto" lets the app pick (the OVAT theme); anything else is the
+        # theme /theme saved in the UI preferences file.
+        theme=theme, log_level=None,
         disable_welcome_banner_animation=True, cursor_blink=True,
         show_greeting=False, autocopy_to_clipboard=False,
         file_watcher_for_autocomplete=False, ask_confirmation_on_exit=True,
@@ -174,11 +177,12 @@ def config_view(info: dict, workflow: str | None) -> ConfigView:
 
 
 def runtime_snapshot(info: dict, workflow: str | None, active: str,
-                     stats: AgentStatsSnapshot) -> RuntimeSnapshot:
+                     stats: AgentStatsSnapshot,
+                     theme: str = AUTO_THEME) -> RuntimeSnapshot:
     current, agents = agent_summaries(info, active)
     window = int(info.get("context_window") or 0)
     return RuntimeSnapshot(
-        config=config_view(info, workflow), active_agent=current,
+        config=config_view(info, workflow, theme), active_agent=current,
         agents=agents, skills=[], tools=tool_summaries(info), stats=stats,
         context_window=window, issues=[], hooks_count=0,
         connectors=ConnectorCounts(), mcp=MCPState(),

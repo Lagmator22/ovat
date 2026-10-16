@@ -25,7 +25,7 @@ from textual.widgets import Static
 
 from ovat.agent.events import (REMOTE_STATUS, SUBAGENT_STATUS, TOOL_ENDED,
                                TOOL_STARTED)
-from ovat.agent.permissions import ONCE, REFUSE, SESSION
+from ovat.agent.permissions import ALWAYS, ONCE, REFUSE, SESSION
 from ovat.agentic import commands as ovat_commands
 from ovat.agentic import session as s
 from ovat.cli.theme import OVAT_THEME
@@ -343,7 +343,7 @@ class OvatAgentApp(App):
 
     async def on_approval_app_approval_granted_always_permanent(
             self, message) -> None:
-        await self._answer_approval(SESSION)
+        await self._answer_approval(ALWAYS)
 
     async def on_approval_app_approval_rejected(self, message) -> None:
         await self._answer_approval(REFUSE)

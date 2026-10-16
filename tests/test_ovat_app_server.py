@@ -28,7 +28,8 @@ import pytest
 from ovat.agent.compaction import CompactionFailed, compacted_memory
 from ovat.agent.events import (SUBAGENT_STATUS, TOOL_ENDED, TOOL_STARTED,
                                Event)
-from ovat.agent.permissions import (ONCE, REFUSE, SESSION, ApprovalBroker)
+from ovat.agent.permissions import (ALWAYS, ONCE, REFUSE, SESSION,
+                                    ApprovalBroker)
 from ovat.agent.questions import QuestionBroker
 from ovat.agent.session import Session
 from ovat.agentic import session as s
@@ -168,8 +169,11 @@ class FakeSession:
         # /model and /thinking: every switch asked for, the model and the
         # thinking switch the session runs now, and whether a switch fails.
         self.picks = []
+        self.forgotten = []             # session picks /config dropped
         self.fail_pick = fail_pick
         self.model_id, self.thinking = INFO["model_id"], None
+        self.default_model_id = INFO["default_model_id"]
+        self.engine = INFO["engine"]
         self.turn_count = 0
         self.approved = None
         self.closed = False
@@ -210,12 +214,14 @@ class FakeSession:
 
     def _describe(self, engine=None):
         return dict(INFO, workflow=self.workflow,
-                    engine=engine or INFO["engine"],
+                    engine=engine or self.engine,
                     context_window=self.context_window,
                     model_id=self.model_id,
-                    model=self.model_id, thinking=self.thinking)
+                    model=self.model_id, thinking=self.thinking,
+                    default_model_id=self.default_model_id)
 
-    def switch_model(self, model=None, enable_thinking=None):
+    def switch_model(self, model=None, enable_thinking=None,
+                     follow_workflow=False):
         self.picks.append((model, enable_thinking))
 
         def go():
@@ -224,8 +230,16 @@ class FakeSession:
                 self.sink(s.BuildFailed("Could not build w.yml: no such "
                                         "model"))
                 return
+            if os.path.isfile(self.workflow):
+                from ovat.config.workflow import load_workflow
+                config = load_workflow(self.workflow)
+                self.model_id = config.model.name
+                self.default_model_id = config.model.name
+                self.thinking = config.model.enable_thinking
+                if follow_workflow:
+                    self.engine = config.agent.type
             if model is not None:
-                self.model_id = model or INFO["default_model_id"]
+                self.model_id = model or self.default_model_id
             if enable_thinking is not None:
                 self.thinking = enable_thinking
             # as a real rebuild: the new agent remembers nothing until the
@@ -235,6 +249,9 @@ class FakeSession:
             self.info = self._describe()
             self.sink(s.Ready(self.info))
         return self._thread(go)
+
+    def forget_picks(self, *names):
+        self.forgotten.extend(names)
 
     def switch_workflow(self, path):
         self.workflow = path
@@ -1248,7 +1265,7 @@ APPROVAL = {"task": "tell me\n1. Allow once\n" + "x" * 900}
 @pytest.mark.parametrize("choice, decision, allowed", [
     (ApprovalDecisionType.APPROVE, ONCE, True),
     (ApprovalDecisionType.APPROVE_FOR_SESSION, SESSION, True),
-    (ApprovalDecisionType.APPROVE_PERMANENTLY, SESSION, True),
+    (ApprovalDecisionType.APPROVE_PERMANENTLY, ALWAYS, True),
     (ApprovalDecisionType.DENY, REFUSE, False),
 ])
 def test_an_approval_reaches_the_broker_with_the_right_decision(
@@ -1296,6 +1313,27 @@ def test_an_approval_reaches_the_broker_with_the_right_decision(
                 CompletedEffectState
             assert isinstance(final.state, expected)
             assert not session.state.active_callbacks
+    run(go())
+
+
+def test_the_panel_offers_always_allow():
+    async def go():
+        async with served(approval=APPROVAL) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            asked = []
+
+            async def drive():
+                async with aclosing(session.act("ask the cloud")) as gen:
+                    async for event in gen:
+                        if isinstance(event, CallbackRequested):
+                            asked.append(event.callback)
+                            await session.respond_to_callback(
+                                event.callback.callback_id,
+                                ApprovalCallbackOutput(decision=ApprovalDecision(
+                                    type=ApprovalDecisionType.DENY)))
+            await asyncio.wait_for(drive(), T)
+            assert ApprovalDecisionType.APPROVE_PERMANENTLY in \
+                asked[0].detail.choices
     run(go())
 
 
@@ -1520,7 +1558,10 @@ def test_a_full_queue_and_context_entries_are_refused_with_a_reason():
     run(go())
 
 
-def test_small_reads_before_and_after_a_session_exists():
+def test_small_reads_before_and_after_a_session_exists(monkeypatch):
+    # diagnostics/list runs the doctor's checks; this machine's are not the point
+    from ovat.cli import diagnostics
+    monkeypatch.setattr(diagnostics, "run_checks", lambda config_path=None: [])
     async def go():
         client, handle, made = await raw_client()
         try:
@@ -2703,29 +2744,33 @@ def test_the_runtime_offers_the_models_the_session_can_switch_to():
 
 
 def test_no_setting_is_fixed_by_an_administrator():
-    """The /model picker asks which fields are fixed before it opens."""
+    """The /model picker asks which fields are fixed before it opens. With no
+    workflow file only the theme is listed, and the one layer a write may
+    name is the workflow."""
     async def go():
         async with served() as (session, handle, fake):
             await session.resources.runtime.wait_until_ready()
             response = await session.resources.config.read_fields()
-            assert response.fields == [] and response.targets == []
+            assert [f.name for f in response.fields] == ["theme"]
+            assert response.targets == ["workflow"]
+            assert all(f.origin != "admin" for f in response.fields)
     run(go())
 
 
 def test_picking_a_model_builds_again_and_the_conversation_survives(
-        saved_sessions):
+        saved_sessions, tmp_path):
     async def go():
-        async with served() as (session, handle, fake):
+        async with served(_wf(tmp_path)) as (session, handle, fake):
             await session.resources.runtime.wait_until_ready()
             await _ask(session, "one")
             await _ask(session, "two")
             status = await session.resources.config.write_model(
                 model_alias="Qwen3-8B-int4-ov")
             assert status.name == "APPLIED"
-            assert fake.picks == [("Qwen3-8B-int4-ov", None)]
+            assert fake.picks == [(None, None)]
             config = _config(session)
             assert config.active_model.alias == "Qwen3-8B-int4-ov"
-            assert config.active_model_pinned
+            assert not config.active_model_pinned
             # the new agent remembers what the old one did, and the
             # transcript is where it was
             assert _remembered_questions(fake) == ["one", "two"]
@@ -2735,9 +2780,9 @@ def test_picking_a_model_builds_again_and_the_conversation_survives(
     run(go())
 
 
-def test_the_rewind_points_stay_valid_after_a_model_switch(saved_sessions):
+def test_the_rewind_points_stay_valid_after_a_model_switch(saved_sessions, tmp_path):
     async def go():
-        async with served() as (session, handle, fake):
+        async with served(_wf(tmp_path)) as (session, handle, fake):
             await session.resources.runtime.wait_until_ready()
             await _ask(session, "one")
             await _ask(session, "two")
@@ -2749,26 +2794,26 @@ def test_the_rewind_points_stay_valid_after_a_model_switch(saved_sessions):
     run(go())
 
 
-def test_the_empty_alias_goes_back_to_the_workflows_own_model():
+def test_the_empty_alias_goes_back_to_the_workflows_own_model(tmp_path):
     async def go():
-        async with served() as (session, handle, fake):
+        async with served(_wf(tmp_path)) as (session, handle, fake):
             await session.resources.runtime.wait_until_ready()
             await session.resources.config.write_model(
                 model_alias="Qwen3-8B-int4-ov")
             await session.resources.config.write_model(model_alias="")
-            assert fake.picks[-1] == ("", None)
+            assert fake.picks[-1] == (None, None)
             assert not _config(session).active_model_pinned
-            assert _config(session).active_model.alias == "Qwen3.5-4B-int4-ov"
+            assert _config(session).active_model.alias == "Qwen3-8B-int4-ov"
     run(go())
 
 
-def test_picking_the_model_already_running_builds_nothing():
+def test_picking_the_model_already_running_builds_nothing(tmp_path):
     async def go():
-        async with served() as (session, handle, fake):
+        async with served(_wf(tmp_path)) as (session, handle, fake):
             await session.resources.runtime.wait_until_ready()
             await session.resources.config.write_model(
                 model_alias="Qwen3.5-4B-int4-ov", reasoning_effort="off")
-            assert fake.picks == []
+            assert fake.picks == [(None, None)]
     run(go())
 
 
@@ -2786,15 +2831,15 @@ def test_a_model_the_session_does_not_offer_is_refused_in_words():
     run(go())
 
 
-def test_thinking_is_the_enable_thinking_switch():
+def test_thinking_is_the_enable_thinking_switch(tmp_path):
     async def go():
-        async with served() as (session, handle, fake):
+        async with served(_wf(tmp_path)) as (session, handle, fake):
             await session.resources.runtime.wait_until_ready()
             await session.resources.config.set_thinking("high")
-            assert fake.picks == [(None, True)]
+            assert fake.picks == [(None, None)]
             assert _config(session).active_model.thinking == "high"
             await session.resources.config.set_thinking("off")
-            assert fake.picks[-1] == (None, False)
+            assert fake.picks[-1] == (None, None)
             assert _config(session).active_model.thinking == "off"
             with pytest.raises(AppServerResponseError) as err:
                 await session.resources.config.set_thinking("max")
@@ -2819,15 +2864,15 @@ def test_a_switch_is_refused_while_a_turn_runs():
     run(go())
 
 
-def test_a_model_that_cannot_start_leaves_the_old_one_and_says_so():
+def test_a_model_that_cannot_start_leaves_the_old_one_and_says_so(tmp_path):
     async def go():
-        async with served(fail_pick=True) as (session, handle, fake):
+        async with served(_wf(tmp_path), fail_pick=True) as (session, handle, fake):
             await session.resources.runtime.wait_until_ready()
             await _ask(session, "one")
             with pytest.raises(AppServerResponseError) as err:
                 await session.resources.config.write_model(
                     model_alias="Qwen3-8B-int4-ov")
-            assert "old one is still in use" in err.value.error.message
+            assert "agent from before is still running" in err.value.error.message
             assert _config(session).active_model.alias == "Qwen3.5-4B-int4-ov"
             assert handle.ready
             # the old agent was never touched: still the same conversation
@@ -2836,9 +2881,9 @@ def test_a_model_that_cannot_start_leaves_the_old_one_and_says_so():
     run(go())
 
 
-def test_a_framework_engine_is_told_it_forgets_on_a_model_switch():
+def test_a_framework_engine_is_told_it_forgets_on_a_model_switch(tmp_path):
     async def go():
-        async with served(native=False) as (session, handle, fake):
+        async with served(_wf(tmp_path), native=False) as (session, handle, fake):
             await session.resources.runtime.wait_until_ready()
             await session.enqueue("one")
             await events_until(session, is_completed)
@@ -2854,7 +2899,7 @@ def test_a_framework_engine_is_told_it_forgets_on_a_model_switch():
 
 def test_reload_rebuilds_only_when_the_workflow_file_changed(tmp_path):
     workflow = tmp_path / "w.yml"
-    workflow.write_text("model: {}\n")
+    workflow.write_text("model: {name: Qwen3.5-4B-int4-ov}\n")
 
     async def go():
         async with served(str(workflow)) as (session, handle, fake):
@@ -3042,4 +3087,348 @@ def test_todo_and_web_results_become_vibe_cards():
             out = WebSearchEffectOutput.model_validate(search.state.output)
             assert out.sources[0].url == "https://x.org"
             assert search.state.display.message == "ovms (1 result)"
+    run(go())
+
+
+# ---- /config and /theme (config/write, config/fields/read) -----------------------
+
+WORKFLOW = """\
+# my agent
+model:
+  name: Qwen3.5-4B-int4-ov   # the model
+  device: GPU
+tools:
+  - name: search_docs
+    type: builtin
+agent:
+  type: native
+"""
+
+
+def _wf(tmp_path, text=WORKFLOW):
+    path = tmp_path / "w.yml"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+def _op(path, value=None, op="set", target=None):
+    from ovat.tui.vibe.app_server.protocol import ConfigWriteOpWire
+    return ConfigWriteOpWire(op=op, path=path, value=value,
+                             target_layer=target)
+
+
+async def _write(session, *ops, reload=False):
+    return await session.resources.config.write(
+        list(ops), reason="test", reload_runtime=reload)
+
+
+def test_the_settings_screen_lists_the_workflows_own_settings(tmp_path):
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await session.resources.config.read_fields()
+            by_name = {f.name: f for f in response.fields}
+            device = by_name["device"]
+            assert device.kind.value == "enum" and device.value == "GPU"
+            assert device.enum_choices == ["CPU", "GPU", "NPU"]
+            assert [v.layer for v in device.layer_values] == [
+                "workflow", "default"]
+            temperature = by_name["temperature"]
+            assert [v.layer for v in temperature.layer_values] == ["default"]
+            assert by_name["search_docs.permission"].path == \
+                "/tools/search_docs/permission"
+            assert by_name["engine"].enum_choices[0] == "native"
+            assert by_name["theme"].value == "auto"
+            # no Vibe-only setting is listed
+            assert not {"voice_mode_enabled", "narrator_enabled", "log_level",
+                        "enable_telemetry"} & set(by_name)
+            assert response.targets == ["workflow"]
+    run(go())
+
+
+def test_a_model_picker_choice_is_saved_in_the_workflow_layer(tmp_path):
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            fields = {f.name: f for f in
+                      (await session.resources.config.read_fields()).fields}
+            model = fields["active_model"]
+            assert model.value == "Qwen3-8B-int4-ov"
+            assert [(v.layer, v.value) for v in model.layer_values] == [
+                ("workflow", "Qwen3-8B-int4-ov")]
+            assert "name: Qwen3-8B-int4-ov" in Path(fake.workflow).read_text()
+    run(go())
+
+
+def test_a_setting_is_written_into_the_file_and_the_comments_stay(tmp_path):
+    path = _wf(tmp_path)
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await _write(session,
+                                    _op("/model/temperature", 0.3),
+                                    _op("/tools/search_docs/permission",
+                                        "ask"))
+            assert response.applied
+            text = open(path, encoding="utf-8").read()
+            assert "# my agent" in text and "# the model" in text
+            from ovat.config.workflow import load_workflow
+            config = load_workflow(path)
+            assert config.model.temperature == 0.3
+            assert config.tools[0].permission == "ask"
+            # written, not yet rebuilt: the screen sends config/reload on close
+            assert fake.picks == []
+            await session.resources.config.reload()
+            assert fake.picks == [(None, None)]
+    run(go())
+
+
+def test_reload_runtime_builds_again_and_the_conversation_survives(tmp_path):
+    path = _wf(tmp_path)
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            response = await _write(session, _op("/model/device", "NPU"),
+                                    reload=True)
+            assert response.applied
+            assert fake.picks == [(None, None)]
+            assert _remembered_questions(fake) == ["one"]
+            assert _texts(session.history) == ["one"]
+            await _ask(session, "two")
+            assert _remembered_questions(fake) == ["one", "two"]
+    run(go())
+
+
+def test_an_invalid_value_is_refused_with_the_message_and_changes_nothing(
+        tmp_path):
+    path = _wf(tmp_path)
+    before = open(path, "rb").read()
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await _write(session, _op("/model/top_p", 5.0))
+            assert response.rejected and not response.applied
+            assert "model.top_p" in response.failures[0]
+            assert open(path, "rb").read() == before
+            seen = await events_until(
+                session, lambda e: isinstance(e, ServerWarning))
+            assert "model.top_p" in next(
+                e.params.warning.message for e in seen
+                if isinstance(e, ServerWarning))
+            assert fake.picks == []
+    run(go())
+
+
+def test_a_batch_with_one_bad_op_writes_none_of_it(tmp_path):
+    path = _wf(tmp_path)
+    before = open(path, "rb").read()
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await _write(session,
+                                    _op("/model/temperature", 0.3),
+                                    _op("/model/device", "TPU"))
+            assert response.failures == [
+                "device must be one of: CPU, GPU, NPU."]
+            assert open(path, "rb").read() == before
+    run(go())
+
+
+def test_a_vibe_only_setting_is_answered_not_used_and_changes_nothing(
+        tmp_path):
+    path = _wf(tmp_path)
+    before = open(path, "rb").read()
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            for name in ("voice_mode_enabled", "log_level",
+                         "enable_telemetry"):
+                response = await _write(session, _op(f"/{name}", True))
+                assert not response.applied and not response.rejected
+                assert response.failures == [
+                    f"'{name}' is not used by OVAT, so nothing was changed."]
+            response = await _write(session, _op("/no_such_thing", 1))
+            assert response.failures == ["Unknown setting: /no_such_thing"]
+            response = await _write(session, _op("/model/device", "CPU",
+                                                 target="project-toml"))
+            assert "Unknown layer" in response.failures[0]
+            assert open(path, "rb").read() == before
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.config.update({"log_level": "debug"})
+            assert "not used by OVAT" in str(err.value)
+    run(go())
+
+
+def test_a_setting_is_reset_by_removing_it(tmp_path):
+    path = _wf(tmp_path)
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _write(session, _op("/model/temperature", 0.3))
+            await _write(session, _op("/model/temperature", op="remove",
+                                      target="workflow"))
+            assert "temperature" not in open(path, encoding="utf-8").read()
+    run(go())
+
+
+def test_saving_the_model_in_the_file_drops_the_sessions_own_pick(tmp_path):
+    path = _wf(tmp_path)
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            fake.picks.clear()
+            response = await _write(session,
+                                    _op("/active_model", "Qwen3-8B-int4-ov"),
+                                    reload=True)
+            assert response.applied
+            assert "name: Qwen3-8B-int4-ov" in open(
+                path, encoding="utf-8").read()
+            assert fake.forgotten == ["name", "name"]
+            assert fake.picks == [(None, None)]          # built from the file
+            assert _remembered_questions(fake) == ["one"]
+    run(go())
+
+
+def test_the_default_model_choice_only_drops_the_pick_and_leaves_the_file(
+        tmp_path):
+    path = _wf(tmp_path)
+    before = open(path, "rb").read()
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await _write(session, _op("/active_model", ""))
+            assert response.applied
+            assert open(path, "rb").read() == before
+            assert fake.forgotten == ["name"]
+            # the file did not change, but the agent is out of date anyway
+            await session.resources.config.reload()
+            assert fake.picks == [(None, None)]
+    run(go())
+
+
+def test_writing_settings_is_refused_while_a_turn_runs(tmp_path):
+    path = _wf(tmp_path)
+    before = open(path, "rb").read()
+
+    async def go():
+        async with served(path, hold_turn=True) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("slow")
+            await events_until(session, lambda e: isinstance(e, TurnStarted))
+            await poll(lambda: fake.busy)
+            with pytest.raises(AppServerResponseError) as err:
+                await _write(session, _op("/model/device", "CPU"))
+            assert err.value.error.code is ProtocolErrorCode.CONFLICT
+            assert open(path, "rb").read() == before
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_a_workflow_that_will_not_load_is_a_sentence(tmp_path):
+    path = _wf(tmp_path, "model: {name: m, devise: GPU}\n")
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await _write(session, _op("/model/device", "CPU"))
+            assert not response.applied
+            assert "Cannot read" in response.failures[0]
+    run(go())
+
+
+def test_the_theme_is_saved_in_the_ui_preferences_file(tmp_path):
+    from ovat.agentic import prefs
+
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            cwd = handle._ctx.cwd
+            prefs.update(cwd, config="keep.yml")
+            response = await _write(session, _op("/theme", "nord"))
+            assert response.applied
+            assert _config(session).theme == "nord"
+            assert prefs.load(cwd) == {"config": "keep.yml", "theme": "nord"}
+            fields = {f.name: f for f in
+                      (await session.resources.config.read_fields()).fields}
+            assert [v.layer for v in fields["theme"].layer_values] == [
+                "preferences", "default"]
+            # a theme that does not exist is refused, the saved one stays
+            response = await _write(session, _op("/theme", "neon-pink"))
+            assert response.failures == ["Unknown theme: neon-pink"]
+            assert prefs.load(cwd)["theme"] == "nord"
+            # and removing it goes back to auto, keeping the other keys
+            await _write(session, _op("/theme", op="remove"))
+            assert prefs.load(cwd) == {"config": "keep.yml"}
+            assert _config(session).theme == "auto"
+            assert fake.picks == []            # a theme never rebuilds
+    run(go())
+
+
+def test_a_saved_theme_is_what_the_next_session_starts_with(tmp_path):
+    from ovat.agentic import prefs
+
+    async def go():
+        prefs.update(os.getcwd(), theme="nord")
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            assert _config(session).theme == "nord"
+    run(go())
+
+
+def test_diagnostics_are_the_doctors_checks_that_are_not_ok(monkeypatch,
+                                                            tmp_path):
+    from ovat.cli import diagnostics
+    from ovat.tui.vibe.app_server.protocol import DiagnosticsListResponse
+    seen = []
+
+    def checks(config_path=None):
+        seen.append(config_path)
+        return [diagnostics.Check("Python", "ok", "3.13"),
+                diagnostics.Check("OVMS serving", "warn", "ovms not found"),
+                diagnostics.Check("Workflow config", "fail", "no model")]
+    monkeypatch.setattr(diagnostics, "run_checks", checks)
+    path = _wf(tmp_path)
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            client = session._connection.current
+            raw = await client.request(
+                "diagnostics/list",
+                {"sessionId": handle._ctx.projector.session.id})
+            response = DiagnosticsListResponse.model_validate(
+                raw, by_alias=True)
+            # worst first, ok ones left out, and the same checks /doctor runs
+            assert [(i.file, i.message) for i in response.issues] == [
+                ("Workflow config", "fail: no model"),
+                ("OVMS serving", "warn: ovms not found")]
+            assert response.hooks_count == 0
+            assert seen == [path]
+    run(go())
+
+
+def test_saving_the_engine_uses_the_new_workflow_engine_and_keeps_memory(tmp_path):
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            result = await _write(session, _op("/agent/type", "react"), reload=True)
+            assert result.applied
+            assert handle._ctx.info["engine"] == "react"
+            assert _remembered_questions(fake) == ["one"]
     run(go())

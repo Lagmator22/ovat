@@ -1,7 +1,12 @@
 # ovat/tui/server/methods/runtime.py
-"""What the session is running with: runtime, stats, tools, agents."""
+"""What the session is running with: runtime, stats, tools, agents,
+diagnostics."""
+import asyncio
+
+from ovat.cli import diagnostics
 from ovat.tui.server import views
 from ovat.tui.server.rpc import Routes
+from ovat.tui.vibe.app_server.models import ConfigIssue
 from ovat.tui.vibe.app_server.protocol import (AgentsListParams,
                                                AgentsListResponse,
                                                DiagnosticsListParams,
@@ -47,7 +52,17 @@ async def agents_list(ctx, params: AgentsListParams):
     return AgentsListResponse(active=active, agents=agents)
 
 
+# Vibe's diagnostics are "config issues": a file and a sentence each. OVAT's are
+# the checks of `ovat doctor` and /doctor (ovat/cli/diagnostics.py), the one
+# source: every check that is not ok is an issue, the check's name standing
+# where Vibe has a file name. They import openvino and open a socket, so they
+# run on a thread. OVAT has no hooks.
 @routes.method("diagnostics/list", DiagnosticsListParams)
 async def diagnostics_list(ctx, params: DiagnosticsListParams):
     ctx.require_session(params.session_id)
-    return DiagnosticsListResponse(issues=[], hooks_count=0)
+    checks = await asyncio.to_thread(diagnostics.run_checks,
+                                     ctx.workflow or None)
+    return DiagnosticsListResponse(
+        issues=[ConfigIssue(file=c.name, message=f"{c.status}: {c.detail}")
+                for c in diagnostics.problems(checks)],
+        hooks_count=0)

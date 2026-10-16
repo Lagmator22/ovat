@@ -12,7 +12,7 @@ Vibe's choices map onto the broker's three decisions:
 
     approve                  -> ONCE
     approve for the session  -> SESSION
-    approve permanently      -> SESSION   (OVAT keeps no rules on disk yet)
+    approve permanently      -> ALWAYS    (saved in .ovat/permissions.json)
     deny                     -> REFUSE
     cancel the turn          -> REFUSE, and the turn is interrupted
 
@@ -25,7 +25,8 @@ from dataclasses import dataclass
 
 from pydantic import TypeAdapter
 
-from ovat.agent.permissions import (ONCE, REFUSE, SESSION, ApprovalRequest)
+from ovat.agent.permissions import (ALWAYS, ONCE, REFUSE, SESSION,
+                                    ApprovalRequest)
 from ovat.tui.server.projector import now_ms
 from ovat.tui.server.safe import approval_safe
 from ovat.tui.server.rpc import RpcError
@@ -42,17 +43,18 @@ from ovat.tui.vibe.app_server.protocol import (CallbackCallParams,
                                                ProtocolErrorCode)
 from ovat.tui.vibe.utils.tool_presentation import EffectCallDisplay
 
-# What the person is offered. "Permanently" is left out on purpose: OVAT has
-# no saved rules yet, so the button would promise more than it does. An
-# answer of that kind from a client is still accepted (as SESSION).
+# What the person is offered. "Permanently" is saved per project by the
+# session's broker (ovat/agentic/rules.py), and only an interactive session
+# has a broker that reads it back.
 CHOICES = [ApprovalDecisionType.APPROVE,
            ApprovalDecisionType.APPROVE_FOR_SESSION,
+           ApprovalDecisionType.APPROVE_PERMANENTLY,
            ApprovalDecisionType.DENY]
 
 _DECISIONS = {
     ApprovalDecisionType.APPROVE: ONCE,
     ApprovalDecisionType.APPROVE_FOR_SESSION: SESSION,
-    ApprovalDecisionType.APPROVE_PERMANENTLY: SESSION,
+    ApprovalDecisionType.APPROVE_PERMANENTLY: ALWAYS,
     ApprovalDecisionType.DENY: REFUSE,
     ApprovalDecisionType.CANCEL_TURN: REFUSE,
 }

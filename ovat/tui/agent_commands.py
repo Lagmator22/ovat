@@ -34,7 +34,9 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "copy": (),
     "paste-image": ("capability:image input",),
     "log": ("session/log/read",),
-    "log-level": ("config/write",),
+    # It writes Vibe's log_level, which OVAT does not use: config/write
+    # answers "not used by OVAT", so the command would only end in that.
+    "log-level": ("capability:a log level setting",),
     "debug": ("diagnostics/logs/read",),
     "compact": ("session/compact",),
     "exit": ("session/stop",),
@@ -50,7 +52,9 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "plugins": ("plugin_catalog/read",),
     "reload-plugins": ("plugin/reload",),
     "todo": ("capability:a todo tool",),
-    "voice": ("config/write",),
+    # The voice panel writes voice_mode_enabled, also refused (voice comes
+    # with its own step).
+    "voice": ("capability:voice input",),
     "leanstall": ("agents/install",),
     "unleanstall": ("agents/uninstall",),
     "rewind": ("session/rewind/read", "session/rewind"),

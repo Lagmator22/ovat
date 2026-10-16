@@ -168,7 +168,6 @@ class OvatAgentApp(VibeApp):
         self._handle = handle
         self._banner_factory = partial(AgentBanner, animate=animate,
                                        source=self._banner_source)
-        self._theme_name = OVAT_THEME.name
         self.register_theme(OVAT_THEME)
         self._hardware_choice = hardware
         self._hardware = None
@@ -321,11 +320,19 @@ class OvatAgentApp(VibeApp):
 
     # ---- theme: OVAT's, for "auto" and as the default -------------------------
 
+    @property
+    def _theme_name(self) -> str:
+        """The theme the person chose with /theme (the server keeps it in the
+        UI preferences file and reports it as the config's theme), and OVAT's
+        own until they do."""
+        theme = self.config.theme
+        return OVAT_THEME.name if theme == AUTO_THEME else theme
+
     async def _apply_theme(self, theme: str) -> None:
-        """The server says "auto"; here that means the theme the person
-        chose with /theme, and OVAT's own until they do. (OVAT's theme is
-        not one of Textual's built-in names, which the copied code refuses.)
-        A name from the picker is only a preview until it is chosen."""
+        """The server says "auto" when nothing is saved; that means OVAT's own
+        theme. (OVAT's theme is not one of Textual's built-in names, which the
+        copied code refuses.) A name from the picker is only a preview until
+        it is chosen; choosing it writes it (the copied `_persist_theme`)."""
         if theme == AUTO_THEME:
             theme = self._theme_name
         if theme != OVAT_THEME.name:
@@ -338,11 +345,6 @@ class OvatAgentApp(VibeApp):
         after = (self.native_ansi_color, self.current_theme.dark)
         if after != before:
             self._restyle_diff_widgets(ansi=after[0], dark=after[1])
-
-    async def _persist_theme(self, theme: str) -> None:
-        """A theme chosen with /theme lasts for the session: writing the
-        settings back comes with the config screen, in a later phase."""
-        self._theme_name = theme
 
     async def _switch_to_theme_picker_app(self) -> None:
         if self._current_bottom_app == BottomApp.ThemePicker:

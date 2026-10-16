@@ -25,7 +25,7 @@ from uuid import uuid4
 from ovat.agent.events import (REMOTE_STATUS, SUBAGENT_STATUS, TOOL_ENDED,
                               TOOL_STARTED)
 from ovat.agentic import session as s
-from ovat.agentic import sessions
+from ovat.agentic import prefs, sessions
 from ovat.tui.server import saved, views
 from ovat.tui.server.approvals import Approvals
 from ovat.tui.server.projector import Projector, now_ms
@@ -95,6 +95,12 @@ class ServerContext:
         # time stamp when the agent was built, which /reload compares.
         self.last_failure: str | None = None
         self._built_stamp: int | None = None
+        # The theme saved in the UI preferences file ("auto": none saved);
+        # and whether /config changed the settings under the built agent
+        # (see settings_changed).
+        self.theme = views.AUTO_THEME
+        self.theme_saved = False
+        self._settings_stale = False
 
     # ---- the handshake ---------------------------------------------------------
 
@@ -140,6 +146,9 @@ class ServerContext:
             raise RpcError(ProtocolErrorCode.CONFLICT,
                            "A session is already open on this server")
         cwd = self.project_dir(options)
+        saved_theme = prefs.load(cwd).get("theme")
+        self.theme_saved = isinstance(saved_theme, str) and bool(saved_theme)
+        self.theme = saved_theme if self.theme_saved else views.AUTO_THEME
         agent = self.session_factory(self.workflow, self._sink, cwd=cwd)
         self.cwd = cwd
         self.agent = agent
@@ -233,7 +242,7 @@ class ServerContext:
 
     def runtime(self) -> RuntimeSnapshot:
         return views.runtime_snapshot(self.info, self.workflow, self.profile,
-                                      self.stats.snapshot())
+                                      self.stats.snapshot(), self.theme)
 
     def refresh_runtime(self) -> None:
         """Tell the client the runtime changed (the agent finished building,
@@ -420,7 +429,8 @@ class ServerContext:
                                f"Could not start the agent: {exc}") from None
 
     async def pick(self, *, model: str | None = None,
-                   enable_thinking: bool | None = None) -> str | None:
+                   enable_thinking: bool | None = None,
+                   follow_workflow: bool = False) -> str | None:
         """/model and /thinking: run on another model and/or thinking switch
         for this session. Waits for the new agent; returns None when it is
         running, or the sentence saying it could not be built (the old agent
@@ -428,8 +438,10 @@ class ServerContext:
         if not self.is_ready:
             raise RpcError(ProtocolErrorCode.CONFLICT,
                            "The agent is not ready yet.")
-        await self.rebuild(pick={"model": model,
-                                 "enable_thinking": enable_thinking})
+        pick = {"model": model, "enable_thinking": enable_thinking}
+        if follow_workflow:
+            pick["follow_workflow"] = True
+        await self.rebuild(pick=pick)
         await self.ready.wait()
         if self.last_failure is not None:
             return ("The model was not changed: the new one could not be "
@@ -442,14 +454,24 @@ class ServerContext:
         except OSError:
             return None
 
+    def settings_changed(self) -> None:
+        """/config wrote the workflow, or dropped a session pick: the built
+        agent is out of date even if the file's time stamp looks the same
+        (two writes within one clock tick)."""
+        self._settings_stale = True
+
     async def reload(self) -> None:
         """/reload: read the workflow file again. The agent is rebuilt (with
         this session's picks and its conversation) only when the file changed
-        since it was built; otherwise there is nothing to read."""
-        if self._workflow_stamp() == self._built_stamp:
+        since it was built or /config changed a setting; otherwise there is
+        nothing to read."""
+        if (self._workflow_stamp() == self._built_stamp
+                and not self._settings_stale):
             return
-        failure = await self.pick()
+        self._settings_stale = False
+        failure = await self.pick(follow_workflow=True)
         if failure is not None:
+            self._settings_stale = True
             raise RpcError(ProtocolErrorCode.INTERNAL_ERROR,
                            "The workflow could not be loaded again. The "
                            "agent from before is still running.")
