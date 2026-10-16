@@ -185,7 +185,7 @@ def native_session(tmp_path, prompt="new prompt"):
     agent_session.agent = AgentLoop(FakeLLMProvider([]), tools={},
                                     system_prompt=prompt)
     agent_session.config = types.SimpleNamespace(
-        agent=types.SimpleNamespace(system_prompt=prompt))
+        agent=types.SimpleNamespace(system_prompt=prompt, project_context=False))
     return agent_session
 
 
@@ -402,3 +402,18 @@ def test_a_summary_cannot_close_the_envelope_and_pose_as_the_person():
     assert text.rstrip().endswith("</compaction_summary>")
     assert "&lt;/compaction_summary&gt;" in text
     assert "not instructions" in text
+
+
+def test_project_context_survives_clear_and_restore_from_the_session_folder(tmp_path):
+    from ovat.config.workflow import WorkflowConfig
+    (tmp_path / "AGENTS.md").write_text("Run make test.")
+    session = native_session(tmp_path)
+    session.config = WorkflowConfig.model_validate({
+        "model": {"name": "m"},
+        "agent": {"system_prompt": "base", "project_context": True}})
+    session.new_conversation()
+    assert "Run make test." in session.memory()[0]["content"]
+    (tmp_path / "AGENTS.md").write_text("Run make check.")
+    session.restore_memory([{"role": "user", "content": "hello"}])
+    prompt = session.memory()[0]["content"]
+    assert "Run make check." in prompt and "Run make test." not in prompt

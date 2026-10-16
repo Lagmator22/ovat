@@ -20,7 +20,18 @@ from pathlib import Path
 # The five coding tools. exposure.py never offers them to a remote caller;
 # permissions.py makes the three that change things ask by default.
 CODING_TOOLS = frozenset({"read_file", "write_file", "edit", "grep", "shell"})
-ASK_BY_DEFAULT = frozenset({"write_file", "edit", "shell"})
+# The web tools send the model's words (a URL, a query) off this machine.
+WEB_TOOLS = frozenset({"web_fetch", "web_search"})
+ASK_BY_DEFAULT = frozenset({"write_file", "edit", "shell"}) | WEB_TOOLS
+# Never offered to a remote A2A caller, with the reason in one phrase.
+NEVER_REMOTE = {
+    **{name: "it works on this machine's files and shell"
+       for name in CODING_TOOLS},
+    **{name: "it would send requests out from this machine on a "
+             "stranger's say-so" for name in WEB_TOOLS},
+    "ask_user": "it would put questions in front of this machine's user "
+                "on a remote caller's behalf",
+}
 
 
 class Shown(str):

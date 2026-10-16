@@ -98,6 +98,11 @@ class EventBus:
         # approver(name, arguments, reason) -> bool, may block. None means
         # nobody can be asked, so `ask` is a no (see agent/permissions.py).
         self.approver: Callable[[str, dict, str], bool] | None = None
+        # Asks a person a question for the ask_user tool:
+        # asker(question, choices) -> answer text, or None if nobody
+        # answered. May block. None here means there is no person to ask and
+        # the tool says so at once (see agent/questions.py).
+        self.asker: Callable[[str, list[str]], str | None] | None = None
 
     def subscribe(self, listener: Listener) -> Callable[[], None]:
         """Add a listener. Returns the function that removes it again."""

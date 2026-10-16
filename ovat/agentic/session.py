@@ -24,6 +24,7 @@ from typing import Callable
 from ovat.agent.events import (ANSWER_DELTA, REASONING_DELTA, STEER_TAKEN,
                                Event)
 from ovat.agent.permissions import ApprovalBroker, ApprovalRequest
+from ovat.agent.questions import QuestionBroker, QuestionRequest
 from ovat.text import split_thinking
 
 
@@ -72,6 +73,12 @@ class Steered:
 @dataclass(frozen=True)
 class ApprovalNeeded:
     request: ApprovalRequest
+
+
+@dataclass(frozen=True)
+class QuestionNeeded:
+    """The ask_user tool wants a person's answer (agent/questions.py)."""
+    request: QuestionRequest
 
 
 @dataclass(frozen=True)
@@ -220,6 +227,8 @@ class AgentSession:
         self.info: dict = {}
         self.broker = ApprovalBroker(
             on_request=lambda r: self._emit(ApprovalNeeded(r)))
+        self.questions = QuestionBroker(
+            on_request=lambda r: self._emit(QuestionNeeded(r)))
         self.busy = False
         self.last_answer = ""
         self.last_trace: dict = {}
@@ -285,6 +294,7 @@ class AgentSession:
         self.config, self.agent = config, agent
         self._overrides = overrides
         agent.events.approver = self.broker
+        agent.events.asker = self.questions
 
         def _on_bus(e: Event) -> None:
             if e.type == ANSWER_DELTA:
@@ -313,10 +323,11 @@ class AgentSession:
         self.broker.forget_session_grants()
         self.last_trace, self.last_answer = {}, ""
         from ovat.agent.loop import AgentLoop
+        from ovat.agent.factory import compose_system_prompt
         from ovat.agent.session import Session
         if isinstance(self.agent, AgentLoop):
             self.agent.session = Session(
-                system_prompt=self.config.agent.system_prompt)
+                system_prompt=compose_system_prompt(self.config, Path(self.cwd)))
             self._emit(Notice("info", "New conversation."))
             return None
         engine = self.config.agent.type if self.config else None
@@ -350,8 +361,9 @@ class AgentSession:
         session = self._memory()
         if session is None:
             return False
+        from ovat.agent.factory import compose_system_prompt
         from ovat.agent.session import Session
-        prompt = self.config.agent.system_prompt if self.config else None
+        prompt = compose_system_prompt(self.config, Path(self.cwd)) if self.config else None
         fresh = Session(system_prompt=prompt)
         fresh.messages.extend(dict(m) for m in messages if _chat_message(m))
         self.agent.session = fresh
@@ -516,6 +528,7 @@ class AgentSession:
             self.agent.events.stop.set()
             stopped = True
         self.broker.cancel_all()
+        self.questions.cancel_all()
         if self._shell is not None and self._shell.poll() is None:
             from ovat.cli.shell import kill
             try:

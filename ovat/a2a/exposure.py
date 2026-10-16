@@ -14,17 +14,18 @@ Default rules, safest first:
   tools touch.
 - a2a tools and `delegate` (subagents) are hidden: a remote caller could
   otherwise make this machine send work on to a third agent or a cloud API.
-- the coding tools (read_file, write_file, edit, grep, shell) are NEVER
-  offered, not even through `expose_tools`: they read and change this
-  machine's files and run commands, and no owner line should hand that to
-  a remote caller.
+- the coding tools (read_file, write_file, edit, grep, shell), the web
+  tools (web_fetch, web_search) and ask_user are NEVER offered, not even
+  through `expose_tools`: they read and change this machine's files, run
+  commands, send requests out or interrupt its user, and no owner line
+  should hand that to a remote caller.
 - everything else (today: search_docs) is exposed.
 `expose_tools` overrides all of this with an explicit list, which is a
 line the owner wrote on purpose.
 """
 from dataclasses import dataclass, field
 
-from ovat.tools.project import CODING_TOOLS
+from ovat.tools.project import NEVER_REMOTE
 
 # Builtins whose arguments name a file on this machine.
 PATH_TOOLS = frozenset({"transcribe", "describe_image"})
@@ -54,13 +55,13 @@ def decide(tools: dict, expose_tools: list[str] | None) -> Exposure:
     if expose_tools is not None:
         coding = [n for n in expose_tools if n in tools
                   and tools[n].get("kind", "builtin") == "builtin"
-                  and n in CODING_TOOLS]
+                  and n in NEVER_REMOTE]
         if coding:
             raise ValueError(
                 f"a2a.server.expose_tools names {', '.join(coding)}, which "
-                f"can read or change files and run commands on this machine. "
-                f"They are never offered to a remote caller; remove them "
-                f"from the list.")
+                f"act on this machine (files, commands, web requests or its "
+                f"user). They are never offered to a remote caller; remove "
+                f"them from the list.")
         unknown = [n for n in expose_tools if n not in tools]
         if unknown:
             raise ValueError(
@@ -80,10 +81,9 @@ def decide(tools: dict, expose_tools: list[str] | None) -> Exposure:
 
     for name, spec in tools.items():
         kind = spec.get("kind", "builtin")
-        if kind == "builtin" and name in CODING_TOOLS:
-            result.hidden[name] = ("it works on this machine's files and "
-                                   "shell, and is never offered to a "
-                                   "remote caller")
+        if kind == "builtin" and name in NEVER_REMOTE:
+            result.hidden[name] = (f"{NEVER_REMOTE[name]}, and is never "
+                                   f"offered to a remote caller")
         elif kind in _HIDDEN_BY_KIND:
             result.hidden[name] = _HIDDEN_BY_KIND[kind]
         elif name in PATH_TOOLS:

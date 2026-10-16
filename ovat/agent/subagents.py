@@ -99,6 +99,7 @@ class SubagentRunner:
         if hasattr(child, "stop"):
             child.stop = self._bus.stop
         child.events.approver = self._bus.approver
+        child.events.asker = self._bus.asker
         child.events.subscribe(lambda e: self._forward(cfg.name, e))
         try:
             answer = child.run(task)

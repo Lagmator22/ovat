@@ -24,11 +24,15 @@ from ovat.providers.backend import LLMBackend
 from ovat.providers.base import (EmbeddingsProvider, LLMProvider,
                                  RetrieverProvider)
 from ovat.providers.llm_ovms import OVMSLLMProvider
+from ovat.tools import ask_user as ask_user_tool
 from ovat.tools import describe_image as describe_image_tool
 from ovat.tools import edit as edit_tool
 from ovat.tools import grep as grep_tool
 from ovat.tools import read_file as read_file_tool
 from ovat.tools import shell as shell_tool
+from ovat.tools import todo as todo_tool
+from ovat.tools import web_fetch as web_fetch_tool
+from ovat.tools import web_search as web_search_tool
 from ovat.tools import write_file as write_file_tool
 from ovat.tools.project import project_root
 from ovat.tools import search_docs as search_docs_tool
@@ -50,7 +54,49 @@ BUILTIN_TOOL_SCHEMAS = {
     "edit": edit_tool.SCHEMA,
     "grep": grep_tool.SCHEMA,
     "shell": shell_tool.SCHEMA,
+    "todo": todo_tool.SCHEMA,
+    "ask_user": ask_user_tool.SCHEMA,
+    "web_fetch": web_fetch_tool.SCHEMA,
+    "web_search": web_search_tool.SCHEMA,
 }
+
+# How much of AGENTS.md / OVAT.md goes into the prompt. A small local model
+# has a small context; a long file would push the actual task out of it.
+PROJECT_CONTEXT_FILES = ("AGENTS.md", "OVAT.md")
+PROJECT_CONTEXT_CHARS = 12_000
+
+
+def compose_system_prompt(config: WorkflowConfig, root=None) -> str | None:
+    """The agent's system prompt, plus the project's own instructions when
+    `agent.project_context` is on.
+
+    One place for it: build_agent, and the session's "new conversation",
+    both ask here, so a /clear keeps the project context. Read at call time
+    (not cached) so an edit to AGENTS.md shows up on the next build.
+    """
+    prompt = config.agent.system_prompt
+    if not config.agent.project_context:
+        return prompt
+    root = root or project_root()
+    parts = []
+    for name in PROJECT_CONTEXT_FILES:
+        try:
+            with (root / name).open(encoding="utf-8", errors="replace") as source:
+                text = source.read(PROJECT_CONTEXT_CHARS + 1).strip()
+        except OSError:
+            continue
+        if not text:
+            continue
+        note = ""
+        if len(text) > PROJECT_CONTEXT_CHARS:
+            text = text[:PROJECT_CONTEXT_CHARS].rstrip()
+            note = (f"\n\n[{name} was cut at {PROJECT_CONTEXT_CHARS} "
+                    f"characters; read the file for the rest.]")
+        parts.append(f"## Project instructions from {name}\n\n{text}{note}")
+    if not parts:
+        return prompt
+    block = "\n\n".join(parts)
+    return f"{prompt}\n\n{block}" if prompt else block
 
 
 def build_llm(config: WorkflowConfig) -> LLMProvider:
@@ -247,6 +293,14 @@ def _make_coding_tools(root, stop) -> dict:
     }
 
 
+def _make_web_search(tool_cfg=None):
+    """Bind this entry's provider, instance address and key variable NAME."""
+    return lambda query, _p=getattr(tool_cfg, "provider", None), \
+        _u=getattr(tool_cfg, "base_url", None), \
+        _k=getattr(tool_cfg, "api_key_env", None): (
+            web_search_tool.web_search_impl(query, _p, _u, _k))
+
+
 def _make_mcp_caller(server, tool_name: str):
     """Bind one remote MCP tool into a plain callable for the loop.
 
@@ -343,10 +397,21 @@ def build_tools(config: WorkflowConfig,
     # Each builder takes the tool's OWN config, so `model:` and `device:` in
     # workflow.yml reach the tool that declared them. search_docs ignores it;
     # its model is the embedder in the rag: section.
+    store = todo_tool.TodoStore()          # this agent's list, never saved
+    ask_bus = events if events is not None else EventBus()
     builders = {
         "search_docs": lambda cfg: _make_search_docs(retriever),
         "transcribe": _make_transcribe,
         "describe_image": _make_describe_image,
+        "todo": lambda cfg: (lambda action, todos=None, _s=store:
+                             todo_tool.todo_impl(action, todos, _s)),
+        # Reads bus.asker when called, so an interface that connects after
+        # the build (the agent TUI) can still be asked through.
+        "ask_user": lambda cfg: (lambda question, choices=None, _b=ask_bus:
+                                 ask_user_tool.ask_user_impl(
+                                     question, choices, _b)),
+        "web_fetch": lambda cfg: web_fetch_tool.web_fetch_impl,
+        "web_search": _make_web_search,
     }
     coding = _make_coding_tools(
         project_root(), events.stop if events is not None else None)
@@ -471,6 +536,12 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False,
             f"OpenAI-compatible URL. Use agent.type: native, or "
             f"model.provider: ovms."
         )
+    # The project's AGENTS.md joins the prompt here, once, so all four
+    # engines (which read config.agent.system_prompt) get the same text.
+    prompt = compose_system_prompt(config)
+    if prompt != config.agent.system_prompt:
+        config = config.model_copy(update={
+            "agent": config.agent.model_copy(update={"system_prompt": prompt})})
     retriever = None if skip_rag else build_rag(config)
     if retriever is not None:
         search_docs_tool.configure(retriever)
