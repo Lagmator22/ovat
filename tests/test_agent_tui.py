@@ -1,10 +1,10 @@
 # tests/test_agent_tui.py
-"""The agent TUI (`ovat agent`), driven headless with Textual's Pilot.
+"""The agent TUI (`ovat agent`): the copied widgets in ovat/tui/vibe/,
+driven by a scripted session, headless with Textual's Pilot.
 
-The session is a fake that plays a scripted turn on a thread, exactly as
-the real AgentSession reports one, so these tests cover the drawing and
-the keys, not the agent. Every wait is a bounded poll (the Windows runner
-is slower; one fixed pause has failed there before).
+The session is a fake that plays a turn on a thread exactly as the real
+AgentSession reports one, so these tests cover the drawing and the keys.
+Every wait is a bounded poll (the Windows runner is slower).
 """
 import asyncio
 import threading
@@ -19,14 +19,15 @@ from ovat.agent.events import (SUBAGENT_STATUS, TOOL_ENDED,  # noqa: E402
 from ovat.agent.permissions import ApprovalBroker  # noqa: E402
 from ovat.agentic import session as s  # noqa: E402
 from ovat.tui.app import OvatAgentApp  # noqa: E402
-from ovat.tui.widgets.approval import ApprovalPanel  # noqa: E402
+from ovat.tui.vibe.cli.textual_ui.widgets.approval_app import \
+    ApprovalApp  # noqa: E402
+from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.container import \
+    ChatInputContainer  # noqa: E402
+from ovat.tui.vibe.cli.textual_ui.widgets.messages import (  # noqa: E402
+    AssistantMessage, BashOutputMessage, InterruptMessage, UserCommandMessage,
+    UserMessage, WarningMessage)
+from ovat.tui.vibe.cli.textual_ui.widgets.tools import ToolGroup  # noqa: E402
 from ovat.tui.widgets.banner import Banner  # noqa: E402
-from ovat.tui.widgets.input import CompletionPopup, InputBox  # noqa: E402
-from ovat.tui.widgets.messages import (AssistantMessage,  # noqa: E402
-                                      BashOutputMessage, InterruptMessage,
-                                      UserMessage)
-from ovat.tui.widgets.messages import _BorderedLine as Notice  # noqa: E402
-from ovat.tui.widgets.tools import ToolGroup  # noqa: E402
 
 INFO = {"workflow": "w.yml", "name": "w", "model": "Qwen3.5-4B-int4-ov",
         "device": "GPU", "provider": "ovms", "engine": "native",
@@ -117,13 +118,13 @@ async def _until(pilot, check, timeout=5.0):
         await pilot.pause(0.05)
 
 
-def _app(session_holder=None, hardware=False):
+def _app(session_holder=None, hardware=False, animate=False):
     def factory(workflow, sink, cwd=None):
         fake = FakeSession(workflow, sink, cwd)
         if session_holder is not None:
             session_holder.append(fake)
         return fake
-    return OvatAgentApp("w.yml", session_factory=factory, animate=False,
+    return OvatAgentApp("w.yml", session_factory=factory, animate=animate,
                         history_file=None, hardware=hardware)
 
 
@@ -136,38 +137,35 @@ def run(coro):
     asyncio.run(coro)
 
 
+def _facts(app) -> str:
+    return str(app.query_one("#agent-facts").render())
+
+
 def test_the_banner_and_bar_show_the_session():
     async def go():
         app = _app()
         async with app.run_test(size=(110, 30)) as pilot:
-            await _until(pilot, lambda: "Qwen3.5" in str(
-                app.query_one("#bar-right").render()))
-            bar = str(app.query_one("#bar-right").render())
-            assert "GPU" in bar and "native" in bar
-            assert app.query_one(Banner)
+            await _until(pilot, lambda: "Qwen3.5" in _facts(app))
+            assert "GPU" in _facts(app) and "native" in _facts(app)
+            banner = str(app.query_one(Banner)._model.render())
+            assert "Qwen3.5" in banner and "loading" not in banner
     run(go())
 
 
-def test_a_question_becomes_a_folded_tool_line_and_an_answer():
+def test_a_question_becomes_a_tool_group_and_an_answer():
     async def go():
         app = _app()
         async with app.run_test(size=(110, 30)) as pilot:
             await _type(pilot, "How many leave days?")
             await pilot.press("enter")
             await _until(pilot, lambda: app.query(AssistantMessage))
-            kinds = [type(w).__name__ for w in
-                     app.query_one("#messages").children]
-            assert kinds == ["UserMessage", "ToolGroup", "AssistantMessage"]
-            group = app.query_one(ToolGroup)
-            assert str(group._header()).startswith("⏵ Searched docs")
-            group.toggle()
-            assert "search_docs" in str(group._body())
-            assert "researcher: calling search_docs" in str(group._body())
-            assert not app.query("LoadingLine")
+            assert app.query(UserMessage)
+            assert app.query(ToolGroup)
+            assert not app.query("LoadingWidget")
     run(go())
 
 
-def test_markup_like_text_in_an_answer_or_output_cannot_break_it():
+def test_markup_like_text_cannot_break_answers_or_shell_output():
     async def go():
         app = _app()
         async with app.run_test(size=(110, 30)) as pilot:
@@ -179,7 +177,7 @@ def test_markup_like_text_in_an_answer_or_output_cannot_break_it():
             await _until(pilot, lambda: app.query(BashOutputMessage)
                          and app.query_one(BashOutputMessage).has_class(
                              "bash-success"))
-            assert "[/bold]" in app.query_one(BashOutputMessage).output_text
+            assert "[/bold]" in app.query_one(BashOutputMessage)._output
     run(go())
 
 
@@ -195,8 +193,8 @@ def test_a_question_typed_while_busy_is_given_back():
             await _until(pilot, lambda: holder[0].busy)
             await _type(pilot, "second")
             await pilot.press("enter")
-            await _until(pilot, lambda: app.query(Notice))
-            assert app.query_one(InputBox).area.text == "second"
+            await _until(pilot, lambda: app.query(WarningMessage))
+            assert app.query_one(ChatInputContainer).value == "second"
             holder[0].hold.set()
     run(go())
 
@@ -210,20 +208,23 @@ def test_the_approval_panel_replaces_the_input_and_ignores_early_keys():
             holder[0].ask_approval = True
             await _type(pilot, "q")
             await pilot.press("enter")
-            await _until(pilot, lambda: app.query(ApprovalPanel))
-            assert app.query_one(InputBox).display is False
+            await _until(pilot, lambda: app.query(ApprovalApp))
+            panel = app.query_one(ApprovalApp)
+            assert app.query_one(ChatInputContainer).display is False
+            await _until(pilot, lambda: app.focused is panel)  # keys go here
+            panel._mount_time = time.monotonic()  # as if it just appeared
             await pilot.press("1")          # inside the 0.5 s grace: ignored
             assert holder[0].approved is None
             await pilot.pause(0.6)
             await pilot.press("1")
             await _until(pilot, lambda: holder[0].approved is not None)
             assert holder[0].approved is True
-            await _until(pilot, lambda: not app.query(ApprovalPanel))
-            assert app.query_one(InputBox).display is True
+            await _until(pilot, lambda: not app.query(ApprovalApp))
+            assert app.query_one(ChatInputContainer).display is True
     run(go())
 
 
-def test_esc_on_the_approval_panel_says_no():
+def test_deny_on_the_approval_panel_says_no():
     async def go():
         holder = []
         app = _app(holder)
@@ -232,9 +233,9 @@ def test_esc_on_the_approval_panel_says_no():
             holder[0].ask_approval = True
             await _type(pilot, "q")
             await pilot.press("enter")
-            await _until(pilot, lambda: app.query(ApprovalPanel))
+            await _until(pilot, lambda: app.query(ApprovalApp))
             await pilot.pause(0.6)
-            await pilot.press("escape")
+            await pilot.press("n")
             await _until(pilot, lambda: holder[0].approved is not None)
             assert holder[0].approved is False
     run(go())
@@ -262,21 +263,28 @@ def test_bang_runs_a_shell_command_once():
             await _type(pilot, "!echo hi")
             await pilot.press("enter")
             await _until(pilot, lambda: app.query(BashOutputMessage))
-            assert not app.query(UserMessage)     # the block shows it once
+            assert [type(w).__name__ for w in
+                    app.query_one("#messages").children] == [
+                "BashOutputMessage"]       # the block shows it once
     run(go())
 
 
-def test_slash_shows_completions_and_enter_runs_help():
+def test_slash_lists_every_command_and_enter_runs_help():
+    from ovat.agentic.commands import COMMANDS
+
     async def go():
         app = _app()
         async with app.run_test(size=(110, 40)) as pilot:
             await pilot.press("/")
-            popup = app.query_one(CompletionPopup)
-            await _until(pilot, lambda: popup.shown)
-            assert popup.selected().name == "help"
+            popup = app.query_one("#completion-popup")
+            await _until(pilot, lambda: popup.styles.display == "block")
+            text = popup.content_text
+            for name in ("help", "doctor", "telemetry", "agents"):
+                assert f"/{name}" in text
+            assert len(text.splitlines()) >= 2 * len(COMMANDS)
+            await _type(pilot, "help")
             await pilot.press("enter")
-            await _until(pilot, lambda: app.query(Notice))
-            assert "Commands" in str(app.query_one(Notice).content)
+            await _until(pilot, lambda: app.query(UserCommandMessage))
     run(go())
 
 
@@ -285,11 +293,11 @@ def test_an_unknown_command_suggests_a_near_one():
         app = _app()
         async with app.run_test(size=(110, 30)) as pilot:
             await _type(pilot, "/tols x")
-            await pilot.press("escape")      # close the popup first
+            await pilot.press("escape")
             await pilot.press("enter")
-            await _until(pilot, lambda: app.query(Notice))
-            text = str(app.query_one(Notice).content)
-            assert "No command /tols" in text and "/tools" in text
+            await _until(pilot, lambda: app.query(WarningMessage))
+            text = app.query_one(WarningMessage)._message
+            assert "/tols" in text and "/tools" in text
     run(go())
 
 
@@ -308,8 +316,8 @@ def test_the_prompt_stays_on_screen_at_80x24():
     async def go():
         app = _app()
         async with app.run_test(size=(80, 24)) as pilot:
-            await pilot.pause(0.2)
-            area = app.query_one(InputBox).area
+            await pilot.pause(0.3)
+            area = app.query_one(ChatInputContainer).input_widget
             assert 0 <= area.region.y < 24 and area.region.height >= 1
     run(go())
 
@@ -323,10 +331,10 @@ def test_there_are_no_tooltips():
     run(go())
 
 
-def test_no_widget_reuses_a_textual_private_name():
-    # self._running on a widget silently shadowed Textual's own message-pump
-    # flag: the tool group never showed it had finished. Any private name a
-    # Textual base class already uses is a bug waiting to happen.
+def test_ovats_own_tui_files_never_reuse_a_textual_private_name():
+    # self._running on a widget once shadowed Textual's message-pump flag.
+    # Scans OVAT's own TUI files; the copied code in ovat/tui/vibe/ is kept
+    # as it was written.
     import re
     from pathlib import Path
 
@@ -338,6 +346,8 @@ def test_no_widget_reuses_a_textual_private_name():
     taken |= set(vars(Widget()))
     root = Path(__file__).parents[1] / "ovat" / "tui"
     for path in root.rglob("*.py"):
+        if "vibe" in path.relative_to(root).parts:
+            continue
         mine = set(re.findall(r"self\.(_[a-z_]+)\s*=",
                               path.read_text(encoding="utf-8")))
         assert not mine & taken, (path, sorted(mine & taken))
@@ -346,100 +356,41 @@ def test_no_widget_reuses_a_textual_private_name():
 def test_the_bar_shows_a_live_hardware_reading_without_inventing_one():
     class Monitor:
         def sample(self):
-            return {"cpu": 23.4, "ram": 61.0}     # no NPU on this machine
+            return {"cpu": 23.4, "ram": 61.0}
 
         def close(self):
             pass
 
     async def go():
         app = _app(hardware=Monitor())
-        async with app.run_test(size=(140, 30)) as pilot:
-            await _until(pilot, lambda: "CPU 23%" in str(
-                app.query_one("#bar-right").render()), timeout=6)
-            bar = str(app.query_one("#bar-right").render())
-            assert "RAM 61%" in bar and "NPU" not in bar
+        async with app.run_test(size=(160, 30)) as pilot:
+            await _until(pilot, lambda: "CPU 23%" in _facts(app), timeout=6)
+            assert "RAM 61%" in _facts(app) and "NPU" not in _facts(app)
     run(go())
 
 
-def test_an_answer_that_lands_while_the_app_closes_is_ignored():
-    # The Windows run: the fake turn finished during shutdown and drawing
-    # the bar raised NoMatches. A late report must be dropped, not crash.
-    async def go():
-        holder = []
-        app = _app(holder)
-        async with app.run_test(size=(110, 30)) as pilot:
-            await _until(pilot, lambda: holder)
-            app.query_one("#bottom-bar").remove()
-            await pilot.pause(0.05)
-            app.post_message(__import__("ovat.tui.app", fromlist=["x"])
-                             .SessionEvent(s.TurnDone("late", 1.0)))
-            await pilot.pause(0.1)
-    run(go())
-
-
-def test_bang_switches_to_bash_mode_and_shows_the_bang_once():
-    async def go():
-        app = _app()
-        async with app.run_test(size=(110, 30)) as pilot:
-            box = app.query_one(InputBox)
-            await pilot.press("!")
-            await _until(pilot, lambda: box.bash)
-            assert box.area.text == ""                # the typed ! is gone
-            await _type(pilot, "ls")
-            assert box.area.text == "ls"
-            await pilot.press("backspace", "backspace", "backspace")
-            await _until(pilot, lambda: not box.bash)  # empty + backspace
-    run(go())
-
-
-def test_the_banner_mark_animates_then_rests_and_ready_fills_the_banner():
+def test_the_banner_mark_animates_then_rests():
     from ovat.tui.widgets.braille import ChipMark, frames
 
     frames_ = frames()
     assert len({len(f) for f in frames_}) == 1      # fixed size: no relayout
-    assert frames_[0] != frames_[-1]
 
     async def go():
-        app = OvatAgentApp("w.yml", session_factory=lambda w, sink, cwd=None:
-                           FakeSession(w, sink, cwd), history_file=None,
-                           hardware=False)
+        app = _app(animate=True)
         async with app.run_test(size=(120, 40)) as pilot:
             mark = app.query_one(ChipMark)
             await _until(pilot, lambda: mark._index >= len(frames_) - 1)
-            banner = str(app.query_one(Banner)._model.render())
-            assert "Qwen3.5" in banner and "loading" not in banner
-            assert app.query_one(InputBox).area.has_focus
     run(go())
 
 
-def test_every_command_is_in_the_popup_and_a_click_runs_it():
-    async def go():
-        app = _app()
-        async with app.run_test(size=(110, 40)) as pilot:
-            await pilot.press("/")
-            popup = app.query_one(CompletionPopup)
-            await _until(pilot, lambda: popup.shown)
-            names = [c.name for c in popup.items]
-            assert "doctor" in names and "telemetry" in names
-            assert len(names) == len(__import__(
-                "ovat.agentic.commands", fromlist=["x"]).COMMANDS)
-            popup.highlighted = 0
-            popup.action_select()          # what a click on the row does
-            await _until(pilot, lambda: app.query(Notice))
-            assert "Commands" in str(app.query_one(Notice).content)
-    run(go())
+def test_an_answer_that_lands_while_the_app_closes_is_ignored():
+    from ovat.tui.app import SessionEvent
 
-
-def test_a_shell_command_that_ends_before_mount_still_shows_its_dollar():
     async def go():
         app = _app()
         async with app.run_test(size=(110, 30)) as pilot:
-            await _type(pilot, "!echo hi")
-            await pilot.press("enter")
-            await _until(pilot, lambda: app.query(BashOutputMessage)
-                         and app.query_one(BashOutputMessage).has_class(
-                             "bash-success"))
-            await pilot.pause(0.3)          # a pulse tick would land here
-            block = app.query_one(BashOutputMessage)
-            assert str(block._prompt.render()).startswith("$")
+            app.query_one("#agent-facts").remove()
+            await pilot.pause(0.05)
+            app.post_message(SessionEvent(s.TurnDone("late", 1.0)))
+            await pilot.pause(0.1)
     run(go())

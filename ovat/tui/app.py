@@ -1,51 +1,59 @@
 # ovat/tui/app.py
-# Layout and styles adapted from Mistral Vibe
-# (https://github.com/mistralai/mistral-vibe, vibe/cli/textual_ui/app.py
-# compose and app.tcss), Copyright Mistral AI, Apache License 2.0. Changed
-# for OVAT: driven by AgentSession events, OVAT commands, colours and bar.
-"""`ovat agent`: the chat-first agent TUI.
+"""`ovat agent`: the agent TUI, built from the copied widgets in
+ovat/tui/vibe/ and driven by OVAT's AgentSession.
 
-Layout, top to bottom (Mistral Vibe's):
+    #chat                   ChatScroll: banner, what's new, the transcript
+    #loading-area           LoadingWidget while the agent works
+    #bottom-app-container   ChatInputContainer, or an ApprovalApp in its place
+    #bottom-bar             PathDisplay, process, spacer, the agent's facts
 
-    #chat          the banner, what's new, then the transcript, anchored
-                   to the BOTTOM so a new conversation starts by the input
-    #loading-area  one line while the agent works (spinner, status, time)
-    #bottom        the input box, or an approval panel in its place
-    #bottom-bar    folder and process on the left, the agent on the right
-
-The app only draws. AgentSession (ovat/agentic/session.py) does the work on
-worker threads and reports through one callback; that callback posts a
-SessionEvent here (post_message is thread-safe), and on_session_event
-turns each report into widgets. So nothing in this file blocks, and every
-rule worth testing is tested without a terminal.
+The copied EventHandler draws tool calls and answers; bridge.Bridge turns
+OVAT's agent events into the history events it understands. AgentSession
+does the work on worker threads and reports through one callback, posted
+here as a SessionEvent (post_message is thread-safe).
 """
 import os
+import threading
 import time
 from pathlib import Path
 
 from rich.text import Text
 from textual.app import App
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, VerticalGroup
 from textual.message import Message
 from textual.widgets import Static
 
 from ovat.agent.events import (REMOTE_STATUS, SUBAGENT_STATUS, TOOL_ENDED,
                                TOOL_STARTED)
-from ovat.agentic import commands
+from ovat.agent.permissions import ONCE, REFUSE, SESSION
+from ovat.agentic import commands as ovat_commands
 from ovat.agentic import session as s
 from ovat.cli import ui
 from ovat.cli.theme import OVAT_THEME
-from ovat.tui.widgets.approval import ApprovalPanel
+from ovat.tui.bridge import Bridge
+from ovat.tui.vibe.agents import AgentSafety
+from ovat.tui.vibe.app_server._effect_models import GenericEffectDetail
+from ovat.tui.vibe.cli.commands import Command, CommandRegistry
+from ovat.tui.vibe.cli.textual_ui.app import ChatScroll
+from ovat.tui.vibe.cli.textual_ui.handlers.event_handler import EventHandler
+from ovat.tui.vibe.cli.textual_ui.widgets.approval_app import ApprovalApp
+from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.container import \
+    ChatInputContainer
+from ovat.tui.vibe.cli.textual_ui.widgets.loading import LoadingWidget
+from ovat.tui.vibe.cli.textual_ui.widgets.messages import (
+    BashOutputMessage, ErrorMessage, InterruptMessage, SlashCommandMessage,
+    UserCommandMessage, UserMessage, WarningMessage, WhatsNewMessage)
+from ovat.tui.vibe.cli.textual_ui.widgets.no_markup_static import \
+    NoMarkupStatic
+from ovat.tui.vibe.cli.textual_ui.widgets.path_display import PathDisplay
+from ovat.tui.vibe.utils.tool_presentation import EffectCallDisplay
 from ovat.tui.widgets.banner import Banner
-from ovat.tui.widgets.input import HISTORY_FILE, InputBox
-from ovat.tui.widgets.loading import LoadingLine
-from ovat.tui.widgets.messages import (AssistantMessage, BashOutputMessage,
-                                      InterruptMessage, UserMessage,
-                                      WhatsNewMessage, notice, turn_footer)
-from ovat.tui.widgets.tools import ToolGroup
 
+TCSS = Path(__file__).parent / "vibe" / "cli" / "textual_ui" / "app.tcss"
+HISTORY_FILE = Path.home() / ".ovat" / "agent_history"
 QUIT_CONFIRM_S = 2.0
+ENGINES = ("native", "react", "llamaindex", "openai-agents")
 WHATS_NEW = (
     "**What's new in the OVAT agent**\n\n"
     "- **Subagents**: hand a task to another workflow, an A2A agent or a "
@@ -53,23 +61,31 @@ WHATS_NEW = (
     "- **A2A**: `/serve` offers this workflow to other agents\n"
     "- **Approvals**: anything that sends data off this PC asks first\n"
     "- **`!cmd`** runs a shell command, Esc stops it")
-ENGINES = ("native", "react", "llamaindex", "openai-agents")
 
 
-class HardwareReading(Message):
-    """A CPU / NPU / RAM reading, taken on a worker thread."""
+class OvatCommandRegistry(CommandRegistry):
+    """The copied registry, filled from OVAT's one command table."""
 
-    def __init__(self, reading: dict) -> None:
-        super().__init__()
-        self.reading = reading
+    def _build_commands(self) -> dict[str, Command]:
+        return {
+            c.name: Command(
+                aliases=frozenset({f"/{c.name}", *(f"/{a}" for a in c.aliases
+                                                   if a.isalnum())}),
+                description=c.help + (f"  ({c.usage})" if c.usage else ""),
+                handler=f"_cmd_{c.name}")
+            for c in ovat_commands.COMMANDS}
 
 
 class SessionEvent(Message):
-    """One report from the AgentSession, carried to the UI thread."""
-
     def __init__(self, event) -> None:
         super().__init__()
         self.event = event
+
+
+class HardwareReading(Message):
+    def __init__(self, reading: dict) -> None:
+        super().__init__()
+        self.reading = reading
 
 
 def _short_path(path: str) -> str:
@@ -77,54 +93,12 @@ def _short_path(path: str) -> str:
     return "~" + path[len(home):] if path.startswith(home) else path
 
 
-def help_text() -> Text:
-    out = Text()
-    out.append("Commands\n", style=f"bold {ui.CYAN}")
-    width = max(len(c.name) + len(c.usage) for c in commands.COMMANDS) + 3
-    for c in commands.COMMANDS:
-        label = f"/{c.name}" + (f" {c.usage}" if c.usage else "")
-        out.append(f"  {label.ljust(width)}", style=f"bold {ui.PURPLE}")
-        out.append(c.help + "\n", style=ui.DIM)
-    out.append("\nKeys\n", style=f"bold {ui.CYAN}")
-    for key, what in (("enter", "send"), ("ctrl+j", "new line"),
-                      ("!cmd", "run a shell command here"),
-                      ("esc", "stop the answer or the command"),
-                      ("ctrl+o", "open or fold the tool calls"),
-                      ("up/down", "earlier messages"),
-                      ("ctrl+c", "copy a selection; twice to quit")):
-        out.append(f"  {key.ljust(width)}", style=f"bold {ui.PURPLE}")
-        out.append(what + "\n", style=ui.DIM)
-    return out
-
-
 class OvatAgentApp(App):
     TITLE = "OVAT agent"
-
-    CSS = """
-    * { scrollbar-size: 1 1; }
-    Screen { background: transparent; layout: vertical; }
-    #chat { layout: stream; height: 1fr; width: 100%; padding: 0;
-            align-vertical: bottom; background: transparent;
-            scrollbar-color: $foreground 30%;
-            scrollbar-background: transparent; }
-    #messages { layout: stream; width: 100%; height: auto; }
-    #loading-area { height: auto; width: 100%; padding: 1 0 0 0; }
-    #bottom { height: auto; width: 100%; }
-    #bottom-bar { height: auto; width: 100%; padding: 0; layout: horizontal; }
-    #bar-left { width: auto; color: $text-muted; }
-    #bar-spacer { width: 1fr; }
-    #bar-right { width: auto; color: $text-muted; }
-    Markdown { color: $foreground; }
-    Markdown .code_inline { color: $success; background: transparent;
-                            text-style: bold; }
-    Markdown MarkdownFence { overflow-x: auto; max-width: 95%;
-                             background: transparent; }
-    """
+    CSS_PATH = str(TCSS)
 
     BINDINGS = [
         Binding("escape", "interrupt", show=False),
-        # priority so it also wins over Textual's own ctrl+c -> copy_text;
-        # action_cancel_or_quit copies a selection itself, first.
         Binding("ctrl+c", "cancel_or_quit", show=False, priority=True),
         Binding("ctrl+o", "toggle_tools", show=False),
     ]
@@ -140,50 +114,52 @@ class OvatAgentApp(App):
         self._history_file = history_file
         self._cwd = cwd or os.getcwd()
         self.session = None
-        self._chat_screen = None        # set in on_mount
-        self._loading: LoadingLine | None = None
-        self._group: ToolGroup | None = None
-        self._shell_block: BashOutputMessage | None = None
+        self._chat_screen = None
+        self._bridge = Bridge()
+        self._handler: EventHandler | None = None
+        self._loading: LoadingWidget | None = None
+        self._bash: BashOutputMessage | None = None
         self._approvals: list = []
-        self._panel: ApprovalPanel | None = None
+        self._approval: ApprovalApp | None = None
+        self._approval_request = None
         self._last_quit_press = 0.0
-        self._turn_started = 0.0
-        # True: the real monitor; False: none; anything else: a fake (tests).
         self._hardware_choice = hardware
         self._hardware = None
         self._reading: dict = {}
+        self._tools_collapsed = True
 
-    # ---- layout ------------------------------------------------------------
+    # ---- layout --------------------------------------------------------------
 
     def compose(self):
-        from textual.containers import Horizontal
-        with VerticalScroll(id="chat"):
+        with ChatScroll(id="chat"):
             yield Banner(animate=self._animate_mark, id="banner")
             yield WhatsNewMessage(WHATS_NEW)
-            yield Vertical(id="messages")
-        yield Vertical(id="loading-area")
-        with Vertical(id="bottom"):
-            yield InputBox(history_file=self._history_file, id="input-box")
+            yield VerticalGroup(id="messages")
+        with Horizontal(id="loading-area"):
+            yield Static(id="loading-area-content")
+        with Static(id="bottom-app-container"):
+            yield ChatInputContainer(
+                command_registry=OvatCommandRegistry(),
+                history_file=self._history_file, id="input-container")
         with Horizontal(id="bottom-bar"):
-            yield Static("", id="bar-left")
-            yield Static("", id="bar-spacer")
-            yield Static("", id="bar-right")
+            yield PathDisplay(self._cwd)
+            yield NoMarkupStatic(f"[PID {os.getpid()}]", id="process-title")
+            yield NoMarkupStatic(id="spacer")
+            yield Static("", id="agent-facts")
 
     def on_mount(self) -> None:
-        # Every lookup goes through the MAIN screen: while /doctor or
-        # /telemetry is open, the app's own query would search that screen
-        # and the agent's reports would find no widgets to draw on.
         self._chat_screen = self.screen
         self.register_theme(OVAT_THEME)
         self.theme = OVAT_THEME.name
+        self._handler = EventHandler(
+            mount_callback=self._mount_message,
+            get_tools_collapsed=lambda: self._tools_collapsed)
         self.session = self._session_factory(
             self._workflow, self._from_session, cwd=self._cwd)
         self.session.start()
+        self._chat.anchor()
+        self._input.focus_input()
         self._update_bar()
-        # Stay pinned to the newest message while the user has not scrolled
-        # away (Vibe's ChatScroll does the same).
-        self._chat_screen.query_one("#chat", VerticalScroll).anchor()
-        self._chat_screen.query_one(InputBox).area.focus()
         if self._hardware_choice is True:
             from ovat.agentic.hardware import HardwareMonitor
             self._hardware = HardwareMonitor()
@@ -191,6 +167,72 @@ class OvatAgentApp(App):
             self._hardware = self._hardware_choice
         if self._hardware is not None:
             self.set_interval(2.0, self._sample_hardware)
+
+    def on_unmount(self) -> None:
+        if self.session is not None:
+            self.session.close()
+        if self._hardware is not None:
+            self._hardware.close()
+
+    # ---- helpers -------------------------------------------------------------
+
+    @property
+    def _chat(self) -> ChatScroll:
+        return self._chat_screen.query_one("#chat", ChatScroll)
+
+    @property
+    def _input(self) -> ChatInputContainer:
+        return self._chat_screen.query_one(ChatInputContainer)
+
+    @property
+    def _messages(self) -> VerticalGroup:
+        return self._chat_screen.query_one("#messages", VerticalGroup)
+
+    async def _mount_message(self, widget, after=None, before=None, *,
+                             container=None) -> None:
+        """The copied app's _mount_and_scroll (Vibe app.py), without its
+        message queue and history pruning, which OVAT does not have yet."""
+        from ovat.tui.vibe.cli.textual_ui.widgets.messages import (
+            StreamingMessageBase)
+        chat = self._chat
+        user_initiated = isinstance(widget, (UserMessage, UserCommandMessage))
+        should_anchor = user_initiated or chat.is_at_bottom
+        before_parent = before.parent if before is not None else None
+        after_parent = after.parent if after is not None else None
+        with self.batch_update():
+            if before_parent is not None:
+                await before_parent.mount(widget, before=before)
+            elif after_parent is not None:
+                await after_parent.mount(widget, after=after)
+            elif container is not None:
+                await container.mount(widget)
+            else:
+                await self._messages.mount(widget)
+            if not widget.is_mounted:
+                return
+            if isinstance(widget, StreamingMessageBase):
+                await widget.write_initial_content()
+        if should_anchor:
+            chat.anchor()
+
+    async def note(self, text: str, level: str = "info") -> None:
+        if level == "error":
+            await self._mount_message(ErrorMessage(text))
+        elif level == "warn":
+            await self._mount_message(WarningMessage(text))
+        else:
+            await self._mount_message(UserCommandMessage(text))
+
+    async def _start_loading(self, status: str | None = None) -> None:
+        await self._stop_loading()
+        self._loading = LoadingWidget(status)
+        await self._chat_screen.query_one("#loading-area-content").mount(
+            self._loading)
+
+    async def _stop_loading(self) -> None:
+        if self._loading is not None:
+            await self._loading.remove()
+            self._loading = None
 
     def _sample_hardware(self) -> None:
         monitor = self._hardware
@@ -200,436 +242,373 @@ class OvatAgentApp(App):
                 self.post_message(HardwareReading(monitor.sample()))
             except Exception:
                 pass
-        import threading
-        threading.Thread(target=take, daemon=True,
-                         name="ovat-hardware").start()
+        threading.Thread(target=take, daemon=True, name="ovat-hw").start()
 
     def on_hardware_reading(self, message: HardwareReading) -> None:
-        if not self.is_running or not self._chat_screen.query("#bar-right"):
-            return
-        self._reading = message.reading
-        self._update_bar()
-
-    def on_unmount(self) -> None:
-        if self.session is not None:
-            self.session.close()
-        if self._hardware is not None:
-            self._hardware.close()
-
-    def _from_session(self, event) -> None:
-        """Called on worker threads. post_message is the thread-safe door."""
-        self.post_message(SessionEvent(event))
-
-    # ---- helpers -----------------------------------------------------------
-
-    @property
-    def _messages(self) -> Vertical:
-        return self._chat_screen.query_one("#messages", Vertical)
-
-    def _add(self, widget) -> None:
-        self._messages.mount(widget)
-        # After the new widget is laid out, not before: scrolling first left
-        # the newest message just below the view.
-        chat = self._chat_screen.query_one("#chat", VerticalScroll)
-        self.call_after_refresh(chat.scroll_end, animate=False)
-
-    def note(self, text, level: str = "info") -> None:
-        self._add(notice(text, level))
-
-    def _start_loading(self, status: str = "Thinking") -> None:
-        self._stop_loading()
-        self._loading = LoadingLine(status)
-        self._chat_screen.query_one("#loading-area").mount(self._loading)
-
-    def _stop_loading(self) -> None:
-        if self._loading is not None:
-            self._loading.remove()
-            self._loading = None
+        if self.is_running and self._chat_screen.query("#agent-facts"):
+            self._reading = message.reading
+            self._update_bar()
 
     def _update_bar(self) -> None:
-        """Vibe's bar: where (path, process) left, what (agent) right."""
         info = self.session.info if self.session else {}
-        left = Text(f"{_short_path(self._cwd)} [PID {os.getpid()}]")
-        right = Text(no_wrap=True, overflow="ellipsis")
+        facts = Text(no_wrap=True, overflow="ellipsis")
         if info.get("model"):
-            right.append(f"{info['device']}", style=f"bold {ui.CYAN}")
-            right.append(f" {info['model']} · {info.get('engine')}")
+            facts.append(info["device"], style=f"bold {ui.CYAN}")
+            facts.append(f" {info['model']} · {info.get('engine')}")
         totals = self.session.totals if self.session else {}
         used = totals.get("prompt_tokens", 0) + totals.get(
             "completion_tokens", 0)
         if used:
-            right.append(f" · {used:,} tokens")
+            facts.append(f" · {used:,} tokens")
         if self.session and self.session.serving:
-            right.append(" · ")
-            right.append("a2a serving", style=ui.GREEN)
-        if self.session and self.session.broker.auto_approve:
-            right.append(" · ")
-            right.append("yolo", style=f"bold {ui.YELLOW}")
+            facts.append(" · ")
+            facts.append("a2a serving", style=ui.GREEN)
         if self._reading:
             from ovat.agentic.hardware import format_reading
-            right.append(" · ")
-            right.append(format_reading(self._reading).replace("  ·  ", " · "),
-                         style=ui.CYAN)
-        screen = self._chat_screen
-        screen.query_one("#bar-left", Static).update(left)
-        screen.query_one("#bar-right", Static).update(right)
+            facts.append(" · " + format_reading(self._reading).replace(
+                "  ·  ", " · "))
+        self._chat_screen.query_one("#agent-facts", Static).update(facts)
 
-    # ---- what the session reports -------------------------------------------
+    def _from_session(self, event) -> None:
+        self.post_message(SessionEvent(event))
 
-    def on_session_event(self, message: SessionEvent) -> None:
-        # A worker can finish while the app is closing (Ctrl-C as an answer
-        # lands). By then the widgets are gone; drawing would raise
-        # NoMatches on the way out. Seen on the Windows test run.
-        if not self.is_running or not self._chat_screen.query("#bar-right"):
-            return
-        event = message.event
-        handler = getattr(self, f"_on_{type(event).__name__}", None)
+    # ---- session reports -----------------------------------------------------
+
+    async def on_session_event(self, message: SessionEvent) -> None:
+        if not self.is_running or not self._chat_screen.query("#agent-facts"):
+            return            # a late report while the app closes
+        handler = getattr(self, f"_on_{type(message.event).__name__}", None)
         if handler is not None:
-            handler(event)
+            await handler(message.event)
 
-    def _on_Ready(self, event: s.Ready) -> None:
+    async def _on_Ready(self, event: s.Ready) -> None:
         self._chat_screen.query_one(Banner).show_session(event.info)
-        engine = event.info.get("engine", "")
-        self._chat_screen.query_one(InputBox).set_title(f"{engine}")
+        self._input.set_agent_name(event.info.get("engine", ""))
         self._update_bar()
 
-    def _on_BuildFailed(self, event: s.BuildFailed) -> None:
+    async def _on_BuildFailed(self, event: s.BuildFailed) -> None:
         self._chat_screen.query_one(Banner).show_problem("see below")
-        self.note(event.text, "error")
-        self._update_bar()
+        await self.note(event.text, "error")
 
-    def _on_TurnStarted(self, event: s.TurnStarted) -> None:
-        self._group = None
-        self._turn_started = time.monotonic()
-        self._start_loading("Thinking")
+    async def _on_TurnStarted(self, event: s.TurnStarted) -> None:
+        await self._start_loading()
 
-    def _on_AgentActivity(self, event: s.AgentActivity) -> None:
+    async def _on_AgentActivity(self, event: s.AgentActivity) -> None:
         ev = event.event
-        if ev.type not in (TOOL_STARTED, TOOL_ENDED, REMOTE_STATUS,
-                           SUBAGENT_STATUS):
+        if ev.type not in (TOOL_STARTED, TOOL_ENDED, SUBAGENT_STATUS,
+                           REMOTE_STATUS):
             return
-        if self._group is None:
-            kinds = {t["name"]: t["kind"]
-                     for t in self.session.info.get("tools", [])}
-            self._group = ToolGroup(kinds)
-            self._add(self._group)
-        self._group.handle(ev)
-        if self._loading is not None:
-            d = ev.data
-            if ev.type == TOOL_STARTED:
-                args = d.get("arguments") or {}
-                who = args.get("agent") if d.get("name") == "delegate" else None
-                self._loading.set_status(
-                    f"Delegating to {who}" if who
-                    else f"Calling {d.get('name')}")
-            elif ev.type == TOOL_ENDED:
-                self._loading.set_status("Thinking")
-            else:
-                self._loading.set_status(f"{d.get('agent')} working")
+        kinds = {t["name"]: t["kind"]
+                 for t in (self.session.info or {}).get("tools", [])}
+        history = self._bridge.convert(ev, kinds)
+        if history is not None:
+            await self._handler.handle_event(history, self._loading)
 
-    def _on_ApprovalNeeded(self, event: s.ApprovalNeeded) -> None:
+    async def _on_ApprovalNeeded(self, event: s.ApprovalNeeded) -> None:
         self._approvals.append(event.request)
-        if self._panel is None:
-            self._show_next_approval()
+        if self._approval is None:
+            await self._show_next_approval()
 
-    def _show_next_approval(self) -> None:
-        if not self._approvals:
-            return
+    async def _show_next_approval(self) -> None:
         request = self._approvals.pop(0)
+        self._approval_request = request
         if self._loading is not None:
-            self._loading.pause()
-            self._loading.set_status("Waiting for your approval")
-        self._chat_screen.query_one(InputBox).display = False
-        self._panel = ApprovalPanel(request)
-        self._chat_screen.query_one("#bottom").mount(self._panel)
-        self._panel.focus()
+            self._loading.begin_action_required("Waiting for approval")
+        detail = GenericEffectDetail(
+            tool_name=request.tool, input=request.arguments or None,
+            display=EffectCallDisplay(summary=request.tool,
+                                      status_text=f"Asking about "
+                                                  f"{request.tool}"))
+        self._approval = ApprovalApp(effect=detail, config=None,
+                                     reason=request.reason or None)
+        # As the copied app's _switch_from_input: hide AND disable the input,
+        # or its text area pulls the focus back and the keys meant for the
+        # panel go into a hidden prompt.
+        with self.batch_update():
+            self._input.display = False
+            self._input.disabled = True
+            await self._chat_screen.query_one("#bottom-app-container").mount(
+                self._approval)
+        self.call_after_refresh(self._approval.focus)
 
-    def on_approval_panel_decided(self, message: ApprovalPanel.Decided) -> None:
-        self.session.broker.resolve(message.request_id, message.decision)
-        if self._panel is not None:
-            self._panel.remove()
-            self._panel = None
+    async def _answer_approval(self, decision: str) -> None:
+        if self._approval_request is not None:
+            self.session.broker.resolve(self._approval_request.id, decision)
+        self._approval_request = None
+        if self._approval is not None:
+            await self._approval.remove()
+            self._approval = None
         if self._loading is not None:
-            self._loading.resume()
-            self._loading.set_status("Thinking")
+            self._loading.end_action_required()
         if self._approvals:
-            self._show_next_approval()
+            await self._show_next_approval()
             return
-        box = self._chat_screen.query_one(InputBox)
-        box.display = True
-        box.area.focus()
+        self._input.disabled = False
+        self._input.display = True
+        self.call_after_refresh(self._input.focus_input)
 
-    def _on_TurnDone(self, event: s.TurnDone) -> None:
-        self._stop_loading()
-        if self._group is not None:
-            self._group.finish(event.failed and not event.cancelled,
-                               event.elapsed)
-        footer = turn_footer(event.elapsed, event.totals, event.sources,
-                             event.failed, event.cancelled)
+    async def on_approval_app_approval_granted(self, message) -> None:
+        await self._answer_approval(ONCE)
+
+    async def on_approval_app_approval_granted_always_tool(self, message) -> None:
+        await self._answer_approval(SESSION)
+
+    async def on_approval_app_approval_granted_always_permanent(
+            self, message) -> None:
+        await self._answer_approval(SESSION)
+
+    async def on_approval_app_approval_rejected(self, message) -> None:
+        await self._answer_approval(REFUSE)
+
+    async def _on_TurnDone(self, event: s.TurnDone) -> None:
+        await self._stop_loading()
+        if self._handler.current_tool_group is not None:
+            self._handler._finalize_tool_group(escalate=event.failed)
         if event.cancelled:
-            self._add(InterruptMessage())
+            await self._mount_message(InterruptMessage())
+        elif event.failed:
+            await self._mount_message(ErrorMessage(event.answer or "failed"))
         else:
-            self._add(AssistantMessage(event.answer or "_(no answer)_",
-                                       footer, failed=event.failed))
-        self._group = None
-        self._clear_approvals()
-        self._update_bar()
-
-    def _on_ShellLine(self, event: s.ShellLine) -> None:
-        if self._shell_block is not None:
-            self._shell_block.add_line(event.text)
-            self._chat_screen.query_one("#chat", VerticalScroll).scroll_end(animate=False)
-
-    def _on_ShellDone(self, event: s.ShellDone) -> None:
-        if self._shell_block is not None:
-            self._shell_block.finish(event.code, event.elapsed)
-            self._shell_block = None
-        if not (self.session and self.session.busy):
-            self._stop_loading()
-
-    def _on_Notice(self, event: s.Notice) -> None:
-        self.note(event.text, event.level)
-        self._update_bar()
-
-    def _clear_approvals(self) -> None:
+            await self._handler.handle_event(
+                self._bridge.answer(event.answer or "(no answer)"))
+        await self._handler.finalize_streaming()
         self._approvals.clear()
-        if self._panel is not None:
-            self._panel.remove()
-            self._panel = None
-            box = self._chat_screen.query_one(InputBox)
-            box.display = True
-            box.area.focus()
+        if self._approval is not None:
+            await self._answer_approval(REFUSE)
+        self._update_bar()
 
-    # ---- what the person typed ----------------------------------------------
+    async def _on_ShellLine(self, event: s.ShellLine) -> None:
+        if self._bash is not None:
+            await self._bash.append_output(event.text + "\n")
+            self.call_after_refresh(self._chat.scroll_end, animate=False)
 
-    def on_input_box_submitted(self, message: InputBox.Submitted) -> None:
-        text = message.text
+    async def _on_ShellDone(self, event: s.ShellDone) -> None:
+        if self._bash is not None:
+            interrupted = event.code is None or event.code < 0
+            await self._bash.finish(event.code if event.code is not None
+                                    else -1, interrupted=interrupted)
+            self._bash = None
+
+    async def _on_Notice(self, event: s.Notice) -> None:
+        await self.note(event.text, event.level)
+        self._update_bar()
+
+    # ---- input ---------------------------------------------------------------
+
+    async def on_chat_input_container_submitted(
+            self, message: ChatInputContainer.Submitted) -> None:
+        text = message.value.strip()
+        if not text:
+            return
         if text.startswith("!"):
-            self._run_shell(text[1:].strip())
+            await self._run_shell(text[1:].strip())
             return
         if text.startswith("/"):
-            self._slash(text)
+            await self._slash(text)
             return
         if self.session.busy:
-            # Give the question back instead of losing it.
-            self._chat_screen.query_one(InputBox).set_text(text)
-            self.note("Still working on the last one; esc stops it.", "warn")
+            self._input.value = text          # give it back, do not lose it
+            await self.note("Still working on the last one; Esc stops it.",
+                            "warn")
             return
-        self._add(UserMessage(text))
+        await self._mount_message(UserMessage(text))
         self.session.ask(text)
 
-    def _run_shell(self, command: str) -> None:
+    async def _run_shell(self, command: str) -> None:
         if not command:
-            self.note("Type a command after !, like !dir or !ls", "warn")
+            await self.note("Type a command after !, like !dir or !ls", "warn")
             return
-        # The block's own prompt pulses while it runs (Vibe's shape), so
-        # no loading line for a shell command.
-        self._shell_block = BashOutputMessage(command)
-        self._add(self._shell_block)
+        self._bash = BashOutputMessage(command, self._cwd, pending=True)
+        await self._mount_message(self._bash)
         if self.session.run_shell(command) is None:
-            self._shell_block = None
+            self._bash = None
 
-    def _slash(self, text: str) -> None:
-        self._add(UserMessage(text, slash=True))
-        command, rest = commands.parse(text)
+    async def _slash(self, text: str) -> None:
+        await self._mount_message(SlashCommandMessage(text))
+        command, rest = ovat_commands.parse(text)
         if command is None:
-            near = commands.complete(rest or "")
-            hint = f" Did you mean /{near[0].name}?" if near and rest else ""
-            self.note(f"No command /{rest}.{hint} /help lists them.", "warn")
+            near = ovat_commands.complete(rest or "")
+            hint = f" Did you mean `/{near[0].name}`?" if near and rest else ""
+            await self.note(f"No command `/{rest}`.{hint} `/help` lists them.",
+                            "warn")
             return
-        getattr(self, f"_cmd_{command.name}")(rest)
+        await getattr(self, f"_cmd_{command.name}")(rest)
 
-    # ---- slash commands (names match commands.COMMANDS) ---------------------
+    # ---- slash commands (names match ovat.agentic.commands.COMMANDS) --------
 
-    def _cmd_help(self, rest: str) -> None:
-        self.note(help_text())
+    async def _cmd_help(self, rest: str) -> None:
+        lines = ["### Commands", ""]
+        for c in ovat_commands.COMMANDS:
+            usage = f" {c.usage}" if c.usage else ""
+            lines.append(f"- `/{c.name}{usage}`: {c.help}")
+        lines += ["", "### Keys", "",
+                  "- `Enter` send, `Ctrl+J` new line, `Up/Down` history",
+                  "- `!cmd` runs a shell command here",
+                  "- `Esc` stops the answer or the command",
+                  "- `Ctrl+O` opens or folds the tool calls",
+                  "- `Ctrl+C` copies a selection; twice quits"]
+        await self.note("\n".join(lines))
 
-    def _cmd_new(self, rest: str) -> None:
-        self._messages.remove_children()
+    async def _cmd_new(self, rest: str) -> None:
+        await self._messages.remove_children()
         self.session.new_conversation()
 
-    def _cmd_tools(self, rest: str) -> None:
+    async def _cmd_tools(self, rest: str) -> None:
         tools = self.session.info.get("tools", [])
         if not tools:
-            self.note("This agent has no tools.")
+            await self.note("This agent has no tools.")
             return
-        out = Text()
-        for t in tools:
-            colour = {"allow": ui.GREEN, "ask": ui.YELLOW,
-                      "deny": ui.RED}.get(t["permission"], ui.DIM)
-            out.append(f"{t['name']:<20}", style="bold")
-            out.append(f"{t['kind']:<12}", style=ui.DIM)
-            out.append(t["permission"] + "\n", style=colour)
-        self.note(out)
+        lines = ["| tool | kind | permission |", "| --- | --- | --- |"]
+        lines += [f"| `{t['name']}` | {t['kind']} | {t['permission']} |"
+                  for t in tools]
+        await self.note("\n".join(lines))
 
-    def _cmd_agents(self, rest: str) -> None:
+    async def _cmd_agents(self, rest: str) -> None:
         info = self.session.info
-        out = Text()
+        lines = ["### Subagents", ""]
         subs = info.get("subagents", [])
-        out.append("Subagents\n", style=f"bold {ui.CYAN}")
-        if not subs:
-            out.append("  none (add a subagents: list to the workflow)\n",
-                       style=ui.DIM)
-        for sub in subs:
-            out.append(f"  {sub['name']:<16}", style=f"bold {ui.PURPLE}")
-            out.append(f"{sub['where']:<10}", style=ui.DIM)
-            out.append(sub["description"] + "\n")
+        lines += ([f"- `{x['name']}` ({x['where']}): {x['description']}"
+                   for x in subs] or ["- none (add `subagents:` to the "
+                                      "workflow)"])
         peers = [t for t in info.get("tools", []) if t["kind"] == "a2a"]
-        out.append("A2A agents used as tools\n", style=f"bold {ui.CYAN}")
-        if not peers:
-            out.append("  none\n", style=ui.DIM)
-        for peer in peers:
-            out.append(f"  {peer['name']:<16}", style="bold")
-            out.append(peer["permission"] + "\n", style=ui.DIM)
-        out.append("This workflow over A2A\n", style=f"bold {ui.CYAN}")
-        state = ("serving (`/serve stop` ends it)" if self.session.serving
-                 else "not serving (`/serve` starts it)")
-        out.append(f"  {state}", style=ui.DIM)
-        self.note(out)
+        lines += ["", "### A2A agents used as tools", ""]
+        lines += ([f"- `{p['name']}` ({p['permission']})" for p in peers]
+                  or ["- none"])
+        lines += ["", "### This workflow over A2A", "",
+                  "- serving (`/serve stop` ends it)" if self.session.serving
+                  else "- not serving (`/serve` starts it)"]
+        await self.note("\n".join(lines))
 
-    def _cmd_ask(self, rest: str) -> None:
+    async def _cmd_ask(self, rest: str) -> None:
         name, _, task = rest.partition(" ")
         if not name or not task.strip():
-            self.note("Usage: /ask <subagent> <task>", "warn")
+            await self.note("Usage: `/ask <subagent> <task>`", "warn")
             return
-        self._add(UserMessage(f"@{name} {task}"))
         self.session.ask_subagent(name, task.strip())
 
-    def _cmd_serve(self, rest: str) -> None:
+    async def _cmd_serve(self, rest: str) -> None:
         if rest.strip() == "stop":
             self.session.stop_server()
-            self.note("Stopping the A2A server.")
+            await self.note("Stopping the A2A server.")
         else:
             self.session.start_server()
         self.set_timer(1.0, self._update_bar)
 
-    def _cmd_engine(self, rest: str) -> None:
+    async def _cmd_engine(self, rest: str) -> None:
         engine = rest.strip()
         if engine not in ENGINES:
-            self.note(f"Engines: {', '.join(ENGINES)}", "warn")
+            await self.note(f"Engines: {', '.join(ENGINES)}", "warn")
             return
-        self._chat_screen.query_one(Banner).display = True
-        self.note(f"Switching to the {engine} engine…")
+        await self.note(f"Switching to the {engine} engine.")
         self.session.start(engine)
 
-    def _cmd_trace(self, rest: str) -> None:
+    async def _cmd_trace(self, rest: str) -> None:
         trace = self.session.last_trace
         if not trace:
-            self.note("Nothing yet: ask something first.")
+            await self.note("Nothing yet: ask something first.")
             return
         totals = trace.get("totals", {})
-        out = Text()
-        out.append(f"{trace.get('engine')}  ", style=f"bold {ui.CYAN}")
         flags = [k for k in ("failed", "truncated", "undecoded_tool_call",
                              "empty_answer") if totals.get(k)]
-        out.append(f"{totals.get('turns')} turns, "
-                   f"{totals.get('tool_calls')} tool calls, "
-                   f"{totals.get('latency_s')} s", style=ui.DIM)
-        if flags:
-            out.append("  " + ", ".join(flags), style=ui.RED)
+        lines = [f"**{trace.get('engine')}**: {totals.get('turns')} turns, "
+                 f"{totals.get('tool_calls')} tool calls, "
+                 f"{totals.get('latency_s')} s"
+                 + (f", **{', '.join(flags)}**" if flags else ""), ""]
         for i, turn in enumerate(trace.get("turns", []) or [], 1):
-            out.append(f"\n  turn {i}: {turn.get('latency_s')} s, "
-                       f"{turn.get('prompt_tokens')} → "
-                       f"{turn.get('completion_tokens')} tokens, "
-                       f"{turn.get('finish_reason')}", style=ui.DIM)
+            lines.append(f"- turn {i}: {turn.get('latency_s')} s, "
+                         f"{turn.get('prompt_tokens')} → "
+                         f"{turn.get('completion_tokens')} tokens, "
+                         f"{turn.get('finish_reason')}")
             for call in turn.get("tool_calls", []):
-                out.append(f"\n    {call.get('name')} "
-                           f"{call.get('duration_s')} s", style=ui.DIM)
-        self.note(out)
+                lines.append(f"  - `{call.get('name')}` "
+                             f"{call.get('duration_s')} s")
+        await self.note("\n".join(lines))
 
-    def _cmd_yolo(self, rest: str) -> None:
+    async def _cmd_yolo(self, rest: str) -> None:
         broker = self.session.broker
         broker.auto_approve = not broker.auto_approve
-        self.note("Every tool is approved for this session. /yolo again "
-                  "turns it off." if broker.auto_approve else
-                  "Tools ask again.", "warn" if broker.auto_approve else "info")
-        box = self._chat_screen.query_one(InputBox)
-        box.set_warning(broker.auto_approve)
-        box.set_title("yolo: approves everything" if broker.auto_approve
-                      else (self.session.info.get("engine") or ""))
-        self._update_bar()
+        self._input.set_safety(AgentSafety.YOLO if broker.auto_approve
+                               else AgentSafety.NEUTRAL)
+        await self.note("Every tool is approved for this session. `/yolo` "
+                        "again turns it off." if broker.auto_approve
+                        else "Tools ask again.",
+                        "warn" if broker.auto_approve else "info")
 
-    def _cmd_workflow(self, rest: str) -> None:
+    async def _cmd_workflow(self, rest: str) -> None:
         path = rest.strip()
         if not path:
-            self.note("Usage: /workflow path/to/workflow.yml", "warn")
+            await self.note("Usage: `/workflow path/to/workflow.yml`", "warn")
             return
         self.session.switch_workflow(path)
-        self._chat_screen.query_one(Banner).display = True
 
     def _sessions_dir(self) -> Path:
         return Path(self._cwd) / ".ovat" / "sessions"
 
-    def _cmd_save(self, rest: str) -> None:
+    async def _cmd_save(self, rest: str) -> None:
         memory = getattr(self.session.agent, "session", None)
         if memory is None:
-            self.note("Saving works on the native engine.", "warn")
+            await self.note("Saving works on the native engine.", "warn")
             return
         name = rest.strip() or time.strftime("agent-%Y%m%d-%H%M%S")
         path = self._sessions_dir() / f"{name}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         memory.save(str(path))
-        self.note(f"Saved to {_short_path(str(path))}")
+        await self.note(f"Saved to `{_short_path(str(path))}`")
 
-    def _cmd_load(self, rest: str) -> None:
+    async def _cmd_load(self, rest: str) -> None:
         from ovat.agent.session import Session
         name = rest.strip()
         path = self._sessions_dir() / f"{name}.json"
         if not name or not path.is_file():
             saved = sorted(p.stem for p in self._sessions_dir().glob("*.json"))
-            self.note("Usage: /load <name>. Saved: "
-                      + (", ".join(saved[-8:]) or "none"), "warn")
+            await self.note("Usage: `/load <name>`. Saved: "
+                            + (", ".join(saved[-8:]) or "none"), "warn")
             return
         if getattr(self.session.agent, "session", None) is None:
-            self.note("Loading works on the native engine.", "warn")
+            await self.note("Loading works on the native engine.", "warn")
             return
         self.session.agent.session = Session.load(str(path))
-        turns = sum(1 for m in self.session.agent.session.messages
-                    if m.get("role") == "user")
-        self.note(f"Loaded {name} ({turns} questions). The model remembers "
-                  f"it; the transcript above is not redrawn.")
+        await self.note(f"Loaded `{name}`. The model remembers it; the "
+                        f"transcript above is not redrawn.")
 
-    def _cmd_copy(self, rest: str) -> None:
+    async def _cmd_copy(self, rest: str) -> None:
         if not self.session.last_answer:
-            self.note("Nothing to copy yet.")
+            await self.note("Nothing to copy yet.")
             return
         self.copy_to_clipboard(self.session.last_answer)
         self.notify("Copied the last answer.", timeout=2)
 
-    def _cmd_doctor(self, rest: str) -> None:
+    async def _cmd_doctor(self, rest: str) -> None:
         from ovat.cli.doctor_screen import DoctorScreen
         self.push_screen(DoctorScreen(self.session.workflow))
 
-    def _cmd_telemetry(self, rest: str) -> None:
+    async def _cmd_telemetry(self, rest: str) -> None:
         from ovat.cli.telemetry_screen import TelemetryScreen
         self.push_screen(TelemetryScreen())
 
-    def _cmd_quit(self, rest: str) -> None:
+    async def _cmd_quit(self, rest: str) -> None:
         self.exit()
 
     # ---- keys ----------------------------------------------------------------
 
     def action_interrupt(self) -> None:
+        if self._input.dismiss_completion():
+            return
         if self.session is not None and self.session.cancel():
             if self._loading is not None:
                 self._loading.set_status("Interrupting")
 
     def action_toggle_tools(self) -> None:
-        groups = list(self._chat_screen.query(ToolGroup))
-        if groups:
-            groups[-1].toggle()
+        from ovat.tui.vibe.cli.textual_ui.widgets.tools import ToolGroup
+        self._tools_collapsed = not self._tools_collapsed
+        for group in self._chat_screen.query(ToolGroup):
+            group.set_collapsed(self._tools_collapsed)
 
     def action_cancel_or_quit(self) -> None:
-        """Selection: copy it. Busy: stop. Idle: quit on a SECOND press."""
         if self.screen.get_selected_text():
             self.screen.action_copy_text()
             self.screen.clear_selection()
             self.notify("Copied the selection.", timeout=2)
-            return
-        area = self._chat_screen.query_one(InputBox).area
-        if area.has_focus and area.selected_text:
-            self.copy_to_clipboard(area.selected_text)
-            self.notify("Copied.", timeout=2)
             return
         if self.session is not None and self.session.cancel():
             return
@@ -638,8 +617,8 @@ class OvatAgentApp(App):
             self.exit()
             return
         self._last_quit_press = now
-        self.notify("Press Ctrl-C again to quit  ·  /quit works too",
-                    severity="warning", timeout=QUIT_CONFIRM_S)
+        self.notify("Press Ctrl+C again to quit", severity="warning",
+                    timeout=QUIT_CONFIRM_S)
 
 
 def run(workflow: str | None = None) -> None:

@@ -19,7 +19,22 @@ from textual.widgets import Static
 
 from ovat.cli import ui
 from ovat.tui.widgets.braille import ChipMark
-from ovat.tui.widgets.loading import wave_text
+
+
+# Blue -> cyan -> purple: the wave's stops.
+WAVE = (ui.BLUE, "#1E90E6", ui.CYAN, "#7AA2FF", ui.PURPLE)
+
+
+def wave_text(text: str, step: int) -> Text:
+    """`text` with the colour wave at position `step`."""
+    out = Text()
+    span = len(WAVE)
+    for i, ch in enumerate(text):
+        # A smooth triangle wave over the stops, moving right each tick.
+        pos = (step - i) % (2 * span - 2)
+        index = pos if pos < span else 2 * span - 2 - pos
+        out.append(ch, style=f"bold {WAVE[index]}")
+    return out
 
 
 def _version() -> str:
