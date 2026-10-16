@@ -12,7 +12,7 @@ Vibe's choices map onto the broker's three decisions:
 
     approve                  -> ONCE
     approve for the session  -> SESSION
-    approve permanently      -> ALWAYS    (saved in .ovat/permissions.json)
+    approve permanently      -> ALWAYS    (saved in ~/.ovat/permissions.json)
     deny                     -> REFUSE
     cancel the turn          -> REFUSE, and the turn is interrupted
 

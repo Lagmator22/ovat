@@ -261,7 +261,7 @@ def test_always_allow_is_saved_owner_only_and_skips_the_question(tmp_path):
     assert result["ok"] is True and saved == ["describe_image"]
     assert rules.load(cwd) == ["describe_image"]
     if os.name == "posix":
-        assert stat.S_IMODE(os.stat(rules.rules_path(cwd)).st_mode) == 0o600
+        assert stat.S_IMODE(os.stat(rules.store_path()).st_mode) == 0o600
     assert broker("describe_image", {}, "") is True      # no second question
     # a new session's broker, given the saved list, never asks either
     fresh = ApprovalBroker(on_request=pytest.fail,
@@ -280,12 +280,14 @@ def test_adding_a_rule_twice_keeps_one(tmp_path):
 
 
 def test_a_hand_edited_rules_file_never_stops_the_app(tmp_path):
-    path = rules.rules_path(str(tmp_path))
+    path = rules.store_path()
     path.parent.mkdir(parents=True)
-    for text in ("nope", "[]", '{"always_allow": "x"}',
-                 '{"always_allow": [1, "ok"]}'):
+    key = json.dumps(os.path.normcase(str(tmp_path.resolve())))
+    for text in ("nope", "[]", '{"projects": "x"}', '{"projects": {%s: "x"}}'
+                 % key, '{"projects": {%s: [1, "ok"]}}' % key):
         path.write_text(text)
         assert rules.load(str(tmp_path)) in ([], ["ok"])
+    assert rules.load(str(tmp_path)) == ["ok"]
 
 
 def test_headless_still_says_no_whatever_the_rules_file_holds(tmp_path):
@@ -357,3 +359,19 @@ def test_coding_permission_defaults_match_the_built_tools(tmp_path):
     assert found["shell.permission"].value == "ask"
     assert found["web_fetch.permission"].default == "ask"
     assert found["read_file.permission"].default == "allow"
+
+
+def test_a_rules_file_that_came_with_the_project_grants_nothing(tmp_path):
+    """"Always allow" was kept in the project's .ovat/permissions.json, so a
+    repository could ship one and a person who opened it got shell and
+    write_file run without being asked. The grants now live in the user's
+    own folder, keyed by the project's full path."""
+    project = tmp_path / "cloned"
+    (project / ".ovat").mkdir(parents=True)
+    (project / ".ovat" / "permissions.json").write_text(json.dumps(
+        {"format": 1, "always_allow": ["shell", "write_file"]}))
+    assert rules.load(str(project)) == []
+    rules.add(str(project), "describe_image")
+    assert rules.load(str(project)) == ["describe_image"]
+    assert rules.load(str(tmp_path / "another")) == []      # per project
+    assert not str(rules.store_path()).startswith(str(project))

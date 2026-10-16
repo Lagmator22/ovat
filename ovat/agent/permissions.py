@@ -127,7 +127,8 @@ class ApprovalBroker:
         self.timeout = timeout
         self.auto_approve = False            # /yolo: every ask is a yes
         # Tools a person said "always allow" to, in this project: loaded from
-        # .ovat/permissions.json by whoever builds an INTERACTIVE session
+        # ~/.ovat/permissions.json (ovat/agentic/rules.py, never the project
+        # folder) by whoever builds an INTERACTIVE session
         # (ovat/agentic/session.py), and saved through `on_always` when one
         # more is added. Only a broker has this, so a run with no person to
         # ask never sees it: gate() still says no there.

@@ -107,19 +107,21 @@ def saved_sessions(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def project_files(tmp_path, monkeypatch):
-    """The agent app keeps two small files in the project folder: the UI
-    preferences (the theme) and the "always allow" rules. A test that runs
-    the app in a made-up folder (/work/ovat-project) or in the checkout
-    would write there, so unless a test uses its own temporary folder, both
-    go to a temporary one."""
+    """The agent app keeps the UI preferences (the theme) in the project
+    folder and the "always allow" grants in the user's home. A test that runs
+    the app in a made-up folder (/work/ovat-project) or in the checkout would
+    write there, so unless a test uses its own temporary folder, the
+    preferences go to a temporary one, and the grants always do."""
     from ovat.agentic import prefs, rules
-    for module, name, real in ((prefs, "prefs_path", prefs.prefs_path),
-                               (rules, "rules_path", rules.rules_path)):
-        def path(cwd, real=real, name=name):
-            if cwd and str(cwd).startswith(str(tmp_path)):
-                return real(cwd)
-            return tmp_path / "project-files" / name
-        monkeypatch.setattr(module, name, path)
+    real = prefs.prefs_path
+
+    def path(cwd):
+        if cwd and str(cwd).startswith(str(tmp_path)):
+            return real(cwd)
+        return tmp_path / "project-files" / "prefs_path"
+    monkeypatch.setattr(prefs, "prefs_path", path)
+    monkeypatch.setattr(rules, "store_path",
+                        lambda: tmp_path / "home" / ".ovat" / "permissions.json")
 
 
 class FakeLLMProvider(LLMProvider):
