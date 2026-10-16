@@ -201,7 +201,13 @@ def test_a_question_typed_while_busy_is_given_back():
     run(go())
 
 
-def test_the_approval_panel_replaces_the_input_and_ignores_early_keys():
+def test_the_approval_panel_replaces_the_input_and_ignores_early_keys(
+        monkeypatch):
+    # The grace period is set, not raced. Marking the panel as "just
+    # appeared" and then pressing a key took more than the real 0.5 s on
+    # the Windows runner, so the key was accepted and the test failed there.
+    from ovat.tui.vibe.cli.textual_ui.widgets import approval_app
+
     async def go():
         holder = []
         app = _app(holder)
@@ -214,10 +220,11 @@ def test_the_approval_panel_replaces_the_input_and_ignores_early_keys():
             panel = app.query_one(ApprovalApp)
             assert app.query_one(ChatInputContainer).display is False
             await _until(pilot, lambda: app.focused is panel)  # keys go here
-            panel._mount_time = time.monotonic()  # as if it just appeared
-            await pilot.press("1")          # inside the 0.5 s grace: ignored
+            monkeypatch.setattr(approval_app, "_INPUT_GRACE_PERIOD_S", 60.0)
+            await pilot.press("1")          # inside the grace: ignored
+            await pilot.pause(0.2)
             assert holder[0].approved is None
-            await pilot.pause(0.6)
+            monkeypatch.setattr(approval_app, "_INPUT_GRACE_PERIOD_S", 0.0)
             await pilot.press("1")
             await _until(pilot, lambda: holder[0].approved is not None)
             assert holder[0].approved is True
