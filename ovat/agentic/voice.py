@@ -43,8 +43,16 @@ def clean_transcript(text: str, peak: float) -> str:
     if not cleaned or set(cleaned) <= {"!", ".", " ", "?", ","}:
         return ""
     norm = re.sub(r"[^\w\s]", "", cleaned.lower()).strip()
-    if norm in WHISPER_HALLUCINATIONS and peak < 0.04:
+    words = norm.split()
+    if words and set(words) <= {"you"}:
         return ""
+    if words and (
+        set(words) <= {"thank", "you"}
+        or norm in WHISPER_HALLUCINATIONS
+        or any(h in norm for h in ("thanks for watching", "thank you for watching"))
+    ):
+        if peak < 0.08:
+            return ""
     return cleaned
 
 

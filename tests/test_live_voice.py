@@ -282,6 +282,9 @@ def test_clean_transcript_filters_hallucinations_and_exclamation_loops():
     assert clean_transcript("you!!!!!!!!!!!!!!!!Thank you. Thank you.!!!!!!!!!!I'm going to go to the bathroom.", 0.02) == ""
     assert clean_transcript("Hello world", 0.005) == "Hello world"
     assert clean_transcript("Thank you", 0.1) == "Thank you"
+    assert clean_transcript("You.", 0.05) == ""
+    assert clean_transcript("You you", 0.02) == ""
+    assert clean_transcript("you you you", 0.15) == ""
 
 
 def test_prompt_listener_updates_final_text_when_partial_was_seen():
@@ -303,4 +306,28 @@ def test_prompt_listener_updates_final_text_when_partial_was_seen():
     adapter.on_transcribe_text("final utterance ")
     assert prompt.text == "before final utterance after"
     assert prompt.cursor == len("before final utterance ")
+
+
+def test_voice_key_control_modifier_does_not_abort_recording(monkeypatch):
+    from ovat.tui import voice
+    from tests.test_vibe_agent_tui import running, until as ui_until
+    original = voice.PromptVoiceManager
+    recorder = Recorder()
+    manager = original(lambda: ("m", None), recorder=recorder,
+                       pipeline=lambda *a: SimpleNamespace(
+                           generate=lambda audio, **kw: "hello"), interval=0.01)
+    monkeypatch.setattr(voice, "PromptVoiceManager", lambda settings: manager)
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await pilot.press("ctrl+r")
+            await ui_until(pilot, lambda: manager.transcribe_state == TranscribeState.RECORDING)
+            # Pressing control modifier alone should not abort recording
+            await pilot.press("control")
+            await asyncio.sleep(0.05)
+            assert manager.transcribe_state == TranscribeState.RECORDING
+            # Wait past debounce and press ctrl+r to stop recording
+            await asyncio.sleep(0.45)
+            await pilot.press("ctrl+r")
+            await ui_until(pilot, lambda: manager.transcribe_state == TranscribeState.IDLE)
+    asyncio.run(go())
 

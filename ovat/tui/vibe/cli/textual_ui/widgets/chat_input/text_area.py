@@ -562,18 +562,26 @@ class ChatTextArea(TextArea):
 
         # Handle key pressed during audio recording or flushing
         if self._voice_manager.transcribe_state != TranscribeState.IDLE:
-            event.prevent_default()
-            event.stop()
             if event.key == "ctrl+c":  # Escape is handled in app.py
+                event.prevent_default()
+                event.stop()
                 self._voice_manager.cancel_recording()
                 self._last_voice_action_time = now
-            elif self._voice_manager.transcribe_state == TranscribeState.RECORDING:
-                # Debounce rapid Ctrl+R repeat events so holding Ctrl+R does not instantly stop recording
-                if event.key == "ctrl+r" and (now - self._last_voice_action_time) < 0.4:
+                return True
+            if event.key == "ctrl+r":
+                event.prevent_default()
+                event.stop()
+                if (now - self._last_voice_action_time) < 0.4:
                     return True
-                await self._voice_manager.stop_recording()
                 self._last_voice_action_time = now
-            return True
+                if self._voice_manager.transcribe_state == TranscribeState.RECORDING:
+                    await self._voice_manager.stop_recording()
+                return True
+            if event.key in {"control", "ctrl", "shift", "alt"}:
+                event.prevent_default()
+                event.stop()
+                return True
+            return False
 
         # Handle audio record keybind
         if self._voice_manager.is_enabled and event.key == "ctrl+r":
