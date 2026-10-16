@@ -728,17 +728,27 @@ class _WindowsNPUCounter:
         ]
         return candidates[0] if len(candidates) == 1 else None
 
+    # What _WindowsGPUCounter changes: which adapter, which counter path.
+    _no_adapter_reason = (
+        "no single compute-only adapter among the GPU Engine "
+        "counters, so the NPU cannot be told apart from the GPU here")
+
+    def _choose(self, instance_names) -> str | None:
+        return self.choose_adapter(instance_names)
+
+    def _path(self, luid: str) -> str:
+        return (f"\\{self.object_name}(*luid_{luid}*engtype_compute)"
+                f"\\Utilization Percentage")
+
     def _open(self) -> bool:
         """Resolve the adapter and open a query. True if a counter is live."""
         if self._counter is not None:
             return True
         if self._pdh is None:
             return False
-        luid = self.choose_adapter(self.instances())
+        luid = self._choose(self.instances())
         if luid is None:
-            self._reason = (
-                "no single compute-only adapter among the GPU Engine "
-                "counters, so the NPU cannot be told apart from the GPU here")
+            self._reason = self._no_adapter_reason
             return False
 
         ctypes = self._ctypes
@@ -748,8 +758,7 @@ class _WindowsNPUCounter:
             self._reason = "PdhOpenQueryW failed"
             return False
         counter = self._wintypes.HANDLE()
-        path = (f"\\{self.object_name}(*luid_{luid}*engtype_compute)"
-                f"\\Utilization Percentage")
+        path = self._path(luid)
         if self._pdh.PdhAddEnglishCounterW(
                 query, path, 0, ctypes.byref(counter)) != self._ERROR_SUCCESS:
             self._pdh.PdhCloseQuery(query)
@@ -770,6 +779,15 @@ class _WindowsNPUCounter:
         The counter is per-process, so the machine-wide figure is the sum over
         every process with work on that engine.
         """
+        readings = self._readings()
+        if readings is None:
+            return None
+        total = sum(value for _name, value in readings)
+        return round(min(100.0, max(0.0, total)), 1)
+
+    def _readings(self) -> list[tuple[str, float]] | None:
+        """[(counter instance name, percent)] for the opened counter, or
+        None when there is nothing to read."""
         if not self._open():
             return None
         ctypes = self._ctypes
@@ -794,8 +812,7 @@ class _WindowsNPUCounter:
         items = ctypes.cast(
             buffer,
             ctypes.POINTER(self._item_type * count.value)).contents
-        total = sum(item.FmtValue.doubleValue for item in items)
-        return round(min(100.0, max(0.0, total)), 1)
+        return [(item.szName, item.FmtValue.doubleValue) for item in items]
 
     def _close(self) -> None:
         if self._query is not None:
@@ -812,6 +829,101 @@ class _WindowsNPUCounter:
         if self._open():
             return None
         return self._reason or "no NPU counter available"
+
+
+class _WindowsGPUCounter(_WindowsNPUCounter):
+    """GPU utilisation on Windows, from the same GPU Engine counter set.
+
+    The sibling of the NPU reader and the reverse of its rule: the NPU is the
+    adapter with ONLY a compute engine, the GPU is the GRAPHICS adapter that
+    publishes the most engine types (the Arc 140V lists 3d, compute, copy,
+    gsc, neural, videodecode, ...; "Basic Render" lists just 3d, and the NPU
+    just compute, so neither can win). A tie, or no graphics adapter, reports
+    unavailable instead of guessing. The NPU adapter is never picked: it has
+    no graphics engine.
+
+    THE NUMBER. Task Manager's convention: add up every process on one engine
+    type, then take the busiest type. A video decode at 40% beside an idle 3d
+    engine is a 40% GPU, not 40% + 0%, and not an average that hides it.
+    Capped at 100.
+    """
+
+    _no_adapter_reason = ("no single graphics adapter among the GPU Engine "
+                          "counters")
+
+    @classmethod
+    def choose_gpu_adapter(cls, instance_names) -> str | None:
+        graphics = {
+            luid: engines for luid, engines in cls.engines_by_adapter(
+                instance_names).items() if engines & _GRAPHICS_ENGINE_TYPES}
+        if not graphics:
+            return None
+        most = max(len(engines) for engines in graphics.values())
+        top = [luid for luid, engines in graphics.items()
+               if len(engines) == most]
+        return top[0] if len(top) == 1 else None
+
+    def _choose(self, instance_names) -> str | None:
+        return self.choose_gpu_adapter(instance_names)
+
+    def _path(self, luid: str) -> str:
+        return f"\\{self.object_name}(*luid_{luid}*)\\Utilization Percentage"
+
+    def utilization(self) -> float | None:
+        readings = self._readings()
+        if readings is None:
+            return None
+        return self.busiest_engine_type(readings)
+
+    @staticmethod
+    def busiest_engine_type(readings) -> float | None:
+        """Static so a test can drive it with (instance name, percent)."""
+        per_type: dict[str, float] = {}
+        for name, value in readings:
+            match = _GPU_ENGINE_INSTANCE.match(name)
+            if match:
+                kind = match.group("engtype").lower()
+                per_type[kind] = per_type.get(kind, 0.0) + value
+        if not per_type:
+            return None
+        return round(min(100.0, max(0.0, max(per_type.values()))), 1)
+
+
+class GPUSource(TelemetrySource):
+    """GPU utilisation, today on Windows only (the GPU Engine counter, see
+    _WindowsGPUCounter). Elsewhere the source says it is unavailable, and the
+    bar shows no GPU figure: absent is not zero. Intel UT has richer GPU
+    numbers on the telemetry page, but it is a separate tool a person must
+    install."""
+
+    name = "gpu"
+
+    def __init__(self, counter=None):
+        # Injectable like NPUSource's, so a test needs no GPU.
+        self._counter = counter
+        self._counter_built = counter is not None
+
+    @property
+    def counter(self):
+        if not self._counter_built:
+            self._counter_built = True
+            if sys.platform.startswith("win"):
+                self._counter = _WindowsGPUCounter()
+        return self._counter
+
+    @property
+    def unavailable(self) -> str | None:
+        counter = self.counter
+        if counter is None:
+            return "GPU utilisation is only read on Windows for now"
+        return counter.unavailable
+
+    def sample(self) -> dict:
+        counter = self.counter
+        if counter is None:
+            return {}
+        percent = counter.utilization()
+        return {} if percent is None else {"utilization": percent}
 
 
 class NPUSource(TelemetrySource):
