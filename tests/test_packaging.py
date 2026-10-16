@@ -58,16 +58,29 @@ def test_the_model_download_tool_is_a_core_dependency():
     assert any("huggingface" in d.replace("_", "-").lower() for d in deps)
 
 
-def test_dev_extra_includes_every_optional_agent_framework():
-    """A fresh ``.[dev]`` install must run tests for every agent engine."""
-    pyproject = Path(__file__).parents[1] / "pyproject.toml"
-    metadata = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    extras = metadata["project"]["optional-dependencies"]
+def _expanded(extras: dict, name: str) -> set:
+    """An extra's packages, with `ovat[a,b]` entries replaced by those
+    extras' packages (the way pip resolves them)."""
+    out = set()
+    for dep in extras[name]:
+        if dep.startswith("ovat["):
+            for inner in dep[len("ovat["):dep.index("]")].split(","):
+                out |= _expanded(extras, inner.strip())
+        else:
+            out.add(dep)
+    return out
 
-    dev_dependencies = set(extras["dev"])
-    for framework_extra in ("langchain", "llamaindex", "openai-agents",
-                            "a2a", "tui", "voice", "all"):
-        assert set(extras[framework_extra]) <= dev_dependencies
+
+def test_dev_and_all_include_every_optional_extra():
+    """A fresh ``.[dev]`` install must run tests for every agent engine, and
+    ``.[all]`` must install every feature. Both name the other extras, so
+    a package added to one extra reaches them too."""
+    extras = _extras()
+    dev, every = _expanded(extras, "dev"), _expanded(extras, "all")
+    for name in ("langchain", "llamaindex", "openai-agents", "a2a", "tui",
+                 "voice"):
+        assert set(extras[name]) <= every, name
+        assert set(extras[name]) <= dev, name
 
 
 def test_no_prose_is_trapped_inside_a_shell_code_fence():
