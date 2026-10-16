@@ -157,6 +157,22 @@ def test_an_explicit_list_naming_a_missing_tool_is_an_error():
         exposure.decide(_tools(search_docs="builtin"), ["nope"])
 
 
+def test_the_coding_tools_are_never_offered_to_a_remote_caller():
+    names = ("read_file", "write_file", "edit", "grep", "shell")
+    tools = _tools(search_docs="builtin", **{n: "builtin" for n in names})
+    exp = exposure.decide(tools, None)
+    assert exp.exposed == ["search_docs"]
+    assert set(names) <= set(exp.hidden)
+    # Not even a line the owner wrote on purpose can hand them over.
+    for name in names:
+        with pytest.raises(ValueError, match="never offered"):
+            exposure.decide(tools, ["search_docs", name])
+    # An MCP server's own tool that happens to be called shell is a
+    # different thing and follows the MCP rule.
+    mcp = exposure.decide(_tools(shell="mcp_stdio"), ["shell"])
+    assert mcp.exposed == ["shell"]
+
+
 def test_select_builds_the_agent_with_exposed_tools_only():
     tools = _tools(search_docs="builtin", transcribe="builtin")
     assert list(exposure.decide(tools, None).select(tools)) == ["search_docs"]

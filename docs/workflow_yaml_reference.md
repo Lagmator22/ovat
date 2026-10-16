@@ -64,7 +64,7 @@ One entry per tool. `tools:` is a LIST.
 
 | Field | Type | Default | Constraints | Purpose |
 | --- | --- | --- | --- | --- |
-| `name` | string | **required** | - | `search_docs`, `transcribe`, `describe_image`, or any tool an MCP server advertises. |
+| `name` | string | **required** | - | `search_docs`, `transcribe`, `describe_image`, the coding tools `read_file`, `write_file`, `edit`, `grep`, `shell` (they work inside the folder you run from; the last three ask first), or any tool an MCP server advertises. |
 | `type` | string | `builtin` | - | `builtin` runs in-process; `mcp_stdio` launches an external MCP server; `a2a` asks another agent over A2A (needs `pip install 'ovat[a2a]'`). |
 | `command` | list[string] \| null | `null` | - | Argv that launches the MCP server. Required when `type: mcp_stdio`. |
 | `env` | string \| string \| null | `null` | - | Extra environment for an `mcp_stdio` server, which otherwise sees only HOME, PATH and a few more. `${VAR}` is expanded from your shell. |
@@ -74,7 +74,7 @@ One entry per tool. `tools:` is a LIST.
 | `token_env` | string \| null | `null` | - | NAME of the environment variable holding the bearer token for that agent. Never the token itself. |
 | `timeout` | float \| null | `null` | > 0 | Seconds to wait for the other agent's answer. Unset: 900. |
 | `description` | string \| null | `null` | - | What the model is told this agent does. Unset: built from the agent's card. |
-| `permission` | allow \| ask \| deny \| null | `null` | - | `allow`, `ask` (a person says yes first; with nobody to ask, as in `ovat run`, it does not run) or `deny`. Unset: `ask` for an `a2a` tool on another machine, `allow` otherwise. |
+| `permission` | allow \| ask \| deny \| null | `null` | - | `allow`, `ask` (a person says yes first; with nobody to ask, as in `ovat run`, it does not run) or `deny`. Unset: `ask` for an `a2a` tool on another machine and for the `write_file`, `edit` and `shell` tools, `allow` otherwise. |
 
 ## `agent`
 

@@ -96,8 +96,11 @@ PURPOSE = {
                                  "model folder (or `ovms_max_prompt_len` on "
                                  "`NPU`).",
 
-    ("tools", "name"): "`search_docs`, `transcribe`, `describe_image`, or any "
-                       "tool an MCP server advertises.",
+    ("tools", "name"): "`search_docs`, `transcribe`, `describe_image`, the "
+                       "coding tools `read_file`, `write_file`, `edit`, "
+                       "`grep`, `shell` (they work inside the folder you "
+                       "run from; the last three ask first), or any tool an "
+                       "MCP server advertises.",
     ("tools", "type"): "`builtin` runs in-process; `mcp_stdio` launches an "
                        "external MCP server; `a2a` asks another agent over "
                        "A2A (needs `pip install 'ovat[a2a]'`).",
@@ -122,7 +125,9 @@ PURPOSE = {
     ("tools", "permission"): "`allow`, `ask` (a person says yes first; "
                              "with nobody to ask, as in `ovat run`, it does "
                              "not run) or `deny`. Unset: `ask` for an `a2a` "
-                             "tool on another machine, `allow` otherwise.",
+                             "tool on another machine and for the "
+                             "`write_file`, `edit` and `shell` tools, "
+                             "`allow` otherwise.",
 
     ("agent", "type"): "Which engine runs the tool loop: `native` (built in), "
                        "`react` (LangChain), `llamaindex`, or "

@@ -25,6 +25,12 @@ from ovat.providers.base import (EmbeddingsProvider, LLMProvider,
                                  RetrieverProvider)
 from ovat.providers.llm_ovms import OVMSLLMProvider
 from ovat.tools import describe_image as describe_image_tool
+from ovat.tools import edit as edit_tool
+from ovat.tools import grep as grep_tool
+from ovat.tools import read_file as read_file_tool
+from ovat.tools import shell as shell_tool
+from ovat.tools import write_file as write_file_tool
+from ovat.tools.project import project_root
 from ovat.tools import search_docs as search_docs_tool
 from ovat.tools import transcribe as transcribe_tool
 
@@ -39,6 +45,11 @@ BUILTIN_TOOL_SCHEMAS = {
     "search_docs": search_docs_tool.SCHEMA,
     "transcribe": transcribe_tool.SCHEMA,
     "describe_image": describe_image_tool.SCHEMA,
+    "read_file": read_file_tool.SCHEMA,
+    "write_file": write_file_tool.SCHEMA,
+    "edit": edit_tool.SCHEMA,
+    "grep": grep_tool.SCHEMA,
+    "shell": shell_tool.SCHEMA,
 }
 
 
@@ -214,6 +225,28 @@ def _make_describe_image(tool_cfg=None):
                                                     model=_m, device=_d))
 
 
+def _make_coding_tools(root, stop) -> dict:
+    """The five coding tools, bound to this project folder.
+
+    `root` is the working directory when the agent is built (default-arg
+    binding again: the engines pass only the model's arguments). `stop` is
+    the bus's cancel flag, which is how Esc ends a running shell command.
+    """
+    return {
+        "read_file": lambda file_path, offset=None, limit=2000, _r=root: (
+            read_file_tool.read_file_impl(file_path, _r, offset, limit)),
+        "write_file": lambda file_path, content, _r=root: (
+            write_file_tool.write_file_impl(file_path, content, _r)),
+        "edit": lambda file_path, old_string, new_string, replace_all=False,
+        _r=root: edit_tool.edit_impl(file_path, old_string, new_string, _r,
+                                     replace_all),
+        "grep": lambda pattern, path=".", glob=None, max_matches=None,
+        _r=root: grep_tool.grep_impl(pattern, _r, path, glob, max_matches),
+        "shell": lambda command, timeout=None, _r=root, _s=stop: (
+            shell_tool.shell_impl(command, _r, timeout, _s)),
+    }
+
+
 def _make_mcp_caller(server, tool_name: str):
     """Bind one remote MCP tool into a plain callable for the loop.
 
@@ -315,6 +348,10 @@ def build_tools(config: WorkflowConfig,
         "transcribe": _make_transcribe,
         "describe_image": _make_describe_image,
     }
+    coding = _make_coding_tools(
+        project_root(), events.stop if events is not None else None)
+    builders.update({name: (lambda cfg, _f=fn: _f)
+                     for name, fn in coding.items()})
     tools = {}
     for tool_cfg in config.tools:
         if tool_cfg.type == "builtin":
@@ -359,7 +396,8 @@ def build_tools(config: WorkflowConfig,
     # Every tool from THIS config entry gets its permission: an mcp_stdio
     # entry's applies to each tool its server advertises.
     for tool_cfg in config.tools:
-        default = default_permission(tool_cfg.type, tool_cfg.url)
+        default = default_permission(tool_cfg.type, tool_cfg.url,
+                                    tool_cfg.name)
         for spec in tools.values():
             if spec.get("_entry") is tool_cfg:
                 spec["permission"] = tool_cfg.permission or default

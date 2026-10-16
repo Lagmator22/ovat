@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 from urllib.parse import urlparse
 
+from ovat.tools.project import ASK_BY_DEFAULT
+
 ALLOW, ASK, DENY = "allow", "ask", "deny"
 PERMISSIONS = (ALLOW, ASK, DENY)
 
@@ -48,12 +50,18 @@ def is_loopback(url: str) -> bool:
         return False
 
 
-def default_permission(kind: str, url: str | None = None) -> str:
+def default_permission(kind: str, url: str | None = None,
+                       name: str | None = None) -> str:
     """The permission a tool gets when the workflow names none.
 
     Anything that sends data off this machine asks; everything that stays
     local is allowed, which keeps every existing workflow working as before.
+    The one local exception: the coding tools that change files or run
+    commands (`name` says which builtin) ask, because a model that is wrong
+    about a command costs the person their files.
     """
+    if kind == "builtin" and name in ASK_BY_DEFAULT:
+        return ASK
     if kind == "api":
         return ASK
     if kind == "a2a":

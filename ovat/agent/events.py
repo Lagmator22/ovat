@@ -40,7 +40,8 @@ from typing import Any, Callable
 #
 #   tool_started  call_id, name, arguments
 #   tool_ended    call_id, name, status ("ok" | "error" | "denied"),
-#                 duration_s, result_chars
+#                 duration_s, result_chars, and `display` (a dict, only
+#                 for tools that return structured output: the coding tools)
 #   remote_status agent, state, text      (a remote A2A agent's progress)
 #   subagent_status agent, text           (a delegated subagent's progress)
 #   answer_delta  text                    (streamed answer chunk)
@@ -167,14 +168,21 @@ def observed(name: str, function: Callable, bus: EventBus,
                      duration_s=0.0, result_chars=len(refusal))
             return refusal
         started = time.monotonic()
-        status, result_chars = "error", None
+        status, result_chars, display = "error", None, None
         try:
             result = function(*args, **kwargs)
             status, result_chars = "ok", len(str(result))
+            # A tool may hand back a str that also carries `display`, the
+            # structured version for a UI (see ovat/tools/project.Shown).
+            # The engines still get the same object, which is just a str.
+            display = getattr(result, "display", None)
+            if display and display.get("failed"):
+                status = "error"
             return result
         finally:
+            extra = {"display": display} if display else {}
             bus.emit(TOOL_ENDED, call_id=call_id, name=name, status=status,
                      duration_s=round(time.monotonic() - started, 3),
-                     result_chars=result_chars)
+                     result_chars=result_chars, **extra)
 
     return wrapper
