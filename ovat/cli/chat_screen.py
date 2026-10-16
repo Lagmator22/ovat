@@ -86,13 +86,15 @@ DEFAULT_MAX_TOKENS = None
 REPLAY_RICH_TURNS = 6
 
 PREFS_FILE = "chat_prefs.json"
-SESSIONS_DIR = "sessions"
 
 # strip_thinking and split_thinking live in ovat/text.py: the plain CLI and the
 # agent session need them too, and this module imports textual. One copy, per
 # the single-source-of-truth rule -- two would drift the moment a new tag
 # spelling turned up.
 from ovat.text import split_thinking, strip_thinking
+# Where saved conversations live is shared with the agent apps (one folder,
+# so /load here and /save there see the same files).
+from ovat.agentic.sessions import sessions_dir
 
 
 def _ovat_dir(cwd: str) -> str:
@@ -120,7 +122,7 @@ def save_prefs(cwd: str, config_path: str, model_path: str) -> None:
 def _session_path(cwd: str, name: str) -> str:
     # A session name is a bare word; the path and extension are ours.
     safe = "".join(c for c in name if c.isalnum() or c in "-_") or "last"
-    return os.path.join(_ovat_dir(cwd), SESSIONS_DIR, f"{safe}.json")
+    return os.path.join(sessions_dir(cwd), f"{safe}.json")
 
 
 def list_sessions(cwd: str) -> list:
@@ -129,7 +131,7 @@ def list_sessions(cwd: str) -> list:
     Returns (name, path, modified, turns) so the picker can show more than a
     filename: which conversation this was, and how much of it there is.
     """
-    folder = os.path.join(_ovat_dir(cwd), SESSIONS_DIR)
+    folder = sessions_dir(cwd)
     sessions = []
     try:
         names = os.listdir(folder)

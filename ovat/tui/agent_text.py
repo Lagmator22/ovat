@@ -16,6 +16,7 @@ from pathlib import Path
 from rich.text import Text
 
 from ovat.agentic import commands as ovat_commands
+from ovat.agentic.sessions import sessions_dir
 from ovat.cli import ui
 
 ENGINES = ("native", "react", "llamaindex", "openai-agents")
@@ -112,10 +113,6 @@ def yolo_text(on: bool) -> tuple[str, str]:
         return ("Every tool is approved for this session. `/yolo` again "
                 "turns it off.", "warn")
     return "Tools ask again.", "info"
-
-
-def sessions_dir(cwd: str) -> Path:
-    return Path(cwd) / ".ovat" / "sessions"
 
 
 def save_conversation(agent, cwd: str, name: str) -> tuple[str, str]:

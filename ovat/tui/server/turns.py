@@ -28,6 +28,7 @@ from uuid import uuid4
 
 from ovat.agentic import session as s
 from ovat.text import THINK_CLOSE, THINK_OPEN
+from ovat.tui.server import saved
 from ovat.tui.server.projector import now_ms
 from ovat.tui.server.rpc import Reply, RpcError
 from ovat.tui.vibe.app_server.models import (JsonPatchOperation,
@@ -185,7 +186,12 @@ class TurnManager:
             if subagent is not None:
                 started = agent.ask_subagent(*subagent)
             else:
+                # Where this turn's message will sit in the model's memory,
+                # so a rewind to it knows where to cut (see saved.py).
+                memory = agent.memory()
                 started = agent.ask(active.text)
+                if started is not None and memory is not None:
+                    ctx.anchors[active.entry_id] = len(memory)
             if started is None:
                 reason = ("This workflow has no subagents."
                           if subagent is not None and "delegate" not in (
@@ -374,6 +380,7 @@ class TurnManager:
             ctx.report_error(f"{type(exc).__name__}: {exc}")
         self.active = None
         projector.turn_completed(completed)
+        saved.save(ctx)
         self._after_turn(status)
 
     def _after_turn(self, status: PublicTurnStatus) -> None:

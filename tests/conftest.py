@@ -83,6 +83,20 @@ def _plain_console_output():
         os.environ.update(saved_env)
 
 
+@pytest.fixture(autouse=True)
+def saved_sessions(tmp_path, monkeypatch):
+    """The agent app saves every conversation after every turn, into the
+    project folder it runs in. In a test that folder is the developer's
+    checkout, or a made-up path like /work/ovat-project that the CI runner
+    cannot write (and that Windows would happily create as C:\\work). So
+    every test saves into its own temporary folder; this fixture is that
+    store, for the tests that look inside it."""
+    from ovat.agentic import sessions
+    store = sessions.SessionStore(tmp_path / "saved-sessions")
+    monkeypatch.setattr(sessions, "store_for", lambda cwd: store)
+    return store
+
+
 class FakeLLMProvider(LLMProvider):
     """A stand in for OVMS that hands back replies I prepared in advance."""
 

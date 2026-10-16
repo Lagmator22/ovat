@@ -44,7 +44,6 @@ from ovat.tui.vibe.app_server.models import (AgentStatsSnapshot,
                                              PublicSession,
                                              PublicSessionState, PublicTurn,
                                              PublicTurnQueue, RunningEffectState,
-                                             TokenUsage,
                                              validate_history_entry)
 from ovat.tui.vibe.app_server.protocol import (HistoryEntryAddedParams,
                                                HistoryEntryUpdatedParams,
@@ -312,16 +311,21 @@ class Projector:
         self._send("error", ServerErrorParams(
             error=PublicError(message=message)))
 
-    # ---- a fresh conversation --------------------------------------------------
+    # ---- another conversation ------------------------------------------------
 
-    def reset(self) -> None:
-        """/clear: no history, no turns, no queue. The id and the event
-        numbering carry on, so the client's next event is still the next."""
-        self.history.clear()
-        self.turns.clear()
+    def adopt(self, session: PublicSession,
+              history: list[PublicHistoryEntry],
+              turns: list[PublicTurn]) -> None:
+        """Become another conversation: a new one (/clear), a resumed one, a
+        rewound one, a fork.
+
+        Nothing is sent: the method that does this answers with the whole
+        new state, and the client adopts it in place of its mirror. The
+        numbering carries on, so the client's next event is still the
+        next."""
+        self.session = session
+        self.history = list(history)
+        self.turns = list(turns)
         self.queue = PublicTurnQueue()
-        self.bridge = Bridge(self.session.id)
-        self.session = self.session.model_copy(update={
-            "preview": "", "token_usage": TokenUsage(),
-            "updated_at": now_ms()})
+        self.bridge = Bridge(session.id)
 

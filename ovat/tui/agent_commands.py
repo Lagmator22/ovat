@@ -3,8 +3,8 @@
 work on OVAT's app server.
 
 The copied registry (ovat/tui/vibe/cli/commands.py) lists 34 commands. Most
-of them need something OVAT's server does not have (a model picker, saved
-sessions, MCP, an account...), and a command that cannot work must not
+of them need something OVAT's server does not have (a model picker, MCP,
+an account...), and a command that cannot work must not
 be reachable: it would only end in a "not supported" error. So the table
 below says, for EVERY Vibe command, which server methods its handler calls
 (or which capability it assumes), and the registry keeps a command only when
@@ -33,7 +33,7 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "clear": ("session/history/clear",),
     "copy": (),
     "paste-image": ("capability:image input",),
-    "log": ("capability:saved sessions",),
+    "log": ("session/log/read",),
     "log-level": ("config/write",),
     "debug": ("diagnostics/logs/read",),
     "compact": ("session/compact",),
@@ -43,7 +43,8 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "teleport": ("vibeCode/teleport/start",),
     "remote-project": ("vibeCode/projects/open",),
     "proxy-setup": ("config/proxy/read", "config/proxy/write"),
-    "resume": ("session/history/get", "session/delete"),
+    "resume": ("session/list", "session/read", "session/resume",
+               "session/delete"),
     "rename": ("session/rename",),
     "mcp": ("mcp_catalog/read",),
     "plugins": ("plugin_catalog/read",),
@@ -52,7 +53,7 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "voice": ("config/write",),
     "leanstall": ("agents/install",),
     "unleanstall": ("agents/uninstall",),
-    "rewind": ("session/rewind",),
+    "rewind": ("session/rewind/read", "session/rewind"),
     "branch": ("session/fork",),
     "retry": ("capability:continuing a reply",),
     "loop": ("loops/list",),
@@ -74,6 +75,7 @@ KEYS = """### Keys
 - `Enter` send, `Ctrl+J` new line, `Up/Down` history
 - `!cmd` runs a shell command here
 - `Esc` stops the answer or the command
+- `Esc Esc` on an empty prompt goes back to an earlier message (rewind)
 - `Ctrl+O` opens or folds the tool calls
 - `Shift+Tab` switches between asking and auto-approve
 - `Ctrl+C` copies a selection, stops the answer, and quits when pressed twice

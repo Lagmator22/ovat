@@ -41,6 +41,7 @@ from ovat.tui import agent_text
 from ovat.tui.agent_commands import OvatCommandRegistry
 from ovat.tui.server import OvatServerHandle, start_ovat_app_server
 from ovat.tui.vibe.app_server import AppServerSession
+from ovat.tui.vibe.app_server.protocol import AppServerResponseError
 from ovat.tui.vibe.app_server.events import (AppServerEvent, ServerError,
                                              ServerWarning)
 from ovat.tui.vibe.cli.clipboard import copy_text_to_clipboard
@@ -353,15 +354,6 @@ class OvatAgentApp(VibeApp):
     async def action_toggle_debug_console(self, **kwargs: Any) -> None:
         """Ctrl+Backslash: the console reads the server's log."""
 
-    def _start_rewind_mode(self, **kwargs: Any) -> None:
-        """Esc Esc on an empty prompt: rewinding needs saved sessions."""
-
-    def action_rewind_prev(self) -> None:
-        pass
-
-    def action_rewind_next(self) -> None:
-        pass
-
     # ---- /status: the copied one prints a cost in dollars ---------------------
 
     async def _show_status(self, **kwargs: Any) -> None:
@@ -489,22 +481,38 @@ class OvatAgentApp(VibeApp):
 
 # ---- the entry point -----------------------------------------------------------
 
+class CannotOpen(Exception):
+    """`--continue` / `--resume` found nothing to open; the text says why."""
+
+
 async def run_agent(workflow: str | None, *, cwd: str | None = None,
-                    session_factory=s.AgentSession) -> None:
+                    session_factory=s.AgentSession,
+                    continue_session: bool = False,
+                    resume_session_id: str | None = None) -> None:
     """Start the app server, run the app, and leave nothing running.
 
     The app closes the session on its way out (shutdown_cleanup sends
     `session/stop`); the handle then stops the server task and the agent,
     including the A2A server process `/serve` may have started.
     """
-    session, handle = await start_ovat_app_server(
-        workflow, cwd=cwd, session_factory=session_factory)
+    try:
+        session, handle = await start_ovat_app_server(
+            workflow, cwd=cwd, session_factory=session_factory,
+            continue_session=continue_session,
+            resume_session_id=resume_session_id)
+    except AppServerResponseError as exc:
+        # Nothing saved to continue, or no saved session with that id.
+        raise CannotOpen(exc.error.message) from None
     try:
         await _run_app_with_cleanup(OvatAgentApp(session, handle))
     finally:
         await handle.close()
 
 
-def run(workflow: str | None = None) -> None:
+def run(workflow: str | None = None, *,
+        continue_session: bool = False,
+        resume_session_id: str | None = None) -> None:
     """Entry point for `ovat agent`."""
-    asyncio.run(run_agent(workflow or s.find_workflow()))
+    asyncio.run(run_agent(workflow or s.find_workflow(),
+                          continue_session=continue_session,
+                          resume_session_id=resume_session_id))

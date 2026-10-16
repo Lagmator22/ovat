@@ -487,9 +487,10 @@ def test_help_lists_the_commands_and_keys_and_nothing_that_cannot_work():
             text = screen_text(app)
             for name in [c.name for c in ovat_commands.COMMANDS
                          if c.name not in ("quit", "new")] + [
-                             "clear", "exit", "status", "theme"]:
+                             "clear", "exit", "status", "theme", "resume",
+                             "rewind", "rename", "branch", "log"]:
                 assert f"/{name}" in text, name
-            for gone in ("/teleport", "/mcp", "/model", "/resume", "/config"):
+            for gone in ("/teleport", "/mcp", "/model", "/config"):
                 assert gone not in text, gone
             assert "Ctrl+O" in text and "Shift+Tab" in text
             # a usage in angle brackets is not eaten as an HTML tag
@@ -1033,7 +1034,8 @@ def test_steering_and_the_debug_console_keys_do_nothing_instead_of_failing():
     run(go())
 
 
-def test_esc_esc_does_not_open_rewind_which_needs_saved_sessions(monkeypatch):
+def test_esc_esc_rewinds_to_a_message_and_puts_it_back_in_the_prompt(
+        monkeypatch):
     from ovat.tui.vibe.cli.textual_ui import app as vibe_app
     from ovat.tui.vibe.cli.textual_ui.widgets.rewind_app import RewindApp
     # "Esc Esc" is two presses within a fraction of a second; a slow runner
@@ -1042,14 +1044,73 @@ def test_esc_esc_does_not_open_rewind_which_needs_saved_sessions(monkeypatch):
 
     async def go():
         async with running() as (app, pilot, fake, handle):
-            await say(pilot, "first")
+            for i, text in enumerate(("first", "second")):
+                await say(pilot, text)
+                await until(pilot, lambda: len(app.query(AssistantMessage))
+                            == i + 1)
+                await until(pilot, lambda: not app._is_busy())
+            await pilot.press("escape")
+            await pilot.press("escape")
+            await until(pilot, lambda: app.query(RewindApp))
+            # the last message is picked; "edit only" (OVAT restores no
+            # files), then "keep in current session"
+            await pilot.press("1")
+            await pilot.press("1")
+            await until(pilot, lambda: not app._rewind_mode
+                        and len(app.query(UserMessage)) == 1)
+            assert app.query_one(ChatInputContainer).value == "second"
+            assert [m["content"] for m in fake.remembered.messages
+                    if m["role"] == "user"] == ["first"]
+            assert not app.query(ErrorMessage)
+    run(go())
+
+
+def test_saved_conversations_rename_branch_log_and_resume_from_the_app(
+        saved_sessions):
+    from ovat.tui.vibe.cli.textual_ui.widgets.branch_created_message import \
+        BranchCreatedMessage
+    from ovat.tui.vibe.cli.textual_ui.widgets.session_picker import \
+        SessionPickerApp
+
+    def user_texts(app):
+        return [w._content for w in app.query(UserMessage)]
+
+    async def go():
+        async with running(size=(120, 40)) as (app, pilot, fake, handle):
+            await say(pilot, "first chat")
             await until(pilot, lambda: app.query(AssistantMessage))
             await until(pilot, lambda: not app._is_busy())
-            assert app._get_user_message_widgets()      # there is one to rewind to
-            await pilot.press("escape")
-            await pilot.press("escape")
-            await pilot.pause(0.5)
-            assert not app._rewind_mode and not app.query(RewindApp)
+            first = app.app_server.session_id
+            await say(pilot, "/rename Leave policy")
+            await until(pilot, lambda: (saved_sessions.load(first) or {})
+                        .get("title") == "Leave policy")
+            await say(pilot, "/log")
+            # (the full path wraps on screen; its last folder does not)
+            await until(pilot, lambda: "Current Log Directory"
+                        in screen_text(app) and saved_sessions.folder.name
+                        in screen_text(app))
+            await say(pilot, "/branch")
+            await until(pilot, lambda: app.query(BranchCreatedMessage))
+            assert len(saved_sessions.list()) == 2
+            await say(pilot, "/new")
+            await until(pilot, lambda: app.app_server.session_id != first)
+            await say(pilot, "second chat")
+            # (/new leaves its own "clear" line above it)
+            await until(pilot, lambda: user_texts(app)[-1:] == ["second chat"]
+                        and not app._is_busy())
+            await say(pilot, "/resume")
+            await until(pilot, lambda: app.query(SessionPickerApp))
+            picker = app.query_one(SessionPickerApp)
+            options = picker.query_one("OptionList")
+            # this chat, the branch and "Leave policy". The branch and its
+            # source are saved in the same instant, so pick by id, not place
+            await until(pilot, lambda: options.option_count == 3)
+            options.highlighted = options.get_option_index(first)
+            await pilot.press("enter")
+            await until(pilot, lambda: app.app_server.session_id == first)
+            await until(pilot, lambda: user_texts(app) == ["first chat"])
+            assert [m["content"] for m in fake.remembered.messages
+                    if m["role"] == "user"] == ["first chat"]
             assert not app.query(ErrorMessage)
     run(go())
 
@@ -1188,7 +1249,8 @@ def test_the_registry_keeps_a_vibe_command_only_when_the_server_serves_it():
         assert all(m in routes for m in VIBE_NEEDS[name]), name
     # what that comes to today (it grows when the server learns a method)
     assert set(registry.commands) & vibe == {
-        "help", "clear", "copy", "exit", "status", "theme"}
+        "help", "clear", "copy", "exit", "status", "theme", "resume",
+        "rewind", "rename", "branch", "log"}
 
 
 def test_a_removed_command_would_only_have_ended_in_not_supported():
@@ -1358,3 +1420,36 @@ def test_context_window_shows_percentage_in_the_bottom_bar():
     run(go())
 
 
+
+
+# ---- `ovat agent --continue / --resume` ------------------------------------------
+
+def test_ovat_agent_continue_and_resume_on_the_command_line(
+        monkeypatch, tmp_path):
+    from typer.testing import CliRunner
+
+    from ovat.cli.main import app as cli
+    from ovat.tui import app as classic
+    invoke = CliRunner().invoke
+    workflow = tmp_path / "w.yml"
+    workflow.write_text("model: {}\n")
+
+    result = invoke(cli, ["agent", str(workflow), "--continue",
+                          "--resume", "abc"])
+    assert result.exit_code == 1 and "not both" in result.output
+
+    # nothing saved: one readable line, no traceback
+    result = invoke(cli, ["agent", str(workflow), "--resume", "nope"])
+    assert result.exit_code == 1, result.output
+    assert "No saved session nope" in result.output
+    assert "Traceback" not in result.output
+
+    # the classic app takes neither flag, and a plain start must not pass
+    # them to it (it would fail with a TypeError)
+    calls = []
+    monkeypatch.setattr(classic, "run", lambda *a, **k: calls.append((a, k)))
+    monkeypatch.setenv("OVAT_AGENT_UI", "classic")
+    assert invoke(cli, ["agent", str(workflow)]).exit_code == 0
+    assert calls == [((str(workflow),), {})]
+    result = invoke(cli, ["agent", str(workflow), "--continue"])
+    assert result.exit_code == 1 and "need the new app" in result.output

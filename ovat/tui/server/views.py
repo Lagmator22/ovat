@@ -159,11 +159,15 @@ def runtime_snapshot(info: dict, workflow: str | None, active: str,
         bypass_tool_permissions=False, experimental_harness=False)
 
 
-def session_log(session_id: str) -> SessionLogSummary:
-    # Nothing is written to disk yet (sessions come in a later phase), so the
-    # app never offers a session id to continue from.
-    return SessionLogSummary(enabled=False, session_id=session_id,
-                             persisted=False)
+def session_log(session_id: str, store) -> SessionLogSummary:
+    """Whether conversations are saved here (`store`, a SessionStore or
+    None), and whether this one already is: the app offers "resume it later"
+    only when both are true."""
+    if store is None:
+        return SessionLogSummary(enabled=False, session_id=session_id)
+    return SessionLogSummary(enabled=True, session_id=session_id,
+                             persisted=store.path(session_id).is_file(),
+                             path=str(store.folder))
 
 
 def _stem(path: str | None) -> str:

@@ -25,11 +25,16 @@ from typing import Callable
 CLASSIC = "classic"
 
 
-def runner() -> Callable[[str | None], None]:
+def classic_requested() -> bool:
+    """OVAT_AGENT_UI=classic: run the first app instead of the new one."""
+    return os.environ.get("OVAT_AGENT_UI", "").strip().lower() == CLASSIC
+
+
+def runner() -> Callable[..., None]:
     """The function that runs `ovat agent`: the new app, or the classic one
     when OVAT_AGENT_UI=classic. Raises ImportError when the [tui] extra is
     not installed (the caller prints the hint)."""
-    if os.environ.get("OVAT_AGENT_UI", "").strip().lower() == CLASSIC:
+    if classic_requested():
         from ovat.tui.app import run as run_classic
         return run_classic
     from ovat.tui.agent_app import run as run_agent

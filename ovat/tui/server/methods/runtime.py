@@ -21,7 +21,7 @@ async def runtime_read(ctx, params: RuntimeReadParams):
     projector = ctx.require_session(params.session_id)
     return RuntimeReadResponse(
         runtime=ctx.runtime(),
-        session_log=views.session_log(projector.session.id),
+        session_log=views.session_log(projector.session.id, ctx.store),
         ready=ctx.is_ready)
 
 

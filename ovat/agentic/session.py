@@ -234,6 +234,50 @@ class AgentSession:
         engine = self.config.agent.type if self.config else None
         return self.start(engine)
 
+    # ---- the model's memory (native engine only) ---------------------------
+    # Saved sessions, rewind and fork read and replace what the model
+    # remembers. Only the native loop keeps that as a plain list of messages;
+    # a framework engine keeps its own, out of reach, so these answer None or
+    # False there and the caller says so.
+
+    def _memory(self):
+        from ovat.agent.loop import AgentLoop
+        return (self.agent.session if isinstance(self.agent, AgentLoop)
+                else None)
+
+    def memory(self) -> list[dict] | None:
+        """A copy of what the model remembers; None on a framework engine."""
+        session = self._memory()
+        return None if session is None else session.snapshot()
+
+    def restore_memory(self, messages: list[dict]) -> bool:
+        """Make the model remember `messages` (a resumed conversation).
+
+        The saved system prompt is replaced by this workflow's own: a resumed
+        conversation continues with the agent running now, not the one that
+        happened to be running when it was saved."""
+        session = self._memory()
+        if session is None:
+            return False
+        from ovat.agent.session import Session
+        prompt = self.config.agent.system_prompt if self.config else None
+        rest = [dict(m) for m in messages]
+        if rest and rest[0].get("role") == "system":
+            rest = rest[1:]
+        fresh = Session(system_prompt=prompt)
+        fresh.messages.extend(rest)
+        self.agent.session = fresh
+        return True
+
+    def truncate_memory(self, length: int) -> bool:
+        """Forget from message `length` on (rewind). False on a framework
+        engine; ValueError when `length` is not a user-message boundary."""
+        session = self._memory()
+        if session is None:
+            return False
+        session.truncate(length)
+        return True
+
     def close(self) -> None:
         self.cancel()
         self.stop_server()

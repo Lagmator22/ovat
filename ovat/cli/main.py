@@ -1527,14 +1527,23 @@ def tui():
 def agent(
     config: str = typer.Argument(
         None, help="The workflow to chat with. Default: ./workflow.yml."),
+    continue_session: bool = typer.Option(
+        False, "--continue", "-c",
+        help="Continue the latest conversation saved in this folder."),
+    resume_session: str = typer.Option(
+        None, "--resume", "-r",
+        help="Resume a saved conversation by its id (the start is enough)."),
 ):
     """Chat with an agent: live tools, subagents, A2A, !shell (new TUI)."""
     if os.environ.get("OVAT_TUI") == "1":
         rprint("[yellow]Already inside the OVAT TUI.[/yellow] Run "
                "[bold]ovat agent[/bold] from a normal terminal.")
         raise typer.Exit(code=1)
+    if continue_session and resume_session:
+        rprint("[red]Use --continue or --resume, not both.[/red]")
+        raise typer.Exit(code=1)
     try:
-        from ovat.tui import runner
+        from ovat.tui import classic_requested, runner
         run_agent_tui = runner()
     except ImportError:
         rprint("[yellow]The agent TUI needs the TUI extra:[/yellow] "
@@ -1543,7 +1552,21 @@ def agent(
     if config and not os.path.isfile(config):
         rprint(f"[red]No such workflow file:[/red] {esc(config)}")
         raise typer.Exit(code=1)
-    run_agent_tui(config)
+    if not (continue_session or resume_session):
+        run_agent_tui(config)
+        return
+    if classic_requested():
+        rprint("[red]--continue and --resume need the new app.[/red] Unset "
+               "OVAT_AGENT_UI to use them.")
+        raise typer.Exit(code=1)
+    from ovat.tui.agent_app import CannotOpen
+    try:
+        run_agent_tui(config, continue_session=continue_session,
+                      resume_session_id=resume_session)
+    except CannotOpen as exc:
+        rprint(f"[red]{esc(str(exc))}[/red] `ovat agent` without "
+               f"--continue/--resume starts a new one.")
+        raise typer.Exit(code=1)
 
 
 @app.command()

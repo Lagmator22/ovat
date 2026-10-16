@@ -15,6 +15,7 @@ everything after that runs on the loop, in the order the session sent it.
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,7 +25,8 @@ from uuid import uuid4
 from ovat.agent.events import (REMOTE_STATUS, SUBAGENT_STATUS, TOOL_ENDED,
                               TOOL_STARTED)
 from ovat.agentic import session as s
-from ovat.tui.server import views
+from ovat.agentic import sessions
+from ovat.tui.server import saved, views
 from ovat.tui.server.approvals import Approvals
 from ovat.tui.server.projector import Projector, now_ms
 from ovat.tui.server.rpc import RpcError, RpcServer
@@ -77,6 +79,15 @@ class ServerContext:
         self._switch: _Switch | None = None
         # While > 0, plain notices are dropped (see new_conversation).
         self._quiet_notices = 0
+        # True while /clear rebuilds a framework engine (see new_conversation).
+        self._clearing = False
+        # Saved conversations (ovat/tui/server/saved.py): user entry id ->
+        # index of its message in the model's memory, for rewind; the memory
+        # of a resumed conversation until the agent is built to take it; and
+        # whether a save already failed (said once).
+        self.anchors: dict[str, int] = {}
+        self._pending_memory: list[dict] | None = None
+        self.save_failed = False
 
     # ---- the handshake ---------------------------------------------------------
 
@@ -100,29 +111,38 @@ class ServerContext:
                            f"Session not found: {session_id}")
         return self.projector
 
-    def open_session(self, options: AgentConfig
+    def project_dir(self, options: AgentConfig) -> str:
+        """The folder the session works in (and saves to): the client's
+        choice, else the server's, else where `ovat agent` was started."""
+        self.cwd = options.cwd or options.workdir or self.cwd or os.getcwd()
+        return self.cwd
+
+    @property
+    def store(self) -> sessions.SessionStore | None:
+        """Where conversations are saved; None when there is no project
+        folder to save them in."""
+        return sessions.store_for(self.cwd)
+
+    def open_session(self, options: AgentConfig, restored: dict | None = None
                      ) -> tuple[PublicSessionState, Callable[[], None]]:
-        """Create the session and its agent. The agent starts building once
-        the response has gone out (`after`), so a report from it can never
+        """Create the session and its agent, as the saved conversation
+        `restored` when one is given. The agent starts building once the
+        response has gone out (`after`), so a report from it can never
         overtake the answer that tells the client the session exists."""
         if self.projector is not None:
             raise RpcError(ProtocolErrorCode.CONFLICT,
                            "A session is already open on this server")
-        cwd = options.cwd or options.workdir or self.cwd
+        cwd = self.project_dir(options)
         agent = self.session_factory(self.workflow, self._sink, cwd=cwd)
-        self.cwd = cwd or getattr(agent, "cwd", None)
+        self.cwd = cwd
         self.agent = agent
         named = views.profile(options.agent or "")
         self.profile = (views.AUTO_APPROVE_PROFILE if options.auto_approve
                         else named.name if named else views.DEFAULT_PROFILE)
         agent.broker.auto_approve = self.profile == views.AUTO_APPROVE_PROFILE
-        stamp = now_ms()
-        active, _ = views.agent_summaries(self.info, self.profile)
-        session = PublicSession(
-            id=str(uuid4()), status=IdleSessionStatus(), created_at=stamp,
-            updated_at=stamp, cwd=self.cwd,
-            workspace_roots=[self.cwd] if self.cwd else [], agent=active)
-        self.projector = Projector(session, self.rpc.notify)
+        self.projector = Projector(self._fresh_session(), self.rpc.notify)
+        if restored is not None:
+            self.restore(restored)
         self.ready.clear()
 
         def after() -> None:
@@ -132,6 +152,63 @@ class ServerContext:
                 self.build_error = f"Could not start the agent: {exc}"
                 self.ready.set()
         return self.projector.state(), after
+
+    def _fresh_session(self) -> PublicSession:
+        """A new, empty conversation with an id of its own."""
+        stamp = now_ms()
+        active, _ = views.agent_summaries(self.info, self.profile)
+        return PublicSession(
+            id=str(uuid4()), status=IdleSessionStatus(), created_at=stamp,
+            updated_at=stamp, cwd=self.cwd,
+            workspace_roots=[self.cwd] if self.cwd else [], agent=active,
+            model=self.info.get("model") or None)
+
+    # ---- saved conversations ---------------------------------------------------
+
+    def restore(self, rec: dict) -> None:
+        """Make the saved conversation `rec` the open one: its transcript
+        now, its memory as soon as the agent can take it."""
+        projector = self.projector
+        session = projector.session.model_copy(update={
+            "id": rec["id"], "title": rec.get("title") or None,
+            "preview": rec.get("preview") or "",
+            "created_at": rec.get("created_at") or now_ms(),
+            "updated_at": rec.get("updated_at") or now_ms(),
+            "token_usage": None, "status": IdleSessionStatus()})
+        projector.adopt(session, saved.history_of(rec, rec["id"]),
+                        saved.turns_of(rec, rec["id"]))
+        self.anchors = {k: int(v)
+                        for k, v in (rec.get("anchors") or {}).items()}
+        self._pending_memory = list(rec.get("memory") or [])
+        if self.is_ready:
+            self._apply_memory()
+
+    def _apply_memory(self) -> None:
+        memory, self._pending_memory = self._pending_memory, None
+        if memory is None or self.agent.restore_memory(memory):
+            return
+        # A framework engine: the transcript is back, the model's memory
+        # is not, and rewinding could not cut a memory it cannot reach.
+        self.anchors.clear()
+        if any(m.get("role") == "user" for m in memory):
+            self.projector.warning(
+                "This engine keeps its own memory, so the model does not "
+                "remember this conversation. `/engine native` continues it "
+                "with memory.")
+
+    async def switch_to(self, rec: dict) -> None:
+        """/resume while a conversation is open: keep this one, open that."""
+        if self.turns.busy:
+            raise RpcError(ProtocolErrorCode.CONFLICT,
+                           "Wait for the current turn to end, or interrupt "
+                           "it, before resuming another session")
+        saved.save(self)
+        self.approvals.forget()
+        self.turns.reset()
+        self.agent.broker.forget_session_grants()
+        self.stats.last_prompt = None
+        self.stats.last_completion = None
+        self.restore(rec)
 
     async def wait_ready(self) -> None:
         """Until the agent is built. Raises BuildFailedError with the reason
@@ -210,7 +287,14 @@ class ServerContext:
         self._switch = None
         self.workflow = getattr(self.agent, "workflow", None) or self.workflow
         self.ready.set()
-        self.refresh_runtime()
+        if self._pending_memory is not None:
+            self._apply_memory()
+        else:
+            # A new agent (first build, /engine, /workflow) remembers
+            # nothing yet, so no message is where an old anchor points.
+            self.anchors.clear()
+        if not self._clearing:
+            self.refresh_runtime()
 
     def _on_BuildFailed(self, event: s.BuildFailed) -> None:
         switch, self._switch = self._switch, None
@@ -322,14 +406,28 @@ class ServerContext:
         finally:
             self.loop.call_soon(self._unmute_notices)
         if rebuilt is not None:
-            # A framework engine forgets by rebuilding; wait for it.
+            # A framework engine forgets by rebuilding; wait for it. Its
+            # Ready must not announce the runtime: nothing in it changed, and
+            # that notification would carry the OLD session id, which the
+            # client reads only after it has adopted the new one from this
+            # method's answer. The copied client takes a runtime/updated for
+            # a session it is not on as an unknown event and drops the whole
+            # event stream (seen in the pilot test that runs /engine react,
+            # then /new).
             self.ready.clear()
             self._build_thread = rebuilt
-            await self.wait_ready()
+            self._clearing = True
+            try:
+                await self.wait_ready()
+            finally:
+                self._clearing = False
         # The session's token totals carry on; the context is empty again.
         self.stats.last_prompt = None
         self.stats.last_completion = None
-        self.projector.reset()
+        # A new conversation is a new session, with an id of its own: the
+        # old one stays saved under its id (the app prints how to resume it).
+        self.anchors.clear()
+        self.projector.adopt(self._fresh_session(), [], [])
 
     def _unmute_notices(self) -> None:
         self._quiet_notices = max(0, self._quiet_notices - 1)

@@ -28,8 +28,9 @@ import pytest
 from ovat.agent.events import (SUBAGENT_STATUS, TOOL_ENDED, TOOL_STARTED,
                                Event)
 from ovat.agent.permissions import (ONCE, REFUSE, SESSION, ApprovalBroker)
+from ovat.agent.session import Session
 from ovat.agentic import session as s
-from ovat.tui.server import serve_on_memory, start_ovat_app_server
+from ovat.tui.server import saved, serve_on_memory, start_ovat_app_server
 from ovat.tui.server.methods.session import history_page
 from ovat.tui.vibe.app_server.client import AppServerClient
 from ovat.tui.vibe.app_server.events import (CallbackRequested,
@@ -157,6 +158,9 @@ class FakeSession:
         self.shell_busy = False
         self.shell_killed = threading.Event()
         self._lock = threading.Lock()
+        # What the model remembers, kept as the native loop keeps it: a real
+        # Session, a user message per question, an answer per finished turn.
+        self.remembered = Session(system_prompt="be brief")
 
     def _thread(self, target, *args):
         thread = threading.Thread(target=target, args=args, daemon=True,
@@ -192,6 +196,7 @@ class FakeSession:
 
     def new_conversation(self):
         self.cleared += 1
+        self.remembered = Session(system_prompt="be brief")
         if not self.rebuild:
             # as the native loop does: forget in place and say so
             self.sink(s.Notice("info", "New conversation."))
@@ -214,6 +219,8 @@ class FakeSession:
                 return None
             self.busy = True
         self.asked.append(text)
+        if self.native:
+            self.remembered.add_user(text)
         return self._thread(self._turn, text)
 
     def ask_subagent(self, name, task):
@@ -223,6 +230,27 @@ class FakeSession:
             self.busy = True
         self.subagent_calls.append((name, task))
         return self._thread(self._turn, f"/ask {name} {task}")
+
+    # ---- the model's memory (native only, as AgentSession) --------------------
+
+    def memory(self):
+        if not self.native or self.agent is None:
+            return None
+        return self.remembered.snapshot()
+
+    def restore_memory(self, messages):
+        if not self.native:
+            return False
+        self.remembered = Session(system_prompt="be brief")
+        self.remembered.messages.extend(
+            m for m in messages if m.get("role") != "system")
+        return True
+
+    def truncate_memory(self, length):
+        if not self.native:
+            return False
+        self.remembered.truncate(length)
+        return True
 
     def _turn(self, text):
         self.start_gate.wait(T)
@@ -263,6 +291,9 @@ class FakeSession:
             if self.delta_pause:
                 time.sleep(self.delta_pause)
         cancelled = self.stop.is_set()
+        if self.native and not text.startswith("/ask "):
+            # a subagent turn (`/ask`) leaves the main model's memory alone
+            self.remembered.add_assistant(self.answer)
         self.totals["turns"] += 1
         self.totals["prompt_tokens"] += self.totals_per_turn.get(
             "prompt_tokens") or 0
@@ -575,15 +606,17 @@ def test_a_listener_hears_the_reports_until_it_unsubscribes():
     run(go())
 
 
-def test_continue_and_resume_say_that_nothing_is_saved():
+def test_continue_and_resume_say_when_there_is_nothing_to_open():
     async def go():
-        for kwargs in ({"continue_session": True},
-                       {"resume_session_id": "nope"}):
+        for kwargs, says in (({"continue_session": True},
+                              "no saved session to continue"),
+                             ({"resume_session_id": "nope"},
+                              "No saved session nope")):
             with pytest.raises(AppServerResponseError) as err:
                 await asyncio.wait_for(start_ovat_app_server(
                     "w.yml", session_factory=FakeSession, **kwargs), T)
             assert err.value.error.code is ProtocolErrorCode.NOT_FOUND
-            assert "does not keep saved sessions" in str(err.value)
+            assert says in str(err.value)
         await poll(lambda: not _leftover_threads())
     run(go())
 
@@ -1354,7 +1387,11 @@ def test_clearing_the_history_starts_a_fresh_conversation_without_gaps():
             await asyncio.wait_for(session.clear_history(), T)
             assert fake.cleared == 1
             assert session.history == []
-            assert session.session_id == before_id
+            # a new conversation is a new session; the old one stays saved,
+            # because the app tells the person how to resume it
+            assert session.session_id != before_id
+            assert before_id in [
+                x.id for x in await session.resources.sessions.list()]
             # the next turn's events still number on from where they were: a
             # gap would make the client resync and the history would double
             await session.enqueue("two")
@@ -1450,9 +1487,11 @@ def test_session_read_returns_the_state_and_other_ids_are_not_found():
             with pytest.raises(AppServerResponseError) as err:
                 await session.resources.sessions.get_session_history("nope")
             assert err.value.error.code is ProtocolErrorCode.NOT_FOUND
-            assert await session.resources.sessions.list() == []
+            # saved after its turn, so it is the one to continue
+            assert [x.id for x in await session.resources.sessions.list()] \
+                == [session.session_id]
             assert await session.resources.sessions.resolve_continue_session(
-            ) is None
+            ) == session.session_id
     run(go())
 
 
@@ -2035,3 +2074,233 @@ def test_context_window_is_published_in_runtime_and_stats_updates():
     run(go())
 
 
+
+
+# ---- saved conversations ---------------------------------------------------------
+
+def _texts(history, role="user"):
+    return [e.text for e in history
+            if isinstance(e, PublicMessageEntry) and e.role == role]
+
+
+def _remembered_questions(fake):
+    return [m["content"] for m in fake.remembered.messages
+            if m["role"] == "user"]
+
+
+async def _ask(session, text):
+    await session.enqueue(text)
+    await events_until(session, is_completed)
+
+
+def test_a_conversation_is_saved_after_each_turn_and_reopens_on_a_new_server(
+        saved_sessions):
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await _ask(session, "two")
+            first_id = session.session_id
+            entries = [e.id for e in session.history]
+            remembered = fake.memory()
+        assert saved_sessions.load(first_id)["memory"] == remembered
+        made = []
+
+        def factory(workflow, sink, cwd=None):
+            made.append(FakeSession(workflow, sink, cwd))
+            return made[0]
+        # the short id the app prints after /clear is enough
+        session, handle = await asyncio.wait_for(start_ovat_app_server(
+            "w.yml", session_factory=factory,
+            resume_session_id=first_id[:8]), T)
+        try:
+            assert session.session_id == first_id
+            assert [e.id for e in session.history] == entries
+            await session.resources.runtime.wait_until_ready()
+            # the memory goes in once the agent is built to take it
+            await poll(lambda: made[0].remembered.snapshot() == remembered)
+            await _ask(session, "three")
+            assert _texts(session.history) == ["one", "two", "three"]
+        finally:
+            await asyncio.wait_for(session.close(), T)
+            await asyncio.wait_for(handle.close(), T)
+    run(go())
+
+
+def test_continue_opens_the_most_recent_conversation(saved_sessions):
+    for sid, stamp in (("older", 1), ("newer", 2)):
+        saved_sessions.save({"id": sid, "title": f"the {sid} one",
+                             "updated_at": stamp, "history": [], "turns": [],
+                             "memory": [], "anchors": {}})
+
+    async def go():
+        session, handle = await asyncio.wait_for(start_ovat_app_server(
+            "w.yml", session_factory=FakeSession, continue_session=True), T)
+        try:
+            assert session.session_id == "newer"
+            assert session.state.session.title == "the newer one"
+        finally:
+            await asyncio.wait_for(session.close(), T)
+            await asyncio.wait_for(handle.close(), T)
+    run(go())
+
+
+def test_rewind_cuts_the_memory_where_that_turn_began_even_after_a_subagent():
+    """`@researcher ...` adds a user entry to the transcript and nothing to
+    the model's memory, so the third user entry is not the third user
+    message. Rewinding to "two" must leave the model remembering "one"."""
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            for text in ("one", "@researcher look it up", "two", "three"):
+                await _ask(session, text)
+            assert fake.subagent_calls == [("researcher", "look it up")]
+            target = next(e for e in session.history
+                          if isinstance(e, PublicMessageEntry)
+                          and e.text == "two")
+            result = await session.resources.sessions.rewind(
+                target.id, restore_files=False, inplace=True)
+            assert result.message == "two"
+            assert _texts(session.history) == ["one",
+                                               "@researcher look it up"]
+            assert _remembered_questions(fake) == ["one"]
+            assert fake.remembered.messages[-1]["role"] == "assistant"
+            # and the conversation goes on from there
+            await _ask(session, "two again")
+            assert _remembered_questions(fake) == ["one", "two again"]
+    run(go())
+
+
+def test_rewind_into_a_new_session_keeps_the_original_saved(saved_sessions):
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await _ask(session, "two")
+            original = session.session_id
+            target = next(
+                e for e in session.history
+                if isinstance(e, PublicMessageEntry) and e.text == "two")
+            await session.resources.sessions.rewind(
+                target.id, restore_files=False, inplace=False)
+            assert session.session_id != original
+            assert _texts(saved.history_of(saved_sessions.load(original))) \
+                == ["one", "two"]
+            assert _texts(saved.history_of(
+                saved_sessions.load(session.session_id))) == ["one"]
+    run(go())
+
+
+def test_rewinding_to_the_first_message_in_place_forgets_the_saved_file(
+        saved_sessions):
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            sid = session.session_id
+            assert saved_sessions.load(sid) is not None
+            first = session.history[0]
+            await session.resources.sessions.rewind(
+                first.id, restore_files=False, inplace=True)
+            assert session.history == []
+            assert _remembered_questions(fake) == []
+            assert saved_sessions.load(sid) is None
+    run(go())
+
+
+def test_rewind_is_refused_on_an_engine_whose_memory_ovat_cannot_cut():
+    async def go():
+        async with served(native=False) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            before = [e.id for e in session.history]
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.sessions.rewind(
+                    session.history[0].id, restore_files=False, inplace=True)
+            assert err.value.error.code is ProtocolErrorCode.NOT_IMPLEMENTED
+            assert "native engine" in str(err.value)
+            assert [e.id for e in session.history] == before
+    run(go())
+
+
+def test_branch_saves_a_copy_and_leaves_the_open_conversation_alone(
+        saved_sessions):
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await _ask(session, "two")
+            before = [e.id for e in session.history]
+            memory = fake.memory()
+            response = await session.resources.sessions.fork(
+                entry_id=None, attach=False)
+            copy_id = response.state.session.id
+            assert copy_id != session.session_id
+            assert [e.id for e in session.history] == before
+            assert fake.memory() == memory
+            rec = saved_sessions.load(copy_id)
+            assert _texts(saved.history_of(rec)) == ["one", "two"]
+            assert rec["memory"] == memory
+    run(go())
+
+
+def test_rename_and_delete_change_what_is_saved(saved_sessions):
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            sid = session.session_id
+            await session.resources.sessions.rename("Leave policy")
+            assert saved_sessions.load(sid)["title"] == "Leave policy"
+            listed = await session.resources.sessions.list()
+            assert [(x.id, x.title) for x in listed] == [
+                (sid, "Leave policy")]
+            await session.resources.sessions.delete(sid)
+            assert saved_sessions.load(sid) is None
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.sessions.delete("nope")
+            assert err.value.error.code is ProtocolErrorCode.NOT_FOUND
+    run(go())
+
+
+def test_resume_switches_conversations_and_keeps_the_open_one_saved():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "first chat")
+            first = session.session_id
+            await asyncio.wait_for(session.clear_history(), T)
+            await _ask(session, "second chat")
+            second = session.session_id
+            await asyncio.wait_for(session.resume(first), T)
+            assert session.session_id == first
+            assert _texts(session.history) == ["first chat"]
+            assert _remembered_questions(fake) == ["first chat"]
+            assert {first, second} <= {
+                x.id for x in await session.resources.sessions.list()}
+            # and it carries on there, numbered without a gap
+            await _ask(session, "more")
+            assert _texts(session.history) == ["first chat", "more"]
+    run(go())
+
+
+def test_a_save_that_fails_is_said_once_and_the_conversation_goes_on(
+        saved_sessions, monkeypatch):
+    def full(record):
+        raise OSError("disk full")
+    monkeypatch.setattr(saved_sessions, "save", full)
+
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            seen = []
+            # a turn's save (and so its warning) comes just after the turn
+            # completes: the third turn is there to collect the second's
+            for text in ("one", "two", "three"):
+                await session.enqueue(text)
+                seen += await events_until(session, is_completed)
+            said = [e.params.warning.message for e in seen
+                    if isinstance(e, ServerWarning)]
+            assert len(said) == 1 and "disk full" in said[0]
+            assert _texts(session.history) == ["one", "two", "three"]
+    run(go())
