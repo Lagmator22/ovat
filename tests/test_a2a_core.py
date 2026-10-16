@@ -403,6 +403,121 @@ def test_one_model_at_a_time_and_the_second_is_told_it_waits():
     assert len(waits) == 1 and "1 ahead" in waits[0][1]
 
 
+class ApprovalRecorder(Recorder):
+    async def input_required(self, call_id, tool, args):
+        self.calls.append(("input_required", call_id, tool, args))
+
+
+class AsksFirst(FakeAgent):
+    """Asks the caller before it answers a question that says "deploy"."""
+
+    def run(self, text):
+        if "deploy" in text and self.events.approver is not None:
+            allowed = self.events.approver("deploy", {"target": "prod"}, "")
+            self.last_trace = {"turns": [], "totals": {"turns": 1}}
+            return "deployed" if allowed else "not deployed"
+        return super().run(text)
+
+
+def test_a_task_waiting_for_a_person_does_not_hold_the_model():
+    """The worker held the one-model lock while it waited for the caller's
+    approval, so every other caller waited too, up to task_timeout_s."""
+    svc, built = _service(AsksFirst, task_timeout_s=5)
+
+    async def scenario():
+        waiting = ApprovalRecorder()
+        await svc.run(_task("deploy it", context="a", task_id="t1",
+                            approval_capable=True), waiting)
+        assert waiting.kinds()[-1] == "input_required"
+        started = time.monotonic()
+        other = Recorder()
+        await svc.run(_task("q", context="b", task_id="t2"), other)
+        assert "completed" in other.kinds()
+        assert time.monotonic() - started < 2
+        svc.cancel("t1")
+    asyncio.run(scenario())
+
+
+def test_the_same_conversation_waits_while_its_run_is_paused():
+    """Giving the model gate away during an approval must not let a second
+    message in the SAME conversation run on the same agent meanwhile: one
+    agent, one memory, one run at a time."""
+    svc, built = _service(AsksFirst, task_timeout_s=5)
+
+    async def scenario():
+        paused = ApprovalRecorder()
+        await svc.run(_task("deploy it", task_id="t1",
+                            approval_capable=True), paused)
+        follow_up = Recorder()
+        job = asyncio.ensure_future(svc.run(_task("q", task_id="t2"),
+                                            follow_up))
+        await asyncio.sleep(0.3)
+        assert built[0].questions == []          # still waiting its turn
+        done = Recorder()
+        await svc.run(_task("", task_id="t1", data={
+            "callId": paused.calls[-1][1], "outcome": "proceed_once"}), done)
+        await job
+        assert ("answer", "deployed", []) in done.calls
+        assert "completed" in follow_up.kinds()
+        assert built[0].questions == ["q"]
+    asyncio.run(scenario())
+
+
+def test_an_approval_nobody_answers_ends_the_task_and_is_forgotten():
+    """With no answer the tool is refused and the run goes on, but nothing
+    awaited it any more: the task stayed in the running table for good and
+    status() counted it as active forever."""
+    svc, built = _service(AsksFirst, task_timeout_s=0.3)
+
+    async def scenario():
+        rec = ApprovalRecorder()
+        await svc.run(_task("deploy it", task_id="t1",
+                            approval_capable=True), rec)
+        assert rec.kinds()[-1] == "input_required"
+        for _ in range(200):
+            if "t1" not in svc._running:
+                break
+            await asyncio.sleep(0.01)
+    asyncio.run(scenario())
+    assert "t1" not in svc._running
+    assert svc.status()["active"] == 0
+    assert svc.stats["failed"] == 1
+
+
+def test_only_a_matching_proceed_allows_and_a_closed_request_is_refused():
+    svc, built = _service(AsksFirst, task_timeout_s=5)
+
+    async def ask_and_answer(task_id, answer):
+        first = ApprovalRecorder()
+        await svc.run(_task("deploy it", task_id=task_id,
+                            approval_capable=True), first)
+        call_id = first.calls[-1][1]
+        second = Recorder()
+        await svc.run(_task("", task_id=task_id, data=answer(call_id)),
+                      second)
+        return second
+
+    async def scenario():
+        yes = await ask_and_answer(
+            "t1", lambda c: {"callId": c, "outcome": "proceed_once"})
+        assert ("answer", "deployed", []) in yes.calls
+        wrong_id = await ask_and_answer(
+            "t2", lambda c: {"callId": "other", "outcome": "proceed_once"})
+        assert ("answer", "not deployed", []) in wrong_id.calls
+        odd = await ask_and_answer(
+            "t3", lambda c: {"callId": c, "outcome": "yes please"})
+        assert ("answer", "not deployed", []) in odd.calls
+        # an answer for a task that is not waiting is refused, never run
+        late = Recorder()
+        await svc.run(_task("", task_id="t1",
+                            data={"callId": "x", "outcome": "proceed_once"}),
+                      late)
+        assert late.kinds() == ["rejected"]
+    asyncio.run(scenario())
+    assert svc._running == {}
+    assert [len(a.questions) for a in built] == [0]
+
+
 # ---- serving: the rules checked before a port opens ------------------------
 
 def test_loopback_needs_nothing_extra():
