@@ -271,6 +271,83 @@ def _is_safe_member(name: str) -> bool:
     return ".." not in parts
 
 
+def _checked_tar_links(members: list) -> list:
+    """The members safe to extract, or RuntimeError before anything is.
+
+    _is_safe_member checks member NAMES only. A link member also has a
+    TARGET, and nothing checked that: a symlink to ../../outside, or a
+    hardlink to a file outside the staging folder, was extracted as is.
+    Python's `tar` filter (3.12+) does not check link targets either, and on
+    3.10/3.11 there is no filter at all, so this runs on every version.
+
+    What the real archives hold (OVMS 2026.4.1, checked 2026-10-16): the
+    Windows zip has no links. Each Linux tar.gz has 51-52 relative symlinks,
+    all pointing inside the archive (libfoo.so -> libfoo.so.414), which OVMS
+    needs, so links are kept rather than refused wholesale. The ubuntu22 and
+    ubuntu24 archives also hold ONE absolute symlink,
+        ovms/lib/python/openvino_tokenizers/lib/libopenvino_tokenizers.so
+            -> /ovms/lib/libopenvino_tokenizers.so
+    which is the path inside OVMS's Docker image and points at nothing on a
+    normal machine. Absolute symlinks are therefore dropped, not refused:
+    refusing would make `ovat setup` fail on Ubuntu, and a link to a path
+    that does not exist does nothing that a missing link does not.
+
+    Refused, the whole archive:
+      - a symlink whose target, read from the link's own folder, leaves the
+        archive (tar resolves a symlink against its own folder);
+      - a hardlink whose target is absolute or leaves the archive (tar names
+        a hardlink's target from the archive root, not the link's folder);
+      - a link target, or a member, that passes THROUGH a symlink in the
+        archive. A link to "." one level down makes "sub/x/.." mean
+        something other than it reads, which is how a chain of links that
+        each look harmless reaches outside.
+    """
+    def parts(path: str) -> list:
+        return [p for p in path.replace("\\", "/").split("/")
+                if p not in ("", ".")]
+
+    symlinks = {"/".join(parts(m.name)) for m in members if m.issym()}
+
+    def escapes(start: list, target: str) -> bool:
+        """Walk `target` from the folder `start` one step at a time.
+
+        Step by step, not posixpath.normpath: normpath folds "l2/.." away
+        before anyone can see that l2 is a link, which is the trick above.
+        """
+        here = list(start)
+        for step in parts(target):
+            if here and "/".join(here) in symlinks:
+                return True                     # passes through a link
+            if step == "..":
+                if not here:
+                    return True                 # above the archive root
+                here.pop()
+            else:
+                here.append(step)
+        return False
+
+    kept = []
+    for m in members:
+        name = parts(m.name)
+        if any("/".join(name[:i]) in symlinks for i in range(1, len(name))):
+            raise RuntimeError(
+                f"Refusing this OVMS archive: {m.name} sits inside one of the "
+                f"archive's own links. Nothing was installed.")
+        if m.issym() or m.islnk():
+            absolute = m.linkname.startswith(("/", "\\")) or os.path.isabs(
+                m.linkname)
+            if absolute and m.issym():
+                continue                          # dropped, see the docstring
+            start = name[:-1] if m.issym() else []
+            if absolute or escapes(start, m.linkname):
+                raise RuntimeError(
+                    f"Refusing this OVMS archive: the link {m.name} points to "
+                    f"{m.linkname}, outside the install folder. Nothing was "
+                    f"installed.")
+        kept.append(m)
+    return kept
+
+
 def _make_owner_writable(root: str) -> None:
     """Add the owner's write bit everywhere under `root`.
 
@@ -319,8 +396,9 @@ def _extract_tar(tf, staging: str, members) -> None:
     Ubuntu 26.04. Asking for `tar` explicitly keeps one behaviour across every
     version instead of tracking the interpreter's.
 
-    Path traversal is already blocked by _is_safe_member before we get here,
-    which is the protection `data` would otherwise be providing.
+    Path traversal is already blocked before we get here, by _is_safe_member
+    for names and _checked_tar_links for link targets, which is the
+    protection `data` would otherwise be providing.
     """
     # Force the owner's write bit ON before a single byte is written. This is
     # the fix, and it has to happen HERE rather than afterwards: OVMS ships
@@ -360,8 +438,8 @@ def _extract(archive: str, into: str) -> None:
                 zf.extractall(staging, members=members)
         else:
             with tarfile.open(archive, "r:gz") as tf:
-                members = [m for m in tf.getmembers()
-                           if _is_safe_member(m.name)]
+                members = _checked_tar_links(
+                    [m for m in tf.getmembers() if _is_safe_member(m.name)])
                 _extract_tar(tf, staging, members)
 
         # Before anything is moved. The archive's own 0o555 directories would

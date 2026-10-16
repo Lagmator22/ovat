@@ -778,6 +778,14 @@ three builds, and macOS has none. The archive's single `ovms/` folder is
 flattened into `~/.ovat/ovms`, and every member's owner-write bit is set before
 extraction, because OVMS ships its files read-only.
 
+Every member is checked before anything is extracted, on every Python version.
+A name with `..` or an absolute path is skipped. A link whose target leaves the
+archive, directly or through another of the archive's links, stops the install
+with nothing extracted. The Linux archives' own library links
+(`libfoo.so -> libfoo.so.414`) stay. One absolute link in the Ubuntu archives
+points at `/ovms/lib`, the folder inside OVMS's Docker image, so it points at
+nothing on a normal machine and is left out.
+
 ### Installing it by hand (air-gapped machines, or a build you already have)
 
 `ovat setup` is the supported path. When it cannot be used, these are the steps
