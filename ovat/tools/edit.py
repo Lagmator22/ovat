@@ -29,6 +29,8 @@ def line_contexts(content: str, snippet: str) -> list[tuple[int, str, str]]:
             line_end = content.find("\n", match_end)
             if line_end == -1:
                 line_end = len(content)
+            elif line_end > match_end and content[line_end - 1] == "\r":
+                line_end -= 1
             suffix = content[match_end:line_end]
         results.append((start_line, prefix, suffix))
         pos = content.find(snippet, match_end)      # like str.replace
