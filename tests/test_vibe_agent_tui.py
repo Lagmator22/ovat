@@ -970,6 +970,19 @@ def test_ctrl_o_folds_and_opens_the_tool_calls():
     run(go())
 
 
+def test_ctrl_t_also_folds_the_tool_calls_for_terminals_that_eat_ctrl_o():
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await say(pilot, "q")
+            await until(pilot, lambda: app.query(AssistantMessage))
+            group = app.query_one(ToolGroup)
+            await pilot.press("ctrl+t")
+            await until(pilot, lambda: not group._is_collapsed)
+            await pilot.press("ctrl+t")
+            await until(pilot, lambda: group._is_collapsed)
+    run(go())
+
+
 def test_ctrl_c_twice_quits_when_idle():
     async def go():
         async with running() as (app, pilot, fake, handle):

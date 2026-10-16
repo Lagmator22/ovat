@@ -143,6 +143,10 @@ class OvatAgentApp(VibeApp):
     BINDINGS = [
         Binding("shift+up", "scroll_chat_up", "Scroll Up", show=False),
         Binding("shift+down", "scroll_chat_down", "Scroll Down", show=False),
+        # Ctrl+O works in the app (test_ctrl_o_folds_and_opens_the_tool_calls)
+        # but some terminal apps swallow it over SSH, so the same action also
+        # lives on Ctrl+T, a key nothing here uses.
+        Binding("ctrl+t", "toggle_tool", "Toggle Tool", show=False),
     ]
 
     def __init__(self, session: AppServerSession, handle: OvatServerHandle, *,

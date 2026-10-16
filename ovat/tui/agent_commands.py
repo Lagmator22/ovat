@@ -76,7 +76,7 @@ KEYS = """### Keys
 - `!cmd` runs a shell command here
 - `Esc` stops the answer or the command
 - `Esc Esc` on an empty prompt goes back to an earlier message (rewind)
-- `Ctrl+O` opens or folds the tool calls
+- `Ctrl+O` (or `Ctrl+T`) opens or folds the tool calls
 - `Shift+Tab` switches between asking and auto-approve
 - `Ctrl+C` copies a selection, stops the answer, and quits when pressed twice
 """
