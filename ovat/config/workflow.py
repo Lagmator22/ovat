@@ -586,7 +586,8 @@ class A2AServerConfig(StrictModel):
     port: int = Field(default=9100, gt=0, lt=65536)
     public_url: str | None = None        # what the card says, behind a tunnel
     # caller name -> NAME of the env var holding that caller's token. Empty:
-    # one generated token in .ovat/a2a/token, for a caller named "local".
+    # one generated token for the project (in ~/.ovat, never the project:
+    # see ovat/a2a/tokens.py), for a caller named "local".
     tokens: dict[str, str] = Field(default_factory=dict)
     # None: the safe default set (no tool that takes a file path, no MCP
     # tool). A list names exactly which tools a remote caller may trigger.

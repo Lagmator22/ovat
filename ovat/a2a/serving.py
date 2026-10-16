@@ -69,7 +69,7 @@ class Prepared:
 def prepare(config: WorkflowConfig, settings: A2AServerConfig,
             workflow_path: str, version: str, tls: bool = False,
             skip_rag: bool = False, build=build_agent,
-            token_file: Path = tokens_mod.DEFAULT_TOKEN_FILE,
+            token_file: Path | None = None,
             dry_run: bool = False) -> Prepared:
     """Build what the server needs. Raises ValueError/RuntimeError with a
     sentence on any problem, before any port is opened.

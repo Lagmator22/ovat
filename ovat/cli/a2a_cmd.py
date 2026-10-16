@@ -108,8 +108,9 @@ def serve(
     rprint(f"Card:   {esc(prepared.url.rstrip('/'))}"
            f"/.well-known/agent-card.json")
     if not s.tokens:
-        rprint("Token:  .ovat/a2a/token (callers send it as "
-               "\"Authorization: Bearer ...\"; 'ovat a2a token' prints it)")
+        rprint("Token:  generated for this project and kept in your own "
+               "folder (callers send it as \"Authorization: Bearer ...\"; "
+               "'ovat a2a token' prints it)")
     else:
         rprint(f"Callers: {esc(', '.join(s.tokens))}")
     rprint(f"Engine: {esc(cfg.agent.type)} | model {esc(cfg.model.name)} "

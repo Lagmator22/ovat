@@ -170,8 +170,9 @@ def a2a_call_impl(message: str, peer, name: str, url: str, bus=None,
             if token_env:
                 fix = f" Check the variable {token_env}."
             elif is_loopback(url):
-                fix = (" It was sent this folder's .ovat/a2a/token; if that "
-                       "agent was started in another folder, set token_env.")
+                fix = (" It was sent this project's generated token (ovat a2a "
+                       "token); if that agent was started in another "
+                       "folder, set token_env.")
             else:
                 fix = " This workflow sends no token; set token_env."
             return done(f"Error: {who} refused the token.{fix}")

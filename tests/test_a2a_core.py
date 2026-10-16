@@ -744,3 +744,21 @@ def test_a2a_call_answers_every_confirmation_the_remote_asks_for():
     assert len(endless.answers) == a2a_call.MAX_APPROVALS
 
 
+
+
+def test_a_token_file_that_came_with_the_project_is_never_used(
+        tmp_path, monkeypatch):
+    """The generated token was read from the project's .ovat/a2a/token. A
+    repository could ship one, and its author would then hold a working
+    token for anyone who served that project. The token now lives in the
+    user's own folder, one per project."""
+    project = tmp_path / "cloned"
+    (project / ".ovat" / "a2a").mkdir(parents=True)
+    (project / ".ovat" / "a2a" / "token").write_text("known-to-the-author\n")
+    monkeypatch.chdir(project)
+    served = tokens.load_or_create()
+    assert served != "known-to-the-author"
+    assert tokens.token_file() != project / ".ovat" / "a2a" / "token"
+    assert tokens.peer_token("http://127.0.0.1:9100", None) == served
+    monkeypatch.chdir(tmp_path)                       # another project
+    assert tokens.load_or_create() != served

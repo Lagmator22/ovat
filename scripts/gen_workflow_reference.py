@@ -198,8 +198,9 @@ PURPOSE = {
                                   "proxy.",
     ("a2a.server", "tokens"): "Caller name to the NAME of the environment "
                               "variable holding that caller's token. "
-                              "Unset: one generated token in "
-                              "`.ovat/a2a/token`.",
+                              "Unset: one generated token for the "
+                              "project, kept in your own folder "
+                              "(`ovat a2a token` prints it).",
     ("a2a.server", "expose_tools"): "Tools a remote caller may trigger. "
                                     "Unset: every builtin that takes no "
                                     "file path; MCP tools only when listed.",

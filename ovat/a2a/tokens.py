@@ -6,8 +6,11 @@ loopback port, and so can a web page open in the user's browser (DNS
 rebinding). The token is what stops both.
 
 Two ways to configure callers:
-- nothing in the YAML: one random token is generated into .ovat/a2a/token
-  (owner-only permissions on POSIX), for a caller named "local";
+- nothing in the YAML: one random token is generated for the project, for a
+  caller named "local". It is kept in the person's own folder
+  (~/.ovat/a2a/<project id>.token, owner-only on POSIX), never in the
+  project: a repository could ship a token file there and its author would
+  then hold a working token for whoever serves that project;
 - a2a.server.tokens: {planner: OVAT_A2A_PLANNER}: one caller per entry,
   each token read from the NAMED environment variable. One name per token
   is what lets the server keep each caller's tasks apart (spec 13.1) and
@@ -18,14 +21,20 @@ import secrets
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from ovat import userdata
 from ovat.agent.permissions import is_loopback
 
-DEFAULT_TOKEN_FILE = Path(".ovat") / "a2a" / "token"
 LOCAL_CALLER = "local"
 
 
-def load_or_create(path: Path = DEFAULT_TOKEN_FILE) -> str:
+def token_file(cwd: str | os.PathLike = ".") -> Path:
+    """Where the project in `cwd` keeps its generated token."""
+    return userdata.folder() / "a2a" / f"{userdata.project_id(cwd)}.token"
+
+
+def load_or_create(path: Path | None = None) -> str:
     """The generated token, made on first use. Never empty."""
+    path = path or token_file()
     if path.exists():
         token = path.read_text(encoding="utf-8").strip()
         if token:
@@ -33,8 +42,9 @@ def load_or_create(path: Path = DEFAULT_TOKEN_FILE) -> str:
     return rotate(path)
 
 
-def rotate(path: Path = DEFAULT_TOKEN_FILE) -> str:
+def rotate(path: Path | None = None) -> str:
     """Replace the generated token. Old callers stop working at once."""
+    path = path or token_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(32)
     # Created owner-only from the start rather than chmod-ed afterwards, so
@@ -46,7 +56,7 @@ def rotate(path: Path = DEFAULT_TOKEN_FILE) -> str:
     return token
 
 
-def callers(tokens: dict[str, str], token_file: Path = DEFAULT_TOKEN_FILE,
+def callers(tokens: dict[str, str], path: Path | None = None,
             environ=os.environ) -> dict[str, str]:
     """{token: caller name} for the server's auth check.
 
@@ -55,7 +65,7 @@ def callers(tokens: dict[str, str], token_file: Path = DEFAULT_TOKEN_FILE,
     network problem from the caller's side.
     """
     if not tokens:
-        return {load_or_create(token_file): LOCAL_CALLER}
+        return {load_or_create(path): LOCAL_CALLER}
     table = {}
     for caller, env_name in tokens.items():
         value = environ.get(env_name, "").strip()
@@ -89,12 +99,12 @@ def same_origin(url: str, configured: str) -> bool:
 
 
 def peer_token(url: str, token_env: str | None,
-               token_file: Path = DEFAULT_TOKEN_FILE,
+               path: Path | None = None,
                environ=os.environ) -> str:
     """The bearer token to send to the agent at `url`, or "" for none.
 
     A named variable always decides. With none named, an agent on THIS
-    machine gets the token `ovat a2a serve` generated in this folder, so
+    machine gets the token `ovat a2a serve` generated for this project, so
     serving and calling from one project needs no setup. The file never
     goes to another host.
     """
@@ -103,6 +113,6 @@ def peer_token(url: str, token_env: str | None,
     if not is_loopback(url):
         return ""
     try:
-        return token_file.read_text(encoding="utf-8").strip()
+        return (path or token_file()).read_text(encoding="utf-8").strip()
     except OSError:
         return ""

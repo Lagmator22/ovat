@@ -176,7 +176,7 @@ How `ovat a2a serve` offers this workflow. Safe by default.
 | `host` | string | `127.0.0.1` | - | Address to listen on. The default is this machine only. |
 | `port` | integer | `9100` | > 0, < 65536 | Port to listen on. |
 | `public_url` | string \| null | `null` | - | URL the card advertises, when callers reach this server through a tunnel or proxy. |
-| `tokens` | string \| string | empty | - | Caller name to the NAME of the environment variable holding that caller's token. Unset: one generated token in `.ovat/a2a/token`. |
+| `tokens` | string \| string | empty | - | Caller name to the NAME of the environment variable holding that caller's token. Unset: one generated token for the project, kept in your own folder (`ovat a2a token` prints it). |
 | `expose_tools` | list[string] \| null | `null` | - | Tools a remote caller may trigger. Unset: every builtin that takes no file path; MCP tools only when listed. |
 | `expose_sources` | names \| full \| none | `names` | - | Citations sent back: file `names`, `full` paths, or `none`. |
 | `max_message_chars` | integer | `8000` | > 0 | Longest message accepted. |

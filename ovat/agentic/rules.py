@@ -22,21 +22,16 @@ Owner-only (0600) like the A2A token. This file never imports textual.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
+from ovat import userdata
 from ovat.agentic import atomic
 
 FORMAT = 2
 
 
 def store_path() -> Path:
-    return Path.home() / ".ovat" / "permissions.json"
-
-
-def _key(cwd: str) -> str:
-    # normcase: on Windows C:\Proj and c:\proj are one folder.
-    return os.path.normcase(str(Path(cwd).resolve()))
+    return userdata.folder() / "permissions.json"
 
 
 def _projects() -> dict:
@@ -53,7 +48,7 @@ def _projects() -> dict:
 
 def load(cwd: str) -> list[str]:
     """The tools allowed for good in this project."""
-    tools = _projects().get(_key(cwd))
+    tools = _projects().get(userdata.project_key(cwd))
     return [t for t in tools if isinstance(t, str)] if isinstance(
         tools, list) else []
 
@@ -65,6 +60,6 @@ def add(cwd: str, tool: str) -> None:
     tools = load(cwd)
     if tool in tools:
         return
-    projects[_key(cwd)] = [*tools, tool]
+    projects[userdata.project_key(cwd)] = [*tools, tool]
     atomic.write_text(store_path(), json.dumps(
         {"format": FORMAT, "projects": projects}, indent=2))
