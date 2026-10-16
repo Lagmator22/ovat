@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import threading
 from collections import deque
 
@@ -26,18 +27,23 @@ SPEECH_PEAK = 0.015
 SILENCE_PEAK = 0.008
 
 WHISPER_HALLUCINATIONS = {
-    "you", "you.", "you!", "thank you", "thank you.", "thank you!",
-    "thanks for watching", "thanks for watching.", "bye", "bye.", "bye-bye."
+    "you", "thank you", "thanks for watching", "bye", "bye-bye",
+    "i'm going to go to the bathroom", "thank you thank you",
 }
 
 
 def clean_transcript(text: str, peak: float) -> str:
-    cleaned = text.strip()
-    if not cleaned:
+    if not text:
         return ""
-    if set(cleaned) <= {"!", ".", " ", "?"}:
+    exclamations = text.count("!")
+    if exclamations > 4 and exclamations > len(text) * 0.15:
         return ""
-    if cleaned.lower() in WHISPER_HALLUCINATIONS and peak < 0.035:
+    cleaned = re.sub(r"!{2,}", "", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned or set(cleaned) <= {"!", ".", " ", "?", ","}:
+        return ""
+    norm = re.sub(r"[^\w\s]", "", cleaned.lower()).strip()
+    if norm in WHISPER_HALLUCINATIONS and peak < 0.04:
         return ""
     return cleaned
 
@@ -210,6 +216,7 @@ class VoiceManager:
             # The upstream streamer supports short-form audio below 30 s.
             result = pipe.generate(audio[:RATE * MAX_SECONDS - 1],
                                    language="<|en|>", return_timestamps=False,
+                                   repetition_penalty=1.2, max_new_tokens=128,
                                    streamer=lambda _: cancel.is_set())
         texts = getattr(result, "texts", None)
         raw = (texts[0] if texts else str(result)).strip()
@@ -242,9 +249,10 @@ class VoiceManager:
                     if text:
                         self._notify("on_transcribe_partial", text)
                 if final:
-                    if not text and audio is not None and audio.size >= RATE * 0.2:
-                        text = await asyncio.to_thread(self._decode, pipe, audio,
-                                                       self._cancel)
+                    if (not text or (audio is not None and audio.size != last_size)) and audio is not None and audio.size >= RATE * 0.2:
+                        final_text = await asyncio.to_thread(self._decode, pipe, audio,
+                                                             self._cancel)
+                        text = final_text or text
                     if text:
                         self._notify("on_transcribe_text", text)
                     else:

@@ -279,6 +279,7 @@ def test_clean_transcript_filters_hallucinations_and_exclamation_loops():
     assert clean_transcript(" you", 0.005) == ""
     assert clean_transcript("Thank you.", 0.01) == ""
     assert clean_transcript("Thanks for watching.", 0.02) == ""
+    assert clean_transcript("you!!!!!!!!!!!!!!!!Thank you. Thank you.!!!!!!!!!!I'm going to go to the bathroom.", 0.02) == ""
     assert clean_transcript("Hello world", 0.005) == "Hello world"
     assert clean_transcript("Thank you", 0.1) == "Thank you"
 
