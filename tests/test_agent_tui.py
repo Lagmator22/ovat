@@ -471,7 +471,9 @@ def _fake_checks(config_path=None):
     long_fix = ("ovms not found (config, OVAT_OVMS, PATH, known folders all "
                 "empty). Run 'ovat setup' to install it (no PATH change "
                 "needed), or point model.ovms_binary at C:\\x\\[/y]")
-    return [Check("Python", "ok", "3.12"),
+    # The ok details are words no machine line contains: "3.12" here
+    # matched "Python 3.12.15" on the runners that run 3.12.
+    return [Check("Python", "ok", "fine here"),
             Check("OVMS serving", "warn", long_fix),
             Check("Core dependencies", "ok", "all 9 importable"),
             Check("Workflow config", "fail", "no such file: w.yml")]
@@ -499,7 +501,7 @@ def test_doctor_is_a_block_in_the_chat_with_the_problems_first(monkeypatch):
                 "OVMSserving")
             assert "C:\\x\\[/y]" in shown and "ovatsetup" in shown
             # The two that passed are folded into one row until asked for.
-            assert "2checksok" in shown and "3.12" not in shown
+            assert "2checksok" in shown and "finehere" not in shown
             await pilot.press("ctrl+o")
             await pilot.pause(0.2)
             assert "all9importable" in _plain(report.query("Static"))
