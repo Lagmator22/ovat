@@ -290,6 +290,7 @@ class Projector:
                 child = child.model_copy(update={
                     "status": status,
                     "token_usage": usage,
+                    "context_usage": usage,
                     "updated_at": now_ms(),
                 })
                 self.child_sessions[child_id] = child
