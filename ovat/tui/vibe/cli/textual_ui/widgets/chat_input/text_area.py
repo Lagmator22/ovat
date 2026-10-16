@@ -560,28 +560,23 @@ class ChatTextArea(TextArea):
 
         now = time.monotonic()
 
-        # Handle key pressed during audio recording or flushing
+        # Handle key pressed during audio recording or flushing.
+        # OVAT edit: only Ctrl+R stops (any key did, so a bare Ctrl stopped it
+        # before the R arrived), and a repeat within 0.4 s is ignored. Every
+        # key is still swallowed: typed letters would be overwritten by the
+        # transcript, and Enter would send the prompt mid-recording.
         if self._voice_manager.transcribe_state != TranscribeState.IDLE:
+            event.prevent_default()
+            event.stop()
             if event.key == "ctrl+c":  # Escape is handled in app.py
-                event.prevent_default()
-                event.stop()
                 self._voice_manager.cancel_recording()
                 self._last_voice_action_time = now
-                return True
-            if event.key == "ctrl+r":
-                event.prevent_default()
-                event.stop()
-                if (now - self._last_voice_action_time) < 0.4:
-                    return True
+            elif (event.key == "ctrl+r"
+                  and now - self._last_voice_action_time >= 0.4):
                 self._last_voice_action_time = now
                 if self._voice_manager.transcribe_state == TranscribeState.RECORDING:
                     await self._voice_manager.stop_recording()
-                return True
-            if event.key in {"control", "ctrl", "shift", "alt"}:
-                event.prevent_default()
-                event.stop()
-                return True
-            return False
+            return True
 
         # Handle audio record keybind
         if self._voice_manager.is_enabled and event.key == "ctrl+r":

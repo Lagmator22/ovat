@@ -331,3 +331,41 @@ def test_voice_key_control_modifier_does_not_abort_recording(monkeypatch):
             await ui_until(pilot, lambda: manager.transcribe_state == TranscribeState.IDLE)
     asyncio.run(go())
 
+
+
+def test_keys_pressed_while_recording_do_not_type_or_send(monkeypatch):
+    """Only Ctrl+R stops a recording. Other keys used to fall through to the
+    prompt: letters were typed and then overwritten by the transcript, and
+    Enter sent the prompt in the middle of the recording."""
+    from ovat.tui import voice
+    from tests.test_vibe_agent_tui import running, until as ui_until
+    recorder = Recorder()
+    manager = voice.PromptVoiceManager(
+        lambda: ("m", None), recorder=recorder,
+        pipeline=lambda *a: SimpleNamespace(generate=lambda audio, **kw: ""),
+        interval=0.01)
+    monkeypatch.setattr(voice, "PromptVoiceManager", lambda settings: manager)
+
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await pilot.press("ctrl+r")
+            await ui_until(pilot, lambda: manager.transcribe_state
+                           == TranscribeState.RECORDING)
+            await pilot.press("x", "enter")
+            await pilot.pause(0.2)
+            assert app.query_one("#input").text == ""
+            assert fake.asked == []
+            assert manager.transcribe_state == TranscribeState.RECORDING
+            await asyncio.sleep(0.45)
+            await pilot.press("ctrl+r")
+            await ui_until(pilot, lambda: manager.transcribe_state
+                           == TranscribeState.IDLE)
+            # Esc is the one key let through: the app cancels with it
+            await asyncio.sleep(0.45)
+            await pilot.press("ctrl+r")
+            await ui_until(pilot, lambda: manager.transcribe_state
+                           == TranscribeState.RECORDING)
+            await pilot.press("escape")
+            await ui_until(pilot, lambda: manager.transcribe_state
+                           == TranscribeState.IDLE)
+    asyncio.run(go())

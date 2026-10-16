@@ -80,7 +80,7 @@ KEYS = """### Keys
 - `Esc` stops the answer or the command
 - `Esc Esc` on an empty prompt goes back to an earlier message (rewind)
 - `Ctrl+O` (or `Ctrl+T`) opens or folds the tool calls
-- `Ctrl+R` records local voice; pause or press a key to finish, `Esc` cancels
+- `Ctrl+R` records local voice; pause or press `Ctrl+R` to finish, `Esc` cancels
 - `Shift+Tab` switches between asking and auto-approve
 - `Ctrl+C` copies a selection, stops the answer, and quits when pressed twice
 """
