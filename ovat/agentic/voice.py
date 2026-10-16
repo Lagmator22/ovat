@@ -22,7 +22,7 @@ RATE = 16000
 BLOCK = 1600
 MAX_SECONDS = 30
 SILENCE_SECONDS = 0.8
-SILENCE_PEAK = 0.01
+SILENCE_PEAK = 0.003
 
 
 def whisper_settings(config, cwd: str) -> tuple[str, str | None]:
@@ -203,7 +203,7 @@ class VoiceManager:
                 if final:
                     self._stop_stream()
                     self._set_state(TranscribeState.FLUSHING)
-                if signal and audio is not None and audio.size != last_size:
+                if (signal or final) and audio is not None and audio.size != last_size:
                     # Upstream py_whisper_pipeline.cpp: raw 16 kHz floats;
                     # a true streamer return stops decoding on cancellation.
                     text = await asyncio.to_thread(self._decode, pipe, audio,
@@ -213,6 +213,9 @@ class VoiceManager:
                     last_size = audio.size
                     self._notify("on_transcribe_partial", text)
                 if final:
+                    if not text and audio is not None and audio.size >= RATE * 0.2:
+                        text = await asyncio.to_thread(self._decode, pipe, audio,
+                                                       self._cancel)
                     if text:
                         self._notify("on_transcribe_text", text)
                     else:
