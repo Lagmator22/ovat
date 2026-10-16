@@ -62,6 +62,20 @@ CAPABILITY = "capability:"
 # OVAT command -> the Vibe command that is the same thing.
 SAME_AS_VIBE = {"help": "help", "new": "clear", "copy": "copy", "quit": "exit"}
 
+# Copied commands whose upstream text describes what they do in Vibe, not
+# here (Vibe's /voice opens a settings panel, its /reload reloads skills, its
+# /mcp signs in to hosted servers). The aliases OVAT has no use for go too.
+OWN_WORDS = {
+    "voice": "Turn local voice dictation on or off. Ctrl+R records; the "
+             "audio stays on this machine",
+    "reload": "Read the workflow file again and rebuild the agent if it "
+              "changed",
+    "mcp": "The workflow's MCP servers and their tools. Pass a name to list "
+           "its tools; switch one on or off for this session",
+    "log": "Show the folder where conversations are saved",
+}
+DROPPED_ALIASES = {"mcp": {"/connectors"}}
+
 # Read-only OVAT commands that may run while the agent works.
 SIDE_CHANNEL = frozenset({"tools", "agents", "trace", "yolo", "serve",
                           "doctor", "telemetry"})
@@ -105,6 +119,12 @@ class OvatCommandRegistry(CommandRegistry):
         # tool is a plain workflow tool, so /todo is always there.
         if "todo" in commands:
             commands["todo"].is_available = None
+        for name, words in OWN_WORDS.items():
+            if name in commands:
+                commands[name].description = words
+        for name, aliases in DROPPED_ALIASES.items():
+            if name in commands:
+                commands[name].aliases = commands[name].aliases - aliases
         for c in ovat_commands.COMMANDS:
             aliases = frozenset({f"/{c.name}", *(f"/{a}" for a in c.aliases
                                                  if a.isalnum())})

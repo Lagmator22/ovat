@@ -494,6 +494,12 @@ def test_help_lists_the_commands_and_keys_and_nothing_that_cannot_work():
                 assert f"/{name}" in text, name
             for gone in ("/teleport", "/retry"):
                 assert gone not in text, gone
+            # copied commands say what they do HERE: /voice is a local
+            # dictation switch, /reload has no skills, /mcp no hosted login
+            assert "local voice dictation" in text
+            for vibe_words in ("Configure voice settings", "skills",
+                               "/connectors", "login <alias>"):
+                assert vibe_words not in text, vibe_words
             assert "Ctrl+O" in text and "Shift+Tab" in text
             # /branch's own text has `ovat agent --resume <id>` in a code
             # span, where an escape would be shown as is
