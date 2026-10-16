@@ -155,6 +155,32 @@ def test_the_model_provider_selects_the_backend():
     assert isinstance(default, OVMSLLMProvider), "ovms must remain the default"
 
 
+def test_the_agent_path_caps_a_local_model_at_model_max_tokens(monkeypatch):
+    """`provider: genai` never passed a cap, so GenAILLMProvider's own 256
+    default silently cut every agent answer short. The agent is not a chat you
+    are watching (no streaming, Esc cannot stop a generation mid-call), so it
+    takes the same ceiling the OVMS path does: model.max_tokens."""
+    from ovat.agent.factory import build_llm
+    from ovat.config.workflow import WorkflowConfig
+    from ovat.providers import llm_genai
+
+    seen = []
+
+    class Recorder:
+        def __init__(self, *args, **kwargs):
+            seen.append(kwargs)
+
+    monkeypatch.setattr(llm_genai, "GenAILLMProvider", Recorder)
+
+    build_llm(WorkflowConfig(model={"name": "m", "provider": "genai"}))
+    build_llm(WorkflowConfig(model={"name": "m", "provider": "genai",
+                                    "max_tokens": 1500}))
+    build_llm(WorkflowConfig(model={"name": "m", "provider": "genai",
+                                    "max_tokens": None}))
+
+    assert [k["max_new_tokens"] for k in seen] == [4096, 1500, None]
+
+
 def test_an_unknown_provider_names_the_ones_that_exist():
     import pytest
     from ovat.agent.factory import build_llm

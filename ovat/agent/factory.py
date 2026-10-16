@@ -60,7 +60,12 @@ def build_llm(config: WorkflowConfig) -> LLMProvider:
         # Imported lazily, exactly like build_embedder does: the OVMS path
         # must not pay openvino_genai's import cost.
         from ovat.providers.llm_genai import GenAILLMProvider
+        # The same ceiling the OVMS path takes. GenAILLMProvider's own 256
+        # default cut every agent answer short, and the "uncapped" local chat
+        # does not apply here: that chat streams and Esc stops it, while an
+        # agent turn is one blocking call nobody can interrupt mid-generation.
         return GenAILLMProvider(m.name, m.device,
+                                max_new_tokens=m.max_tokens,
                                 enable_thinking=m.enable_thinking)
     if m.provider != "ovms":
         raise ValueError(
