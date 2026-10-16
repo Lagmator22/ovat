@@ -556,6 +556,22 @@ def test_a_click_on_a_row_of_the_completion_popup_chooses_it():
     run(go())
 
 
+def test_at_offers_the_subagents_before_any_file():
+    async def go():
+        async with running(size=(120, 50)) as (app, pilot, fake, handle):
+            await type_text(pilot, "@resear")
+            popup = app.query_one("#completion-popup")
+            await until(pilot, lambda: popup.styles.display == "block")
+            first = popup.query("_CompletionRow").first()
+            assert "researcher" in str(
+                first.query_one(".completion-command").render())
+            assert "reads docs" in popup.content_text
+            await pilot.press("tab")
+            box = app.query_one("#input-body")
+            await until(pilot, lambda: box.value.startswith("@researcher"))
+    run(go())
+
+
 def test_an_unknown_command_suggests_a_near_one_and_is_not_sent_to_the_model():
     async def go():
         async with running() as (app, pilot, fake, handle):

@@ -210,6 +210,12 @@ class OvatAgentApp(VibeApp):
         if self._hardware is not None:
             self.set_interval(HARDWARE_EVERY_S, self._sample_hardware)
         self._update_bar()
+        agent_completion.offer_subagents(
+            self.query_one(ChatInputContainer), self._subagent_names)
+
+    def _subagent_names(self) -> list[tuple[str, str]]:
+        return [(x["name"], x.get("description") or "subagent")
+                for x in (self._agent.info or {}).get("subagents", [])]
 
     def on_unmount(self) -> None:
         if self._unsubscribe is not None:
