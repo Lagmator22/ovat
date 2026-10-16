@@ -321,8 +321,7 @@ class Projector:
                         id=str(uuid4()), session_id=child_id,
                         turn_id=active_turn, created_at=stamp, updated_at=stamp,
                         generation_status=PublicEntryGenerationStatus.COMPLETED,
-                        role="assistant", content=[TextContentBlock(text=answer_text)],
-                        source="agent_response"))
+                        role="assistant", content=[TextContentBlock(text=answer_text)]))
                 curr_usage = self.session.token_usage
                 base_in = curr_usage.input_tokens if curr_usage is not None else 0
                 base_out = curr_usage.output_tokens if curr_usage is not None else 0
