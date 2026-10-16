@@ -488,7 +488,7 @@ def test_help_lists_the_commands_and_keys_and_nothing_that_cannot_work():
             for name in [c.name for c in ovat_commands.COMMANDS
                          if c.name not in ("quit", "new")] + [
                              "clear", "exit", "status", "theme", "resume",
-                             "rewind", "rename", "branch", "log"]:
+                             "rewind", "rename", "branch", "log", "compact"]:
                 assert f"/{name}" in text, name
             for gone in ("/teleport", "/mcp", "/model", "/config"):
                 assert gone not in text, gone
@@ -1094,6 +1094,33 @@ def test_esc_esc_rewinds_to_a_message_and_puts_it_back_in_the_prompt(
     run(go())
 
 
+def test_compact_summarizes_the_memory_and_marks_the_transcript():
+    from ovat.tui.vibe.cli.textual_ui.widgets.compact import CompactMessage
+
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await say(pilot, "first")
+            await until(pilot, lambda: len(app.query(AssistantMessage)) == 1
+                        and not app._is_busy())
+            await say(pilot, "/compact keep the numbers")
+            await until(pilot, lambda: app.query(CompactMessage)
+                        and "Compaction completed."
+                        in app.query_one(CompactMessage).get_content())
+            assert fake.compacts == ["keep the numbers"]
+            assert [e.kind for e in app.app_server.history
+                    if e.type == "checkpoint"] == ["compaction"]
+            assert len(fake.memory()) == 3      # system, summary, ack
+            assert not app.query(ErrorMessage), [
+                e._error for e in app.query(ErrorMessage)]
+            # and the next question goes on from the summary
+            await say(pilot, "second")
+            await until(pilot, lambda: fake.asked == ["first", "second"]
+                        and not app._is_busy())
+            assert not app.query(ErrorMessage), [
+                e._error for e in app.query(ErrorMessage)]
+    run(go())
+
+
 def test_saved_conversations_rename_branch_log_and_resume_from_the_app(
         saved_sessions):
     from ovat.tui.vibe.cli.textual_ui.widgets.branch_created_message import \
@@ -1280,7 +1307,7 @@ def test_the_registry_keeps_a_vibe_command_only_when_the_server_serves_it():
     # what that comes to today (it grows when the server learns a method)
     assert set(registry.commands) & vibe == {
         "help", "clear", "copy", "exit", "status", "theme", "resume",
-        "rewind", "rename", "branch", "log"}
+        "rewind", "rename", "branch", "log", "compact"}
 
 
 def test_a_removed_command_would_only_have_ended_in_not_supported():

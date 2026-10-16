@@ -60,13 +60,13 @@ def _first_arg(arguments: dict) -> str:
 
 
 class Bridge:
-    def __init__(self, session_id: str = SESSION_ID) -> None:
+    def __init__(self, session_id: str = SESSION_ID, first_id: int = 1) -> None:
         self.session_id = session_id
         # The turn the next entries belong to. None outside a turn (and for
         # the classic agent TUI, which has no turns).
         self.turn_id: str | None = None
         self._entries: dict[str, PublicEffectEntry] = {}
-        self._ids = itertools.count(1)
+        self._ids = itertools.count(first_id)
         self._last_running: str | None = None
 
     def running(self, tool: str) -> PublicEffectEntry | None:
