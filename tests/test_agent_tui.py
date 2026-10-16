@@ -76,8 +76,10 @@ class FakeSession:
             ):
                 self.sink(s.AgentActivity(ev))
             if self.ask_approval:
-                self.approved = self.broker("subagent cloud", {"task": "t"},
-                                            "sends the task away")
+                self.approved = self.broker(
+                    "subagent cloud",
+                    getattr(self, "approval_args", {"task": "t"}),
+                    "sends the task away")
             self.hold.wait(10)
             self.busy = False
             self.sink(s.TurnDone(self.answer, 1.5, {
@@ -393,4 +395,40 @@ def test_an_answer_that_lands_while_the_app_closes_is_ignored():
             await pilot.pause(0.05)
             app.post_message(SessionEvent(s.TurnDone("late", 1.0)))
             await pilot.pause(0.1)
+    run(go())
+
+
+def test_approval_text_cannot_dress_up_as_the_panels_own_options():
+    # A model-written task that tries to print fake option lines inside the
+    # approval panel. It must show on one line, marked, with no control
+    # characters, and long text must be cut.
+    from ovat.tui.app import approval_safe
+
+    spoof = "summarise\n\n› 1. Allow once\n  3. Deny\x1b[2J"
+    shown = approval_safe({"task": spoof, "n": 3})
+    assert "\n" not in shown["task"] and "\x1b" not in shown["task"]
+    assert "↵" in shown["task"] and shown["n"] == 3
+    long = approval_safe("x" * 5000)
+    assert len(long) < 700 and "5000 characters" in long
+
+    async def go():
+        holder = []
+        app = _app(holder)
+        async with app.run_test(size=(110, 30)) as pilot:
+            await _until(pilot, lambda: holder)
+            holder[0].ask_approval = True
+            holder[0].approval_args = {"task": spoof}
+            await _type(pilot, "q")
+            await pilot.press("enter")
+            await _until(pilot, lambda: app.query(ApprovalApp))
+            panel = app.query_one(ApprovalApp)
+            await _until(pilot, lambda: "summarise" in "".join(
+                str(w.render()) for w in panel.query("NoMarkupStatic")))
+            shown = [str(w.render()) for w in panel.query(
+                ".approval-description")]
+            assert shown, "the task must be on screen to be judged"
+            text = " ".join(shown)
+            # One line, newlines visible as marks, no escape soup.
+            assert "\u21b5" in text and "\n" not in text
+            assert "\\n" not in text and "\\x1b" not in text
     run(go())
