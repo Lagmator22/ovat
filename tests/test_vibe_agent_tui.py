@@ -308,7 +308,7 @@ def test_a_question_streams_a_tool_group_then_the_answer():
             assert app.query(ToolGroup)
             assert "New hires get 20 days." in app.query_one(
                 AssistantMessage).get_content()
-            assert not app.query("LoadingWidget")
+            await until(pilot, lambda: not app.query("LoadingWidget"))
             assert fake.asked == ["How many leave days?"]
             # the bar counts what the turn used: 100 + 20 tokens
             await until(pilot, lambda: "120 tokens" in facts(app))
