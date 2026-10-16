@@ -1534,7 +1534,8 @@ def agent(
                "[bold]ovat agent[/bold] from a normal terminal.")
         raise typer.Exit(code=1)
     try:
-        from ovat.tui.app import run as run_agent_tui
+        from ovat.tui import runner
+        run_agent_tui = runner()
     except ImportError:
         rprint("[yellow]The agent TUI needs the TUI extra:[/yellow] "
                + esc('pip install "ovat[tui]"'))

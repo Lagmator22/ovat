@@ -53,6 +53,17 @@ class OvatServerHandle:
         """OVAT's own session (the fake one, in tests)."""
         return self._ctx.agent
 
+    @property
+    def ready(self) -> bool:
+        """The agent is built (False while it builds, or when it could not
+        be)."""
+        return self._ctx.is_ready
+
+    @property
+    def build_error(self) -> str | None:
+        """Why there is no agent, when the build failed."""
+        return self._ctx.build_error
+
     def subscribe(self, listener: Callable[[object], None]
                   ) -> Callable[[], None]:
         """Hear every report the AgentSession makes (Ready, BuildFailed,

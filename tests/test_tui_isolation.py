@@ -94,3 +94,25 @@ def test_the_agent_tui_is_optional_too(monkeypatch, tmp_path):
     assert runner.invoke(app, ["init", str(target)]).exit_code == 0
     assert runner.invoke(app, ["doctor", str(target)]).exit_code == 0
     assert runner.invoke(app, ["--help"]).exit_code == 0
+
+
+def test_without_textual_both_agent_uis_print_the_install_hint(monkeypatch):
+    """`ovat.tui` itself imports no toolkit, so the hint has to come from the
+    app modules failing to import, for the new app and the classic one."""
+    for name in ("ovat.tui.agent_app", "ovat.tui.app"):
+        monkeypatch.setitem(sys.modules, name, None)
+    for ui in (None, "classic"):
+        if ui:
+            monkeypatch.setenv("OVAT_AGENT_UI", ui)
+        result = runner.invoke(app, ["agent"])
+        assert result.exit_code == 1, (ui, result.output)
+        assert "ovat[tui]" in result.output
+
+
+def test_importing_ovat_tui_pulls_in_no_toolkit():
+    import subprocess
+    code = ("import sys, ovat.tui; "
+            "assert 'textual' not in sys.modules, 'textual was imported'")
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                          text=True)
+    assert done.returncode == 0, done.stderr

@@ -119,6 +119,16 @@ class Banner(Static):
         self._model.update(model_line(info))
         self._counts.update(counts_line(info))
 
+    def show_loading(self) -> None:
+        """The agent is being built again (/engine, /workflow)."""
+        self._counts.update("")
+        self._model.update(wave_text("loading the agent…", self._step))
+        if self._timer is None:
+            self._timer = self.set_interval(0.1, self._wave)
+
+    def freeze_mark(self) -> None:
+        self.mark.freeze()
+
     def show_problem(self, text: str) -> None:
         self._stop_wave()
         self._model.update(Text("no agent loaded", style=f"bold {ui.YELLOW}"))

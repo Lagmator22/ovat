@@ -90,6 +90,8 @@ class FakeSession:
     """Plays turns on threads, as AgentSession does, and records what the
     server did to it."""
 
+    agent_class = FakeAgent
+
     def __init__(self, workflow, sink, cwd=None, *, native=True,
                  answer="New hires get 20 days.", reasoning="",
                  fail_build=None, hold_build=False, hold_turn=False,
@@ -134,6 +136,10 @@ class FakeSession:
         self.stop = threading.Event()
         self.busy = False
         self.agent = None
+        self.info = {}
+        self.serving = False
+        self.server_calls = []                  # "start" / "stop" for /serve
+        self.last_trace, self.last_answer = {}, ""
         self.totals = {"turns": 0, "prompt_tokens": 0, "completion_tokens": 0}
         self.asked, self.subagent_calls = [], []
         self.engines = []
@@ -167,9 +173,10 @@ class FakeSession:
                     or f"Could not build {self.workflow}: boom"))
                 return
             # as the real session: the old agent is replaced only now
-            self.agent = FakeAgent(self.native)
-            self.sink(s.Ready(dict(INFO, workflow=self.workflow,
-                                   engine=engine or INFO["engine"])))
+            self.agent = self.agent_class(self.native)
+            self.info = dict(INFO, workflow=self.workflow,
+                             engine=engine or INFO["engine"])
+            self.sink(s.Ready(self.info))
         return self._thread(go)
 
     def switch_workflow(self, path):
@@ -247,6 +254,15 @@ class FakeSession:
             "Error: cancelled by the caller." if cancelled else self.answer,
             0.5, dict(self.totals_per_turn), [], self.failed, cancelled,
             self.reasoning))
+
+    def start_server(self):
+        self.server_calls.append("start")
+        self.serving = True
+        self.sink(s.Notice("info", "a2a: serving on 127.0.0.1:9999"))
+
+    def stop_server(self):
+        self.server_calls.append("stop")
+        self.serving = False
 
     def cancel(self):
         self.cancels += 1
