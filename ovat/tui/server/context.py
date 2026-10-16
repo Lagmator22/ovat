@@ -29,6 +29,7 @@ from ovat.agentic import sessions
 from ovat.tui.server import saved, views
 from ovat.tui.server.approvals import Approvals
 from ovat.tui.server.projector import Projector, now_ms
+from ovat.tui.server.questions import Questions
 from ovat.tui.server.rpc import RpcError, RpcServer
 from ovat.tui.server.shell_runs import ShellRuns
 from ovat.tui.server.turns import BuildFailedError, TurnManager
@@ -67,6 +68,7 @@ class ServerContext:
         self.stats = views.StatsBook()
         self.turns = TurnManager(self)
         self.approvals = Approvals(self)
+        self.questions = Questions(self)
         self.shell = ShellRuns(self)
         self.lifecycle = asyncio.Lock()
         self.closed = False
@@ -209,6 +211,7 @@ class ServerContext:
                            "it, before resuming another session")
         saved.save(self)
         self.approvals.forget()
+        self.questions.forget()
         self.turns.reset()
         self.agent.broker.forget_session_grants()
         self.stats.last_prompt = None
@@ -343,6 +346,9 @@ class ServerContext:
     def _on_ApprovalNeeded(self, event: s.ApprovalNeeded) -> None:
         self.approvals.request(event.request)
 
+    def _on_QuestionNeeded(self, event: s.QuestionNeeded) -> None:
+        self.questions.request(event.request)
+
     def _on_TurnDone(self, event: s.TurnDone) -> None:
         self.turns.finish(event)
 
@@ -456,6 +462,7 @@ class ServerContext:
                            "Wait for the current turn to end, or interrupt it, "
                            "before clearing the conversation")
         self.approvals.forget()
+        self.questions.forget()
         self.turns.reset()
         # The session says "New conversation." about itself; the app draws its
         # own confirmation, so that notice (delivered a moment later, in

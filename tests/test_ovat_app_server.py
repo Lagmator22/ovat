@@ -29,6 +29,7 @@ from ovat.agent.compaction import CompactionFailed, compacted_memory
 from ovat.agent.events import (SUBAGENT_STATUS, TOOL_ENDED, TOOL_STARTED,
                                Event)
 from ovat.agent.permissions import (ONCE, REFUSE, SESSION, ApprovalBroker)
+from ovat.agent.questions import QuestionBroker
 from ovat.agent.session import Session
 from ovat.agentic import session as s
 from ovat.tui.server import saved, serve_on_memory, start_ovat_app_server
@@ -107,6 +108,7 @@ class FakeSession:
                  approval=None, tool=True, shell_lines=("one", "two"),
                  shell_code=0, hold_shell=False, rebuild=False,
                  failed=False, totals=None, start_raises=False,
+                 question=None, extra_tools=(),
                  hold_start=False, compact_error=None, fail_pick=False):
         self.workflow, self.sink = workflow, sink
         self.compact_error = compact_error      # a model that cannot summarize
@@ -121,6 +123,10 @@ class FakeSession:
             self.resolved.append((request_id, decision))
             return real_resolve(request_id, decision)
         self.broker.resolve = spy
+        self.questions = QuestionBroker(
+            on_request=lambda r: sink(s.QuestionNeeded(r)))
+        self.question, self.extra_tools = question, tuple(extra_tools)
+        self.answered = "not asked"             # what ask_user got back
         self.native, self.answer, self.reasoning = native, answer, reasoning
         self.answer_deltas = tuple(answer_deltas)
         self.reasoning_deltas = tuple(reasoning_deltas)
@@ -337,6 +343,27 @@ class FakeSession:
         if self.approval is not None:
             self.approved = self.broker(
                 "search_docs", self.approval, "sends the question away")
+        for n, extra in enumerate(self.extra_tools, start=1):
+            # A tool that reports a `display`, as the real observed() does.
+            extra_id = f"x{n}"
+            self.sink(s.AgentActivity(Event(TOOL_STARTED, {
+                "call_id": extra_id, "name": extra["name"],
+                "arguments": extra["arguments"]})))
+            self.sink(s.AgentActivity(Event(TOOL_ENDED, {
+                "call_id": extra_id, "name": extra["name"], "status": "ok",
+                "duration_s": 0.1, "result_chars": 5,
+                "display": extra["display"]})))
+        if self.question is not None:
+            self.sink(s.AgentActivity(Event(TOOL_STARTED, {
+                "call_id": "q1", "name": "ask_user",
+                "arguments": self.question})))
+            self.answered = self.questions(
+                self.question["question"], self.question.get("choices", []))
+            self.sink(s.AgentActivity(Event(TOOL_ENDED, {
+                "call_id": "q1", "name": "ask_user", "status": "ok",
+                "duration_s": 0.1, "result_chars": 5, "display": {
+                    "kind": "ask_user", "answer": self.answered,
+                    "cancelled": self.answered is None}})))
         self.turn_gate.wait(T)
         if self.tool:
             denied = self.approval is not None and not self.approved
@@ -388,6 +415,7 @@ class FakeSession:
             self.turn_gate.set()
             stopped = True
         self.broker.cancel_all()
+        self.questions.cancel_all()
         if self.shell_busy:
             self.shell_killed.set()
             self.shell_gate.set()
@@ -2839,4 +2867,179 @@ def test_reload_rebuilds_only_when_the_workflow_file_changed(tmp_path):
             await session.resources.config.reload()
             assert len(fake.picks) == 1
             assert _remembered_questions(fake) == ["one"]
+    run(go())
+
+
+# ---- ask_user: the question callback --------------------------------------------
+
+QUESTION = {"question": "Which database?", "choices": ["sqlite", "postgres"]}
+
+
+def _answer_with(text=None, cancelled=False, other=False):
+    from ovat.tui.vibe.app_server.models import (UserAnswer,
+                                                 UserInputCallbackOutput,
+                                                 UserQuestionResult)
+    answers = [] if text is None else [UserAnswer(
+        question="Which database?", answer=text, is_other=other)]
+    return UserInputCallbackOutput(result=UserQuestionResult(
+        answers=answers, cancelled=cancelled))
+
+
+def test_a_question_round_trips_to_the_asking_tool():
+    from ovat.tui.vibe.app_server.models import UserInputCallbackDetail
+
+    async def go():
+        async with served(question=QUESTION) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            events = []
+
+            async def drive():
+                async with aclosing(session.act("pick one")) as gen:
+                    async for event in gen:
+                        events.append(event)
+                        if isinstance(event, CallbackRequested):
+                            await session.respond_to_callback(
+                                event.callback.callback_id,
+                                _answer_with("sqlite"))
+            await asyncio.wait_for(drive(), T)
+
+            asked = next(e.callback for e in events
+                         if isinstance(e, CallbackRequested))
+            assert isinstance(asked.detail, UserInputCallbackDetail)
+            question = asked.detail.request.questions[0]
+            assert question.question == "Which database?"
+            assert [o.label for o in question.options] == ["sqlite",
+                                                           "postgres"]
+            assert fake.answered == "sqlite"
+            assert any(isinstance(e, HistoryEntryUpdated)
+                       and isinstance(e.entry, PublicCallbackEntry)
+                       and e.entry.state.status == "answered"
+                       for e in events)
+            card = next(e for e in session.history if e.id == "q1")
+            assert isinstance(card.state, CompletedEffectState)
+            assert card.state.display.message == "sqlite"
+            assert not session.state.active_callbacks
+    run(go())
+
+
+def test_a_question_without_choices_still_shows_two_options():
+    async def go():
+        async with served(question={"question": "Name it?"}) as (
+                session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("go")
+            seen = await events_until(
+                session, lambda e: isinstance(e, CallbackRequested))
+            options = seen[-1].callback.detail.request.questions[0].options
+            assert [o.label for o in options] == ["Not sure", "Skip"]
+            await session.respond_to_callback(
+                seen[-1].callback.callback_id,
+                _answer_with("Widget", other=True))
+            await events_until(session, is_completed)
+            assert fake.answered == "Widget"
+    run(go())
+
+
+def test_the_person_cancelling_the_question_gives_the_tool_no_answer():
+    async def go():
+        async with served(question=QUESTION) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("pick one")
+            seen = await events_until(
+                session, lambda e: isinstance(e, CallbackRequested))
+            await session.respond_to_callback(
+                seen[-1].callback.callback_id, _answer_with(cancelled=True))
+            await events_until(session, is_completed)
+            assert fake.answered is None
+    run(go())
+
+
+def test_interrupting_closes_an_open_question():
+    async def go():
+        async with served(question=QUESTION) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("pick one")
+            seen = await events_until(
+                session, lambda e: isinstance(e, CallbackRequested))
+            callback = seen[-1].callback
+            await session.interrupt()
+            more = await events_until(session, is_completed)
+            assert completed_turn(more).status is PublicTurnStatus.INTERRUPTED
+            assert fake.answered is None
+            closed = [e.entry for e in more
+                      if isinstance(e, HistoryEntryUpdated)
+                      and isinstance(e.entry, PublicCallbackEntry)]
+            assert closed and closed[0].state.status == "cancelled"
+            with pytest.raises(AppServerResponseError) as err:
+                await session.respond_to_callback(
+                    callback.callback_id, _answer_with("sqlite"))
+            assert err.value.error.code is ProtocolErrorCode.CALLBACK_CLOSED
+    run(go())
+
+
+def test_a_client_that_cannot_show_questions_gets_no_answer_at_once():
+    async def go():
+        made = []
+
+        def factory(workflow, sink, cwd=None):
+            made.append(FakeSession(workflow, sink, cwd, question=QUESTION))
+            return made[0]
+        session, handle = await start_ovat_app_server(
+            "w.yml", session_factory=factory,
+            capabilities=ClientCapabilities(callback_kinds=["approval"]))
+        try:
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("pick one")
+            seen = await events_until(session, is_completed)
+            assert made[0].answered is None
+            assert any(isinstance(e, ServerWarning) and "cannot show" in
+                       e.params.warning.message for e in seen)
+        finally:
+            await asyncio.wait_for(session.close(), T)
+            await asyncio.wait_for(handle.close(), T)
+    run(go())
+
+
+# ---- the todo and web tools as Vibe cards ---------------------------------------
+
+def test_todo_and_web_results_become_vibe_cards():
+    from ovat.tui.vibe.app_server.models import (TodoEffectDetail,
+                                                 TodoEffectOutput,
+                                                 WebFetchEffectDetail,
+                                                 WebFetchEffectOutput,
+                                                 WebSearchEffectDetail,
+                                                 WebSearchEffectOutput)
+    todos = [{"id": "1", "content": "read it", "status": "in_progress",
+              "priority": "high"}]
+    tools = [
+        {"name": "todo", "arguments": {"action": "write", "todos": todos},
+         "display": {"kind": "todo", "action": "write", "todos": todos}},
+        {"name": "web_fetch", "arguments": {"url": "https://example.com"},
+         "display": {"kind": "web_fetch", "url": "https://example.com/",
+                     "content": "# Hi", "content_type": "text/html",
+                     "was_truncated": False}},
+        {"name": "web_search", "arguments": {"query": "ovms"},
+         "display": {"kind": "web_search", "query": "ovms", "answer": "a",
+                     "sources": [{"title": "T", "url": "https://x.org"}]}},
+    ]
+
+    async def go():
+        async with served(extra_tools=tools) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "plan")
+            todo, fetch, search = (next(e for e in session.history
+                                        if e.id == f"x{n}")
+                                   for n in (1, 2, 3))
+            assert isinstance(todo.detail, TodoEffectDetail)
+            assert todo.detail.input.action == "write"
+            assert TodoEffectOutput.model_validate(
+                todo.state.output).todos[0].content == "read it"
+            assert todo.state.display.message == "1 todo"
+            assert isinstance(fetch.detail, WebFetchEffectDetail)
+            assert WebFetchEffectOutput.model_validate(
+                fetch.state.output).url == "https://example.com/"
+            assert isinstance(search.detail, WebSearchEffectDetail)
+            out = WebSearchEffectOutput.model_validate(search.state.output)
+            assert out.sources[0].url == "https://x.org"
+            assert search.state.display.message == "ovms (1 result)"
     run(go())

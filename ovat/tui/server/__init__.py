@@ -144,7 +144,7 @@ async def start_ovat_app_server(
                 name="ovat-agent", version=_version(), title="OVAT agent",
                 entrypoint="cli"),
             capabilities=capabilities or ClientCapabilities(
-                callback_kinds=["approval"]),
+                callback_kinds=["approval", "user_input"]),
             session_options=SessionOptions(cwd=cwd),
             resume_session_id=resume_session_id,
             continue_session=continue_session)

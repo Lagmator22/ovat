@@ -76,5 +76,9 @@ async def queue_resume(ctx, params: TurnQueueResumeParams):
 @routes.method("callback/result", CallbackResultParams)
 async def callback_result(ctx, params: CallbackResultParams):
     projector = ctx.require_session(params.session_id)
-    ctx.approvals.answer(params)
+    # A question (ask_user) and an approval share this one method.
+    if ctx.questions.owns(params.callback_id):
+        ctx.questions.answer(params)
+    else:
+        ctx.approvals.answer(params)
     return CallbackResultResponse(last_event_id=projector.event_id)

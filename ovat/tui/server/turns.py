@@ -377,6 +377,7 @@ class TurnManager:
             "stop_reason": stop_reason})
         try:
             ctx.approvals.cancel_all("Turn ended")
+            ctx.questions.cancel_all("Turn ended")
             projector.finalize_turn(
                 active.turn.id,
                 cancelled=(status is PublicTurnStatus.INTERRUPTED
@@ -510,6 +511,7 @@ class TurnManager:
         active.cancel_requested = True
         self.ctx.agent.cancel()
         self.ctx.approvals.cancel_all("Turn interrupted")
+        self.ctx.questions.cancel_all("Turn interrupted")
         if active.task is not None and not active.agent_started:
             # Still waiting for the build (or about to ask): stop waiting.
             active.task.cancel()

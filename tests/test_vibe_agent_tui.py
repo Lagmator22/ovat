@@ -1669,3 +1669,23 @@ def test_ovat_agent_continue_and_resume_on_the_command_line(
     assert calls == [((str(workflow),), {})]
     result = invoke(cli, ["agent", str(workflow), "--continue"])
     assert result.exit_code == 1 and "need the new app" in result.output
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_ask_user_shows_the_question_and_answers_or_cancels(cancelled):
+    from ovat.tui.vibe.cli.textual_ui.widgets.question_app import QuestionApp
+
+    async def go():
+        async with running(question={"question": "Which database?",
+                                      "choices": ["sqlite", "postgres"]}) as (
+                app, pilot, fake, handle):
+            await say(pilot, "pick one")
+            await until(pilot, lambda: app.query(QuestionApp))
+            await until(pilot, lambda: "Which database?" in screen_text(app))
+            question = app.query_one(QuestionApp)
+            await until(pilot, lambda: not question.is_within_grace_period())
+            await pilot.press("escape" if cancelled else "enter")
+            await until(pilot, lambda: app.query(AssistantMessage))
+            assert fake.answered == (None if cancelled else "sqlite")
+            await until(pilot, lambda: not app.query(QuestionApp))
+    run(go())

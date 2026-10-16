@@ -24,7 +24,10 @@ from ovat.tui.vibe.app_server._effect_models import (
     FileSearchEffectOutput, FileWriteEffectDetail, FileWriteEffectInput,
     FileWriteEffectOutput, GenericEffectDetail, ShellEffectDetail,
     ShellEffectInput, ShellEffectOutput, SubagentEffectDetail,
-    SubagentEffectInput)
+    SubagentEffectInput, TodoEffectDetail, TodoEffectInput, TodoEffectItem,
+    TodoEffectOutput, UserQuestionEffectDetail, WebFetchEffectDetail,
+    WebFetchEffectInput, WebFetchEffectOutput, WebSearchEffectDetail,
+    WebSearchEffectInput, WebSearchEffectOutput, WebSearchEffectSource)
 from ovat.tui.vibe.app_server.events import (HistoryEntryAdded,
                                              HistoryEntryUpdated)
 from ovat.tui.vibe.app_server.models import (CompletedEffectState,
@@ -34,9 +37,11 @@ from ovat.tui.vibe.app_server.models import (CompletedEffectState,
                                              PublicEntryGenerationStatus,
                                              PublicError, PublicMessageEntry,
                                              PublicReasoningEntry,
+                                             QuestionChoice,
                                              RunningEffectState,
                                              SkippedEffectState,
-                                             TextContentBlock)
+                                             TextContentBlock, UserQuestion,
+                                             UserQuestionRequest)
 from ovat.tui.vibe.utils.tool_presentation import (EffectCallDisplay,
                                                    EffectResultDisplay)
 
@@ -54,7 +59,31 @@ _WORDS = {
     "edit": ("Editing", "Edited", "Editing files"),
     "grep": ("Searching", "Searched", "Searching files"),
     "shell": ("Running", "Ran", "Running command"),
+    # todo, ask_user, web_fetch: Vibe's words (todo.py, ask_user_question.py,
+    # web_fetch.py). web_search is OVAT's own tool, same style.
+    "todo": ("Updating", "Updated", "Managing todos"),
+    "ask_user": ("Asking", "Asked", "Waiting for user input"),
+    "web_fetch": ("Fetching", "Fetched", "Fetching URL"),
+    "web_search": ("Searching", "Searched", "Searching the web"),
 }
+
+# Vibe's widget wants at least two options per question and adds "Other"
+# (free text) by itself. A question with fewer choices is padded so it can
+# be shown; the person can always type their own answer.
+_PADDING = ("Not sure", "Skip")
+
+
+def question_request(question: str, choices: list[str]) -> UserQuestionRequest:
+    """The question as Vibe's widget wants it. Used for the running card and
+    for the callback (ovat/tui/server/questions.py)."""
+    labels = [c[:60] for c in choices]
+    for pad in _PADDING:
+        if len(labels) >= 2:
+            break
+        if pad not in labels:
+            labels.append(pad)
+    return UserQuestionRequest(questions=[UserQuestion(
+        question=question, options=[QuestionChoice(label=x) for x in labels])])
 
 
 def _now_ms() -> int:
@@ -100,6 +129,26 @@ def _coding_detail(name: str, a: dict, display):
             return ShellEffectDetail(
                 tool_name=name, display=display,
                 input=ShellEffectInput(command=str(a.get("command", ""))))
+        if name == "todo":
+            todos = a.get("todos")
+            return TodoEffectDetail(
+                tool_name=name, display=display, input=TodoEffectInput(
+                    action=str(a.get("action", "")),
+                    todos=[TodoEffectItem(**t) for t in todos]
+                    if isinstance(todos, list) else None))
+        if name == "ask_user":
+            return UserQuestionEffectDetail(
+                tool_name=name, display=display, input=question_request(
+                    str(a.get("question", "")),
+                    [str(c) for c in a.get("choices") or []]))
+        if name == "web_fetch":
+            return WebFetchEffectDetail(
+                tool_name=name, display=display, input=WebFetchEffectInput(
+                    url=str(a.get("url", "")), timeout=a.get("timeout")))
+        if name == "web_search":
+            return WebSearchEffectDetail(
+                tool_name=name, display=display, input=WebSearchEffectInput(
+                    query=str(a.get("query", ""))))
     except (ValueError, TypeError):
         # A model that sends a number where a string belongs still gets a
         # card, just the generic one.
@@ -143,7 +192,22 @@ def _coding_output(shown: dict):
             was_truncated=bool(shown.get("was_truncated")),
             parsed_matches=[FileSearchEffectMatch(**m) for m in
                             shown.get("parsed_matches") or []])
+    elif kind == "todo":
+        output = TodoEffectOutput(
+            todos=[TodoEffectItem(**t) for t in shown.get("todos") or []])
+    elif kind == "web_fetch":
+        output = WebFetchEffectOutput(
+            url=shown["url"], content=shown.get("content", ""),
+            content_type=shown.get("content_type", "text/plain"),
+            was_truncated=bool(shown.get("was_truncated")))
+    elif kind == "web_search":
+        output = WebSearchEffectOutput(
+            query=shown.get("query", ""), answer=shown.get("answer", ""),
+            sources=[WebSearchEffectSource(**x) for x in
+                     shown.get("sources") or []])
     else:
+        # ask_user has no result card of Vibe's own; its settled line says
+        # what the person answered.
         return None
     return output.model_dump(mode="json", by_alias=True)
 
@@ -159,6 +223,17 @@ def _coding_text(shown: dict) -> str:
     if kind == "read_file":
         n = shown.get("num_lines", 0)
         return f"{n} line{'' if n == 1 else 's'} from {shown['file_path']}"
+    if kind == "todo":
+        n = len(shown.get("todos") or [])
+        return f"{n} todo{'' if n == 1 else 's'}"
+    if kind == "web_fetch":
+        return shown.get("url", "")
+    if kind == "web_search":
+        n = len(shown.get("sources") or [])
+        return f"{shown.get('query', '')} ({n} result{'' if n == 1 else 's'})"
+    if kind == "ask_user":
+        return ("no answer" if shown.get("cancelled")
+                else shown.get("answer", ""))
     return shown.get("file") or shown.get("file_path") or ""
 
 

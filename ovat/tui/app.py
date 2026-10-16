@@ -291,6 +291,11 @@ class OvatAgentApp(App):
         if self._approval is None:
             await self._show_next_approval()
 
+    async def _on_QuestionNeeded(self, event: s.QuestionNeeded) -> None:
+        # This older screen has no way to show a question, so it is "no
+        # answer" at once: the model decides itself instead of waiting.
+        self.session.questions.resolve(event.request.id, None)
+
     async def _show_next_approval(self) -> None:
         request = self._approvals.pop(0)
         self._approval_request = request
