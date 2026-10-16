@@ -30,7 +30,8 @@ from ovat.agentic import session as s
 from ovat.text import THINK_CLOSE, THINK_OPEN
 from ovat.tui.server.projector import now_ms
 from ovat.tui.server.rpc import Reply, RpcError
-from ovat.tui.vibe.app_server.models import (PublicEntryGenerationStatus,
+from ovat.tui.vibe.app_server.models import (JsonPatchOperation,
+                                             PublicEntryGenerationStatus,
                                              PublicError, PublicMessageEntry,
                                              PublicQueuedTurn, PublicTurn,
                                              PublicTurnQueue,
@@ -46,6 +47,7 @@ from ovat.tui.vibe.app_server.protocol import (ProtocolErrorCode,
                                                TurnStartResponse)
 
 QUEUE_MAX = 32
+STREAM_FLUSH_SECONDS = 0.05
 
 
 class BuildFailedError(Exception):
@@ -62,6 +64,12 @@ class _Active:
     task: asyncio.Task | None = None
     cancel_requested: bool = False
     agent_started: bool = False
+    reasoning_id: str | None = None
+    answer_id: str | None = None
+    reasoning_buf: str = ""
+    answer_buf: str = ""
+    reasoning_streamed: bool = False
+    flush_handle: asyncio.TimerHandle | None = None
 
 
 @dataclass
@@ -213,6 +221,71 @@ class TurnManager:
         if active.cancel_requested:
             self.ctx.agent.cancel()
 
+    def on_reasoning_delta(self, text: str) -> None:
+        active = self.active
+        if active is None or not text:
+            return
+        active.reasoning_buf += text
+        self._schedule_flush(active)
+
+    def on_answer_delta(self, text: str) -> None:
+        active = self.active
+        if active is None or not text:
+            return
+        active.answer_buf += text
+        self._schedule_flush(active)
+
+    def _schedule_flush(self, active: _Active) -> None:
+        if active.flush_handle is None:
+            active.flush_handle = self.ctx.loop.call_later(
+                STREAM_FLUSH_SECONDS, self.flush_deltas)
+
+    def flush_deltas(self, *, close_entries: bool = False) -> None:
+        active = self.active
+        if active is None:
+            return
+        if active.flush_handle is not None:
+            active.flush_handle.cancel()
+            active.flush_handle = None
+        projector = self.ctx.projector
+        if projector is None:
+            return
+        if active.reasoning_buf:
+            chunk, active.reasoning_buf = active.reasoning_buf, ""
+            if active.reasoning_id is None:
+                entry = projector.bridge.reasoning(
+                    chunk,
+                    status=PublicEntryGenerationStatus.IN_PROGRESS).entry
+                active.reasoning_id = entry.id
+                active.reasoning_streamed = True
+                projector.add_entry(entry)
+            else:
+                projector.patch_entry(active.reasoning_id, [
+                    JsonPatchOperation(op="append", path="/text",
+                                       value=chunk)])
+        if (active.answer_buf or close_entries) and active.reasoning_id:
+            projector.patch_entry(active.reasoning_id, [
+                JsonPatchOperation(op="replace", path="/generationStatus",
+                                   value="completed")])
+            active.reasoning_id = None
+        if active.answer_buf:
+            chunk, active.answer_buf = active.answer_buf, ""
+            if active.answer_id is None:
+                entry = projector.bridge.answer(
+                    chunk,
+                    status=PublicEntryGenerationStatus.IN_PROGRESS).entry
+                active.answer_id = entry.id
+                projector.add_entry(entry)
+            else:
+                projector.patch_entry(active.answer_id, [
+                    JsonPatchOperation(op="append", path="/content/0/text",
+                                       value=chunk)])
+        if close_entries and active.answer_id is not None:
+            projector.patch_entry(active.answer_id, [
+                JsonPatchOperation(op="replace", path="/generationStatus",
+                                   value="completed")])
+            active.answer_id = None
+
     def finish(self, event: s.TurnDone) -> None:
         active = self.active
         if active is None:
@@ -220,6 +293,8 @@ class TurnManager:
         ctx = self.ctx
         projector = ctx.projector
         ctx.record_totals(event)
+        if not event.failed:
+            self.flush_deltas()
         if event.cancelled:
             status = PublicTurnStatus.INTERRUPTED
         elif event.failed:
@@ -230,11 +305,33 @@ class TurnManager:
                  if status is PublicTurnStatus.FAILED else None)
         if status is PublicTurnStatus.COMPLETED:
             try:
-                if event.reasoning.strip():
+                if active.reasoning_id is not None:
+                    projector.patch_entry(active.reasoning_id, [
+                        JsonPatchOperation(op="replace",
+                                           path="/generationStatus",
+                                           value="completed")])
+                    active.reasoning_id = None
+                elif event.reasoning.strip() and not active.reasoning_streamed:
                     projector.add_entry(projector.bridge.reasoning(
                         _untag(event.reasoning)).entry)
-                projector.add_entry(projector.bridge.answer(
-                    event.answer or "(no answer)").entry)
+                if active.answer_id is not None:
+                    current = projector.entry(active.answer_id)
+                    final_text = event.answer or "(no answer)"
+                    ops: list[JsonPatchOperation] = []
+                    if (isinstance(current, PublicMessageEntry)
+                            and final_text.startswith(current.text)
+                            and len(final_text) > len(current.text)):
+                        ops.append(JsonPatchOperation(
+                            op="append", path="/content/0/text",
+                            value=final_text[len(current.text):]))
+                    ops.append(JsonPatchOperation(
+                        op="replace", path="/generationStatus",
+                        value="completed"))
+                    projector.patch_entry(active.answer_id, ops)
+                    active.answer_id = None
+                else:
+                    projector.add_entry(projector.bridge.answer(
+                        event.answer or "(no answer)").entry)
             except Exception as exc:
                 status = PublicTurnStatus.FAILED
                 error = PublicError(
@@ -254,6 +351,9 @@ class TurnManager:
                   cancelled: bool | None = None) -> None:
         if self.active is not active:
             return
+        if active.flush_handle is not None:
+            active.flush_handle.cancel()
+            active.flush_handle = None
         ctx = self.ctx
         projector = ctx.projector
         completed = active.turn.model_copy(update={
@@ -406,8 +506,12 @@ class TurnManager:
 
     def close(self) -> None:
         active = self.active
-        if active is not None and active.task is not None:
-            active.task.cancel()
+        if active is not None:
+            if active.flush_handle is not None:
+                active.flush_handle.cancel()
+                active.flush_handle = None
+            if active.task is not None:
+                active.task.cancel()
 
 
 def _replace_response(queue_item_id: str):

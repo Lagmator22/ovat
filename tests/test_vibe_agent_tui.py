@@ -37,7 +37,7 @@ from ovat.tui.vibe.cli.textual_ui.widgets.approval_app import \
 from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.container import \
     ChatInputContainer  # noqa: E402
 from ovat.tui.vibe.cli.textual_ui.widgets.messages import (  # noqa: E402
-    AssistantMessage, ErrorMessage, InterruptMessage,
+    AssistantMessage, ErrorMessage, InterruptMessage, ReasoningMessage,
     UserCommandMessage, UserMessage, WarningMessage)
 from ovat.tui.vibe.cli.textual_ui.widgets.theme_picker import \
     ThemePickerApp  # noqa: E402
@@ -1329,3 +1329,23 @@ def test_reporting_an_error_without_sentry_installed_does_nothing(monkeypatch):
     from ovat.tui.vibe.observability.sentry import capture_sentry_exception
     monkeypatch.setitem(sys.modules, "sentry_sdk", None)
     assert capture_sentry_exception(RuntimeError("x"), fatal=True) is None
+
+
+def test_streamed_reasoning_and_answer_deltas_grow_in_the_transcript():
+    async def go():
+        async with running(
+                tool=False,
+                reasoning_deltas=("check ", "handbook"),
+                answer_deltas=("New hires ", "get 20 ", "days."),
+                reasoning="<think>check handbook</think>",
+                answer="New hires get 20 days.") as (app, pilot, fake, handle):
+            await say(pilot, "How many days?")
+            await until(pilot, lambda: app.query(AssistantMessage)
+                        and "New hires get 20 days."
+                        in app.query_one(AssistantMessage).get_content())
+            assert len(app.query(AssistantMessage)) == 1
+            assert len(app.query(ReasoningMessage)) == 1
+            assert "check handbook" in app.query_one(
+                ReasoningMessage)._content
+    run(go())
+

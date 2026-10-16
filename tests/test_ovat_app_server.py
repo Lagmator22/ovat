@@ -94,6 +94,7 @@ class FakeSession:
 
     def __init__(self, workflow, sink, cwd=None, *, native=True,
                  answer="New hires get 20 days.", reasoning="",
+                 answer_deltas=(), reasoning_deltas=(), delta_pause=0.06,
                  fail_build=None, hold_build=False, hold_turn=False,
                  approval=None, tool=True, shell_lines=("one", "two"),
                  shell_code=0, hold_shell=False, rebuild=False,
@@ -111,6 +112,9 @@ class FakeSession:
             return real_resolve(request_id, decision)
         self.broker.resolve = spy
         self.native, self.answer, self.reasoning = native, answer, reasoning
+        self.answer_deltas = tuple(answer_deltas)
+        self.reasoning_deltas = tuple(reasoning_deltas)
+        self.delta_pause = delta_pause
         self.fail_build, self.tool, self.approval = fail_build, tool, approval
         self.shell_lines, self.shell_code = shell_lines, shell_code
         self.rebuild, self.failed = rebuild, failed
@@ -243,6 +247,18 @@ class FakeSession:
                 TOOL_ENDED, {"call_id": call_id, "name": "search_docs",
                              "status": "denied" if denied else "ok",
                              "duration_s": 0.4, "result_chars": 9})))
+        for piece in self.reasoning_deltas:
+            if self.stop.is_set():
+                break
+            self.sink(s.ReasoningDelta(piece))
+            if self.delta_pause:
+                time.sleep(self.delta_pause)
+        for piece in self.answer_deltas:
+            if self.stop.is_set():
+                break
+            self.sink(s.AnswerDelta(piece))
+            if self.delta_pause:
+                time.sleep(self.delta_pause)
         cancelled = self.stop.is_set()
         self.totals["turns"] += 1
         self.totals["prompt_tokens"] += self.totals_per_turn.get(
@@ -1963,3 +1979,35 @@ def test_the_server_does_not_import_textual():
     out = subprocess.run([sys.executable, "-c", code], capture_output=True,
                          text=True, env=env, timeout=120)
     assert "BAD []" in out.stdout, out.stdout + out.stderr
+
+
+def test_streamed_reasoning_and_answer_deltas_become_incremental_history_patches():
+    async def go():
+        async with served(
+                tool=False,
+                reasoning_deltas=("check ", "handbook"),
+                answer_deltas=("New hires ", "get 20 ", "days."),
+                reasoning="<think>check handbook</think>",
+                answer="New hires get 20 days.") as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("How many days?")
+            seen = await events_until(session, is_completed)
+            added = [e.entry for e in seen if isinstance(e, HistoryEntryAdded)]
+            updated = [e for e in seen if isinstance(e, HistoryEntryUpdated)]
+            assistants = [e for e in session.history
+                          if isinstance(e, PublicMessageEntry)
+                          and e.role == "assistant"]
+            reasonings = [e for e in session.history
+                          if isinstance(e, PublicReasoningEntry)]
+            assert len(assistants) == 1
+            assert len(reasonings) == 1
+            assert assistants[0].text == "New hires get 20 days."
+            assert reasonings[0].text == "check handbook"
+            assert any(isinstance(e, PublicMessageEntry)
+                       and e.role == "assistant"
+                       and e.generation_status.value == "in_progress"
+                       for e in added)
+            assert any(any(op.op == "append" and op.path == "/content/0/text"
+                           for op in u.patch) for u in updated)
+    run(go())
+

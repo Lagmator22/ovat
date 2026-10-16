@@ -229,10 +229,18 @@ class ServerContext:
     def _on_TurnStarted(self, event: s.TurnStarted) -> None:
         self.turns.agent_started()
 
+    def _on_ReasoningDelta(self, event: s.ReasoningDelta) -> None:
+        self.turns.on_reasoning_delta(event.text)
+
+    def _on_AnswerDelta(self, event: s.AnswerDelta) -> None:
+        self.turns.on_answer_delta(event.text)
+
     def _on_AgentActivity(self, event: s.AgentActivity) -> None:
         if event.event.type not in (TOOL_STARTED, TOOL_ENDED, SUBAGENT_STATUS,
                                     REMOTE_STATUS):
             return
+        if event.event.type == TOOL_STARTED:
+            self.turns.flush_deltas(close_entries=True)
         kinds = {t["name"]: t["kind"] for t in self.info.get("tools", [])}
         self.projector.agent_event(event.event, kinds)
 

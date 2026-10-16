@@ -176,21 +176,21 @@ class Bridge:
 
     # ---- answers -------------------------------------------------------------
 
-    def answer(self, text: str) -> HistoryEntryAdded:
+    def answer(self, text: str, status: PublicEntryGenerationStatus = (
+               PublicEntryGenerationStatus.COMPLETED)) -> HistoryEntryAdded:
         entry = PublicMessageEntry(
             id=f"msg-{next(self._ids)}", session_id=self.session_id,
             turn_id=self.turn_id, created_at=_now_ms(),
-            updated_at=_now_ms(),
-            generation_status=PublicEntryGenerationStatus.COMPLETED,
+            updated_at=_now_ms(), generation_status=status,
             role="assistant", content=[TextContentBlock(text=text)])
         return HistoryEntryAdded(entry=entry)
 
-    def reasoning(self, text: str) -> HistoryEntryAdded:
+    def reasoning(self, text: str, status: PublicEntryGenerationStatus = (
+                  PublicEntryGenerationStatus.COMPLETED)) -> HistoryEntryAdded:
         """What a thinking model reasoned before it answered."""
         entry = PublicReasoningEntry(
             id=f"reasoning-{next(self._ids)}", session_id=self.session_id,
             turn_id=self.turn_id, created_at=_now_ms(),
-            updated_at=_now_ms(),
-            generation_status=PublicEntryGenerationStatus.COMPLETED,
+            updated_at=_now_ms(), generation_status=status,
             text=text)
         return HistoryEntryAdded(entry=entry)
