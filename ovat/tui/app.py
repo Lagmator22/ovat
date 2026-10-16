@@ -32,6 +32,7 @@ from ovat.agentic import session as s
 from ovat.cli import ui
 from ovat.cli.theme import OVAT_THEME
 from ovat.tui.bridge import Bridge
+from ovat.tui.server.safe import approval_safe
 from ovat.tui.vibe.agents import AgentSafety
 from ovat.tui.vibe.app_server._effect_models import GenericEffectDetail
 from ovat.tui.vibe.cli.commands import Command, CommandRegistry
@@ -86,33 +87,6 @@ class HardwareReading(Message):
     def __init__(self, reading: dict) -> None:
         super().__init__()
         self.reading = reading
-
-
-_APPROVAL_ARG_MAX = 600
-
-
-def approval_safe(value):
-    """A model-written argument as shown in the approval panel.
-
-    The person deciding must see what will be sent, but the text must not
-    be able to dress up as part of the panel: a "task" containing
-    "\n1. Allow once" would otherwise print lines that look like the
-    panel's own options, or push the real ones out of view. So control
-    characters go, every newline shows as a visible mark on ONE line, and
-    long text is cut (with the length said)."""
-    if isinstance(value, dict):
-        return {str(k): approval_safe(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [approval_safe(v) for v in value]
-    if not isinstance(value, str):
-        return value
-    text = "".join(ch if ch.isprintable() or ch == "\n" else "?"
-                   for ch in value)
-    text = text.replace("\r\n", "\n").replace("\n", " \u21b5 ")
-    if len(text) > _APPROVAL_ARG_MAX:
-        text = (text[:_APPROVAL_ARG_MAX]
-                + f" ... [{len(value)} characters in all]")
-    return text
 
 
 def _short_path(path: str) -> str:
