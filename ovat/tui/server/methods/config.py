@@ -37,8 +37,10 @@ async def config_read(ctx, params: ConfigReadParams):
         ctx.require_session(params.session_id)
     return ConfigReadResponse(
         config=views.config_view(ctx.info, ctx.workflow, ctx.theme),
-        skills_count=0, hooks_count=0, mcp_servers_total=0,
-        mcp_servers_enabled=0)
+        skills_count=0, hooks_count=0,
+        mcp_servers_total=len(ctx.info.get("mcp", ())),
+        mcp_servers_enabled=sum(s["status"] != "disabled"
+                                for s in ctx.info.get("mcp", ())))
 
 
 @routes.method("config/effective/read", ConfigEffectiveReadParams)

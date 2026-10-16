@@ -216,12 +216,15 @@ class AgentSession:
                  load=None, build=None, close=None,
                  cwd: str | None = None):
         from ovat.agent.factory import build_agent, close_agent
+        from ovat.agentic.mcp import MCPSelection
         from ovat.config.workflow import load_workflow
         self.workflow = workflow
         self.sink = sink
         self.cwd = cwd or os.getcwd()
         self._load = load or load_workflow
-        self._build = build or build_agent
+        self.mcp_selection = MCPSelection()
+        self._build = build or (lambda config: build_agent(
+            config, select_tools=self.mcp_selection.select_tools))
         self._close = close or close_agent
         self.config = None
         self.agent = None
@@ -310,7 +313,7 @@ class AgentSession:
             if engine:
                 config = config.model_copy(update={
                     "agent": config.agent.model_copy(update={"type": engine})})
-            agent = self._build(config)
+            agent = self._build(self.mcp_selection.config_for_build(config))
         except Exception as exc:
             self._emit(BuildFailed(f"Could not build {self.workflow}: "
                                    f"{_brief(exc)}"))
@@ -334,7 +337,12 @@ class AgentSession:
 
         self._unsubscribe = agent.events.subscribe(_on_bus)
         self.info = describe_agent(config, agent, self.workflow, default_model)
+        self.refresh_mcp()
         self._emit(Ready(self.info))
+
+    def refresh_mcp(self) -> None:
+        if self.config is not None:
+            self.info["mcp"] = self.mcp_selection.catalog(self.config, self.agent)
 
     def switch_workflow(self, path: str) -> threading.Thread:
         """Another workflow starts from its own file: no picks carry over."""

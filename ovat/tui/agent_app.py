@@ -374,6 +374,15 @@ class OvatAgentApp(VibeApp):
     async def action_toggle_debug_console(self, **kwargs: Any) -> None:
         """Ctrl+Backslash: the console reads the server's log."""
 
+    async def _maybe_handle_mcp_subcommand(self, cmd_args: str) -> bool:
+        word = cmd_args.strip().split(" ", 1)[0]
+        if word in {"add", "login", "logout"}:
+            await self._note(
+                "Configure MCP stdio servers in workflow.yml under tools; "
+                "this panel changes which tools this session uses.", "info")
+            return True
+        return await super()._maybe_handle_mcp_subcommand(cmd_args)
+
     # ---- /status: the copied one prints a cost in dollars ---------------------
 
     async def _show_status(self, **kwargs: Any) -> None:

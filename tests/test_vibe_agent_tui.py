@@ -489,9 +489,9 @@ def test_help_lists_the_commands_and_keys_and_nothing_that_cannot_work():
                          if c.name not in ("quit", "new")] + [
                              "clear", "exit", "status", "theme", "resume",
                              "rewind", "rename", "branch", "log", "compact",
-                             "model", "thinking", "reload", "config"]:
+                             "model", "thinking", "reload", "config", "mcp"]:
                 assert f"/{name}" in text, name
-            for gone in ("/teleport", "/mcp", "/retry"):
+            for gone in ("/teleport", "/retry"):
                 assert gone not in text, gone
             assert "Ctrl+O" in text and "Shift+Tab" in text
             # /branch's own text has `ovat agent --resume <id>` in a code
@@ -1468,7 +1468,7 @@ def test_the_registry_keeps_a_vibe_command_only_when_the_server_serves_it():
     assert set(registry.commands) & vibe == {
         "help", "clear", "copy", "exit", "status", "theme", "resume",
         "rewind", "rename", "branch", "log", "compact", "model", "thinking",
-        "reload", "config"}
+        "reload", "config", "mcp"}
 
 
 def test_a_removed_command_would_only_have_ended_in_not_supported():

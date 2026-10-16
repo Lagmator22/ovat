@@ -185,8 +185,15 @@ def runtime_snapshot(info: dict, workflow: str | None, active: str,
         config=config_view(info, workflow, theme), active_agent=current,
         agents=agents, skills=[], tools=tool_summaries(info), stats=stats,
         context_window=window, issues=[], hooks_count=0,
-        connectors=ConnectorCounts(), mcp=MCPState(),
+        connectors=ConnectorCounts(), mcp=mcp_state(info),
         bypass_tool_permissions=False, experimental_harness=False)
+
+
+def mcp_state(info):
+    from ovat.tui.vibe.app_server.models import MCPSourceSummary
+    return MCPState(sources=[MCPSourceSummary(
+        **source, kind="server", transport="stdio")
+        for source in info.get("mcp", ())])
 
 
 def session_log(session_id: str, store) -> SessionLogSummary:
