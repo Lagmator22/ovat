@@ -14,6 +14,7 @@ reply as protocol.RemoteReply, so nothing else learns the SDK's types.
 import asyncio
 import atexit
 import concurrent.futures
+import json
 import threading
 import uuid
 
@@ -127,7 +128,6 @@ class SDKPeer:
                    on_status=None) -> RemoteReply:
         """Send a structured response or confirmation for an input-required task."""
         self._ensure_open()
-        import json
         text = json.dumps(data)
         return self._call(
             self._send(text, metadata or {}, on_status, task_id=task_id,

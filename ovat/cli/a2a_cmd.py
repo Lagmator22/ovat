@@ -171,11 +171,12 @@ def call(
         rprint(f"[red]{esc(reply.state.value)}:[/red] {esc(reply.text)}")
         raise typer.Exit(code=1)
     rprint(esc(reply.text))
-    trace = reply.metadata.get("trace") or {}
-    if trace:
-        rprint(f"[dim]{trace.get('turns', '?')} turns, "
-               f"{trace.get('tool_calls', '?')} tool calls, "
-               f"{trace.get('latency_s', '?')} s[/dim]")
+    from ovat.tools.a2a_call import remote_totals
+    totals = remote_totals(reply.metadata)
+    if totals:
+        rprint(f"[dim]{totals.get('turns', '?')} turns, "
+               f"{totals.get('tool_calls', '?')} tool calls, "
+               f"{totals.get('latency_s', '?')} s[/dim]")
 
 
 @a2a_app.command()

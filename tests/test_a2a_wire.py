@@ -175,7 +175,7 @@ def test_a_question_comes_back_with_progress_trace_and_file_names(server_url):
     assert result.text == "answer to: How many leave days?"
     assert "calling search_docs" in lines
     assert result.metadata["sources"] == ["leave.md"]   # a name, not a path
-    assert result.metadata["trace"]["tool_calls"] == 1
+    assert result.metadata["totals"]["tool_calls"] == 1
 
 
 def test_a_follow_up_continues_the_same_conversation(server_url):

@@ -93,13 +93,13 @@ class _UpdaterReporter:
         except RuntimeError:
             pass
 
-    async def completed(self, trace: dict) -> None:
+    async def completed(self, totals: dict) -> None:
         await self._status(TaskState.TASK_STATE_COMPLETED, None,
-                           {"trace": trace, "sources": self._sources})
+                           {"totals": totals, "sources": self._sources})
 
-    async def failed(self, text: str, trace: dict | None = None) -> None:
+    async def failed(self, text: str, totals: dict | None = None) -> None:
         await self._status(TaskState.TASK_STATE_FAILED, text,
-                           {"trace": trace} if trace else None)
+                           {"totals": totals} if totals else None)
 
     async def rejected(self, text: str) -> None:
         await self._status(TaskState.TASK_STATE_REJECTED, text)

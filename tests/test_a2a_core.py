@@ -671,10 +671,67 @@ def test_subagents_are_not_offered_to_remote_callers_by_default():
     assert exp.exposed == ["search_docs"] and "delegate" in exp.hidden
 
 
-def test_a2a_call_returns_trace_totals_from_server_metadata():
-    totals = {"prompt_tokens": 123, "completion_tokens": 45, "total_tokens": 168}
-    reply = RemoteReply(TaskState.COMPLETED, "ok", metadata={"ovat": {"trace": totals}})
-    peer = ScriptedPeer(reply)
-    ans, returned_totals = a2a_call.a2a_call_impl("hi", peer, "p", "http://x", return_totals=True)
-    assert returned_totals == totals
+def test_a2a_call_returns_the_remote_totals_checked():
+    """Another OVAT's totals arrive under metadata.ovat.totals (the client
+    flattens metadata.ovat), as floats, from a machine this one does not
+    control: only finite, non-negative numbers are kept, as ints."""
+    sent = {"prompt_tokens": 123.0, "completion_tokens": 45.0, "turns": 2.0,
+            "latency_s": 1.5, "tool_calls": -3, "total_tokens": float("inf"),
+            "failed": True, "extra": "x"}
+    reply = RemoteReply(TaskState.COMPLETED, "ok", metadata={"totals": sent})
+    ans, totals = a2a_call.a2a_call_impl("hi", ScriptedPeer(reply), "p",
+                                         "http://x", return_totals=True)
+    assert totals == {"prompt_tokens": 123, "completion_tokens": 45,
+                      "turns": 2, "latency_s": 1.5}
+    assert all(type(v) is int for k, v in totals.items() if k != "latency_s")
+    assert a2a_call.remote_totals({"totals": "lots"}) == {}
+
+
+class ConfirmingPeer(ScriptedPeer):
+    """Asks to confirm `rounds` tools, one per reply, then answers."""
+
+    def __init__(self, rounds):
+        super().__init__()
+        self.rounds, self.answers = rounds, []
+
+    def _next(self):
+        if len(self.answers) < self.rounds:
+            n = len(self.answers) + 1
+            return RemoteReply(TaskState.INPUT_REQUIRED, "approve?",
+                               task_id="t", metadata={
+                                   "kind": "tool-call-confirmation",
+                                   "callId": f"c{n}", "tool": f"tool{n}",
+                                   "args": {"n": n}})
+        return RemoteReply(TaskState.COMPLETED, "all done")
+
+    def send(self, text, metadata=None, on_status=None):
+        self.sent.append((text, metadata))
+        return self._next()
+
+    def send_input(self, data, task_id=None, on_status=None):
+        self.answers.append(data)
+        return self._next()
+
+
+def test_a2a_call_answers_every_confirmation_the_remote_asks_for():
+    """Only the first one was answered: a second tool that needed approval
+    ended the call with "needs more input from a person"."""
+    bus = EventBus()
+    asked = []
+    bus.approver = lambda tool, args, reason: asked.append(tool) or True
+    peer = ConfirmingPeer(rounds=2)
+    out = a2a_call.a2a_call_impl("go", peer, "p", "http://x", bus)
+    assert out.endswith("all done")
+    assert asked == ["p:tool1", "p:tool2"]
+    assert peer.answers == [{"callId": "c1", "outcome": "proceed_once"},
+                            {"callId": "c2", "outcome": "proceed_once"}]
+    # without a person to ask nothing is answered for them
+    headless = ConfirmingPeer(rounds=1)
+    out = a2a_call.a2a_call_impl("go", headless, "p", "http://x", EventBus())
+    assert "needs more input from a person" in out and headless.answers == []
+    # and a remote that never stops asking is not answered forever
+    endless = ConfirmingPeer(rounds=10_000)
+    a2a_call.a2a_call_impl("go", endless, "p", "http://x", bus)
+    assert len(endless.answers) == a2a_call.MAX_APPROVALS
+
 
