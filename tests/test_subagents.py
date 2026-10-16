@@ -687,3 +687,16 @@ def test_child_sessions_save_restore_and_rewind():
     assert "child-c2" not in projector.child_sessions
 
 
+
+
+def test_a_child_stop_flag_wakes_a_waiter_when_the_parent_is_set():
+    """is_set() looked at the parent, but threading.Event.wait() reads its
+    own flag and slept through a parent cancel."""
+    from ovat.agent.events import CombinedStopEvent
+    parent = threading.Event()
+    child = CombinedStopEvent(parent)
+    threading.Timer(0.1, parent.set).start()
+    started = time.monotonic()
+    assert child.wait(5) is True
+    assert time.monotonic() - started < 1
+    assert CombinedStopEvent(threading.Event()).wait(0.1) is False

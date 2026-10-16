@@ -86,6 +86,17 @@ class CombinedStopEvent(threading.Event):
     def is_set(self) -> bool:
         return super().is_set() or (bool(self._parent and self._parent.is_set()))
 
+    def wait(self, timeout: float | None = None) -> bool:
+        # threading.Event.wait() reads its own flag, not is_set(), so it
+        # would sleep through the parent being set. Wait in short slices.
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while not self.is_set():
+            left = 0.05 if deadline is None else deadline - time.monotonic()
+            if left <= 0:
+                return False
+            super().wait(min(left, 0.05))
+        return True
+
 
 # What a cancelled tool hands the model instead of running. One sentence,
 # starting "Error: " like every other failure the model reads.
