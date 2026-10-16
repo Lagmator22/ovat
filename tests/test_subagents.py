@@ -700,3 +700,39 @@ def test_a_child_stop_flag_wakes_a_waiter_when_the_parent_is_set():
     assert child.wait(5) is True
     assert time.monotonic() - started < 1
     assert CombinedStopEvent(threading.Event()).wait(0.1) is False
+
+
+def test_a_child_that_reported_no_tokens_shows_none_not_zero():
+    """Absent is not zero. A child whose engine reported no token counts
+    (an API that sends no usage, a framework engine) was shown as
+    "0 tokens", which reads as measured."""
+    from ovat.agent.events import Event, SUBAGENT_DONE, SUBAGENT_STARTED
+    from ovat.tui.server.projector import Projector
+    from ovat.tui.vibe.app_server.models import IdleSessionStatus, PublicSession
+    from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.subagent_list import \
+        SubagentList
+
+    def finish(totals):
+        projector = Projector(PublicSession(
+            id="p", status=IdleSessionStatus(), created_at=0, updated_at=0),
+            lambda m, p: None)
+        projector.agent_event(Event(SUBAGENT_STARTED, {
+            "call_id": "c1", "agent": "researcher"}), {})
+        projector.agent_event(Event(SUBAGENT_DONE, {
+            "call_id": "c1", "agent": "researcher", "answer": "a",
+            "status": "ok", "totals": totals}), {})
+        return projector.child_sessions["child-c1"], projector.session
+
+    def row(child):
+        widget = SubagentList.__new__(SubagentList)
+        widget._selected_session_id = widget._marker_session_id = None
+        return widget._child_row(child).plain
+
+    unknown, parent = finish({"turns": 1})
+    assert unknown.context_usage is None
+    assert "tokens" not in row(unknown)
+    assert parent.token_usage is None              # nothing added
+    known, parent = finish({"prompt_tokens": 30, "completion_tokens": 12})
+    assert known.context_usage.total_tokens == 42
+    assert "42 tokens" in row(known)
+    assert parent.token_usage.total_tokens == 42

@@ -264,17 +264,20 @@ class SubagentList(NavigableOptionList):
 
     def _child_row(self, session: PublicChildSession) -> Content:
         status, status_style = _status(session)
-        context_tokens = (
-            session.context_usage.total_tokens
+        # OVAT edit: no count when the child reported none (upstream showed
+        # 0 tokens, which reads as measured).
+        tokens = (
+            (f" · {format_compact_count(session.context_usage.total_tokens)}"
+             " tokens", "$text-muted")
             if session.context_usage is not None
-            else 0
+            else ""
         )
         return self._row(
             Content.assemble(
                 (_display_name(session.agent_type), "bold"),
                 f" ({_display_name(session.name)}) ",
                 (f"[{status}]", status_style),
-                (f" · {format_compact_count(context_tokens)} tokens", "$text-muted"),
+                tokens,
             ),
             selected=session.id == self._selected_session_id,
             marked=self._marker_session_id == session.id,

@@ -297,23 +297,25 @@ class Projector:
                     status = ArchivedSessionStatus()
                 else:
                     status = IdleSessionStatus()
+                # Absent is not zero: a child whose engine reported no
+                # token counts keeps context_usage None, and its row in the
+                # subagent list leaves the count out.
                 totals = event.data.get("totals") or {}
-                prompt_toks = totals.get("prompt_tokens") or 0
-                compl_toks = totals.get("completion_tokens") or 0
-                tot_toks = totals.get("total_tokens") or (prompt_toks + compl_toks)
-                usage = TokenUsage(input_tokens=prompt_toks,
-                                   output_tokens=compl_toks,
-                                   total_tokens=tot_toks)
-                child = child.model_copy(update={
-                    "status": status,
-                    "token_usage": usage,
-                    "context_usage": usage,
-                    "updated_at": now_ms(),
-                })
+                prompt = totals.get("prompt_tokens")
+                completion = totals.get("completion_tokens")
+                update = {"status": status, "updated_at": now_ms()}
+                usage = None
+                if prompt is not None or completion is not None:
+                    usage = TokenUsage(
+                        input_tokens=prompt or 0,
+                        output_tokens=completion or 0,
+                        total_tokens=(totals.get("total_tokens")
+                                      or (prompt or 0) + (completion or 0)))
+                    update.update(token_usage=usage, context_usage=usage)
+                child = child.model_copy(update=update)
                 self.child_sessions[child_id] = child
                 self._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
                            child_session=child)
-                answer_text = event.data.get("answer") or ""
                 if answer_text and child_id in self.child_histories:
                     stamp = now_ms()
                     active_turn = self.bridge.turn_id or f"turn-{call_id}"
@@ -322,17 +324,17 @@ class Projector:
                         turn_id=active_turn, created_at=stamp, updated_at=stamp,
                         generation_status=PublicEntryGenerationStatus.COMPLETED,
                         role="assistant", content=[TextContentBlock(text=answer_text)]))
-                curr_usage = self.session.token_usage
-                base_in = curr_usage.input_tokens if curr_usage is not None else 0
-                base_out = curr_usage.output_tokens if curr_usage is not None else 0
-                base_tot = curr_usage.total_tokens if curr_usage is not None else 0
-                self.session = self.session.model_copy(update={
-                    "token_usage": TokenUsage(
-                        input_tokens=base_in + prompt_toks,
-                        output_tokens=base_out + compl_toks,
-                        total_tokens=base_tot + tot_toks,
-                    )
-                })
+                if usage is not None:
+                    # Shown at once; the turn's own stats snapshot (which
+                    # counts children too, see context._on_AgentActivity)
+                    # replaces it when the turn ends.
+                    base = self.session.token_usage or TokenUsage()
+                    self.session = self.session.model_copy(update={
+                        "token_usage": TokenUsage(
+                            input_tokens=base.input_tokens + usage.input_tokens,
+                            output_tokens=base.output_tokens
+                            + usage.output_tokens,
+                            total_tokens=base.total_tokens + usage.total_tokens)})
             return
 
         if event.type == TOOL_ENDED:
