@@ -8,9 +8,28 @@ PC). Because OVMS supports --tool_parser, THIS plug is the one that does real
 tool calling and so chat() can return finish_reason="tool_calls". So this is the 
 server path for llms.
 """
+from dataclasses import dataclass
+
 from openai import OpenAI
 
 from ovat.providers.base import LLMProvider
+
+
+@dataclass
+class _StreamFunction:
+    name: str = ""
+    arguments: str = ""
+
+
+@dataclass
+class _StreamToolCall:
+    id: str = ""
+    function: _StreamFunction = None
+    type: str = "function"
+
+    def __post_init__(self) -> None:
+        if self.function is None:
+            self.function = _StreamFunction()
 
 
 #: Default ceiling on one reply. Mirrored by ModelConfig.max_tokens, and a
@@ -34,7 +53,8 @@ class OVMSLLMProvider(LLMProvider):
                  temperature: float = 0.0,
                  sampling: dict | None = None,
                  extra_body: dict | None = None,
-                 api_key: str = "not-needed"):
+                 api_key: str = "not-needed",
+                 stream: bool = True):
         # api_key is required by the SDK but ignored by OVMS, any string works.
         # A real one is passed only for a cloud subagent (ovat/agentic), which
         # reuses this class because any OpenAI-compatible API speaks the same
@@ -60,14 +80,21 @@ class OVMSLLMProvider(LLMProvider):
         # Both empty by default, so nothing extra is sent.
         self.sampling = dict(sampling or {})
         self.extra_body = dict(extra_body or {})
+        # OVMS documents stream_options.include_usage for continuous-batching
+        # servables only, and usage as not working for streaming on stateful
+        # NPU servables. Setting stream=False on NPU keeps token usage intact.
+        self.stream = stream
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+    def chat(self, messages: list[dict], tools: list[dict] | None = None,
+             on_token=None) -> dict:
         extra = {} if self.max_tokens is None else {"max_tokens": self.max_tokens}
         extra["temperature"] = self.temperature
         extra.update(self.sampling)
         if self.extra_body:
             extra["extra_body"] = self.extra_body
         try:
+            if on_token is not None and self.stream:
+                return self._ask_stream(messages, tools, extra, on_token)
             return self._ask(messages, tools, extra)
         except Exception as exc:
             raise self._explain(exc) from exc
@@ -152,3 +179,73 @@ class OVMSLLMProvider(LLMProvider):
             } if usage is not None else None,
             "raw": response,
         }
+
+    def _ask_stream(self, messages: list[dict], tools: list[dict] | None,
+                    extra: dict, on_token) -> dict:
+        stream = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto" if tools else None,
+            stream=True,
+            stream_options={"include_usage": True},
+            **extra,
+        )
+        parts: list[str] = []
+        calls_by_index: dict[int, _StreamToolCall] = {}
+        finish_reason: str | None = None
+        usage = None
+        try:
+            for chunk in stream:
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    usage = chunk_usage
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                choice = choices[0]
+                if getattr(choice, "finish_reason", None):
+                    finish_reason = choice.finish_reason
+                delta = getattr(choice, "delta", None)
+                if delta is None:
+                    continue
+                for tc in getattr(delta, "tool_calls", None) or ():
+                    idx = getattr(tc, "index", 0) or 0
+                    slot = calls_by_index.get(idx)
+                    if slot is None:
+                        slot = _StreamToolCall(id=f"call_{idx}")
+                        calls_by_index[idx] = slot
+                    if getattr(tc, "id", None):
+                        slot.id = tc.id
+                    fn = getattr(tc, "function", None)
+                    if fn is not None:
+                        if getattr(fn, "name", None):
+                            slot.function.name += fn.name
+                        if getattr(fn, "arguments", None):
+                            slot.function.arguments += fn.arguments
+                piece = getattr(delta, "content", None)
+                if piece:
+                    parts.append(piece)
+                    if not calls_by_index and on_token(piece):
+                        break
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+        tool_calls = ([calls_by_index[i] for i in sorted(calls_by_index)]
+                      if calls_by_index else None)
+        return {
+            "finish_reason": (finish_reason
+                              or ("tool_calls" if tool_calls else "stop")),
+            "content": "".join(parts) if parts else None,
+            "tool_calls": tool_calls,
+            "usage": {
+                "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                "completion_tokens": getattr(usage, "completion_tokens", None),
+            } if usage is not None else None,
+            "raw": None,
+        }
+

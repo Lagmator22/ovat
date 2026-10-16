@@ -588,3 +588,75 @@ def test_a_unified_model_gets_the_switch_too(tmp_path, monkeypatch):
 
     GenAILLMProvider(folder).chat([{"role": "user", "content": "hi"}])
     assert isinstance(vlm_pipe.inputs[-1], str), "the verified path changed"
+
+
+def _chunk(content=None, tool_calls=None, finish_reason=None, usage=None):
+    from types import SimpleNamespace
+    delta = SimpleNamespace(content=content, tool_calls=tool_calls)
+    choices = ([SimpleNamespace(delta=delta, finish_reason=finish_reason)]
+               if (content is not None or tool_calls is not None
+                   or finish_reason is not None) else [])
+    return SimpleNamespace(choices=choices, usage=usage)
+
+
+def test_ovms_provider_streams_content_and_rebuilds_the_reply():
+    from types import SimpleNamespace
+    provider = OVMSLLMProvider(base_url="http://localhost:8000/v3", model="m")
+    called = {}
+
+    def fake_create(**kwargs):
+        called.update(kwargs)
+        return iter([
+            _chunk(content="New hires "),
+            _chunk(content="get 20 days.", finish_reason="stop"),
+            _chunk(usage=SimpleNamespace(prompt_tokens=40,
+                                         completion_tokens=6)),
+        ])
+
+    provider.client.chat.completions.create = fake_create
+    tokens = []
+    out = provider.chat([{"role": "user", "content": "hi"}],
+                        on_token=tokens.append)
+    assert called["stream"] is True
+    assert called["stream_options"] == {"include_usage": True}
+    assert tokens == ["New hires ", "get 20 days."]
+    assert out["content"] == "New hires get 20 days."
+    assert out["finish_reason"] == "stop"
+    assert out["tool_calls"] is None
+    assert out["usage"] == {"prompt_tokens": 40, "completion_tokens": 6}
+
+
+def test_ovms_provider_accumulates_streamed_tool_calls_by_index():
+    from types import SimpleNamespace
+    provider = OVMSLLMProvider(base_url="http://localhost:8000/v3", model="m")
+
+    def tc(index, id=None, name=None, arguments=None):
+        return SimpleNamespace(
+            index=index, id=id,
+            function=SimpleNamespace(name=name, arguments=arguments))
+
+    provider.client.chat.completions.create = lambda **kw: iter([
+        _chunk(tool_calls=[tc(0, id="call_1", name="search_docs",
+                              arguments='{"qu')]),
+        _chunk(tool_calls=[tc(0, arguments='ery": "leave"}')]),
+        _chunk(finish_reason="tool_calls"),
+    ])
+    tokens = []
+    out = provider.chat([{"role": "user", "content": "hi"}],
+                        on_token=tokens.append)
+    assert tokens == []
+    assert len(out["tool_calls"]) == 1
+    call = out["tool_calls"][0]
+    assert call.id == "call_1"
+    assert call.function.name == "search_docs"
+    assert call.function.arguments == '{"query": "leave"}'
+
+
+def test_ovms_provider_does_not_stream_on_npu_so_usage_survives():
+    from ovat.agent.factory import build_llm
+    from ovat.config.workflow import WorkflowConfig
+    npu_llm = build_llm(WorkflowConfig(model={"name": "m", "device": "NPU"}))
+    gpu_llm = build_llm(WorkflowConfig(model={"name": "m", "device": "GPU"}))
+    assert npu_llm.stream is False
+    assert gpu_llm.stream is True
+

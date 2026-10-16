@@ -195,3 +195,55 @@ def test_cancel_between_turns_leaves_a_history_the_next_run_can_use():
 def test_no_stop_flag_means_todays_behaviour():
     loop = AgentLoop(FakeLLMProvider([reply("stop", content="hi")]), {})
     assert loop.run("q") == "hi"
+
+
+class _StreamingFakeLLM:
+    def __init__(self, chunks, finish_reason="stop"):
+        self.chunks = list(chunks)
+        self.finish_reason = finish_reason
+
+    def chat(self, messages, tools=None, on_token=None):
+        parts = []
+        for piece in self.chunks:
+            parts.append(piece)
+            if on_token is not None and on_token(piece):
+                break
+        return {
+            "finish_reason": self.finish_reason,
+            "content": "".join(parts),
+            "tool_calls": None,
+            "usage": {"prompt_tokens": 12, "completion_tokens": 5},
+        }
+
+
+def test_native_loop_streams_reasoning_and_answer_deltas_when_tags_split():
+    from ovat.agent.events import ANSWER_DELTA, REASONING_DELTA
+    bus = EventBus()
+    seen = _recorder(bus)
+    llm = _StreamingFakeLLM([
+        "<th", "ink>check ", "policy</th", "ink>New ", "hires get 20 days."
+    ])
+    loop = AgentLoop(llm, {}, events=bus)
+    out = loop.run("how many days?")
+    assert "New hires get 20 days." in out
+    reasoning = "".join(e.data["text"] for e in seen
+                        if e.type == REASONING_DELTA)
+    answer = "".join(e.data["text"] for e in seen if e.type == ANSWER_DELTA)
+    assert reasoning == "check policy"
+    assert answer == "New hires get 20 days."
+
+
+def test_native_loop_does_not_stream_undecoded_tool_call_markup():
+    from ovat.agent.events import ANSWER_DELTA
+    bus = EventBus()
+    seen = _recorder(bus)
+    llm = _StreamingFakeLLM([
+        "<tool_", "call><function=search_docs>",
+        '{"query": "leave"}', "</function></tool_call>",
+    ])
+    loop = AgentLoop(llm, {}, events=bus)
+    out = loop.run("how many days?")
+    assert out.startswith("Error:")
+    assert loop.last_trace["totals"]["undecoded_tool_call"] is True
+    assert [e for e in seen if e.type == ANSWER_DELTA] == []
+

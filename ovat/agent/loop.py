@@ -17,16 +17,37 @@ is stop": OVMS documents that NPU serving always reports "stop" even when it
 has decoded a tool call, so the label is a description and the payload is the
 fact. A max_iterations guard makes sure I can never spin forever.
 """
+import inspect
 import json
+import re
 import threading
 import time
 
-from ovat.agent.events import CANCELLED_TEXT
+from ovat.agent.events import (ANSWER_DELTA, CANCELLED_TEXT, REASONING_DELTA,
+                               EventBus)
 from ovat.agent.session import Session
 from ovat.agent.usage import sum_known
-from ovat.text import (looks_like_undecoded_tool_call, says_nothing,
-                       strip_code_fence)
+from ovat.text import (THINK_CLOSE, THINK_OPEN, looks_like_undecoded_tool_call,
+                       says_nothing, split_thinking, strip_code_fence)
 from ovat.providers.base import LLMProvider
+
+# A trailing '<', '</', '<th', '</tool_call' etc. at the end of a token chunk
+# may be the start of a <think> or <tool_call> tag split across tokens. Hold it
+# back until the next token completes or disproves the tag.
+_PARTIAL_TAG = re.compile(r"</?[a-zA-Z_]*$")
+
+
+def _untag_thinking(text: str) -> str:
+    return THINK_CLOSE.sub("", THINK_OPEN.sub("", text or "")).strip()
+
+
+def _accepts_on_token(fn) -> bool:
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.name == "on_token" or p.kind is inspect.Parameter.VAR_KEYWORD
+               for p in params)
 
 
 def _parse_args(arguments: str) -> dict | None:
@@ -76,17 +97,20 @@ class AgentLoop:
     def __init__(self, llm: LLMProvider, tools: dict,
                  system_prompt: str | None = None, max_iterations: int = 10,
                  engine_name: str = "native",
-                 stop: threading.Event | None = None):
+                 stop: threading.Event | None = None,
+                 events: EventBus | None = None):
         # llm is any provider that honors the chat() contract (OVMS or a fake).
         self.llm = llm
         self.tools = tools
         self.max_iterations = max_iterations
         self.engine_name = engine_name
+        self.events = events
         # Set from another thread to cancel the run in progress (the TUI's
         # Esc, an A2A CancelTask). Checked before every model call; the
         # request already in flight still finishes, because a cancelled OVMS
         # request keeps generating anyway. None: cannot be cancelled.
-        self.stop = stop
+        self.stop = (stop if stop is not None
+                     else (events.stop if events is not None else None))
         # Each agent owns one conversation memory.
         self.session = Session(system_prompt=system_prompt)
         # Layer 7 (telemetry): after every run() this holds what happened:
@@ -98,6 +122,49 @@ class AgentLoop:
         """The list of tool schemas I show the model. None if I have no tools."""
         menu = [tool["schema"] for tool in self.tools.values()]
         return menu or None
+
+    def _ask_llm(self) -> dict:
+        """Ask the provider for one turn, streaming deltas onto `self.events`
+        when both the bus and the provider's `on_token` parameter are there."""
+        bus = self.events
+        if bus is None or not _accepts_on_token(self.llm.chat):
+            return self.llm.chat(self.session.messages, tools=self._menu())
+        parts: list[str] = []
+        sent_reasoning = ""
+        sent_answer = ""
+        suppressed = False
+
+        def on_token(piece: str) -> bool:
+            nonlocal sent_reasoning, sent_answer, suppressed
+            if self.stop is not None and self.stop.is_set():
+                return True
+            if not piece:
+                return False
+            parts.append(piece)
+            if suppressed:
+                return False
+            raw = "".join(parts)
+            if looks_like_undecoded_tool_call(raw):
+                suppressed = True
+                return False
+            safe = _PARTIAL_TAG.sub("", raw)
+            if not safe:
+                return False
+            raw_reasoning, answer = split_thinking(safe)
+            reasoning = _untag_thinking(raw_reasoning)
+            if (len(reasoning) > len(sent_reasoning)
+                    and reasoning.startswith(sent_reasoning)):
+                bus.emit(REASONING_DELTA,
+                         text=reasoning[len(sent_reasoning):])
+                sent_reasoning = reasoning
+            if (len(answer) > len(sent_answer)
+                    and answer.startswith(sent_answer)):
+                bus.emit(ANSWER_DELTA, text=answer[len(sent_answer):])
+                sent_answer = answer
+            return False
+
+        return self.llm.chat(self.session.messages, tools=self._menu(),
+                             on_token=on_token)
 
     @staticmethod
     def _sources_in(result) -> list[str]:
@@ -213,7 +280,7 @@ class AgentLoop:
             # BEAT 1, ASK: timed, and the token usage OVMS reports per
             # response is kept instead of dropped.
             ask_started = time.monotonic()
-            reply = self.llm.chat(self.session.messages, tools=self._menu())
+            reply = self._ask_llm()
             usage = reply.get("usage") or {}
             turn = {
                 "latency_s": round(time.monotonic() - ask_started, 3),

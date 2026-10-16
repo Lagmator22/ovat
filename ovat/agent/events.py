@@ -43,10 +43,14 @@ from typing import Any, Callable
 #                 duration_s, result_chars
 #   remote_status agent, state, text      (a remote A2A agent's progress)
 #   subagent_status agent, text           (a delegated subagent's progress)
+#   answer_delta  text                    (streamed answer chunk)
+#   reasoning_delta text                  (streamed reasoning chunk)
 TOOL_STARTED = "tool_started"
 TOOL_ENDED = "tool_ended"
 REMOTE_STATUS = "remote_status"
 SUBAGENT_STATUS = "subagent_status"
+ANSWER_DELTA = "answer_delta"
+REASONING_DELTA = "reasoning_delta"
 
 # What a cancelled tool hands the model instead of running. One sentence,
 # starting "Error: " like every other failure the model reads.

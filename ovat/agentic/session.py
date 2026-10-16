@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from ovat.agent.events import Event
+from ovat.agent.events import ANSWER_DELTA, REASONING_DELTA, Event
 from ovat.agent.permissions import ApprovalBroker, ApprovalRequest
 from ovat.text import split_thinking
 
@@ -48,6 +48,16 @@ class TurnStarted:
 class AgentActivity:
     """A tool, remote-agent or subagent event from the running agent."""
     event: Event
+
+
+@dataclass(frozen=True)
+class ReasoningDelta:
+    text: str
+
+
+@dataclass(frozen=True)
+class AnswerDelta:
+    text: str
 
 
 @dataclass(frozen=True)
@@ -178,8 +188,16 @@ class AgentSession:
         self._drop_agent()
         self.config, self.agent = config, agent
         agent.events.approver = self.broker
-        self._unsubscribe = agent.events.subscribe(
-            lambda e: self._emit(AgentActivity(e)))
+
+        def _on_bus(e: Event) -> None:
+            if e.type == ANSWER_DELTA:
+                self._emit(AnswerDelta(e.data.get("text") or ""))
+            elif e.type == REASONING_DELTA:
+                self._emit(ReasoningDelta(e.data.get("text") or ""))
+            else:
+                self._emit(AgentActivity(e))
+
+        self._unsubscribe = agent.events.subscribe(_on_bus)
         self.info = describe_agent(config, agent, self.workflow)
         self._emit(Ready(self.info))
 

@@ -319,3 +319,25 @@ def test_a_subagent_reply_loses_its_reasoning_too():
     session.ask_subagent("helper", "7*6")
     done = sink.wait_for(s.TurnDone)
     assert done.answer == "42" and done.reasoning == "hmm"
+
+
+def test_session_forwards_reasoning_and_answer_deltas_from_the_bus():
+    from ovat.agent.events import ANSWER_DELTA, REASONING_DELTA
+
+    class StreamingAgent(Agent):
+        def run(self, text):
+            self.events.emit(REASONING_DELTA, text="plan ")
+            self.events.emit(ANSWER_DELTA, text="hi ")
+            self.events.emit(ANSWER_DELTA, text="there")
+            return super().run(text)
+
+    session, sink, _ = _session(StreamingAgent)
+    session.start()
+    sink.wait_for(s.Ready)
+    session.ask("q")
+    sink.wait_for(s.TurnDone)
+    reasoning = [e.text for e in sink.events if isinstance(e, s.ReasoningDelta)]
+    answers = [e.text for e in sink.events if isinstance(e, s.AnswerDelta)]
+    assert reasoning == ["plan "]
+    assert answers == ["hi ", "there"]
+
