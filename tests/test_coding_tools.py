@@ -172,6 +172,19 @@ def test_edit_shows_whole_lines_around_a_partial_match(root):
         "start_line": 1, "old_text": "x = foo(1)", "new_text": "x = bar(1)"}
 
 
+def test_edit_matches_a_windows_file_and_keeps_its_line_endings(root):
+    """read_file shows a CRLF file as plain lines, so the model copies them
+    with \n. A multi-line old_string never matched the raw \r\n text: on a
+    Windows checkout every multi-line edit said "not found"."""
+    (root / "w.py").write_bytes(b"a = 1\r\nb = 2\r\nc = 3\r\n")
+    out = edit_impl("w.py", "a = 1\nb = 2", "a = 10\nb = 20", root)
+    assert not _is_error(out), out
+    assert (root / "w.py").read_bytes() == b"a = 10\r\nb = 20\r\nc = 3\r\n"
+    assert out.display["occurrences"] == [
+        {"start_line": 1, "old_text": "a = 1\nb = 2",
+         "new_text": "a = 10\nb = 20"}]
+
+
 def test_edit_not_found_and_ambiguous_leave_the_file_alone(root):
     (root / "a.txt").write_text("x\nx\n")
     missing = edit_impl("a.txt", "zzz", "y", root)

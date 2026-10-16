@@ -6,6 +6,7 @@ line_contexts() from vibe/utils/text.py: same checks, same wording, and the
 same `occurrences` (start_line, old lines, new lines) the diff card draws.
 Left out: its checkpoints, atomic_replace and file locks.
 """
+import os
 from pathlib import Path
 
 from ovat.tools.project import Shown, fail, resolve_inside, shown_path
@@ -29,12 +30,23 @@ def line_contexts(content: str, snippet: str) -> list[tuple[int, str, str]]:
             line_end = content.find("\n", match_end)
             if line_end == -1:
                 line_end = len(content)
-            elif line_end > match_end and content[line_end - 1] == "\r":
-                line_end -= 1
             suffix = content[match_end:line_end]
         results.append((start_line, prefix, suffix))
         pos = content.find(snippet, match_end)      # like str.replace
     return results
+
+
+def newline_style(text: str) -> str:
+    """The line break a file mostly uses."""
+    crlf = text.count("\r\n")
+    counts = {"\r\n": crlf, "\n": text.count("\n") - crlf,
+              "\r": text.count("\r") - crlf}
+    best = max(counts, key=counts.get)
+    return best if counts[best] else os.linesep
+
+
+def to_lf(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def edit_impl(file_path: str, old_string: str, new_string: str, root: Path,
@@ -53,15 +65,21 @@ def edit_impl(file_path: str, old_string: str, new_string: str, root: Path,
     if not path.is_file():
         return fail("edit", f"{file_path} is not a file.")
     try:
-        # newline="" so a CRLF file stays CRLF after the edit.
+        # newline="" reads the line breaks as they are, so they can be put
+        # back the same way after the edit (newline_style below).
         with open(path, "r", encoding="utf-8", newline="") as f:
-            original = f.read()
+            raw = f.read()
     except UnicodeDecodeError:
         return fail("edit", f"{file_path} is not valid UTF-8 text.")
     except PermissionError:
         return fail("edit", f"permission denied: {file_path}")
     except OSError as exc:
         return fail("edit", f"cannot read {file_path}: {exc}")
+    # Match on \n text: read_file shows the model plain lines, so its
+    # old_string has \n even when the file has \r\n.
+    newline = newline_style(raw)
+    original = to_lf(raw)
+    old_string, new_string = to_lf(old_string), to_lf(new_string)
 
     if old_string not in original:
         return fail("edit", f"the string to replace was not found in "
@@ -79,7 +97,7 @@ def edit_impl(file_path: str, old_string: str, new_string: str, root: Path,
     modified = original.replace(old_string, new_string,
                                 -1 if replace_all else 1)
     try:
-        with open(path, "w", encoding="utf-8", newline="") as f:
+        with open(path, "w", encoding="utf-8", newline=newline) as f:
             f.write(modified)
     except OSError as exc:
         return fail("edit", f"cannot write {file_path}: {exc}")
