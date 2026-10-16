@@ -18,8 +18,8 @@ import math
 import re
 
 from ovat.a2a.protocol import PeerError, RemoteCard, TaskState
-from ovat.a2a.tokens import is_loopback
 from ovat.agent.events import CURRENT_CALL_ID, REMOTE_STATUS
+from ovat.agent.permissions import is_loopback
 
 SCHEMA = {
     "type": "function",

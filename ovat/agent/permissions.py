@@ -41,8 +41,9 @@ REFUSE = "deny"            # not this time
 
 
 def is_loopback(url: str) -> bool:
-    """True for a URL on this machine (localhost, 127.x, ::1)."""
-    host = (urlparse(url).hostname or "").lower()
+    """True for a URL on this machine (localhost, 127.x, ::1). The parsed
+    host, never a substring: "localhost" is also in localhost.example.com."""
+    host = (urlparse(url).hostname or "").rstrip(".").lower()
     if host == "localhost":
         return True
     try:

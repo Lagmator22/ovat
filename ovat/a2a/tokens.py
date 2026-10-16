@@ -13,11 +13,12 @@ Two ways to configure callers:
   is what lets the server keep each caller's tasks apart (spec 13.1) and
   lets the audit log say who asked.
 """
-import ipaddress
 import os
 import secrets
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from ovat.agent.permissions import is_loopback
 
 DEFAULT_TOKEN_FILE = Path(".ovat") / "a2a" / "token"
 LOCAL_CALLER = "local"
@@ -69,19 +70,6 @@ def callers(tokens: dict[str, str], token_file: Path = DEFAULT_TOKEN_FILE,
                 f"so the server could not tell them apart. Give each its own.")
         table[value] = caller
     return table
-
-
-def is_loopback(url: str) -> bool:
-    """True when `url`'s host is this machine (localhost or a loopback IP).
-    The parsed host, never a substring: "localhost" is also in
-    http://localhost.example.com."""
-    host = (urlsplit(url).hostname or "").rstrip(".").lower()
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
 
 
 def same_origin(url: str, configured: str) -> bool:
