@@ -38,7 +38,7 @@ from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.container import \
     ChatInputContainer  # noqa: E402
 from ovat.tui.vibe.cli.textual_ui.widgets.messages import (  # noqa: E402
     AssistantMessage, ErrorMessage, InterruptMessage, ReasoningMessage,
-    UserCommandMessage, UserMessage, WarningMessage)
+    SlashCommandMessage, UserCommandMessage, UserMessage, WarningMessage)
 from ovat.tui.vibe.cli.textual_ui.widgets.theme_picker import \
     ThemePickerApp  # noqa: E402
 from ovat.tui.vibe.cli.textual_ui.widgets.tools import ToolGroup  # noqa: E402
@@ -635,6 +635,10 @@ def test_ask_sends_the_task_straight_to_the_subagent():
                 ("researcher", "find the leave rules")]
             assert fake.asked == []                  # not the main model
             await until(pilot, lambda: app.query(AssistantMessage))
+            # one line for what was asked, not the command AND an @ line
+            assert not app.query(SlashCommandMessage)
+            assert [m._content for m in app.query(UserMessage)] == [
+                "@researcher find the leave rules"]
     run(go())
 
 

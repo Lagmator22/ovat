@@ -418,7 +418,12 @@ class OvatAgentApp(VibeApp):
                 + (f"This workflow has: {', '.join(known)}." if known
                    else "This workflow has no subagents."), "warn")
             return
-        # The server sends "@name task" straight to that subagent.
+        # The server sends "@name task" straight to that subagent, and shows
+        # that line as the person's message; the echo of /ask would be a
+        # second line for the same thing.
+        echo = kwargs.get("command_message")
+        if echo is not None:
+            await echo.remove()
         await self._handle_user_message(f"@{name} {task}")
 
     async def _cmd_serve(self, cmd_args: str = "", **kwargs: Any) -> None:
