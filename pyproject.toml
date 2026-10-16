@@ -73,6 +73,8 @@ convert = ["optimum-intel[openvino]>=2.0"]
 langchain = ["langchain>=1", "langchain-openai>=1", "langgraph>=1"]
 llamaindex = ["llama-index-core>=0.14", "llama-index-llms-openai-like>=0.5"]
 openai-agents = ["openai-agents>=0.1"]
+# Linux also needs the system PortAudio library (libportaudio2).
+voice = ["sounddevice>=0.5"]
 # tui: the launcher and the agent TUI (`ovat agent`). The agent TUI's widgets
 # are copied from Mistral Vibe and import these directly; most arrive through
 # other packages today, but nothing guarantees that, so they are named here.

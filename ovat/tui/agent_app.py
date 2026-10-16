@@ -12,7 +12,7 @@ ovat/tui/agent_commands.py, the handlers here), the OVAT banner with the chip
 mark, the agent's facts and the live hardware reading in the bottom bar, and
 OVAT's theme. It turns off what OVAT does not have: update checks, telemetry,
 feedback prompts, the editor promo, the "what's new" of the app it was copied
-from, voice and spoken summaries. Everything else is the copied app.
+from and spoken summaries. Everything else is the copied app.
 
 `/engine` and `/workflow` have no protocol method (a workflow is not part of
 Vibe's app), so they call the server's handle, which rebuilds the agent and
@@ -49,7 +49,6 @@ from ovat.tui.vibe.cli.commands import CommandRegistry
 from ovat.tui.vibe.cli.textual_ui import app as vibe_app
 from ovat.tui.vibe.cli.textual_ui.app import (BottomApp, StartupOptions,
                                               VibeApp, _noop_narrator_manager,
-                                              _noop_voice_manager,
                                               _run_app_with_cleanup)
 from ovat.tui.vibe.cli.textual_ui.widgets.chat_input import ChatInputContainer
 from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.completion_popup import CompletionPopup
@@ -156,13 +155,16 @@ class OvatAgentApp(VibeApp):
                  animate: bool = True, hardware: Any = True,
                  startup: StartupOptions | None = None,
                  **kwargs: Any) -> None:
-        # No update check, no "what's new" cache, no editor promo, no voice
-        # and no narrator: each is a constructor argument of the copied app.
+        from ovat.agentic.voice import whisper_settings
+        from ovat.tui.voice import PromptVoiceManager
+        voice = PromptVoiceManager(lambda: whisper_settings(
+            getattr(handle.agent_session, "config", None), handle.agent_session.cwd))
+        # These optional clients are constructor arguments of the copied app.
         super().__init__(
             history_file=history_file, app_server=session,
             startup=startup or StartupOptions(autocopy_to_clipboard=False),
             update_notifier=None, update_cache_repository=None,
-            voice_manager=_noop_voice_manager(),
+            voice_manager=voice,
             narrator_manager=_noop_narrator_manager(),
             vscode_extension_promo=None, **kwargs)
         self._handle = handle
@@ -373,6 +375,14 @@ class OvatAgentApp(VibeApp):
 
     async def action_toggle_debug_console(self, **kwargs: Any) -> None:
         """Ctrl+Backslash: the console reads the server's log."""
+
+    async def _show_voice_settings(self, **kwargs: Any) -> None:
+        manager = self._voice_manager
+        manager.apply_enabled(not manager.is_enabled)
+        await self._note(
+            "Local voice on. Ctrl+R records; pause or press a key to finish. "
+            "Esc cancels. Audio stays on this machine."
+            if manager.is_enabled else "Local voice off. `/voice` turns it on.")
 
     async def _maybe_handle_mcp_subcommand(self, cmd_args: str) -> bool:
         word = cmd_args.strip().split(" ", 1)[0]

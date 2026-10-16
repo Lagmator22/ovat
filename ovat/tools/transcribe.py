@@ -9,6 +9,7 @@ Same design as search_docs: the real work lives in a plain function so I can
 unit test it with a fake pipeline, and the MCP wrapper is a thin layer on top.
 """
 import os
+import threading
 import wave
 
 import numpy as np
@@ -21,6 +22,9 @@ from fastmcp import FastMCP
 # back to back -- would silently share whichever pipeline loaded first, and the
 # second would transcribe with a model its config never asked for.
 _pipelines: dict = {}
+# Dictation and the file tool may use the same cached native pipeline.
+# One decode at a time keeps either call from changing the other's state.
+WHISPER_LOCK = threading.Lock()
 
 #: Fallback when nothing is configured. `models/whisper-base` is the path the
 #: docs tell people to export into.
@@ -89,6 +93,11 @@ def _load_pipeline(model: str | None = None, device: str | None = None):
     enough once the model is configurable.
     """
     key = (_configured_model(model), _resolve_device(device))
+    with WHISPER_LOCK:
+        return _load_cached_pipeline(key)
+
+
+def _load_cached_pipeline(key):
     if key not in _pipelines:
         if not os.path.isdir(key[0]):
             # Check the folder BEFORE openvino_genai sees it. A missing path
@@ -151,7 +160,8 @@ def _transcribe(path: str, language: str, pipeline, model, device) -> str:
         # tokenizer cannot match, so it silently transcribes as the wrong
         # language instead of failing.
         code = language.strip().strip("<|>") or "en"
-        return str(pipeline.generate(samples, language=f"<|{code}|>"))
+        with WHISPER_LOCK:
+            return str(pipeline.generate(samples, language=f"<|{code}|>"))
     except Exception as exc:
         return f"Error transcribing audio: {exc}"
 
