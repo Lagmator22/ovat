@@ -351,6 +351,7 @@ def _make_a2a_tool(tool_cfg, servers: list | None, events: EventBus | None):
             a2a_call.a2a_call_impl(message, _p, _c.name, _c.url, events,
                                    _c.token_env, _m)),
         "kind": "a2a",
+        "card": card,                  # None when it could not be read yet
     }
 
 

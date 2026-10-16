@@ -60,6 +60,8 @@ class AgentsScreen(Screen):
         self._table = self.query_one("#agents-runs-table", DataTable)
         self._table.add_columns("Call ID", "Agent", "Kind", "Status", "Duration", "Tokens")
         self.action_refresh_view()
+        # Live: a running child's time and status move without pressing r.
+        self.set_interval(1.0, self.action_refresh_view)
 
     def _serving_text(self) -> Text:
         serving = getattr(self.session, "serving", False) if self.session else False
@@ -95,13 +97,14 @@ class AgentsScreen(Screen):
         for p in a2a_tools:
             t.append("  • ", style=ui.GREEN)
             t.append(p.get("name", "unknown"), style="bold")
-            card = p.get("card")
+            # The card as describe_agent gives it (plain values), or none
+            # when the remote could not be reached at start.
+            card = p.get("card") or {}
             card_desc = ""
-            if card is not None:
-                name = getattr(card, "name", "")
-                version = getattr(card, "version", "")
-                skills = ", ".join(getattr(card, "skills", []))
-                card_desc = f" [{name} v{version}: {skills}]" if skills else f" [{name} v{version}]"
+            if card:
+                card_desc = f" [{card.get('name', '')} v{card.get('version', '')}"
+                skills = ", ".join(card.get("skills", []))
+                card_desc += f": {skills}]" if skills else "]"
             t.append(f" (a2a remote, permission: {p.get('permission', 'ask')}){card_desc}")
             t.append("\n")
         return t
@@ -109,6 +112,7 @@ class AgentsScreen(Screen):
     def action_refresh_view(self) -> None:
         if self._table is None:
             return
+        cursor = self._table.cursor_row
         self._table.clear()
         getter = getattr(self.session, "get_child_runs", None)
         runs = getter() if callable(getter) else []
@@ -117,7 +121,12 @@ class AgentsScreen(Screen):
             agent = r.get("agent", "")
             kind = r.get("kind", "")
             status = r.get("status", "")
-            dur = f"{r['duration']:.2f} s" if r.get("duration") is not None else "-"
+            if r.get("duration") is not None:
+                dur = f"{r['duration']:.2f} s"
+            elif status == "running" and r.get("started_at") is not None:
+                dur = f"{time.monotonic() - r['started_at']:.0f} s so far"
+            else:
+                dur = "-"
             toks = str(r["tokens"]) if r.get("tokens") is not None else "-"
             status_style = ui.GREEN if status == "ok" else (ui.RED if status == "failed" else (ui.YELLOW if status == "cancelled" else ui.CYAN))
             self._table.add_row(
@@ -129,13 +138,14 @@ class AgentsScreen(Screen):
                 Text(toks),
                 key=cid,
             )
+        if self._table.row_count:
+            self._table.move_cursor(row=min(cursor, self._table.row_count - 1))
 
     def action_cancel_child(self) -> None:
         if self._table is None or self._table.row_count == 0:
             self.notify("No child runs to cancel", severity="information")
             return
         try:
-            row_idx = self._table.cursor_row
             row_key, _ = self._table.coordinate_to_cell_key(self._table.cursor_coordinate)
             call_id = row_key.value if hasattr(row_key, "value") else str(row_key)
         except Exception:

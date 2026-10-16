@@ -160,6 +160,12 @@ def _model_choices(config) -> list[dict]:
         return [{"id": name, "label": name}]
 
 
+def _card(card) -> dict:
+    """A remote agent's card (a2a.protocol.RemoteCard) as plain values."""
+    return {"name": card.name, "version": card.version,
+            "skills": [skill.name for skill in card.skills]}
+
+
 def describe_agent(config, agent, workflow: str,
                    default_model: str | None = None) -> dict:
     """What the banner and the bottom bar show. Plain values only.
@@ -186,7 +192,9 @@ def describe_agent(config, agent, workflow: str,
         "engine": config.agent.type,
         "context_window": _context_window(config),
         "tools": [{"name": n, "kind": spec.get("kind", "builtin"),
-                   "permission": spec.get("permission", "allow")}
+                   "permission": spec.get("permission", "allow"),
+                   **({"card": _card(spec["card"])} if spec.get("card")
+                      else {})}
                   for n, spec in tools.items()],
         "subagents": [{"name": s.name, "description": s.description,
                        "where": ("workflow" if s.workflow else
@@ -572,24 +580,16 @@ class AgentSession:
         return stopped
 
     def cancel_subagent(self, call_id: str) -> bool:
-        """Cancel a single delegated child agent run by its call_id."""
-        if self.agent is not None:
-            runner = getattr(self.agent, "subagent_runner", None)
-            if runner is None and hasattr(self.agent, "tools"):
-                runner = self.agent.tools.get("delegate", {}).get("runner")
-            if runner is not None:
-                return runner.cancel_child(call_id)
-        return False
+        """Cancel one delegated child run by its call_id; the parent and
+        the other children go on."""
+        runner = getattr(self.agent, "subagent_runner", None)
+        return runner.cancel_child(call_id) if runner is not None else False
 
     def get_child_runs(self) -> list[dict]:
-        """All recorded child runs in this session."""
-        if self.agent is not None:
-            runner = getattr(self.agent, "subagent_runner", None)
-            if runner is None and hasattr(self.agent, "tools"):
-                runner = self.agent.tools.get("delegate", {}).get("runner")
-            if runner is not None and hasattr(runner, "get_runs"):
-                return runner.get_runs()
-        return []
+        """Every child run in this session (factory.build_agent hands every
+        engine its subagent runner)."""
+        runner = getattr(self.agent, "subagent_runner", None)
+        return runner.get_runs() if runner is not None else []
 
     # ---- `!` shell ---------------------------------------------------------
 

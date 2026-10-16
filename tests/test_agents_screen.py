@@ -23,7 +23,8 @@ class FakeSession:
                     "name": "remote_math",
                     "kind": "a2a",
                     "permission": "ask",
-                    "card": type("Card", (), {"name": "math-agent", "version": "1.0.0", "skills": ["add", "mul"]})(),
+                    "card": {"name": "math-agent", "version": "1.0.0",
+                             "skills": ["add", "mul"]},
                 }
             ],
         }
@@ -124,3 +125,26 @@ def test_agents_screen_cancel_child():
             assert len(app.screen_stack) == 1
 
     asyncio.run(scenario())
+
+
+def test_the_card_shown_is_the_one_the_factory_read():
+    """The fake above used to hand the screen a card object with string
+    skills. Real info had no card at all (the factory dropped it), and a
+    real RemoteCard has RemoteSkill objects, which "".join() refused."""
+    from ovat.a2a.protocol import RemoteCard, RemoteSkill
+    from ovat.agentic.session import describe_agent
+    from ovat.config.workflow import WorkflowConfig
+    card = RemoteCard("math-agent", "Solves math", "http://127.0.0.1:9100",
+                      version="1.0.0", skills=(RemoteSkill("add", "adds"),
+                                               RemoteSkill("mul", "times")))
+
+    class Agent:
+        tools = {"remote_math": {"kind": "a2a", "permission": "ask",
+                                 "card": card},
+                 "search_docs": {"kind": "builtin"}}
+    info = describe_agent(WorkflowConfig(model={"name": "m"}), Agent(), "w.yml")
+    session = FakeSession()
+    session.info = info
+    text = AgentsScreen(session)._subagents_text().plain
+    assert "math-agent v1.0.0: add, mul" in text
+    assert "card" not in info["tools"][1]
