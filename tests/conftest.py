@@ -105,6 +105,23 @@ def saved_sessions(tmp_path, monkeypatch):
     return store
 
 
+@pytest.fixture(autouse=True)
+def project_files(tmp_path, monkeypatch):
+    """The agent app keeps two small files in the project folder: the UI
+    preferences (the theme) and the "always allow" rules. A test that runs
+    the app in a made-up folder (/work/ovat-project) or in the checkout
+    would write there, so unless a test uses its own temporary folder, both
+    go to a temporary one."""
+    from ovat.agentic import prefs, rules
+    for module, name, real in ((prefs, "prefs_path", prefs.prefs_path),
+                               (rules, "rules_path", rules.rules_path)):
+        def path(cwd, real=real, name=name):
+            if cwd and str(cwd).startswith(str(tmp_path)):
+                return real(cwd)
+            return tmp_path / "project-files" / name
+        monkeypatch.setattr(module, name, path)
+
+
 class FakeLLMProvider(LLMProvider):
     """A stand in for OVMS that hands back replies I prepared in advance."""
 

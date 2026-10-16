@@ -205,3 +205,14 @@ def test_another_workflow_starts_without_the_picks():
     session.switch_workflow("other.yml")
     sink.wait(s.Ready, 3)
     assert built[2].model.name == "Qwen3-8B"
+
+
+def test_a_settings_reload_reads_the_workflows_new_engine(monkeypatch):
+    session, sink, built = _session()
+    session.start()
+    _ready(session, sink, 1)
+    monkeypatch.setattr(session, "_load", lambda path: WorkflowConfig(
+        model={"name": "Qwen3-8B"}, agent={"type": "react"}))
+    session.switch_model(follow_workflow=True)
+    _ready(session, sink, 2)
+    assert built[-1].agent.type == "react"

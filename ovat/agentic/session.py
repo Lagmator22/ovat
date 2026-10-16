@@ -25,6 +25,7 @@ from ovat.agent.events import (ANSWER_DELTA, REASONING_DELTA, STEER_TAKEN,
                                Event)
 from ovat.agent.permissions import ApprovalBroker, ApprovalRequest
 from ovat.agent.questions import QuestionBroker, QuestionRequest
+from ovat.agentic import rules
 from ovat.text import split_thinking
 
 
@@ -225,8 +226,11 @@ class AgentSession:
         self.config = None
         self.agent = None
         self.info: dict = {}
+        # The project's "always allow" rules are preloaded here and nowhere
+        # else: this session has a person to ask, `ovat run` does not.
         self.broker = ApprovalBroker(
-            on_request=lambda r: self._emit(ApprovalNeeded(r)))
+            on_request=lambda r: self._emit(ApprovalNeeded(r)),
+            always=rules.load(self.cwd), on_always=self._remember_always)
         self.questions = QuestionBroker(
             on_request=lambda r: self._emit(QuestionNeeded(r)))
         self.busy = False
@@ -250,8 +254,8 @@ class AgentSession:
         return self._spawn(self._build_now, engine, {})
 
     def switch_model(self, model: str | None = None,
-                     enable_thinking: bool | None = None
-                     ) -> threading.Thread:
+                     enable_thinking: bool | None = None,
+                     follow_workflow: bool = False) -> threading.Thread:
         """/model and /thinking: build again with another model and/or the
         thinking switch, for this session only (the workflow file is not
         touched). `model` "" goes back to the workflow's own; None leaves it.
@@ -262,8 +266,29 @@ class AgentSession:
             picked["name"] = model
         if enable_thinking is not None:
             picked["enable_thinking"] = enable_thinking
-        engine = self.config.agent.type if self.config else None
+        # A settings reload must also honour an edited agent.type. Ordinary
+        # model picks retain a session's current engine.
+        engine = (self.config.agent.type if self.config else None) \
+            if not follow_workflow else None
         return self._spawn(self._build_now, engine, picked)
+
+    def _remember_always(self, tool: str) -> None:
+        """A person chose "always allow" for `tool`: keep it for the next
+        session in this project (ovat/agentic/rules.py)."""
+        try:
+            rules.add(self.cwd, tool)
+        except OSError as exc:
+            self._emit(Notice(
+                "warn", f"Could not save \"always allow {tool}\" "
+                        f"({exc.strerror or exc}); it lasts for this "
+                        f"session only."))
+
+    def forget_picks(self, *names: str) -> None:
+        """`/config` saved a model setting in the workflow file, so the
+        /model or /thinking pick for it (`name`, `enable_thinking`) must stop
+        winning over the file. Takes effect at the next build."""
+        for name in names:
+            self._overrides.pop(name, None)
 
     def _build_now(self, engine: str | None, picked: dict,
                    fresh: bool = False) -> None:
