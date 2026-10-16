@@ -310,3 +310,20 @@ def test_child_commands_are_told_a_width_that_fits_the_scrollbar():
                                         - log.scrollbar_size_vertical)
             assert captured["cols"] < log.content_size.width   # room reserved
     _run(scenario())
+
+
+def test_the_running_command_tick_survives_the_app_closing():
+    """The status line redraws ten times a second while a command runs. On a
+    slow CI runner a tick landed after the app had removed its widgets and
+    the NoMatches crashed the test run; closing with a command running must
+    not raise."""
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test(size=(100, 24)) as pilot:
+            app._run_command = lambda cmd, cols: None
+            app.query_one("#prompt", Input).value = "echo hi"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app._busy
+        app._tick_status()          # the widgets are gone now
+    _run(scenario())

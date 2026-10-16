@@ -26,6 +26,7 @@ from textual import work
 from textual.app import App, ComposeResult, RenderResult, SystemCommand
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.css.query import NoMatches
 from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Input, OptionList, RichLog, Static
@@ -1176,9 +1177,15 @@ class OvatTUI(App):
         cmd = self._run_cmd if len(self._run_cmd) <= 40 \
             else self._run_cmd[:39] + "…"
         latest = f"  ·  {self._last_line[:60]}" if self._last_line else ""
+        try:
+            prompt = self.query_one("#prompt", Input)
+        except NoMatches:
+            # The app is closing with a command still running: its widgets
+            # are gone before this timer is, and the tick must not crash it.
+            return
         # The leading space is for the cursor: in an empty input it sits on
         # column 0 and would hide the spinner.
-        self.query_one("#prompt", Input).placeholder = (
+        prompt.placeholder = (
             f" {_SPINNER[self._spin]} running {cmd}  ·  {elapsed:.0f}s"
             f"{latest}  ·  Esc cancels")
 
