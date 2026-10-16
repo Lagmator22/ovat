@@ -529,3 +529,12 @@ def test_subagents_are_not_offered_to_remote_callers_by_default():
     exp = exposure.decide(_tools(search_docs="builtin", delegate="subagent"),
                           None)
     assert exp.exposed == ["search_docs"] and "delegate" in exp.hidden
+
+
+def test_a2a_call_returns_trace_totals_from_server_metadata():
+    totals = {"prompt_tokens": 123, "completion_tokens": 45, "total_tokens": 168}
+    reply = RemoteReply(TaskState.COMPLETED, "ok", metadata={"ovat": {"trace": totals}})
+    peer = ScriptedPeer(reply)
+    ans, returned_totals = a2a_call.a2a_call_impl("hi", peer, "p", "http://x", return_totals=True)
+    assert returned_totals == totals
+
