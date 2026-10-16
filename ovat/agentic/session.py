@@ -149,6 +149,18 @@ def describe_agent(config, agent, workflow: str) -> dict:
     }
 
 
+def _chat_message(m) -> bool:
+    """A user, assistant or tool message as the native loop writes them."""
+    if not isinstance(m, dict) or m.get("role") not in (
+            "user", "assistant", "tool"):
+        return False
+    if not isinstance(m.get("content"), (str, type(None))):
+        return False
+    if m["role"] == "tool" and not isinstance(m.get("tool_call_id"), str):
+        return False
+    return isinstance(m.get("tool_calls", []), list)
+
+
 class AgentSession:
     def __init__(self, workflow: str | None, sink: Sink, *,
                  load=None, build=None, close=None,
@@ -255,17 +267,17 @@ class AgentSession:
 
         The saved system prompt is replaced by this workflow's own: a resumed
         conversation continues with the agent running now, not the one that
-        happened to be running when it was saved."""
+        happened to be running when it was saved. A file on disk is not
+        trusted to say what the agent IS, so no saved message may be a
+        system message, and anything not shaped like a chat message is left
+        out."""
         session = self._memory()
         if session is None:
             return False
         from ovat.agent.session import Session
         prompt = self.config.agent.system_prompt if self.config else None
-        rest = [dict(m) for m in messages]
-        if rest and rest[0].get("role") == "system":
-            rest = rest[1:]
         fresh = Session(system_prompt=prompt)
-        fresh.messages.extend(rest)
+        fresh.messages.extend(dict(m) for m in messages if _chat_message(m))
         self.agent.session = fresh
         return True
 
