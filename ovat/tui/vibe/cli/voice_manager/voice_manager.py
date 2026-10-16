@@ -1,0 +1,337 @@
+from __future__ import annotations
+
+from asyncio import CancelledError, create_task, wait_for
+import contextlib
+from typing import TYPE_CHECKING
+
+from ovat.tui.vibe.app_server.config import ConfigView
+from ovat.tui.vibe.app_server.telemetry_port import ClientTelemetryEvent
+from ovat.tui.vibe.cli.audio_recorder.audio_recorder_port import (
+    AlreadyRecordingError,
+    AudioBackendUnavailableError,
+    AudioRecorderPort,
+    NoAudioInputDeviceError,
+    RecordingMode,
+)
+from ovat.tui.vibe.cli.transcribe.transcribe_client_port import (
+    TranscribeClientPort,
+    TranscribeDone,
+    TranscribeError,
+    TranscribeSessionCreated,
+    TranscribeTextDelta,
+)
+from ovat.tui.vibe.cli.voice_manager.telemetry import TranscriptionTrackingState
+from ovat.tui.vibe.cli.voice_manager.voice_manager_port import (
+    RecordingStartError,
+    TranscribeState,
+)
+from ovat.tui.vibe.observability.logging import logger
+from ovat.tui.vibe.utils.api_keys import resolve_api_key
+from ovat.tui.vibe.utils.platform import get_platform_id
+
+if TYPE_CHECKING:
+    from asyncio import Task
+    from collections.abc import Callable
+
+    from ovat.tui.vibe.app_server.telemetry_port import ClientTelemetry
+    from ovat.tui.vibe.cli.voice_manager.voice_manager_port import VoiceManagerListener
+
+TRANSCRIPTION_DRAIN_TIMEOUT = 10.0
+# Below this, the recording is too short to have produced audio blocks, so a
+# false ``has_signal`` means "stopped too early", not "microphone is muted".
+MIN_SIGNAL_RECORDING_DURATION_MS = 500.0
+
+
+def _mic_access_hint() -> str:
+    match get_platform_id():
+        case "darwin":
+            return " Grant access in System Settings → Privacy & Security → Microphone."
+        case "windows":
+            return " Grant access in Settings → Privacy & security → Microphone."
+        case _:
+            return ""
+
+
+def _no_audio_detected_message() -> str:
+    return (
+        "No audio detected from microphone — check your terminal has mic access."
+        + _mic_access_hint()
+    )
+
+
+class VoiceManager:
+    def __init__(
+        self,
+        config_getter: Callable[[], ConfigView],
+        audio_recorder: AudioRecorderPort,
+        transcribe_client: TranscribeClientPort | None,
+        telemetry_client: ClientTelemetry | None = None,
+    ) -> None:
+        self._config_getter = config_getter
+        self._audio_recorder = audio_recorder
+        self._transcribe_client = transcribe_client
+        self._telemetry_client = telemetry_client
+        self._transcribe_state = TranscribeState.IDLE
+        self._transcribe_task: Task[None] | None = None
+        self._listeners: list[VoiceManagerListener] = []
+        self._tracking = TranscriptionTrackingState()
+
+    @property
+    def is_enabled(self) -> bool:
+        return self._config_getter().voice_mode_enabled
+
+    @property
+    def transcribe_state(self) -> TranscribeState:
+        return self._transcribe_state
+
+    @property
+    def peak(self) -> float:
+        return self._audio_recorder.peak
+
+    def apply_enabled(self, enabled: bool) -> None:
+        if not enabled:
+            self.cancel_recording()
+
+        for listener in self._listeners:
+            try:
+                listener.on_voice_mode_change(enabled)
+            except Exception:
+                logger.error("Listener raised during voice mode change", exc_info=True)
+
+    def start_recording(self, mode: RecordingMode = RecordingMode.STREAM) -> None:
+        if self._transcribe_state != TranscribeState.IDLE:
+            return
+
+        if self._transcribe_client is None:
+            logger.warning(
+                "Failed to start recording as the transcribe client is missing"
+            )
+            raise RecordingStartError("Transcribe client is not available")
+
+        transcription = self._config_getter().transcription
+        env_var = transcription.provider.api_key_env_var
+        if env_var and not resolve_api_key(env_var):
+            raise RecordingStartError(
+                f"Voice transcription needs an API key: set {env_var}"
+            )
+
+        model = transcription.model
+
+        try:
+            self._audio_recorder.start(mode, sample_rate=model.sample_rate)
+        except AlreadyRecordingError:
+            raise RecordingStartError("Recording is already in progress")
+        except AudioBackendUnavailableError as exc:
+            raise RecordingStartError(f"Audio backend is unavailable: {exc}") from exc
+        except NoAudioInputDeviceError:
+            raise RecordingStartError(
+                "No audio input device found." + _mic_access_hint()
+            )
+
+        self._tracking.reset()
+        self._set_state(TranscribeState.RECORDING)
+        self._transcribe_task = create_task(self._run_transcription())
+
+    async def stop_recording(self) -> None:
+        if self._transcribe_state != TranscribeState.RECORDING:
+            return
+        should_flush_queue = self._audio_recorder.mode == RecordingMode.STREAM
+
+        if should_flush_queue:
+            self._set_state(TranscribeState.FLUSHING)
+        recording = self._audio_recorder.stop(wait_for_queue_drained=should_flush_queue)
+        self._tracking.set_recording_duration(recording.duration)
+
+        task = self._transcribe_task
+        if task is not None:
+            try:
+                await wait_for(task, timeout=TRANSCRIPTION_DRAIN_TIMEOUT)
+            except TimeoutError:
+                logger.warning("Transcription task timed out, cancelling")
+                task.cancel()
+                self._on_audio_transcription_error("Transcription timed out")
+                self._notify_error("Transcription timed out")
+            except CancelledError:
+                pass
+            self._transcribe_task = None
+
+        if self._transcribe_state != TranscribeState.IDLE:
+            self._set_state(TranscribeState.IDLE)
+
+    def cancel_recording(self) -> None:
+        if self._transcribe_state == TranscribeState.IDLE:
+            return
+
+        self._audio_recorder.cancel()
+
+        if self._transcribe_task is not None:
+            self._transcribe_task.cancel()
+            self._transcribe_task = None
+
+        self._set_state(TranscribeState.IDLE)
+        self._on_audio_transcription_cancel()
+
+    def add_listener(self, listener: VoiceManagerListener) -> None:
+        if listener not in self._listeners:
+            self._listeners.append(listener)
+
+    def remove_listener(self, listener: VoiceManagerListener) -> None:
+        try:
+            self._listeners.remove(listener)
+        except ValueError:
+            pass
+
+    async def close(self) -> None:
+        transcribe_task = self._transcribe_task
+        self.cancel_recording()
+        if transcribe_task is not None:
+            with contextlib.suppress(CancelledError):
+                await transcribe_task
+        if self._transcribe_client is not None:
+            await self._transcribe_client.close()
+
+    async def _run_transcription(self) -> None:
+        if self._transcribe_client is None:
+            return
+
+        try:
+            audio_stream = self._audio_recorder.audio_stream()
+
+            async for event in self._transcribe_client.transcribe(audio_stream):
+                match event:
+                    case TranscribeTextDelta(text=text):
+                        self._tracking.record_text(text)
+                        for listener in self._listeners:
+                            try:
+                                listener.on_transcribe_text(text)
+                            except Exception:
+                                logger.error(
+                                    "Listener raised during transcribe text",
+                                    exc_info=True,
+                                )
+                    case TranscribeError(message=msg):
+                        raise RuntimeError(msg)
+                    case TranscribeSessionCreated(request_id=request_id):
+                        self._tracking.set_recording_id(request_id)
+                        self._on_audio_transcription_start()
+                    case TranscribeDone():
+                        pass
+
+            if self._transcribe_state != TranscribeState.IDLE:
+                self._set_state(TranscribeState.IDLE)
+
+            if (
+                self._tracking.accumulated_transcript_length == 0
+                and not self._audio_recorder.has_signal
+                and self._recorded_long_enough_for_signal()
+            ):
+                message = _no_audio_detected_message()
+                self._on_audio_transcription_error(message)
+                self._notify_error(message)
+                return
+
+            if self._tracking.accumulated_transcript_length == 0:
+                self._notify_notice("No speech detected")
+
+            self._on_audio_transcription_done()
+        except CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Transcription failed", exc_info=exc)
+            self._audio_recorder.cancel()
+
+            if self._transcribe_state != TranscribeState.IDLE:
+                self._set_state(TranscribeState.IDLE)
+
+            self._on_audio_transcription_error(str(exc))
+            self._notify_error(str(exc))
+
+    def _recorded_long_enough_for_signal(self) -> bool:
+        duration_ms = self._tracking.last_recording_duration_ms
+        if duration_ms is None:
+            return False
+        return duration_ms >= MIN_SIGNAL_RECORDING_DURATION_MS
+
+    def _on_audio_transcription_start(self) -> None:
+        if not self._telemetry_client:
+            return
+        self._telemetry_client.log(
+            ClientTelemetryEvent(
+                name="vibe.audio.transcription.start",
+                properties={"recording_id": self._tracking.recording_id},
+            )
+        )
+
+    def _on_audio_transcription_cancel(self) -> None:
+        if not self._telemetry_client:
+            return
+        self._telemetry_client.log(
+            ClientTelemetryEvent(
+                name="vibe.audio.transcription.cancel_recording",
+                properties={
+                    "recording_id": self._tracking.recording_id,
+                    "recording_duration_ms": self._tracking.elapsed_ms(),
+                },
+            )
+        )
+
+    def _on_audio_transcription_done(self) -> None:
+        if not self._telemetry_client:
+            return
+        transcription_duration_ms = self._tracking.elapsed_ms()
+        recording_duration_ms = (
+            self._tracking.last_recording_duration_ms
+            if self._tracking.last_recording_duration_ms is not None
+            else transcription_duration_ms
+        )
+        self._telemetry_client.log(
+            ClientTelemetryEvent(
+                name="vibe.audio.transcription.done",
+                properties={
+                    "recording_id": self._tracking.recording_id,
+                    "transcript_length": self._tracking.accumulated_transcript_length,
+                    "transcription_duration_ms": transcription_duration_ms,
+                    "recording_duration_ms": recording_duration_ms,
+                },
+            )
+        )
+
+    def _on_audio_transcription_error(self, error_message: str) -> None:
+        if not self._telemetry_client:
+            return
+        self._telemetry_client.log(
+            ClientTelemetryEvent(
+                name="vibe.audio.transcription.error",
+                properties={
+                    "recording_id": self._tracking.recording_id,
+                    "error_message": error_message,
+                    "transcription_duration_ms": self._tracking.elapsed_ms(),
+                    "recording_duration_ms": self._tracking.last_recording_duration_ms,
+                },
+            )
+        )
+
+    def _notify_error(self, message: str) -> None:
+        for listener in self._listeners:
+            try:
+                listener.on_transcribe_error(message)
+            except Exception:
+                logger.error("Listener raised during transcribe error", exc_info=True)
+
+    def _notify_notice(self, message: str) -> None:
+        for listener in self._listeners:
+            try:
+                listener.on_transcribe_notice(message)
+            except Exception:
+                logger.error("Listener raised during transcribe notice", exc_info=True)
+
+    def _set_state(self, state: TranscribeState) -> None:
+        if self._transcribe_state == state:
+            return
+
+        self._transcribe_state = state
+        for listener in self._listeners:
+            try:
+                listener.on_transcribe_state_change(state)
+            except Exception:
+                logger.error("Listener raised during state change", exc_info=True)
