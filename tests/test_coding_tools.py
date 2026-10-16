@@ -486,3 +486,20 @@ def test_a_native_agent_edits_a_file_through_the_loop(tmp_path, monkeypatch):
     assert (tmp_path / "a.txt").read_text() == "hello there"
     sent = str(llm.calls[1]["messages"])
     assert "replaced 1 occurrence" in sent
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on "
+                                            "Windows runners")
+def test_grep_does_not_read_a_symlinked_file_that_leaves_the_project(
+        root, tmp_path_factory, monkeypatch):
+    """The Python fallback walks the folder itself; a symlinked FILE inside
+    the project that points out of it must not be opened."""
+    import ovat.tools.grep as grep_module
+    monkeypatch.setattr(grep_module.shutil, "which", lambda name: None)
+    project = root / "proj"
+    project.mkdir()
+    other = tmp_path_factory.mktemp("elsewhere").resolve()
+    (other / "id_rsa").write_text("PRIVATE KEY hush")
+    (project / "notes.txt").write_text("nothing here")
+    (project / "key").symlink_to(other / "id_rsa")
+    assert "PRIVATE KEY" not in grep_impl("hush", project)

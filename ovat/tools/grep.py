@@ -58,6 +58,12 @@ def _walk(target: Path, root: Path, regex, glob, limit: int):
                          if not any(fnmatch.fnmatch(n, p) for p in SKIP_FILES))
     count = 0
     for file in files:
+        # os.walk does not follow symlinked FOLDERS, but a symlinked FILE is
+        # opened through its link: one pointing out of the project (say at
+        # ~/.ssh/id_rsa) would be read past the fence. Only files that
+        # resolve inside the project are searched (ripgrep skips links).
+        if resolve_inside(str(file), root)[0] is None:
+            continue
         rel = file.relative_to(root).as_posix() if file.is_relative_to(root) \
             else str(file)
         if not _matches_glob(rel, glob):
