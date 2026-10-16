@@ -621,7 +621,11 @@ class OvatAgentApp(App):
 
     async def _cmd_telemetry(self, rest: str) -> None:
         from ovat.tui.telemetry import TelemetryView
-        self.push_screen(TelemetryView())
+        # A callable, not the agent: /engine builds a new one.
+        session = self.session
+        self.push_screen(TelemetryView(
+            agent=(lambda: getattr(session, "agent", None))
+            if session is not None else None))
 
     async def _cmd_quit(self, rest: str) -> None:
         self.exit()
