@@ -221,15 +221,8 @@ class SubagentRunner:
         from ovat.tools.a2a_call import a2a_call_impl
         require_sdk()
         from ovat.a2a.sdk.client import SDKPeer
-        token = os.environ.get(cfg.a2a.token_env, "").strip() \
-            if cfg.a2a.token_env else ""
-        if not token and not cfg.a2a.token_env and ("127.0.0.1" in cfg.a2a.url or "localhost" in cfg.a2a.url):
-            from ovat.a2a.tokens import DEFAULT_TOKEN_FILE
-            if DEFAULT_TOKEN_FILE.is_file():
-                try:
-                    token = DEFAULT_TOKEN_FILE.read_text(encoding="utf-8").strip()
-                except OSError:
-                    pass
+        from ovat.a2a.tokens import peer_token
+        token = peer_token(cfg.a2a.url, cfg.a2a.token_env)
         peer = SDKPeer(cfg.a2a.url, token=token or None,
                        timeout=cfg.a2a.timeout)
         try:

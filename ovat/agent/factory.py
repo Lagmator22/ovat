@@ -326,9 +326,9 @@ def _make_a2a_tool(tool_cfg, servers: list | None, events: EventBus | None):
     from ovat.tools import a2a_call
     require_sdk()
     from ovat.a2a.sdk.client import SDKPeer
+    from ovat.a2a.tokens import peer_token
 
-    token = os.environ.get(tool_cfg.token_env, "").strip() \
-        if tool_cfg.token_env else ""
+    token = peer_token(tool_cfg.url, tool_cfg.token_env)
     peer = SDKPeer(tool_cfg.url, token=token or None,
                    timeout=tool_cfg.timeout or 900.0)
     if servers is not None:

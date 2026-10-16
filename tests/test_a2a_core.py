@@ -240,6 +240,31 @@ def test_two_callers_with_one_token_are_refused(tmp_path):
                        environ={"X": "same", "Y": "same"})
 
 
+def test_a_local_peer_gets_this_folders_server_token_and_no_one_else_does(
+        tmp_path):
+    """A caller with no token_env, talking to `ovat a2a serve` on this
+    machine, sends the token that server generated. The check used to be
+    `"localhost" in url`, which also matched http://localhost.evil.example
+    and would have sent the token there."""
+    token_file = tmp_path / "token"
+    token_file.write_text("secret\n")
+    def peer(url, env=None, environ={}):
+        return tokens.peer_token(url, env, token_file, environ)
+    assert peer("http://127.0.0.1:9100") == "secret"
+    assert peer("http://localhost:9100/a2a") == "secret"
+    assert peer("http://[::1]:9100") == "secret"
+    for elsewhere in ("http://localhost.evil.example",
+                      "http://evil.example/?u=127.0.0.1",
+                      "http://127.0.0.1.evil.example:9100",
+                      "http://user:localhost@evil.example"):
+        assert peer(elsewhere) == "", elsewhere
+    # a named variable always wins, and is never replaced by the file
+    assert peer("http://127.0.0.1:9100", "T", {"T": "mine"}) == "mine"
+    assert peer("http://127.0.0.1:9100", "T", {}) == ""
+    token_file.unlink()
+    assert peer("http://127.0.0.1:9100") == ""
+
+
 def test_the_audit_log_appends_and_reads_back(tmp_path):
     log = AuditLog(tmp_path / "sub" / "audit.jsonl")
     log.write({"caller": "a", "answer": "x"})

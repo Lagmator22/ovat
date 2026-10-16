@@ -5,7 +5,6 @@ Imports nothing from the SDK at module level: main.py registers this
 sub-app on every run, and `ovat --help` must work without the [a2a] extra.
 Each command checks for the SDK first and says how to install it.
 """
-import os
 from typing import Optional
 
 import typer
@@ -152,13 +151,12 @@ def call(
     _need_sdk()
     from ovat.a2a.protocol import PeerError, TaskState
     from ovat.a2a.sdk.client import SDKPeer
-    token = None
-    if token_env:
-        token = os.environ.get(token_env, "").strip()
-        if not token:
-            rprint(f"[red]{esc(token_env)} is not set.[/red]")
-            raise typer.Exit(code=1)
-    peer = SDKPeer(url, token=token, timeout=timeout)
+    from ovat.a2a.tokens import peer_token
+    token = peer_token(url, token_env)
+    if token_env and not token:
+        rprint(f"[red]{esc(token_env)} is not set.[/red]")
+        raise typer.Exit(code=1)
+    peer = SDKPeer(url, token=token or None, timeout=timeout)
     try:
         remote = peer.card()
         reply = peer.send(message, on_status=lambda text: rprint(

@@ -13,9 +13,11 @@ Two ways to configure callers:
   is what lets the server keep each caller's tasks apart (spec 13.1) and
   lets the audit log say who asked.
 """
+import ipaddress
 import os
 import secrets
 from pathlib import Path
+from urllib.parse import urlsplit
 
 DEFAULT_TOKEN_FILE = Path(".ovat") / "a2a" / "token"
 LOCAL_CALLER = "local"
@@ -67,3 +69,36 @@ def callers(tokens: dict[str, str], token_file: Path = DEFAULT_TOKEN_FILE,
                 f"so the server could not tell them apart. Give each its own.")
         table[value] = caller
     return table
+
+
+def is_loopback(url: str) -> bool:
+    """True when `url`'s host is this machine (localhost or a loopback IP).
+    The parsed host, never a substring: "localhost" is also in
+    http://localhost.example.com."""
+    host = (urlsplit(url).hostname or "").rstrip(".").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def peer_token(url: str, token_env: str | None,
+               token_file: Path = DEFAULT_TOKEN_FILE,
+               environ=os.environ) -> str:
+    """The bearer token to send to the agent at `url`, or "" for none.
+
+    A named variable always decides. With none named, an agent on THIS
+    machine gets the token `ovat a2a serve` generated in this folder, so
+    serving and calling from one project needs no setup. The file never
+    goes to another host.
+    """
+    if token_env:
+        return environ.get(token_env, "").strip()
+    if not is_loopback(url):
+        return ""
+    try:
+        return token_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
