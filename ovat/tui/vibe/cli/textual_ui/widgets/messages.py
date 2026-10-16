@@ -276,10 +276,6 @@ class SlashCommandMessage(UserMessage):
         self.add_class("slash-command-message")
 
 
-class TeleportUserMessage(UserMessage):
-    PROMPT_CHAR = "&"
-
-
 class StreamingMessageBase(Static):
     def __init__(self, content: str) -> None:
         super().__init__()

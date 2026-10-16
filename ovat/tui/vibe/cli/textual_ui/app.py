@@ -88,14 +88,6 @@ from ovat.tui.vibe.app_server.models import (
     QuestionChoice,
     RequiredPermission,
     SubagentEffectDetail,
-    TeleportCheckingGit,
-    TeleportComplete,
-    TeleportEvent,
-    TeleportFailed,
-    TeleportPushing,
-    TeleportPushRequired,
-    TeleportStartingWorkflow,
-    TeleportSummarizingContext,
     TextContentBlock,
     TokenUsage,
     TurnErrorCode,
@@ -171,7 +163,6 @@ from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.input_kinds import (
     Prompt,
     Skill,
     SlashCommand,
-    Teleport,
     classify,
 )
 from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.paste_image import (
@@ -209,7 +200,6 @@ from ovat.tui.vibe.cli.textual_ui.widgets.messages import (
     ReasoningMessage,
     SlashCommandMessage,
     StreamingMessageBase,
-    TeleportUserMessage,
     UserCommandMessage,
     UserMessage,
     UserMessageSeverity,
@@ -229,7 +219,6 @@ from ovat.tui.vibe.cli.textual_ui.widgets.rewind_fork_message import RewindForkM
 from ovat.tui.vibe.cli.textual_ui.widgets.session_picker import SessionPickerApp
 from ovat.tui.vibe.cli.textual_ui.widgets.skills_browser import SkillsBrowserApp
 from ovat.tui.vibe.cli.textual_ui.widgets.subagent_transcripts import SubagentTranscripts
-from ovat.tui.vibe.cli.textual_ui.widgets.teleport_message import TeleportMessage
 from ovat.tui.vibe.cli.textual_ui.widgets.theme_picker import ThemePickerApp, sorted_theme_names
 from ovat.tui.vibe.cli.textual_ui.widgets.thinking_picker import ThinkingPickerApp
 from ovat.tui.vibe.cli.textual_ui.widgets.todo_status import TodoStatusRow
@@ -241,12 +230,6 @@ from ovat.tui.vibe.cli.textual_ui.widgets.tools import (
     ToolCallMessage,
     ToolGroup,
     ToolResultMessage,
-)
-from ovat.tui.vibe.cli.textual_ui.widgets.vibe_code_project import (
-    VibeCodeProjectCreateApp,
-    VibeCodeProjectPickerApp,
-    VibeCodeProjectPickerUiState,
-    suggested_default_branch,
 )
 from ovat.tui.vibe.cli.textual_ui.widgets.voice_app import VoiceApp
 from ovat.tui.vibe.cli.textual_ui.windowing import (
@@ -292,9 +275,7 @@ from ovat.tui.vibe.observability.logging import (
 )
 from ovat.tui.vibe.utils.audio import RecordingMode
 from ovat.tui.vibe.utils.cache_store import FileSystemCacheStore
-from ovat.tui.vibe.utils.data_retention import DATA_RETENTION_MESSAGE
 from ovat.tui.vibe.utils.paths import is_dangerous_directory
-from ovat.tui.vibe.utils.repository import repo_url_label
 from ovat.tui.vibe.utils.retry_prompt import build_retry_prompt
 from ovat.tui.vibe.utils.session_id import shorten_session_id
 
@@ -311,12 +292,10 @@ _MAX_INCOMPLETE_STREAM_RETRIES = 2
 
 
 if TYPE_CHECKING:
-    from ovat.tui.vibe.app_server.resources import PluginCatalogDiff
     from ovat.tui.vibe.cli.textual_ui.screens.config import ConfigWriteResult
     from ovat.tui.vibe.cli.textual_ui.widgets.connector_auth_app import ConnectorAuthApp
     from ovat.tui.vibe.cli.textual_ui.widgets.mcp_app import MCPApp
     from ovat.tui.vibe.cli.textual_ui.widgets.mcp_oauth_app import MCPOAuthApp
-    from ovat.tui.vibe.cli.textual_ui.widgets.plugins_app import PluginsApp
 
 
 def _get_connector_auth_app_class() -> type[ConnectorAuthApp]:
@@ -329,12 +308,6 @@ def _get_mcp_app_class() -> type[MCPApp]:
     from ovat.tui.vibe.cli.textual_ui.widgets.mcp_app import MCPApp
 
     return MCPApp
-
-
-def _get_plugins_app_class() -> type[PluginsApp]:
-    from ovat.tui.vibe.cli.textual_ui.widgets.plugins_app import PluginsApp
-
-    return PluginsApp
 
 
 def _get_mcp_oauth_app_class() -> type[MCPOAuthApp]:
@@ -377,15 +350,12 @@ class BottomApp(StrEnum):
     MCP = auto()
     MCPOAuth = auto()
     ModelPicker = auto()
-    Plugins = auto()
     ProxySetup = auto()
     Question = auto()
     ThemePicker = auto()
     ThinkingPicker = auto()
     SkillsBrowser = auto()
     Rewind = auto()
-    VibeCodeProjectPicker = auto()
-    VibeCodeProjectCreate = auto()
     SessionPicker = auto()
     Voice = auto()
 
@@ -529,7 +499,6 @@ async def prune_oldest_children(
 @dataclass(frozen=True, slots=True)
 class StartupOptions:
     initial_prompt: str | None = None
-    teleport_on_start: bool = False
     show_resume_picker: bool = False
     is_resuming_session: bool = False
     prompt_for_workspace_trust: bool = False
@@ -787,7 +756,6 @@ class VibeApp(App):  # noqa: PLR0904
 
         self._chat_input_container: ChatInputContainer | None = None
         self._current_bottom_app: BottomApp = BottomApp.Input
-        self._vibe_code_project_picker = VibeCodeProjectPickerUiState()
 
         self.history_file = history_file
 
@@ -891,8 +859,6 @@ class VibeApp(App):  # noqa: PLR0904
     def _configure_startup_options(self, startup: StartupOptions | None) -> None:
         opts = startup or StartupOptions()
         self._initial_prompt = opts.initial_prompt
-        self._teleport_on_start = opts.teleport_on_start
-        self._startup_teleport_on_start = opts.teleport_on_start
         self._show_resume_picker = opts.show_resume_picker
         self._startup_show_resume_picker = (
             opts.startup_show_resume_picker
@@ -1585,7 +1551,7 @@ class VibeApp(App):  # noqa: PLR0904
         if self._startup_prompt_processed:
             return
         self._startup_prompt_processed = True
-        if self._initial_prompt or self._teleport_on_start:
+        if self._initial_prompt:
             self._process_initial_prompt()
 
     def _show_config_issues(self) -> None:
@@ -1729,7 +1695,6 @@ class VibeApp(App):  # noqa: PLR0904
                 ),
                 "session_init_duration_ms": session_init_ms,
                 "has_initial_prompt": bool(self._initial_prompt),
-                "teleport_on_start": self._startup_teleport_on_start,
                 "show_resume_picker": self._startup_show_resume_picker,
                 "is_resuming_session": self._is_resuming_session,
                 "prompt_for_workspace_trust": self._startup_prompt_for_workspace_trust,
@@ -1791,11 +1756,7 @@ class VibeApp(App):  # noqa: PLR0904
         await self._mount_and_scroll(UserCommandMessage(message))
 
     def _process_initial_prompt(self) -> None:
-        if self._teleport_on_start and self.commands.has_command("teleport"):
-            self.run_worker(
-                self._handle_teleport_command(self._initial_prompt), exclusive=False
-            )
-        elif self._initial_prompt:
+        if self._initial_prompt:
             self.run_worker(
                 self._handle_user_message(self._initial_prompt), exclusive=False
             )
@@ -2013,8 +1974,6 @@ class VibeApp(App):  # noqa: PLR0904
         match classify(
             value, commands=self.commands, resolve_skill=self._resolve_skill
         ):
-            case Teleport(target=target):
-                await self._handle_teleport_command(target)
             case SlashCommand():
                 await self._handle_command(value)
             case Skill(command=command, name=name):
@@ -2046,8 +2005,6 @@ class VibeApp(App):  # noqa: PLR0904
             match classify(
                 value, commands=self.commands, resolve_skill=self._resolve_skill
             ):
-                case Teleport():
-                    rejection = f"Teleport cannot be queued — {reject_hint}"
                 case SlashCommand():
                     rejection = f"Slash commands cannot be queued — {reject_hint}"
                 case Skill(command=command, name=name):
@@ -2465,147 +2422,6 @@ class VibeApp(App):  # noqa: PLR0904
     async def on_model_picker_app_cancelled(
         self, _event: ModelPickerApp.Cancelled
     ) -> None:
-        await self._switch_to_input_app()
-
-    async def on_vibe_code_project_picker_app_project_selected(
-        self, message: VibeCodeProjectPickerApp.ProjectSelected
-    ) -> None:
-        await self._handle_vibe_code_project_selected(project_id=message.project_id)
-
-    async def _handle_vibe_code_project_selected(self, *, project_id: str) -> None:
-        if self._vibe_code_project_picker.view is None:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    "Remote project picker is not ready.",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-            await self._switch_to_input_app()
-            return
-
-        teleport_pending = self._vibe_code_project_picker.teleport_pending
-        view, project = await self.app_server.resources.vibe_code.select_project(
-            project_id
-        )
-        self._vibe_code_project_picker.view = view
-        if teleport_pending:
-            await self._continue_pending_teleport(project.project_id)
-            return
-
-        await self._mount_and_scroll(
-            UserCommandMessage(
-                f"Linked this repository to remote project **{project.name}**."
-            )
-        )
-        await self._switch_to_input_app()
-
-    async def on_vibe_code_project_picker_app_create_requested(
-        self, message: VibeCodeProjectPickerApp.CreateRequested
-    ) -> None:
-        context = self._vibe_code_project_picker.context
-        git_info = self._vibe_code_project_picker.git_info
-        repo_label = (
-            repo_url_label(context.repo_url) if context else "current repository"
-        )
-        await self._replace_bottom_app(
-            VibeCodeProjectCreateApp(
-                project_name=message.project_name,
-                repo_label=repo_label,
-                default_branch=suggested_default_branch(git_info),
-            )
-        )
-
-    async def on_vibe_code_project_create_app_submitted(
-        self, message: VibeCodeProjectCreateApp.Submitted
-    ) -> None:
-        if self._vibe_code_project_picker.view is None:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    "Remote project picker is not ready.",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-            await self._switch_to_input_app()
-            return
-
-        await self._ensure_loading_widget("Creating project", show_hint=False)
-        loading_widget = self._loading_widget
-        try:
-            view, project = await self.app_server.resources.vibe_code.create(
-                name=message.project_name, default_branch=message.default_branch
-            )
-        except AppServerResponseError as e:
-            await self._mount_and_scroll(
-                ErrorMessage(str(e), collapsed=self._tools_collapsed)
-            )
-            return
-        finally:
-            if self._loading_widget is loading_widget:
-                await self._remove_loading_widget()
-
-        self._vibe_code_project_picker.view = view
-        await self._handle_vibe_code_project_selected(project_id=project.project_id)
-
-    async def on_vibe_code_project_create_app_cancelled(
-        self, _message: VibeCodeProjectCreateApp.Cancelled
-    ) -> None:
-        await self._show_vibe_code_project_picker()
-
-    async def on_vibe_code_project_picker_app_load_more_requested(
-        self, _message: VibeCodeProjectPickerApp.LoadMoreRequested
-    ) -> None:
-        state = self._vibe_code_project_picker.picker_state
-        if state is None or not state.has_more:
-            await self._mount_and_scroll(
-                UserCommandMessage("No more projects to load.")
-            )
-            return
-
-        await self._ensure_loading_widget("Loading more projects", show_hint=False)
-        loading_widget = self._loading_widget
-        try:
-            (
-                view,
-                focus_option_id,
-            ) = await self.app_server.resources.vibe_code.load_more()
-        except AppServerResponseError as e:
-            await self._mount_and_scroll(
-                ErrorMessage(str(e), collapsed=self._tools_collapsed)
-            )
-            return
-        finally:
-            if self._loading_widget is loading_widget:
-                await self._remove_loading_widget()
-
-        self._vibe_code_project_picker.view = view
-
-        try:
-            picker = self.query_one(VibeCodeProjectPickerApp)
-        except Exception:
-            return
-        picker.update_projects(
-            projects=view.state.projects, has_more=view.state.has_more
-        )
-        if focus_option_id is not None:
-            picker.focus_option(focus_option_id)
-
-    async def on_vibe_code_project_picker_app_unlink_requested(
-        self, _message: VibeCodeProjectPickerApp.UnlinkRequested
-    ) -> None:
-        self._vibe_code_project_picker.view = (
-            await self.app_server.resources.vibe_code.unlink()
-        )
-        self._vibe_code_project_picker.clear_teleport()
-        await self._mount_and_scroll(
-            UserCommandMessage("Remote project link cleared.")
-        )
-        await self._switch_to_input_app()
-
-    async def on_vibe_code_project_picker_app_cancelled(
-        self, _event: VibeCodeProjectPickerApp.Cancelled
-    ) -> None:
-        await self.app_server.resources.vibe_code.cancel_picker()
-        self._vibe_code_project_picker.clear_teleport()
         await self._switch_to_input_app()
 
     async def on_thinking_picker_app_thinking_selected(
@@ -3584,195 +3400,6 @@ class VibeApp(App):  # noqa: PLR0904
         )
         return f"{lead}\n\n{detail}"
 
-    async def _teleport_command(self, **kwargs: Any) -> None:
-        await self._handle_teleport_command(show_message=False)
-
-    async def _vibe_code_project_command(self, **_kwargs: Any) -> None:
-        self._vibe_code_project_picker.clear_teleport()
-        await self._ensure_loading_widget("Loading OVAT remote projects", show_hint=False)
-        loading_widget = self._loading_widget
-        try:
-            view, _ = await self.app_server.resources.vibe_code.open_projects()
-        except AppServerResponseError as e:
-            await self._mount_and_scroll(
-                ErrorMessage(str(e), collapsed=self._tools_collapsed)
-            )
-            return
-        finally:
-            if self._loading_widget is loading_widget:
-                await self._remove_loading_widget()
-
-        self._vibe_code_project_picker.view = view
-        await self._show_vibe_code_project_picker()
-
-    async def _resolve_vibe_code_project_for_teleport(
-        self, prompt: str | None
-    ) -> str | None:
-        await self._ensure_loading_widget("Loading OVAT remote projects", show_hint=False)
-        loading_widget = self._loading_widget
-        try:
-            view, project_id = await self.app_server.resources.vibe_code.open_projects(
-                for_teleport=True, prompt=prompt
-            )
-        except AppServerResponseError as e:
-            await self._mount_and_scroll(
-                ErrorMessage(str(e), collapsed=self._tools_collapsed)
-            )
-            return None
-        finally:
-            if self._loading_widget is loading_widget:
-                await self._remove_loading_widget()
-
-        self._vibe_code_project_picker.view = view
-
-        if project_id is not None:
-            return project_id
-
-        if view.saved_project_link_cleared:
-            await self._mount_and_scroll(
-                UserCommandMessage(
-                    "The saved remote project link points to a different "
-                    "repository remote. Pick the project to use for this repository."
-                )
-            )
-
-        self._vibe_code_project_picker.teleport_pending = True
-        self._vibe_code_project_picker.teleport_prompt = prompt
-        await self._show_vibe_code_project_picker()
-        return None
-
-    async def _show_vibe_code_project_picker_after_saved_link_failure(
-        self, prompt: str | None
-    ) -> bool:
-        if self._vibe_code_project_picker.view is None:
-            return False
-
-        view, recovered = await self.app_server.resources.vibe_code.recover_stale_link()
-        self._vibe_code_project_picker.view = view
-        if not recovered:
-            return False
-        self._vibe_code_project_picker.teleport_pending = True
-        self._vibe_code_project_picker.teleport_prompt = prompt
-        await self._mount_and_scroll(
-            UserCommandMessage(
-                "Saved remote project is no longer available. "
-                "Pick the project to use for this repository."
-            )
-        )
-        await self._show_vibe_code_project_picker()
-        return True
-
-    async def _continue_pending_teleport(self, project_id: str) -> None:
-        prompt = self._vibe_code_project_picker.teleport_prompt
-        self._vibe_code_project_picker.clear_teleport()
-        await self._switch_to_input_app()
-        self.run_worker(self._teleport(prompt, project_id=project_id), exclusive=False)
-
-    async def _handle_teleport_command(
-        self, value: str | None = None, show_message: bool = True
-    ) -> None:
-        if show_message:
-            await self._mount_and_scroll(
-                TeleportUserMessage(value) if value else SlashCommandMessage("teleport")
-            )
-
-        project_id = await self._resolve_vibe_code_project_for_teleport(value)
-        if project_id is None:
-            return
-
-        self.run_worker(self._teleport(value, project_id=project_id), exclusive=False)
-
-    async def _teleport(self, prompt: str | None = None, *, project_id: str) -> None:
-        loading = LoadingWidget()
-        await self._loading_area.mount(loading)
-
-        teleport_msg = TeleportMessage()
-        await self._mount_and_scroll(teleport_msg)
-
-        try:
-            async for event in self.app_server.resources.vibe_code.teleport(
-                prompt, project_id=project_id
-            ):
-                if await self._handle_teleport_event(
-                    event, prompt=prompt, loading=loading, message=teleport_msg
-                ):
-                    return
-        except AppServerResponseError as e:
-            await self._handle_teleport_failure(
-                prompt=prompt,
-                loading=loading,
-                message=teleport_msg,
-                code=e.error.code,
-                error_message=str(e),
-            )
-        finally:
-            if loading.parent:
-                await loading.remove()
-
-    async def _handle_teleport_event(
-        self,
-        event: TeleportEvent,
-        *,
-        prompt: str | None,
-        loading: LoadingWidget,
-        message: TeleportMessage,
-    ) -> bool:
-        match event:
-            case TeleportSummarizingContext():
-                message.set_status("Summarizing context...")
-            case TeleportCheckingGit():
-                message.set_status("Preparing workspace...")
-            case TeleportPushRequired(
-                operation_id=operation_id,
-                unpushed_count=count,
-                branch_not_pushed=branch_not_pushed,
-            ):
-                await loading.remove()
-                approved = await self._ask_push_approval(count, branch_not_pushed)
-                await self._loading_area.mount(loading)
-                message.set_status("Teleporting...")
-                await self.app_server.resources.vibe_code.respond_to_push(
-                    operation_id, approved=approved
-                )
-            case TeleportPushing():
-                message.set_status("Syncing with remote...")
-            case TeleportStartingWorkflow():
-                message.set_status("Teleporting...")
-            case TeleportComplete(url=url):
-                message.set_complete(url)
-            case TeleportFailed(error=error):
-                return await self._handle_teleport_failure(
-                    prompt=prompt,
-                    loading=loading,
-                    message=message,
-                    code=error.code,
-                    error_message=error.message,
-                )
-        return False
-
-    async def _handle_teleport_failure(
-        self,
-        *,
-        prompt: str | None,
-        loading: LoadingWidget,
-        message: TeleportMessage,
-        code: str | None,
-        error_message: str,
-    ) -> bool:
-        if message.parent:
-            await message.remove()
-        if code == "saved_project_stale":
-            if loading.parent:
-                await loading.remove()
-            if await self._show_vibe_code_project_picker_after_saved_link_failure(
-                prompt
-            ):
-                return True
-        await self._mount_and_scroll(
-            ErrorMessage(error_message, collapsed=self._tools_collapsed)
-        )
-        return False
-
     async def _ask_push_approval(self, count: int, branch_not_pushed: bool) -> bool:
         if branch_not_pushed:
             question = "Your branch doesn't exist on remote. Push to continue?"
@@ -4141,58 +3768,6 @@ class VibeApp(App):  # noqa: PLR0904
             )
         )
 
-    async def _show_plugins(self, **kwargs: Any) -> None:
-        state = await self.app_server.resources.plugins.read()
-        if state is None:
-            await self._mount_and_scroll(
-                UserCommandMessage("This session resolves no plugins.")
-            )
-            return
-        if not state.plugins and not state.dropped:
-            await self._mount_and_scroll(
-                UserCommandMessage("No plugins are installed for this session.")
-            )
-            return
-        if self._current_bottom_app == BottomApp.Plugins:
-            return
-        await self._mount_and_scroll(UserCommandMessage("Plugins opened..."))
-        await self._switch_from_input(_get_plugins_app_class()(state=state))
-
-    async def _reload_plugins(self, **kwargs: Any) -> PluginCatalogDiff | None:
-        from ovat.tui.vibe.cli.textual_ui.widgets.plugins_app import plugin_reload_report
-
-        try:
-            diff = await self.app_server.resources.plugins.reload()
-        except Exception as exc:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    f"Failed to reload plugins: {exc}", collapsed=self._tools_collapsed
-                )
-            )
-            return None
-        if diff is None:
-            await self._mount_and_scroll(
-                UserCommandMessage("This session resolves no plugins.")
-            )
-            return None
-        await self._mount_and_scroll(UserCommandMessage(plugin_reload_report(diff)))
-        return diff
-
-    async def on_plugins_app_plugins_closed(
-        self, _message: PluginsApp.PluginsClosed
-    ) -> None:
-        await self._mount_and_scroll(UserCommandMessage("Plugins closed."))
-        await self._switch_to_input_app()
-
-    async def on_plugins_app_plugins_reload_requested(
-        self, _message: PluginsApp.PluginsReloadRequested
-    ) -> None:
-        diff = await self._reload_plugins()
-        if diff is None:
-            return
-        with suppress(Exception):
-            self.query_one(_get_plugins_app_class()).update_state(diff.state)
-
     async def _show_status(self, **kwargs: Any) -> None:
         stats = self.app_server.resources.runtime.stats
         session_cached = (
@@ -4236,50 +3811,6 @@ class VibeApp(App):  # noqa: PLR0904
             logger.warning("Provider auth status read failed (%s)", type(exc).__name__)
             return ""
         return render_provider_auth_section(view)
-
-    async def _show_whoami(self, **kwargs: Any) -> None:
-        loading = LoadingWidget(status="Loading", show_hint=False)
-        await self._loading_area.mount(loading)
-        try:
-            identity, account = await asyncio.gather(
-                self.app_server.resources.identity.read(),
-                self.app_server.resources.account.read(),
-                return_exceptions=True,
-            )
-        finally:
-            if loading.parent:
-                await loading.remove()
-        if isinstance(identity, BaseException):
-            logger.warning(
-                "Identity check failed (%s).",
-                type(identity).__name__,
-                exc_info=identity,
-            )
-            identity = None
-        if isinstance(account, BaseException):
-            logger.warning(
-                "Account check failed (%s).", type(account).__name__, exc_info=account
-            )
-            account = None
-        if identity is None:
-            await self._mount_and_scroll(
-                UserCommandMessage(
-                    "## Who am I\n\nNo account information is available."
-                )
-            )
-            return
-        lines = ["## Who am I", ""]
-        if identity.name and identity.name != identity.email:
-            lines.append(f"- **Name**: {identity.name}")
-        if identity.email:
-            lines.append(f"- **Email**: {identity.email}")
-        if identity.workspace:
-            lines.append(f"- **Workspace**: {identity.workspace.name}")
-        if identity.organization:
-            lines.append(f"- **Organization**: {identity.organization.name}")
-        if plan := plan_title(account):
-            lines.append(f"- **Plan**: {plan}")
-        await self._mount_and_scroll(UserCommandMessage("\n".join(lines)))
 
     async def _show_config(self, **kwargs: Any) -> None:
         """Open the full-screen, searchable settings browser."""
@@ -4379,9 +3910,6 @@ class VibeApp(App):  # noqa: PLR0904
         if self._current_bottom_app == BottomApp.ProxySetup:
             return
         await self._switch_to_proxy_setup_app()
-
-    async def _show_data_retention(self, **kwargs: Any) -> None:
-        await self._mount_and_scroll(UserCommandMessage(DATA_RETENTION_MESSAGE))
 
     async def _rename_session(self, cmd_args: str = "", **kwargs: Any) -> None:
         title = cmd_args.strip()
@@ -4835,36 +4363,6 @@ class VibeApp(App):  # noqa: PLR0904
             reload_message.set_error(str(e))
             reload_message.update_display()
 
-    async def _install_lean(self, **kwargs: Any) -> None:
-        current = {agent.name for agent in self.app_server.resources.agents.all}
-        if "lean" in current:
-            await self._mount_and_scroll(
-                UserCommandMessage("Lean agent is already installed.")
-            )
-            return
-        try:
-            await self.app_server.resources.agents.set_installed("lean", installed=True)
-        except AppServerResponseError as exc:
-            await self._mount_and_scroll(ErrorMessage(str(exc)))
-            return
-        await self._mount_and_scroll(UserCommandMessage("Lean agent installed."))
-
-    async def _uninstall_lean(self, **kwargs: Any) -> None:
-        current = {agent.name for agent in self.app_server.resources.agents.all}
-        if "lean" not in current:
-            await self._mount_and_scroll(
-                UserCommandMessage("Lean agent is not installed.")
-            )
-            return
-        try:
-            await self.app_server.resources.agents.set_installed(
-                "lean", installed=False
-            )
-        except AppServerResponseError as exc:
-            await self._mount_and_scroll(ErrorMessage(str(exc)))
-            return
-        await self._mount_and_scroll(UserCommandMessage("Lean agent uninstalled."))
-
     async def _reset_message_widgets(self) -> None:
         """Tear down the on-screen conversation widgets and UI state.
 
@@ -5124,23 +4622,6 @@ class VibeApp(App):  # noqa: PLR0904
         if should_anchor or scroll:
             self.call_after_refresh(chat.anchor)
 
-    async def _show_vibe_code_project_picker(self) -> None:
-        context = self._vibe_code_project_picker.context
-        state = self._vibe_code_project_picker.picker_state
-        if context is None or state is None:
-            await self._switch_to_input_app()
-            return
-
-        await self._replace_bottom_app(
-            VibeCodeProjectPickerApp(
-                context=context,
-                projects=state.projects,
-                has_more=state.has_more,
-                include_unlink=context.saved_link is not None,
-                title="Remote project",
-            )
-        )
-
     async def _switch_to_voice_app(self) -> None:
         if self._current_bottom_app == BottomApp.Voice:
             return
@@ -5272,11 +4753,8 @@ class VibeApp(App):  # noqa: PLR0904
             BottomApp.ProxySetup: ProxySetupApp,
             BottomApp.Approval: ApprovalApp,
             BottomApp.Question: QuestionApp,
-            BottomApp.VibeCodeProjectCreate: VibeCodeProjectCreateApp,
-            BottomApp.VibeCodeProjectPicker: VibeCodeProjectPickerApp,
             BottomApp.SessionPicker: SessionPickerApp,
             BottomApp.MCP: _get_mcp_app_class(),
-            BottomApp.Plugins: _get_plugins_app_class(),
             BottomApp.ConnectorAuth: _get_connector_auth_app_class(),
             BottomApp.MCPOAuth: _get_mcp_oauth_app_class(),
             BottomApp.Rewind: RewindApp,
@@ -5358,22 +4836,6 @@ class VibeApp(App):  # noqa: PLR0904
         try:
             session_picker = self.query_one(SessionPickerApp)
             session_picker.action_cancel()
-        except Exception:
-            pass
-        self._last_escape_time = None
-
-    def _handle_vibe_code_project_picker_app_escape(self) -> None:
-        try:
-            vibe_code_project_picker = self.query_one(VibeCodeProjectPickerApp)
-            vibe_code_project_picker.action_cancel()
-        except Exception:
-            pass
-        self._last_escape_time = None
-
-    def _handle_vibe_code_project_create_app_escape(self) -> None:
-        try:
-            vibe_code_project_create = self.query_one(VibeCodeProjectCreateApp)
-            vibe_code_project_create.action_cancel()
         except Exception:
             pass
         self._last_escape_time = None
@@ -5687,9 +5149,6 @@ class VibeApp(App):  # noqa: PLR0904
             BottomApp.MCP: lambda: self._handle_bottom_app_close_escape(
                 _get_mcp_app_class()
             ),
-            BottomApp.Plugins: lambda: self._handle_bottom_app_close_escape(
-                _get_plugins_app_class()
-            ),
             BottomApp.ConnectorAuth: lambda: self._handle_bottom_app_close_escape(
                 _get_connector_auth_app_class()
             ),
@@ -5705,10 +5164,6 @@ class VibeApp(App):  # noqa: PLR0904
             BottomApp.ModelPicker: self._handle_model_picker_app_escape,
             BottomApp.ThemePicker: self._handle_theme_picker_app_escape,
             BottomApp.ThinkingPicker: self._handle_thinking_picker_app_escape,
-            BottomApp.VibeCodeProjectCreate: self._handle_vibe_code_project_create_app_escape,
-            BottomApp.VibeCodeProjectPicker: (
-                self._handle_vibe_code_project_picker_app_escape
-            ),
             BottomApp.SessionPicker: self._handle_session_picker_app_escape,
             BottomApp.SkillsBrowser: lambda: self._handle_bottom_app_close_escape(
                 SkillsBrowserApp
