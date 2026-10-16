@@ -297,11 +297,14 @@ class Projector:
                 self._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
                            child_session=child)
                 curr_usage = self.session.token_usage
+                base_in = curr_usage.input_tokens if curr_usage is not None else 0
+                base_out = curr_usage.output_tokens if curr_usage is not None else 0
+                base_tot = curr_usage.total_tokens if curr_usage is not None else 0
                 self.session = self.session.model_copy(update={
                     "token_usage": TokenUsage(
-                        input_tokens=curr_usage.input_tokens + prompt_toks,
-                        output_tokens=curr_usage.output_tokens + compl_toks,
-                        total_tokens=curr_usage.total_tokens + tot_toks,
+                        input_tokens=base_in + prompt_toks,
+                        output_tokens=base_out + compl_toks,
+                        total_tokens=base_tot + tot_toks,
                     )
                 })
             return
