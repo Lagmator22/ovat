@@ -1,4 +1,9 @@
 # ovat/tui/widgets/approval.py
+# Look and grace period adapted from Mistral Vibe
+# (https://github.com/mistralai/mistral-vibe, vibe/cli/textual_ui/widgets/
+# approval_app.py and app.tcss #approval-app), Copyright Mistral AI, Apache
+# License 2.0. Changed for OVAT: no "always (permanent)" option, OVAT's
+# broker and wording.
 """Asking the person whether a tool may run, in place of the input box.
 
     ⚠ Allow subagent cloud?
@@ -42,10 +47,10 @@ def _args_text(arguments: dict, width: int = 400) -> str:
 
 class ApprovalPanel(Widget, can_focus=True):
     DEFAULT_CSS = """
-    ApprovalPanel { height: auto; width: 100%; padding: 0 1;
-                    border-top: solid $warning; border-bottom: solid $warning; }
-    ApprovalPanel:focus { border-top: solid $warning;
-                          border-bottom: solid $warning; }
+    ApprovalPanel { height: auto; max-height: 70vh; width: 100%;
+                    padding: 0 1; background: transparent;
+                    border: solid $foreground 35%; }
+    ApprovalPanel:focus { border: solid $foreground 35%; }
     ApprovalPanel Static { height: auto; }
     """
 
@@ -69,16 +74,24 @@ class ApprovalPanel(Widget, can_focus=True):
     def _render_body(self) -> Text:
         r = self.request
         out = Text()
-        out.append("⚠ ", style=f"bold {ui.YELLOW}")
-        out.append(f"Allow {r.tool}?", style="bold")
+        out.append(f"{r.tool} wants to run", style=f"bold {ui.YELLOW}")
         if r.reason:
-            out.append(f"\n  {r.reason}", style=ui.DIM)
+            out.append(f"\n⚠ {r.reason}", style=ui.YELLOW)
         if r.arguments:
-            out.append(f"\n  {_args_text(r.arguments)}", style=ui.DIM)
-        for i, (_, label) in enumerate(_OPTIONS):
-            mark = "›" if i == self.index else " "
-            style = f"bold {ui.CYAN}" if i == self.index else ""
-            out.append(f"\n{mark} {i + 1} {label}", style=style)
+            out.append(f"\n{_args_text(r.arguments)}", style=ui.DIM)
+        out.append("\n")
+        for i, (decision, label) in enumerate(_OPTIONS):
+            selected = i == self.index
+            mark = "› " if selected else "  "
+            if selected and decision != REFUSE:
+                style = f"bold {ui.GREEN}"
+            elif selected:
+                style = "bold"
+            else:
+                style = ""
+            out.append(f"\n{mark}{i + 1}. {label}", style=style)
+        out.append("\n↑↓ choose · enter confirm · 1-3 · esc no",
+                   style=ui.DIM)
         return out
 
     def _redraw(self) -> None:

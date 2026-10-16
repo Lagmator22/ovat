@@ -1,4 +1,8 @@
 # ovat/tui/widgets/input.py
+# Look adapted from Mistral Vibe (https://github.com/mistralai/mistral-vibe,
+# vibe/cli/textual_ui/widgets/chat_input/ and app.tcss #input-box,
+# #completion-popup), Copyright Mistral AI, Apache License 2.0. Changed for
+# OVAT: built on OptionList for mouse support, OVAT colours, OVAT commands.
 """The prompt: multi-line input, history, `!` bash mode, `/` completion.
 
 Keys:
@@ -62,15 +66,18 @@ class CompletionPopup(OptionList, can_focus=False):
 
     DEFAULT_CSS = """
     CompletionPopup { height: auto; max-height: 12; width: 100%;
-                      display: none; border: round $foreground 35%;
+                      display: none; border: solid $foreground 35%;
                       background: $background; padding: 0 1;
                       scrollbar-size-vertical: 1;
-                      scrollbar-color: $secondary 60%; }
+                      scrollbar-color: $foreground 40%; }
+    CompletionPopup:focus { border: solid $foreground 35%; }
     CompletionPopup.shown { display: block; }
     CompletionPopup > .option-list--option-highlighted {
-        background: $secondary 35%; text-style: bold; }
+        background: transparent; }
+    CompletionPopup:focus > .option-list--option-highlighted {
+        background: transparent; }
     CompletionPopup > .option-list--option-hover {
-        background: $secondary 15%; }
+        background: $foreground 8%; }
     """
 
     def __init__(self, **kwargs) -> None:
@@ -78,13 +85,27 @@ class CompletionPopup(OptionList, can_focus=False):
         self.items: list[commands.Command] = []
 
     @staticmethod
-    def _row(command: commands.Command, width: int) -> Text:
+    def _row(command: commands.Command, width: int,
+             selected: bool = False) -> Text:
+        """Vibe's row: the command bold (reversed when selected), then its
+        description, muted (italic when selected)."""
         label = f"/{command.name}" + (f" {command.usage}" if command.usage
                                       else "")
         row = Text(no_wrap=True, overflow="ellipsis")
-        row.append(label.ljust(width), style=f"bold {ui.PURPLE}")
-        row.append(command.help, style=ui.DIM)
+        row.append(label, style="bold reverse" if selected else "bold")
+        row.append(" " * max(2, width - len(label)))
+        row.append(command.help, style="italic" if selected else ui.DIM)
         return row
+
+    def _width(self) -> int:
+        return max(len(c.name) + len(c.usage) for c in commands.COMMANDS) + 4
+
+    def _restyle(self, old: int | None, new: int | None) -> None:
+        for index, selected in ((old, False), (new, True)):
+            if index is not None and 0 <= index < len(self.items):
+                self.replace_option_prompt_at_index(
+                    index, self._row(self.items[index], self._width(),
+                                     selected))
 
     def show_for(self, text: str) -> None:
         wanted = (text.startswith("/") and " " not in text
@@ -92,15 +113,17 @@ class CompletionPopup(OptionList, can_focus=False):
         self.items = commands.complete(text, limit=None) if wanted else []
         self.clear_options()
         if self.items:
-            width = max(len(c.name) + len(c.usage) for c in commands.COMMANDS) + 4
-            self.add_options([Option(self._row(c, width), id=c.name)
-                              for c in self.items])
+            width = self._width()
+            self.add_options([Option(self._row(c, width, i == 0), id=c.name)
+                              for i, c in enumerate(self.items)])
             self.highlighted = 0
         self.set_class(bool(self.items), "shown")
 
     def move(self, delta: int) -> None:
         if self.items:
-            self.highlighted = ((self.highlighted or 0) + delta) % len(self.items)
+            old = self.highlighted
+            self.highlighted = ((old or 0) + delta) % len(self.items)
+            self._restyle(old, self.highlighted)
 
     @property
     def shown(self) -> bool:
@@ -178,18 +201,24 @@ class InputBox(Vertical):
 
     DEFAULT_CSS = """
     InputBox { height: auto; width: 100%; }
-    InputBox #input-row { height: auto; border-top: solid $foreground 30%;
-                          border-bottom: solid $foreground 30%;
+    InputBox #input-row { height: auto; border: none;
+                          border-top: solid $foreground 35%;
+                          border-bottom: solid $foreground 35%;
                           border-title-align: right;
                           border-title-color: $text-muted; }
     InputBox #input-row.bash { border-top: solid $secondary;
                                border-bottom: solid $secondary;
                                border-title-color: $secondary; }
-    InputBox #glyph { width: 2; color: $accent; text-style: bold; }
+    InputBox #input-row.border-warning { border-top: solid $warning;
+                                         border-bottom: solid $warning;
+                                         border-title-color: $warning; }
+    InputBox #glyph { width: auto; padding: 0 1 0 0; color: $accent;
+                      text-style: bold; }
     InputBox #input-row.bash #glyph { color: $secondary; }
-    InputBox InputArea { width: 1fr; height: auto; min-height: 1;
-                         max-height: 12; background: transparent;
-                         border: none; padding: 0; }
+    InputBox InputArea { width: 1fr; height: auto; min-height: 3;
+                         max-height: 50vh; background: transparent;
+                         border: none; padding: 0;
+                         scrollbar-visibility: hidden; }
     InputBox InputArea:focus { border: none; }
     """
 
@@ -214,7 +243,7 @@ class InputBox(Vertical):
     def compose(self):
         yield self.popup
         with Horizontal(id="input-row"):
-            yield Static("›", id="glyph")
+            yield Static(">", id="glyph")
             yield self.area
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
@@ -238,7 +267,7 @@ class InputBox(Vertical):
         self.bash = on
         row = self.query_one("#input-row")
         row.set_class(on, "bash")
-        self.query_one("#glyph", Static).update("!" if on else "›")
+        self.query_one("#glyph", Static).update("!" if on else ">")
         row.border_title = ("bash mode  ·  backspace leaves" if on
                             else getattr(self, "_title", ""))
 
@@ -278,7 +307,12 @@ class InputBox(Vertical):
         if value is not None:
             self.set_text(value)
 
+    def set_warning(self, on: bool) -> None:
+        """Vibe's warning border: every tool is approved (yolo)."""
+        self.query_one("#input-row").set_class(on, "border-warning")
+
     def set_title(self, title: str) -> None:
+        title = f" {title} " if title else ""
         self._title = title
         row = self.query_one("#input-row")
         if not row.has_class("bash"):

@@ -22,8 +22,10 @@ from ovat.tui.app import OvatAgentApp  # noqa: E402
 from ovat.tui.widgets.approval import ApprovalPanel  # noqa: E402
 from ovat.tui.widgets.banner import Banner  # noqa: E402
 from ovat.tui.widgets.input import CompletionPopup, InputBox  # noqa: E402
-from ovat.tui.widgets.messages import (AssistantMessage, Notice,  # noqa: E402
-                                      ShellBlock, UserMessage)
+from ovat.tui.widgets.messages import (AssistantMessage,  # noqa: E402
+                                      BashOutputMessage, InterruptMessage,
+                                      UserMessage)
+from ovat.tui.widgets.messages import _BorderedLine as Notice  # noqa: E402
 from ovat.tui.widgets.tools import ToolGroup  # noqa: E402
 
 INFO = {"workflow": "w.yml", "name": "w", "model": "Qwen3.5-4B-int4-ov",
@@ -139,8 +141,8 @@ def test_the_banner_and_bar_show_the_session():
         app = _app()
         async with app.run_test(size=(110, 30)) as pilot:
             await _until(pilot, lambda: "Qwen3.5" in str(
-                app.query_one("#bottom-bar").render()))
-            bar = str(app.query_one("#bottom-bar").render())
+                app.query_one("#bar-right").render()))
+            bar = str(app.query_one("#bar-right").render())
             assert "GPU" in bar and "native" in bar
             assert app.query_one(Banner)
     run(go())
@@ -174,9 +176,10 @@ def test_markup_like_text_in_an_answer_or_output_cannot_break_it():
             await _until(pilot, lambda: app.query(AssistantMessage))
             await _type(pilot, "!echo x")
             await pilot.press("enter")
-            await _until(pilot, lambda: app.query(ShellBlock)
-                         and "done" in str(app.query_one(ShellBlock)._end.render()))
-            assert "[/bold]" in str(app.query_one(ShellBlock)._out.render())
+            await _until(pilot, lambda: app.query(BashOutputMessage)
+                         and app.query_one(BashOutputMessage).has_class(
+                             "bash-success"))
+            assert "[/bold]" in app.query_one(BashOutputMessage).output_text
     run(go())
 
 
@@ -248,9 +251,7 @@ def test_esc_stops_a_running_answer():
             await pilot.press("enter")
             await _until(pilot, lambda: holder[0].busy)
             await pilot.press("escape")
-            await _until(pilot, lambda: app.query(AssistantMessage))
-            assert "stopped" in str(
-                app.query_one(AssistantMessage).query_one(".footer").render())
+            await _until(pilot, lambda: app.query(InterruptMessage))
     run(go())
 
 
@@ -260,7 +261,7 @@ def test_bang_runs_a_shell_command_once():
         async with app.run_test(size=(110, 30)) as pilot:
             await _type(pilot, "!echo hi")
             await pilot.press("enter")
-            await _until(pilot, lambda: app.query(ShellBlock))
+            await _until(pilot, lambda: app.query(BashOutputMessage))
             assert not app.query(UserMessage)     # the block shows it once
     run(go())
 
@@ -275,7 +276,7 @@ def test_slash_shows_completions_and_enter_runs_help():
             assert popup.selected().name == "help"
             await pilot.press("enter")
             await _until(pilot, lambda: app.query(Notice))
-            assert "Commands" in str(app.query_one(Notice).render())
+            assert "Commands" in str(app.query_one(Notice).content)
     run(go())
 
 
@@ -287,7 +288,7 @@ def test_an_unknown_command_suggests_a_near_one():
             await pilot.press("escape")      # close the popup first
             await pilot.press("enter")
             await _until(pilot, lambda: app.query(Notice))
-            text = str(app.query_one(Notice).render())
+            text = str(app.query_one(Notice).content)
             assert "No command /tols" in text and "/tools" in text
     run(go())
 
@@ -354,8 +355,8 @@ def test_the_bar_shows_a_live_hardware_reading_without_inventing_one():
         app = _app(hardware=Monitor())
         async with app.run_test(size=(140, 30)) as pilot:
             await _until(pilot, lambda: "CPU 23%" in str(
-                app.query_one("#bottom-bar").render()), timeout=6)
-            bar = str(app.query_one("#bottom-bar").render())
+                app.query_one("#bar-right").render()), timeout=6)
+            bar = str(app.query_one("#bar-right").render())
             assert "RAM 61%" in bar and "NPU" not in bar
     run(go())
 
@@ -391,28 +392,23 @@ def test_bang_switches_to_bash_mode_and_shows_the_bang_once():
     run(go())
 
 
-def test_the_intro_plays_then_any_key_opens_the_chat_and_ready_is_kept():
-    # On the AI PC the agent finished building while the intro (then a
-    # separate screen) was on top, its Ready report was dropped, and the
-    # banner said "loading the agent" forever.
-    from ovat.tui.widgets.intro import IntroOverlay, mark_size
+def test_the_banner_mark_animates_then_rests_and_ready_fills_the_banner():
+    from ovat.tui.widgets.braille import ChipMark, frames
 
-    assert mark_size(80, 24)[1] <= 19 and mark_size(200, 60)[0] == 84
+    frames_ = frames()
+    assert len({len(f) for f in frames_}) == 1      # fixed size: no relayout
+    assert frames_[0] != frames_[-1]
 
     async def go():
         app = OvatAgentApp("w.yml", session_factory=lambda w, sink, cwd=None:
                            FakeSession(w, sink, cwd), history_file=None,
                            hardware=False)
-        async with app.run_test(size=(150, 40)) as pilot:
-            await _until(pilot, lambda: app.query(IntroOverlay))
-            assert app.query_one("#chat").display is False
-            await pilot.pause(0.3)
-            await pilot.press("x")
-            await _until(pilot, lambda: not app.query(IntroOverlay))
-            assert app.query_one("#chat").display is True
-            assert app.query_one(InputBox).area.has_focus
+        async with app.run_test(size=(120, 40)) as pilot:
+            mark = app.query_one(ChipMark)
+            await _until(pilot, lambda: mark._index >= len(frames_) - 1)
             banner = str(app.query_one(Banner)._model.render())
             assert "Qwen3.5" in banner and "loading" not in banner
+            assert app.query_one(InputBox).area.has_focus
     run(go())
 
 
@@ -430,5 +426,20 @@ def test_every_command_is_in_the_popup_and_a_click_runs_it():
             popup.highlighted = 0
             popup.action_select()          # what a click on the row does
             await _until(pilot, lambda: app.query(Notice))
-            assert "Commands" in str(app.query_one(Notice).render())
+            assert "Commands" in str(app.query_one(Notice).content)
+    run(go())
+
+
+def test_a_shell_command_that_ends_before_mount_still_shows_its_dollar():
+    async def go():
+        app = _app()
+        async with app.run_test(size=(110, 30)) as pilot:
+            await _type(pilot, "!echo hi")
+            await pilot.press("enter")
+            await _until(pilot, lambda: app.query(BashOutputMessage)
+                         and app.query_one(BashOutputMessage).has_class(
+                             "bash-success"))
+            await pilot.pause(0.3)          # a pulse tick would land here
+            block = app.query_one(BashOutputMessage)
+            assert str(block._prompt.render()).startswith("$")
     run(go())

@@ -1,4 +1,8 @@
 # ovat/tui/widgets/loading.py
+# SnakeSpinner is copied from Mistral Vibe
+# (https://github.com/mistralai/mistral-vibe, vibe/cli/textual_ui/widgets/
+# spinner.py), Copyright Mistral AI, Apache License 2.0. Changed for OVAT:
+# no Spinner base class; the rest of the file is OVAT's.
 """The line above the input while the agent works: spinner, status, time.
 
 Two animations, both cheap:
@@ -7,7 +11,7 @@ Two animations, both cheap:
   purple and back, one letter per tick.
 Every frame is the same width as the last, so updates skip the relayout
 (`layout=False`), which keeps a long transcript from re-measuring 10 times
-a second. Idea from Mistral Vibe's loading widget; colours and words ours.
+a second.
 """
 import random
 import time
@@ -34,8 +38,63 @@ EASTER_EGGS = (
 _EGG_CHANCE = 0.12
 
 
+class SnakeSpinner:
+    MAP_WIDTH = 4
+    MAP_HEIGHT = 4
+    SNAKE_LENGTH = 3
+
+    def __init__(self) -> None:
+        self._positions: list[complex] = [1, 0, 1j]
+
+    @property
+    def current_direction(self) -> complex:
+        return self._positions[0] - self._positions[1]
+
+    def _is_in_bounds(self, position: complex) -> bool:
+        return (
+            0 <= position.real < self.MAP_WIDTH
+            and 0 <= position.imag < self.MAP_HEIGHT
+        )
+
+    def _get_direction(self) -> complex:
+        if (
+            len(set(z.real for z in self._positions)) > 1
+            and len(set(z.imag for z in self._positions)) > 1
+            and self._is_in_bounds(self._positions[0] + self.current_direction)
+        ):
+            return self.current_direction
+        valid_directions = []
+        for rotation in [1, 1j, -1j]:
+            offset = rotation * self.current_direction
+            new_position = self._positions[0] + offset
+            if self._is_in_bounds(new_position) and new_position not in self._positions:
+                valid_directions.append(offset)
+        return random.choice(valid_directions)
+
+    def _next_positions(self) -> list[complex]:
+        if len(self._positions) > self.SNAKE_LENGTH:
+            return self._positions[: self.SNAKE_LENGTH]
+        head_position = self._positions[0]
+        direction = self._get_direction()
+        if self.current_direction != direction:
+            return [head_position + direction] + self._positions
+        return [head_position + direction] + self._positions[:-1]
+
+    def current_frame(self) -> str:
+        from ovat.tui.widgets.braille import render_braille
+        return render_braille(self._positions, self.MAP_WIDTH, self.MAP_HEIGHT)
+
+    def next_frame(self) -> str:
+        self._positions = self._next_positions()
+        return self.current_frame()
+
+    def reset(self) -> None:
+        self._positions = [1, 0, 1j]
+
+
 def snake_frame(step: int) -> str:
-    """One braille character: three lit dots chasing each other round."""
+    """One braille character: three lit dots chasing each other round
+    (kept for the banner's cheap one-cell spinner)."""
     mask = 0
     for i in range(_SNAKE_LENGTH):
         mask |= _SNAKE_PATH[(step - i) % len(_SNAKE_PATH)]
@@ -67,7 +126,7 @@ class LoadingLine(Horizontal):
 
     DEFAULT_CSS = """
     LoadingLine { height: 1; width: 100%; }
-    LoadingLine #spin { width: 2; }
+    LoadingLine #spin { width: 3; }
     LoadingLine #status { width: auto; }
     LoadingLine #hint { width: auto; color: $text-muted; padding-left: 1; }
     """
@@ -80,7 +139,8 @@ class LoadingLine(Horizontal):
         self._paused_at: float | None = None
         self._paused_total = 0.0
         self._last_hint = ""
-        self._spin = Static(snake_frame(0), id="spin")
+        self._snake = SnakeSpinner()
+        self._spin = Static(self._snake.next_frame(), id="spin")
         self._status_widget = Static(wave_text(self._status + "…", 0),
                                      id="status")
         self._hint = Static("", id="hint")
@@ -127,11 +187,11 @@ class LoadingLine(Horizontal):
         self._step += 1
         colour = WAVE[self._step % len(WAVE)]
         self._spin.update(
-            Text(snake_frame(self._step), style=f"bold {colour}"),
+            Text(self._snake.next_frame(), style=f"bold {colour}"),
             layout=False)
         self._status_widget.update(
             wave_text(self._status + "…", self._step), layout=False)
-        hint = f"({format_elapsed(self.elapsed())}  esc to interrupt)"
+        hint = f"({format_elapsed(self.elapsed())} Esc/Ctrl+C to interrupt)"
         if hint != self._last_hint:
             self._hint.update(hint, layout=len(hint) != len(self._last_hint))
             self._last_hint = hint

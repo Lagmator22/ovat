@@ -1,4 +1,8 @@
 # ovat/tui/widgets/tools.py
+# Shape adapted from Mistral Vibe (https://github.com/mistralai/mistral-vibe,
+# vibe/cli/textual_ui/widgets/tools.py, ToolGroup/ToolGroupHeader), Copyright
+# Mistral AI, Apache License 2.0. Changed for OVAT: driven by OVAT's
+# tool_started / tool_ended / subagent events, OVAT's wording.
 """All of one answer's tool calls, folded into one live summary line.
 
     ■ Searching docs, delegating to researcher · researcher: calling search_docs
@@ -64,10 +68,12 @@ class _Call:
 class ToolGroup(Vertical):
     DEFAULT_CSS = """
     ToolGroup { height: auto; width: 100%; margin-top: 1; }
-    ToolGroup .head { height: auto; width: 100%; }
-    ToolGroup .body { height: auto; padding-left: 2; color: $text-muted;
-                      display: none; }
-    ToolGroup.open .body { display: block; }
+    ToolGroup .head { height: auto; width: 100%; pointer: pointer; }
+    ToolGroup .tool-group-body { height: auto; width: 100%; display: none; }
+    ToolGroup.open .tool-group-body { display: block; }
+    ToolGroup .tool-group-border { width: auto; height: 100%;
+                                   padding: 0 1 0 0; color: $text-muted; }
+    ToolGroup .body { height: auto; width: 1fr; }
     """
 
     def __init__(self, kinds: dict[str, str] | None = None) -> None:
@@ -88,8 +94,13 @@ class ToolGroup(Vertical):
         self._body_widget = Static("", classes="body")
 
     def compose(self):
+        from textual.containers import Horizontal
+
+        from ovat.tui.widgets.messages import ExpandingBorder
         yield self._head
-        yield self._body_widget
+        with Horizontal(classes="tool-group-body"):
+            yield ExpandingBorder(classes="tool-group-border")
+            yield self._body_widget
 
     def on_mount(self) -> None:
         self._timer = self.set_interval(0.15, self._pulse)
@@ -161,16 +172,16 @@ class ToolGroup(Vertical):
         if self._working:
             glyph = _PULSE[self._step % len(_PULSE)]
             head.append(glyph + " ", style=f"bold {ui.CYAN}")
-            head.append(self._summary(), style="bold")
+            head.append(self._summary(), style=ui.DIM)
             if self._live:
                 head.append(f"  ·  {self._live}", style=ui.DIM)
             return head
         arrow = "⏷ " if self.has_class("open") else "⏵ "
         errors = any(c.status not in ("ok", "running")
                      for c in self._calls.values())
-        colour = ui.RED if self._failed and errors else ui.DIM
-        head.append(arrow, style=colour)
-        head.append(self._summary(), style=colour)
+        failed = self._failed and errors
+        head.append(arrow, style=ui.RED if failed else ui.GREEN)
+        head.append(self._summary(), style=ui.RED if failed else ui.DIM)
         n = len(self._order)
         head.append(f"  ({n} call{'s' if n != 1 else ''}, "
                     f"{self._elapsed:.1f}s)", style=ui.DIM)

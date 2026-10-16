@@ -1,13 +1,17 @@
 # ovat/tui/app.py
+# Layout and styles adapted from Mistral Vibe
+# (https://github.com/mistralai/mistral-vibe, vibe/cli/textual_ui/app.py
+# compose and app.tcss), Copyright Mistral AI, Apache License 2.0. Changed
+# for OVAT: driven by AgentSession events, OVAT commands, colours and bar.
 """`ovat agent`: the chat-first agent TUI.
 
-Layout, top to bottom (Mistral Vibe's shape, which gives the conversation
-every row it can):
+Layout, top to bottom (Mistral Vibe's):
 
-    #chat          scrolls: the banner, then the transcript
+    #chat          the banner, what's new, then the transcript, anchored
+                   to the BOTTOM so a new conversation starts by the input
     #loading-area  one line while the agent works (spinner, status, time)
     #bottom        the input box, or an approval panel in its place
-    #bottom-bar    folder, workflow, model on device, tokens, flags
+    #bottom-bar    folder and process on the left, the agent on the right
 
 The app only draws. AgentSession (ovat/agentic/session.py) does the work on
 worker threads and reports through one callback; that callback posts a
@@ -36,11 +40,19 @@ from ovat.tui.widgets.approval import ApprovalPanel
 from ovat.tui.widgets.banner import Banner
 from ovat.tui.widgets.input import HISTORY_FILE, InputBox
 from ovat.tui.widgets.loading import LoadingLine
-from ovat.tui.widgets.messages import (AssistantMessage, Notice, ShellBlock,
-                                      UserMessage, turn_footer)
+from ovat.tui.widgets.messages import (AssistantMessage, BashOutputMessage,
+                                      InterruptMessage, UserMessage,
+                                      WhatsNewMessage, notice, turn_footer)
 from ovat.tui.widgets.tools import ToolGroup
 
 QUIT_CONFIRM_S = 2.0
+WHATS_NEW = (
+    "**What's new in the OVAT agent**\n\n"
+    "- **Subagents**: hand a task to another workflow, an A2A agent or a "
+    "cloud API (`/agents`, `/ask`)\n"
+    "- **A2A**: `/serve` offers this workflow to other agents\n"
+    "- **Approvals**: anything that sends data off this PC asks first\n"
+    "- **`!cmd`** runs a shell command, Esc stops it")
 ENGINES = ("native", "react", "llamaindex", "openai-agents")
 
 
@@ -89,15 +101,24 @@ class OvatAgentApp(App):
     TITLE = "OVAT agent"
 
     CSS = """
-    Screen { background: $background; layout: vertical; }
-    #chat { height: 1fr; width: 100%; padding: 0 1; overflow-y: scroll;
-            scrollbar-size-vertical: 1; scrollbar-color: $secondary 60%;
-            scrollbar-background: $background; }
-    #messages { height: auto; width: 100%; }
-    #loading-area { height: auto; width: 100%; padding: 0 1; }
-    #bottom { height: auto; width: 100%; padding: 0 1; }
-    #bottom-bar { height: 1; width: 100%; padding: 0 1;
-                  color: $text-muted; }
+    * { scrollbar-size: 1 1; }
+    Screen { background: transparent; layout: vertical; }
+    #chat { layout: stream; height: 1fr; width: 100%; padding: 0;
+            align-vertical: bottom; background: transparent;
+            scrollbar-color: $foreground 30%;
+            scrollbar-background: transparent; }
+    #messages { layout: stream; width: 100%; height: auto; }
+    #loading-area { height: auto; width: 100%; padding: 1 0 0 0; }
+    #bottom { height: auto; width: 100%; }
+    #bottom-bar { height: auto; width: 100%; padding: 0; layout: horizontal; }
+    #bar-left { width: auto; color: $text-muted; }
+    #bar-spacer { width: 1fr; }
+    #bar-right { width: auto; color: $text-muted; }
+    Markdown { color: $foreground; }
+    Markdown .code_inline { color: $success; background: transparent;
+                            text-style: bold; }
+    Markdown MarkdownFence { overflow-x: auto; max-width: 95%;
+                             background: transparent; }
     """
 
     BINDINGS = [
@@ -115,14 +136,14 @@ class OvatAgentApp(App):
         super().__init__()
         self._workflow = workflow
         self._session_factory = session_factory
-        self._play_intro = animate
+        self._animate_mark = animate
         self._history_file = history_file
         self._cwd = cwd or os.getcwd()
         self.session = None
         self._chat_screen = None        # set in on_mount
         self._loading: LoadingLine | None = None
         self._group: ToolGroup | None = None
-        self._shell_block: ShellBlock | None = None
+        self._shell_block: BashOutputMessage | None = None
         self._approvals: list = []
         self._panel: ApprovalPanel | None = None
         self._last_quit_press = 0.0
@@ -135,23 +156,18 @@ class OvatAgentApp(App):
     # ---- layout ------------------------------------------------------------
 
     def compose(self):
-        if self._play_intro:
-            from ovat.tui.widgets.intro import IntroOverlay
-            yield IntroOverlay(id="intro")
-        with VerticalScroll(id="chat", classes="chat-part"):
-            yield Banner(animate=self._play_intro, id="banner")
+        from textual.containers import Horizontal
+        with VerticalScroll(id="chat"):
+            yield Banner(animate=self._animate_mark, id="banner")
+            yield WhatsNewMessage(WHATS_NEW)
             yield Vertical(id="messages")
-        yield Vertical(id="loading-area", classes="chat-part")
-        with Vertical(id="bottom", classes="chat-part"):
+        yield Vertical(id="loading-area")
+        with Vertical(id="bottom"):
             yield InputBox(history_file=self._history_file, id="input-box")
-        yield Static("", id="bottom-bar", classes="chat-part")
-
-    def on_intro_overlay_finished(self, message) -> None:
-        for intro in self._chat_screen.query("#intro"):
-            intro.remove()
-        for part in self._chat_screen.query(".chat-part"):
-            part.display = True
-        self._chat_screen.query_one(InputBox).area.focus()
+        with Horizontal(id="bottom-bar"):
+            yield Static("", id="bar-left")
+            yield Static("", id="bar-spacer")
+            yield Static("", id="bar-right")
 
     def on_mount(self) -> None:
         # Every lookup goes through the MAIN screen: while /doctor or
@@ -162,13 +178,12 @@ class OvatAgentApp(App):
         self.theme = OVAT_THEME.name
         self.session = self._session_factory(
             self._workflow, self._from_session, cwd=self._cwd)
-        self.session.start()            # builds while the intro plays
+        self.session.start()
         self._update_bar()
-        if self._play_intro:
-            for part in self._chat_screen.query(".chat-part"):
-                part.display = False
-        else:
-            self._chat_screen.query_one(InputBox).area.focus()
+        # Stay pinned to the newest message while the user has not scrolled
+        # away (Vibe's ChatScroll does the same).
+        self._chat_screen.query_one("#chat", VerticalScroll).anchor()
+        self._chat_screen.query_one(InputBox).area.focus()
         if self._hardware_choice is True:
             from ovat.agentic.hardware import HardwareMonitor
             self._hardware = HardwareMonitor()
@@ -190,7 +205,7 @@ class OvatAgentApp(App):
                          name="ovat-hardware").start()
 
     def on_hardware_reading(self, message: HardwareReading) -> None:
-        if not self.is_running or not self._chat_screen.query("#bottom-bar"):
+        if not self.is_running or not self._chat_screen.query("#bar-right"):
             return
         self._reading = message.reading
         self._update_bar()
@@ -213,10 +228,13 @@ class OvatAgentApp(App):
 
     def _add(self, widget) -> None:
         self._messages.mount(widget)
-        self._chat_screen.query_one("#chat", VerticalScroll).scroll_end(animate=False)
+        # After the new widget is laid out, not before: scrolling first left
+        # the newest message just below the view.
+        chat = self._chat_screen.query_one("#chat", VerticalScroll)
+        self.call_after_refresh(chat.scroll_end, animate=False)
 
     def note(self, text, level: str = "info") -> None:
-        self._add(Notice(text, level))
+        self._add(notice(text, level))
 
     def _start_loading(self, status: str = "Thinking") -> None:
         self._stop_loading()
@@ -229,33 +247,32 @@ class OvatAgentApp(App):
             self._loading = None
 
     def _update_bar(self) -> None:
+        """Vibe's bar: where (path, process) left, what (agent) right."""
         info = self.session.info if self.session else {}
-        bar = Text(no_wrap=True, overflow="ellipsis")
-        bar.append(_short_path(self._cwd), style=ui.DIM)
-        if info.get("name"):
-            bar.append("  ·  ", style=ui.DIM)
-            bar.append(info["name"], style=ui.PURPLE)
+        left = Text(f"{_short_path(self._cwd)} [PID {os.getpid()}]")
+        right = Text(no_wrap=True, overflow="ellipsis")
         if info.get("model"):
-            bar.append("  ·  ", style=ui.DIM)
-            bar.append(f"{info['device']}", style=f"bold {ui.CYAN}")
-            bar.append(f" {info['model']}", style=ui.DIM)
-            bar.append(f"  ·  {info.get('engine')}", style=ui.DIM)
+            right.append(f"{info['device']}", style=f"bold {ui.CYAN}")
+            right.append(f" {info['model']} · {info.get('engine')}")
         totals = self.session.totals if self.session else {}
         used = totals.get("prompt_tokens", 0) + totals.get(
             "completion_tokens", 0)
         if used:
-            bar.append(f"  ·  {used:,} tokens", style=ui.DIM)
+            right.append(f" · {used:,} tokens")
         if self.session and self.session.serving:
-            bar.append("  ·  ", style=ui.DIM)
-            bar.append("a2a serving", style=ui.GREEN)
+            right.append(" · ")
+            right.append("a2a serving", style=ui.GREEN)
         if self.session and self.session.broker.auto_approve:
-            bar.append("  ·  ", style=ui.DIM)
-            bar.append("yolo", style=f"bold {ui.YELLOW}")
+            right.append(" · ")
+            right.append("yolo", style=f"bold {ui.YELLOW}")
         if self._reading:
             from ovat.agentic.hardware import format_reading
-            bar.append("  ·  ", style=ui.DIM)
-            bar.append(format_reading(self._reading), style=ui.CYAN)
-        self._chat_screen.query_one("#bottom-bar", Static).update(bar)
+            right.append(" · ")
+            right.append(format_reading(self._reading).replace("  ·  ", " · "),
+                         style=ui.CYAN)
+        screen = self._chat_screen
+        screen.query_one("#bar-left", Static).update(left)
+        screen.query_one("#bar-right", Static).update(right)
 
     # ---- what the session reports -------------------------------------------
 
@@ -263,7 +280,7 @@ class OvatAgentApp(App):
         # A worker can finish while the app is closing (Ctrl-C as an answer
         # lands). By then the widgets are gone; drawing would raise
         # NoMatches on the way out. Seen on the Windows test run.
-        if not self.is_running or not self._chat_screen.query("#bottom-bar"):
+        if not self.is_running or not self._chat_screen.query("#bar-right"):
             return
         event = message.event
         handler = getattr(self, f"_on_{type(event).__name__}", None)
@@ -350,7 +367,7 @@ class OvatAgentApp(App):
         footer = turn_footer(event.elapsed, event.totals, event.sources,
                              event.failed, event.cancelled)
         if event.cancelled:
-            self._add(AssistantMessage("_Stopped._", footer))
+            self._add(InterruptMessage())
         else:
             self._add(AssistantMessage(event.answer or "_(no answer)_",
                                        footer, failed=event.failed))
@@ -405,14 +422,15 @@ class OvatAgentApp(App):
         if not command:
             self.note("Type a command after !, like !dir or !ls", "warn")
             return
-        self._shell_block = ShellBlock(command)    # its header shows the command
+        # The block's own prompt pulses while it runs (Vibe's shape), so
+        # no loading line for a shell command.
+        self._shell_block = BashOutputMessage(command)
         self._add(self._shell_block)
-        if not self.session.busy:
-            self._start_loading(f"Running {command.split()[0]}")
         if self.session.run_shell(command) is None:
             self._shell_block = None
 
     def _slash(self, text: str) -> None:
+        self._add(UserMessage(text, slash=True))
         command, rest = commands.parse(text)
         if command is None:
             near = commands.complete(rest or "")
@@ -525,6 +543,10 @@ class OvatAgentApp(App):
         self.note("Every tool is approved for this session. /yolo again "
                   "turns it off." if broker.auto_approve else
                   "Tools ask again.", "warn" if broker.auto_approve else "info")
+        box = self._chat_screen.query_one(InputBox)
+        box.set_warning(broker.auto_approve)
+        box.set_title("yolo: approves everything" if broker.auto_approve
+                      else (self.session.info.get("engine") or ""))
         self._update_bar()
 
     def _cmd_workflow(self, rest: str) -> None:

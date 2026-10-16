@@ -1,0 +1,10 @@
+OVAT (OpenVINO Agentic Toolkit)
+Copyright 2026 Gurman (Lagmator22) and contributors
+Licensed under the Apache License, Version 2.0.
+
+This product includes software adapted from Mistral Vibe
+(https://github.com/mistralai/mistral-vibe), Copyright Mistral AI,
+licensed under the Apache License, Version 2.0. The adapted files are in
+ovat/tui/ and each one says at the top what was taken and what changed.
+Mistral Vibe's name, logo and mascot are trademarks of Mistral AI and are
+not used.
