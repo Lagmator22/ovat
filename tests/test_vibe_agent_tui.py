@@ -212,6 +212,16 @@ def test_the_banner_shows_the_model_and_stops_saying_loading():
     run(go())
 
 
+def test_the_banner_shows_only_the_workflow_file_name():
+    async def go():
+        path = str(Path("/some/very/long/folder/subagents.yml"))
+        async with running(workflow=path) as (app, pilot, fake, handle):
+            banner = banner_text(app)
+            assert "subagents.yml" in banner
+            assert "long" not in banner
+    run(go())
+
+
 def test_nothing_that_phones_home_or_nags_is_on():
     """No update check, no telemetry, no feedback prompt, no editor promo,
     no what's-new from the app this was copied from, no notifications."""

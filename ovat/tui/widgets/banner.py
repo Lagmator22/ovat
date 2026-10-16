@@ -12,6 +12,7 @@
 Three lines and a small animated mark: the screen is for the conversation.
 """
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 from rich.text import Text
 from textual.containers import Horizontal, Vertical, VerticalGroup
@@ -64,7 +65,7 @@ def counts_line(info: dict) -> Text:
     subs = info.get("subagents", [])
     parts = [_plural(len(tools), "tool"), _plural(len(subs), "subagent")]
     if info.get("workflow"):
-        parts.append(info["workflow"])
+        parts.append(Path(info["workflow"]).name)
     return Text(" · ".join(parts))
 
 
