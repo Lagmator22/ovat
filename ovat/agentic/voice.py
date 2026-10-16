@@ -22,7 +22,7 @@ from ovat.tui.vibe.utils.audio import RecordingMode
 RATE = 16000
 BLOCK = 1600
 MAX_SECONDS = 30
-SILENCE_SECONDS = 0.8
+SILENCE_SECONDS = 2.5
 SPEECH_PEAK = 0.015
 SILENCE_PEAK = 0.008
 

@@ -75,7 +75,7 @@ def test_live_partials_are_revised_before_stop_and_finalised_on_silence():
         assert manager.transcribe_state == TranscribeState.RECORDING
         recorder.send()
         await until(lambda: listener.partials[-1] == "hello world")
-        recorder.send(0, 0.8)
+        recorder.send(0, 2.5)
         await until(lambda: manager.transcribe_state == TranscribeState.IDLE)
         assert listener.final == ["hello world"]
         assert recorder.closed
@@ -263,7 +263,7 @@ def test_voice_key_shows_live_words_then_finishes_without_duplication(monkeypatc
             recorder.send()
             await ui_until(pilot, lambda: app.query_one("#input").text == "hello world")
             assert manager.transcribe_state == TranscribeState.RECORDING
-            recorder.send(0, 0.8)
+            recorder.send(0, 2.5)
             await ui_until(pilot, lambda: manager.transcribe_state == TranscribeState.IDLE)
             assert app.query_one("#input").text == "hello world"
             app.query_one("#input").load_text("")
