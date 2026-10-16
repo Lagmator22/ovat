@@ -2076,6 +2076,88 @@ def test_the_bridge_names_the_session_and_the_turn():
     assert plain.answer("x").entry.turn_id is None
 
 
+def _bridge_run(tmp_path, monkeypatch, name, arguments):
+    """Run one real coding tool and return the card the bridge settles."""
+    from ovat.agent import factory
+    from ovat.agent.events import EventBus
+    from ovat.config.workflow import WorkflowConfig
+    from ovat.tui.server.bridge import Bridge
+    monkeypatch.chdir(tmp_path)
+    bus = EventBus()
+    bus.approver = lambda tool, args, reason: True
+    events = []
+    bus.subscribe(events.append)
+    tools = factory.observe_tools(factory.build_tools(
+        WorkflowConfig(model={"name": "m"}, tools=[{"name": name}]),
+        events=bus), bus)
+    tools[name]["function"](**arguments)
+    bridge = Bridge("s1")
+    started = bridge.convert(events[0], {})
+    updated = bridge.convert(events[-1], {})
+    # What goes over the wire must survive being written out as JSON.
+    updated.entry.model_dump_json(by_alias=True)
+    return started.entry.detail, updated.entry.state
+
+
+def test_an_edit_reaches_the_diff_card_with_its_occurrences(
+        tmp_path, monkeypatch):
+    (tmp_path / "a.py").write_text("a = 1\nb = 2\n")
+    detail, state = _bridge_run(tmp_path, monkeypatch, "edit", {
+        "file_path": "a.py", "old_string": "b = 2", "new_string": "b = 3"})
+    assert detail.kind == "file_edit"
+    assert detail.input.old_string == "b = 2"
+    assert state.status == "completed"
+    # The wire form is camelCase, like every Vibe effect output.
+    assert state.output["occurrences"] == [
+        {"startLine": 2, "oldText": "b = 2", "newText": "b = 3"}]
+    assert state.display.message == "a.py"
+
+
+def test_a_shell_command_reaches_the_card_with_its_output(
+        tmp_path, monkeypatch):
+    detail, state = _bridge_run(tmp_path, monkeypatch, "shell", {
+        "command": f'"{sys.executable}" -c "print(42)"'})
+    assert detail.kind == "shell" and "print(42)" in detail.input.command
+    assert state.status == "completed"
+    assert state.output["stdout"].strip() == "42"
+    assert state.output["output"].strip() == "42"
+
+
+def test_a_shell_command_that_fails_keeps_its_output_on_the_failed_card(
+        tmp_path, monkeypatch):
+    detail, state = _bridge_run(tmp_path, monkeypatch, "shell", {
+        "command": f'"{sys.executable}" -c "import sys; print(1); '
+                   f'sys.exit(2)"'})
+    assert state.status == "failed"
+    assert "code 2" in state.error.message
+    assert state.output["stdout"].strip() == "1"
+
+
+def test_write_read_and_grep_cards_carry_their_outputs(tmp_path, monkeypatch):
+    detail, state = _bridge_run(tmp_path, monkeypatch, "write_file", {
+        "file_path": "n/new.txt", "content": "hi"})
+    assert detail.kind == "file_write"
+    assert state.output == {"filePath": "n/new.txt", "content": "hi",
+                            "fileExisted": False, "previousContent": None}
+    (tmp_path / "r.txt").write_text("one\ntwo\n")
+    detail, state = _bridge_run(tmp_path, monkeypatch, "read_file", {
+        "file_path": "r.txt"})
+    assert detail.kind == "file_read" and state.output["numLines"] == 2
+    detail, state = _bridge_run(tmp_path, monkeypatch, "grep", {
+        "pattern": "two"})
+    assert detail.kind == "file_search"
+    assert state.output["matchCount"] == 1
+    assert state.output["parsedMatches"][0]["line"] == 2
+
+
+def test_a_refused_coding_call_shows_the_sentence_not_a_traceback(
+        tmp_path, monkeypatch):
+    detail, state = _bridge_run(tmp_path, monkeypatch, "read_file", {
+        "file_path": "../outside.txt"})
+    assert state.status == "failed"
+    assert "outside the project folder" in state.error.message
+
+
 # ---- shutdown -------------------------------------------------------------------
 
 def _leftover_threads():
