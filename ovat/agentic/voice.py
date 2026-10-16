@@ -22,9 +22,9 @@ from ovat.tui.vibe.utils.audio import RecordingMode
 RATE = 16000
 BLOCK = 1600
 MAX_SECONDS = 30
-SILENCE_SECONDS = 2.5
-SPEECH_PEAK = 0.015
-SILENCE_PEAK = 0.008
+SILENCE_SECONDS = 2.0
+SPEECH_PEAK = 0.035
+SILENCE_PEAK = 0.015
 
 WHISPER_HALLUCINATIONS = {
     "you", "thank you", "thanks for watching", "bye", "bye-bye",
