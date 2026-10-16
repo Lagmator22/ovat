@@ -79,7 +79,7 @@ voice = ["sounddevice>=0.5"]
 # are copied from Mistral Vibe and import these directly; most arrive through
 # other packages today, but nothing guarantees that, so they are named here.
 tui = ["textual", "pyfiglet", "anyio", "certifi", "httpx", "jsonpatch", "keyring",
-       "packaging", "pyperclip", "truststore",
+       "packaging", "pyperclip", "truststore", "sounddevice>=0.5",
        # /config edits workflow.yml and must keep the user's comments; PyYAML
        # drops them. Not in the base install: only the settings screen writes.
        "ruamel.yaml",
@@ -90,12 +90,19 @@ tui = ["textual", "pyfiglet", "anyio", "certifi", "httpx", "jsonpatch", "keyring
 # could move again. All SDK use is in ovat/a2a/sdk/, so an upgrade is a
 # change there. uvicorn is named because `ovat a2a serve` calls it directly.
 a2a = ["a2a-sdk[http-server]>=1.2.2,<2", "uvicorn>=0.30"]
+# all: everything in one command (TUI, voice, A2A, and all agent frameworks).
+all = ["sounddevice>=0.5", "textual", "pyfiglet", "anyio", "certifi", "httpx",
+       "jsonpatch", "keyring", "packaging", "pyperclip", "truststore",
+       "ruamel.yaml", "a2a-sdk[http-server]>=1.2.2,<2", "uvicorn>=0.30",
+       "langchain>=1", "langchain-openai>=1", "langgraph>=1",
+       "llama-index-core>=0.14", "llama-index-llms-openai-like>=0.5",
+       "openai-agents>=0.1", "tomli; python_version < '3.11'"]
 dev = ["pytest", "pytest-cov", "pytest-xdist", "langchain>=1", "langchain-openai>=1",
        "langgraph>=1", "llama-index-core>=0.14",
        "llama-index-llms-openai-like>=0.5", "openai-agents>=0.1",
        "textual", "pyfiglet", "anyio", "certifi", "httpx", "jsonpatch",
        "keyring", "packaging", "pyperclip", "truststore", "ruamel.yaml",
-       "a2a-sdk[http-server]>=1.2.2,<2", "uvicorn>=0.30",
+       "sounddevice>=0.5", "a2a-sdk[http-server]>=1.2.2,<2", "uvicorn>=0.30",
        # tomllib is stdlib from 3.11; on 3.10, which we support and advertise,
        # the packaging tests need it under its original name.
        "tomli; python_version < '3.11'"]
