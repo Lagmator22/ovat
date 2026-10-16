@@ -68,8 +68,11 @@ STEER_TAKEN = "steer_taken"
 # Safe across threads and async tasks; reset in finally.
 CURRENT_CALL_ID: contextvars.ContextVar[str] = contextvars.ContextVar(
     "CURRENT_CALL_ID", default="")
-CURRENT_AGENT_NAME: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "CURRENT_AGENT_NAME", default="")
+# The subagent a tool call runs under, as (name, the delegate call's id):
+# an approval names the agent and blocks exactly that child, even when two
+# runs of the same subagent are under way.
+CURRENT_SUBAGENT: contextvars.ContextVar[tuple[str, str]] = \
+    contextvars.ContextVar("CURRENT_SUBAGENT", default=("", ""))
 
 
 class CombinedStopEvent(threading.Event):

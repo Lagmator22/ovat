@@ -107,23 +107,12 @@ class Approvals:
                 summary=request.tool,
                 status_text=f"Asking about {request.tool}"))
         stamp = now_ms()
-        child_id = None
-        if request.agent and projector:
-            for cid, cs in projector.child_sessions.items():
-                if cs.name == request.agent and isinstance(cs.status, RunningSessionStatus):
-                    child_id = cid
-                    blocked_cs = cs.model_copy(update={
-                        "status": BlockedSessionStatus(
-                            active_turn_id=ctx.turns.active_id or "",
-                            callback_id=callback_id,
-                            reason="approval"
-                        ),
-                        "updated_at": stamp
-                    })
-                    projector.child_sessions[cid] = blocked_cs
-                    projector._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
-                                    child_session=blocked_cs)
-                    break
+        child_id = f"child-{request.agent_call}" if request.agent_call else None
+        if child_id not in projector.child_sessions:
+            child_id = None
+        _child_status(projector, child_id, BlockedSessionStatus(
+            active_turn_id=ctx.turns.active_id or "",
+            callback_id=callback_id, reason="approval"))
         title = (f"Allow subagent {request.agent} to run {request.tool}?"
                  if request.agent else f"Allow {request.tool}?")
         entry = PublicCallbackEntry(
@@ -204,17 +193,7 @@ class Approvals:
         projector.close_callback(callback_id, {"status": "answered",
                                                "output": dumped})
         self._open.pop(callback_id, None)
-        if record.child_id and record.child_id in projector.child_sessions:
-            cs = projector.child_sessions[record.child_id]
-            if isinstance(cs.status, BlockedSessionStatus):
-                turn_id = cs.status.active_turn_id or ctx.turns.active_id or ""
-                unblocked_cs = cs.model_copy(update={
-                    "status": RunningSessionStatus(active_turn_id=turn_id),
-                    "updated_at": now_ms()
-                })
-                projector.child_sessions[record.child_id] = unblocked_cs
-                projector._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
-                                child_session=unblocked_cs)
+        _unblock(projector, record.child_id, ctx.turns.active_id)
         projector.set_status({"type": "running",
                               "activeTurnId": ctx.turns.active_id or ""})
         if parsed.decision.type is ApprovalDecisionType.CANCEL_TURN:
@@ -229,17 +208,7 @@ class Approvals:
         self._closed.add(callback_id)
         self._ctx.agent.broker.resolve(record.request.id, REFUSE)
         projector = self._ctx.projector
-        if record.child_id and projector and record.child_id in projector.child_sessions:
-            cs = projector.child_sessions[record.child_id]
-            if isinstance(cs.status, BlockedSessionStatus):
-                turn_id = cs.status.active_turn_id or self._ctx.turns.active_id or ""
-                unblocked_cs = cs.model_copy(update={
-                    "status": RunningSessionStatus(active_turn_id=turn_id),
-                    "updated_at": now_ms()
-                })
-                projector.child_sessions[record.child_id] = unblocked_cs
-                projector._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
-                                child_session=unblocked_cs)
+        _unblock(projector, record.child_id, self._ctx.turns.active_id)
         projector.close_callback(callback_id, {"status": "cancelled",
                                                "reason": reason})
 
@@ -251,3 +220,23 @@ class Approvals:
         """A new conversation: nothing open, nothing remembered."""
         self._open.clear()
         self._closed.clear()
+
+
+def _child_status(projector, child_id: str | None, status) -> None:
+    """Set a child session's status and tell the client. None: no child."""
+    child = projector.child_sessions.get(child_id) if child_id else None
+    if child is None:
+        return
+    child = child.model_copy(update={"status": status,
+                                     "updated_at": now_ms()})
+    projector.child_sessions[child_id] = child
+    projector._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
+                    child_session=child)
+
+
+def _unblock(projector, child_id: str | None, active_turn: str | None) -> None:
+    """A child the approval had marked blocked runs again."""
+    child = projector.child_sessions.get(child_id) if child_id else None
+    if child is not None and isinstance(child.status, BlockedSessionStatus):
+        _child_status(projector, child_id, RunningSessionStatus(
+            active_turn_id=child.status.active_turn_id or active_turn or ""))

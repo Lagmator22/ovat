@@ -460,6 +460,7 @@ def test_child_tool_approval_records_agent_name(monkeypatch, tmp_path):
     assert len(requests) == 1
     assert requests[0].tool == "shell"
     assert requests[0].agent == "researcher"
+    assert requests[0].agent_call            # the delegate call it runs under
     broker.resolve(requests[0].id, "once")
     t.join(timeout=2.0)
     assert not t.is_alive()
@@ -556,7 +557,8 @@ def test_child_approval_marks_blocked_and_unblocks():
     approvals = Approvals(ctx)
 
     # Subagent asks for approval
-    req = ApprovalRequest(id=1, tool="shell", arguments={"cmd": "ls"}, reason="", agent="researcher")
+    req = ApprovalRequest(id=1, tool="shell", arguments={"cmd": "ls"},
+                          reason="", agent="researcher", agent_call="c1")
     broker._open[1] = req
     approvals.request(req)
 
@@ -736,3 +738,38 @@ def test_a_child_that_reported_no_tokens_shows_none_not_zero():
     assert known.context_usage.total_tokens == 42
     assert "42 tokens" in row(known)
     assert parent.token_usage.total_tokens == 42
+
+
+def test_an_approval_blocks_the_child_that_asked_not_its_namesake():
+    """Two runs of one subagent were told apart by name only, so the
+    first running one was marked blocked whichever had asked."""
+    from ovat.agent.events import Event, SUBAGENT_STARTED
+    from ovat.agent.permissions import ApprovalBroker, ApprovalRequest
+    from ovat.tui.server.approvals import Approvals
+    from ovat.tui.server.projector import Projector
+    from ovat.tui.vibe.app_server.models import (BlockedSessionStatus,
+                                                 IdleSessionStatus,
+                                                 PublicSession,
+                                                 RunningSessionStatus)
+
+    projector = Projector(PublicSession(id="p", status=IdleSessionStatus(),
+                                        created_at=0, updated_at=0),
+                          lambda m, p: None)
+    for call in ("c1", "c2"):
+        projector.agent_event(Event(SUBAGENT_STARTED, {
+            "call_id": call, "agent": "researcher"}), {})
+
+    class Ctx:
+        def __init__(self):
+            self.projector = projector
+            self.agent = type("A", (), {"broker": ApprovalBroker()})()
+            self.turns = type("T", (), {"active_id": "turn-1"})()
+            self.capabilities = type("C", (), {"callback_kinds": ["approval"]})()
+            self.rpc = type("R", (), {"request": lambda *a: None})()
+    Approvals(Ctx()).request(ApprovalRequest(
+        id=1, tool="shell", arguments={}, agent="researcher",
+        agent_call="c2"))
+    assert isinstance(projector.child_sessions["child-c2"].status,
+                      BlockedSessionStatus)
+    assert isinstance(projector.child_sessions["child-c1"].status,
+                      RunningSessionStatus)

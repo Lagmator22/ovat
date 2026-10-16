@@ -105,7 +105,8 @@ class ApprovalRequest:
     arguments: dict
     reason: str = ""
     decision: str | None = None
-    agent: str = ""
+    agent: str = ""            # the subagent asking, "" for the main agent
+    agent_call: str = ""       # its delegate call's id
     _done: threading.Event = field(default_factory=threading.Event,
                                    repr=False)
 
@@ -144,10 +145,10 @@ class ApprovalBroker:
             return True
         if self.on_request is None:
             return False
-        from ovat.agent.events import CURRENT_AGENT_NAME
-        agent = CURRENT_AGENT_NAME.get("")
+        from ovat.agent.events import CURRENT_SUBAGENT
+        agent, agent_call = CURRENT_SUBAGENT.get()
         request = ApprovalRequest(next(self._ids), tool, dict(arguments),
-                                  reason, agent=agent)
+                                  reason, agent=agent, agent_call=agent_call)
         with self._lock:
             self._open[request.id] = request
         try:

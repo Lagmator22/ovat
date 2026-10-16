@@ -27,7 +27,7 @@ import threading
 import time
 import uuid
 
-from ovat.agent.events import (CURRENT_AGENT_NAME, CURRENT_CALL_ID,
+from ovat.agent.events import (CURRENT_CALL_ID, CURRENT_SUBAGENT,
                                CombinedStopEvent, EventBus, SUBAGENT_DONE,
                                SUBAGENT_EVENT, SUBAGENT_STARTED,
                                SUBAGENT_STATUS, describe)
@@ -102,7 +102,7 @@ class SubagentRunner:
                        kind=kind, task=task, model=model, endpoint_host=host)
         self._status(agent, f"started ({kind})", call_id=call_id)
 
-        token_agent = CURRENT_AGENT_NAME.set(agent)
+        token_agent = CURRENT_SUBAGENT.set((agent, call_id))
         started = time.monotonic()
         self._runs[call_id] = {
             "call_id": call_id,
@@ -128,7 +128,7 @@ class SubagentRunner:
                       f"{type(exc).__name__}: {exc}")
             status = "failed"
         finally:
-            CURRENT_AGENT_NAME.reset(token_agent)
+            CURRENT_SUBAGENT.reset(token_agent)
             self._child_stops.pop(call_id, None)
 
         duration = round(time.monotonic() - started, 3)
