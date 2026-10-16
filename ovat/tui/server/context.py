@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
@@ -68,6 +69,12 @@ class ServerContext:
         self.lifecycle = asyncio.Lock()
         self.closed = False
         self._build_thread: threading.Thread | None = None
+        # Things in this process that want every report too (OVAT's own app:
+        # its banner and bottom bar follow the agent). Called on the loop,
+        # after the server has handled the report.
+        self.listeners: list[Callable[[Any], None]] = []
+        # While /engine or /workflow rebuilds: what to go back to if it fails.
+        self._switch: _Switch | None = None
         # While > 0, plain notices are dropped (see new_conversation).
         self._quiet_notices = 0
 
@@ -184,23 +191,40 @@ class ServerContext:
         if self.closed or self.projector is None:
             return
         handler = getattr(self, f"_on_{type(event).__name__}", None)
-        if handler is None:
-            return
-        try:
-            handler(event)
-        except Exception as exc:
-            self.report_error(f"{type(event).__name__}: "
-                              f"{type(exc).__name__}: {exc}")
+        if handler is not None:
+            try:
+                handler(event)
+            except Exception as exc:
+                self.report_error(f"{type(event).__name__}: "
+                                  f"{type(exc).__name__}: {exc}")
+        for listener in list(self.listeners):
+            try:
+                listener(event)
+            except Exception as exc:
+                self.report_error(f"{type(event).__name__}: a listener "
+                                  f"failed: {type(exc).__name__}: {exc}")
 
     def _on_Ready(self, event: s.Ready) -> None:
         self.info = event.info
         self.build_error = None
+        self._switch = None
+        self.workflow = getattr(self.agent, "workflow", None) or self.workflow
         self.ready.set()
         self.refresh_runtime()
 
     def _on_BuildFailed(self, event: s.BuildFailed) -> None:
-        self.build_error = event.text
+        switch, self._switch = self._switch, None
+        if switch is not None and switch.agent_kept:
+            # /engine or /workflow could not build the new one. The old agent
+            # was never closed, so it stays, and its workflow with it.
+            self.agent.workflow = switch.workflow
+            self.build_error = None
+        else:
+            self.build_error = event.text
         self.ready.set()
+        # Said once, where the person reads (the app draws it in the
+        # transcript): readiness itself does not fail, see ready_wait.
+        self.projector.error(event.text)
 
     def _on_TurnStarted(self, event: s.TurnStarted) -> None:
         self.turns.agent_started()
@@ -235,6 +259,42 @@ class ServerContext:
         else:
             self.projector.warning(
                 event.text, code="info" if event.level == "info" else None)
+
+    # ---- /engine and /workflow -------------------------------------------------
+
+    async def rebuild(self, *, engine: str | None = None,
+                      workflow: str | None = None) -> None:
+        """Build the agent again with another engine or another workflow.
+
+        The agent is "not ready" while it builds, so a prompt sent meanwhile
+        waits for the new one instead of running on an agent that is about
+        to be closed. A build that fails leaves the old agent working
+        (the error is reported once); see _on_BuildFailed.
+        """
+        self.require_session(None)
+        if self.turns.busy:
+            raise RpcError(ProtocolErrorCode.CONFLICT,
+                           "Wait for the current turn to end, or interrupt "
+                           "it, before switching")
+        async with self.lifecycle:
+            agent = self.agent
+            switch = _Switch(workflow=agent.workflow,
+                             agent_kept=agent.agent is not None)
+            self._switch = switch
+            self.ready.clear()
+            self.build_error = None
+            try:
+                self._build_thread = (agent.switch_workflow(workflow)
+                                      if workflow is not None
+                                      else agent.start(engine))
+            except Exception as exc:
+                self._switch = None
+                agent.workflow = switch.workflow
+                if not switch.agent_kept:
+                    self.build_error = f"Could not start the agent: {exc}"
+                self.ready.set()
+                raise RpcError(ProtocolErrorCode.INTERNAL_ERROR,
+                               f"Could not start the agent: {exc}") from None
 
     # ---- /clear ----------------------------------------------------------------
 
@@ -301,6 +361,14 @@ class ServerContext:
         except asyncio.TimeoutError:
             return                  # a stuck close is left to its daemon thread
         closer.join(1.0)            # it is ending: its last act was `done`
+
+
+@dataclass
+class _Switch:
+    """What /engine or /workflow replaces: the workflow to go back to, and
+    whether an agent is alive that a failed build leaves in place."""
+    workflow: str | None
+    agent_kept: bool
 
 
 def _resolve(future: asyncio.Future) -> None:

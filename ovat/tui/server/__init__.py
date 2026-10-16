@@ -53,6 +53,28 @@ class OvatServerHandle:
         """OVAT's own session (the fake one, in tests)."""
         return self._ctx.agent
 
+    def subscribe(self, listener: Callable[[object], None]
+                  ) -> Callable[[], None]:
+        """Hear every report the AgentSession makes (Ready, BuildFailed,
+        TurnDone, Notice...), on the event loop, after the server has handled
+        it. OVAT's own app uses it to keep its banner and bottom bar current.
+        Returns the function that stops listening."""
+        self._ctx.listeners.append(listener)
+
+        def unsubscribe() -> None:
+            if listener in self._ctx.listeners:
+                self._ctx.listeners.remove(listener)
+        return unsubscribe
+
+    async def switch_engine(self, engine: str) -> None:
+        """`/engine`: build the agent again with another engine. Turns wait
+        for it; a failure leaves the old agent working."""
+        await self._ctx.rebuild(engine=engine)
+
+    async def switch_workflow(self, path: str) -> None:
+        """`/workflow`: build the agent from another workflow file."""
+        await self._ctx.rebuild(workflow=path)
+
     @property
     def running(self) -> bool:
         return not self._server_task.done()

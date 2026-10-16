@@ -2,6 +2,7 @@
 """Reading the session, its history, the `!` shell, and small settings."""
 from ovat.tui.server import views
 from ovat.tui.server.rpc import Reply, Routes, RpcError
+from ovat.tui.server.turns import BuildFailedError
 from ovat.tui.vibe.app_server.models import PublicHistoryEntry
 from ovat.tui.vibe.app_server.protocol import (AgentSwitchParams,
                                                EmptyResponse,
@@ -51,7 +52,14 @@ async def session_log_read(ctx, params: SessionLogReadParams):
 @routes.method("session/ready/wait", SessionReadyWaitParams)
 async def ready_wait(ctx, params: SessionReadyWaitParams):
     ctx.require_session(params.session_id)
-    await ctx.wait_ready()
+    try:
+        await ctx.wait_ready()
+    except BuildFailedError:
+        # Not an error: the copied app treats a failing wait as fatal and
+        # asks the person to quit, but a workflow that does not build can be
+        # fixed with /workflow. The reason was announced when the build
+        # failed, and a prompt sent now fails with it too.
+        return SessionReadyWaitResponse(ready=False, init_duration_ms=None)
     return SessionReadyWaitResponse(ready=True, init_duration_ms=None)
 
 

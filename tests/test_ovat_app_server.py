@@ -136,6 +136,7 @@ class FakeSession:
         self.agent = None
         self.totals = {"turns": 0, "prompt_tokens": 0, "completion_tokens": 0}
         self.asked, self.subagent_calls = [], []
+        self.engines = []
         self.turn_count = 0
         self.approved = None
         self.closed = False
@@ -156,15 +157,24 @@ class FakeSession:
     def start(self, engine=None):
         if self.start_raises:
             raise RuntimeError("no worker thread for you")
+        self.engines.append(engine)
 
         def go():
             self.build_gate.wait(T)
-            if self.fail_build:
-                self.sink(s.BuildFailed(self.fail_build))
+            if self.fail_build or self.workflow.endswith("bad.yml"):
+                self.sink(s.BuildFailed(
+                    self.fail_build
+                    or f"Could not build {self.workflow}: boom"))
                 return
+            # as the real session: the old agent is replaced only now
             self.agent = FakeAgent(self.native)
-            self.sink(s.Ready(INFO))
+            self.sink(s.Ready(dict(INFO, workflow=self.workflow,
+                                   engine=engine or INFO["engine"])))
         return self._thread(go)
+
+    def switch_workflow(self, path):
+        self.workflow = path
+        return self.start()
 
     def new_conversation(self):
         self.cleared += 1
@@ -395,17 +405,22 @@ def test_agents_are_the_two_profiles_plus_the_workflows_subagents():
     run(go())
 
 
-def test_a_build_failure_is_the_readiness_error_and_fails_a_turn():
+def test_a_build_failure_is_announced_once_and_fails_a_turn():
+    """Readiness itself does not fail: the copied app treats a failing wait
+    as fatal ("press any key to exit"), and a workflow that does not build
+    can be fixed with /workflow. The reason is a ServerError event, and a
+    prompt sent meanwhile fails with it."""
     async def go():
         async with served(fail_build="Could not build w.yml: boom") as (
                 session, handle, fake):
-            with pytest.raises(AppServerResponseError) as err:
-                await asyncio.wait_for(
-                    session.resources.runtime.wait_until_ready(), T)
-            assert "Could not build w.yml: boom" in str(err.value)
+            await asyncio.wait_for(
+                session.resources.runtime.wait_until_ready(), T)
             assert not session.resources.runtime.ready
             await session.enqueue("hello")
             seen = await events_until(session, is_completed)
+            errors = [e.params.error.message for e in seen
+                      if type(e).__name__ == "ServerError"]
+            assert errors == ["Could not build w.yml: boom"]
             turn = completed_turn(seen)
             assert turn.status is PublicTurnStatus.FAILED
             assert "boom" in turn.error.message
@@ -427,6 +442,101 @@ def test_a_prompt_sent_while_the_agent_builds_waits_and_then_runs():
             seen = await events_until(session, is_completed)
             assert fake.asked == ["early question"]
             assert completed_turn(seen).status is PublicTurnStatus.COMPLETED
+    run(go())
+
+
+# ---- /engine and /workflow through the handle -----------------------------------
+
+def test_switching_the_engine_builds_again_and_the_runtime_follows():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            heard = []
+            handle.subscribe(heard.append)
+            await asyncio.wait_for(handle.switch_engine("react"), T)
+            await poll(lambda: any(isinstance(e, s.Ready) for e in heard))
+            assert fake.engines == [None, "react"]
+            effective = await session.resources.config.read_effective()
+            assert effective.config["engine"] == "react"
+            assert session.resources.runtime.ready
+    run(go())
+
+
+def test_a_prompt_sent_while_the_engine_rebuilds_waits_for_the_new_agent():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            fake.build_gate.clear()
+            await asyncio.wait_for(handle.switch_engine("react"), T)
+            await session.enqueue("while it builds")
+            await events_until(session, lambda e: isinstance(e, TurnStarted))
+            await asyncio.sleep(0.2)
+            assert fake.asked == []                  # still waiting
+            fake.build_gate.set()
+            seen = await events_until(session, is_completed)
+            assert fake.asked == ["while it builds"]
+            assert completed_turn(seen).status is PublicTurnStatus.COMPLETED
+    run(go())
+
+
+def test_switching_the_workflow_loads_the_new_file():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await asyncio.wait_for(handle.switch_workflow("other.yml"), T)
+            await poll(lambda: fake.workflow == "other.yml"
+                       and session.resources.runtime.ready)
+            effective = await session.resources.config.read_effective()
+            assert effective.config["workflow"] == "other.yml"
+    run(go())
+
+
+def test_a_workflow_that_does_not_build_leaves_the_old_agent_working():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await asyncio.wait_for(handle.switch_workflow("bad.yml"), T)
+            # the error is announced (the app draws it), nothing is fatal
+            seen = await events_until(
+                session, lambda e: type(e).__name__ == "ServerError")
+            assert "bad.yml" in seen[-1].params.error.message
+            await poll(lambda: fake.workflow == "w.yml")   # the old one is kept
+            await session.enqueue("still there?")
+            done = await events_until(session, is_completed)
+            assert completed_turn(done).status is PublicTurnStatus.COMPLETED
+            assert fake.asked == ["still there?"]
+    run(go())
+
+
+def test_switching_is_refused_while_a_turn_runs():
+    async def go():
+        async with served(hold_turn=True) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("long one")
+            await events_until(session, lambda e: isinstance(e, TurnStarted))
+            with pytest.raises(Exception) as err:
+                await handle.switch_engine("react")
+            assert "turn" in str(err.value)
+            assert fake.engines == [None]
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_a_listener_hears_the_reports_until_it_unsubscribes():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            heard = []
+            stop = handle.subscribe(heard.append)
+            await session.enqueue("one")
+            await events_until(session, is_completed)
+            assert [type(e).__name__ for e in heard] == [
+                "TurnStarted", "AgentActivity", "AgentActivity", "TurnDone"]
+            stop()
+            await session.enqueue("two")
+            await events_until(session, is_completed)
+            assert len(heard) == 4
     run(go())
 
 
@@ -1611,13 +1721,16 @@ def test_images_are_dropped_with_a_warning_and_the_text_still_runs():
     run(go())
 
 
-def test_an_agent_that_cannot_start_fails_readiness_instead_of_hanging():
+def test_an_agent_that_cannot_start_answers_not_ready_instead_of_hanging():
     async def go():
         async with served(start_raises=True) as (session, handle, fake):
-            with pytest.raises(AppServerResponseError) as err:
-                await asyncio.wait_for(
-                    session.resources.runtime.wait_until_ready(), T)
-            assert "Could not start the agent" in str(err.value)
+            await asyncio.wait_for(
+                session.resources.runtime.wait_until_ready(), T)
+            assert not session.resources.runtime.ready
+            await session.enqueue("hello")
+            seen = await events_until(session, is_completed)
+            assert "Could not start the agent" in completed_turn(
+                seen).error.message
     run(go())
 
 
