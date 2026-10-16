@@ -171,6 +171,12 @@ def type_name(annotation) -> str:
     if origin is list:
         inner = typing.get_args(annotation)
         return f"list[{type_name(inner[0])}]" if inner else "list"
+    if origin is dict:
+        # Before the union branch below, which reads ANY args as a union:
+        # dict[str, str] used to come out as "string | string".
+        inner = typing.get_args(annotation)
+        return (f"map of {type_name(inner[0])} to {type_name(inner[1])}"
+                if inner else "map")
     args = typing.get_args(annotation)
     if args:                                   # a union
         return " \\| ".join(type_name(a) for a in args)
