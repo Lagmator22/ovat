@@ -739,3 +739,15 @@ def test_context_window_is_read_from_config_or_local_model_folder(tmp_path):
     local = WorkflowConfig(model={"name": str(model_dir)})
     assert describe_agent(local, object(), "w.yml")["context_window"] == 65536
 
+    # `ovms --pull` keeps it under the repository by its source (seen on the
+    # AI PC: models/OpenVINO/Qwen3-8B-int4-ov, the meter showed no %)
+    pulled = tmp_path / "repo" / "OpenVINO" / "Qwen3-8B-int4-ov"
+    pulled.mkdir(parents=True)
+    (pulled / "config.json").write_text(
+        json.dumps({"max_position_embeddings": 40960}), encoding="utf-8")
+    served = WorkflowConfig(model={
+        "name": "Qwen3-8B-int4-ov",
+        "source_model": "OpenVINO/Qwen3-8B-int4-ov",
+        "model_repository_path": str(tmp_path / "repo")})
+    assert describe_agent(served, object(), "w.yml")["context_window"] == 40960
+

@@ -493,6 +493,9 @@ def test_help_lists_the_commands_and_keys_and_nothing_that_cannot_work():
             for gone in ("/teleport", "/mcp", "/model", "/config"):
                 assert gone not in text, gone
             assert "Ctrl+O" in text and "Shift+Tab" in text
+            # /branch's own text has `ovat agent --resume <id>` in a code
+            # span, where an escape would be shown as is
+            assert "&lt;" not in text and "--resume <id>" in text
             # a usage in angle brackets is not eaten as an HTML tag
             assert "<engine>" in text and "<subagent> <task>" in text
             assert_no_foreign_brand(app)
@@ -1075,40 +1078,41 @@ def test_saved_conversations_rename_branch_log_and_resume_from_the_app(
     def user_texts(app):
         return [w._content for w in app.query(UserMessage)]
 
+    # (slow on a busy Windows runner: one 8 s wait timed out under -n 4)
     async def go():
         async with running(size=(120, 40)) as (app, pilot, fake, handle):
             await say(pilot, "first chat")
-            await until(pilot, lambda: app.query(AssistantMessage))
-            await until(pilot, lambda: not app._is_busy())
+            await until(pilot, timeout=30, check=lambda: app.query(AssistantMessage))
+            await until(pilot, timeout=30, check=lambda: not app._is_busy())
             first = app.app_server.session_id
             await say(pilot, "/rename Leave policy")
-            await until(pilot, lambda: (saved_sessions.load(first) or {})
+            await until(pilot, timeout=30, check=lambda: (saved_sessions.load(first) or {})
                         .get("title") == "Leave policy")
             await say(pilot, "/log")
             # (the full path wraps on screen; its last folder does not)
-            await until(pilot, lambda: "Current Log Directory"
+            await until(pilot, timeout=30, check=lambda: "Current Log Directory"
                         in screen_text(app) and saved_sessions.folder.name
                         in screen_text(app))
             await say(pilot, "/branch")
-            await until(pilot, lambda: app.query(BranchCreatedMessage))
+            await until(pilot, timeout=30, check=lambda: app.query(BranchCreatedMessage))
             assert len(saved_sessions.list()) == 2
             await say(pilot, "/new")
-            await until(pilot, lambda: app.app_server.session_id != first)
+            await until(pilot, timeout=30, check=lambda: app.app_server.session_id != first)
             await say(pilot, "second chat")
             # (/new leaves its own "clear" line above it)
-            await until(pilot, lambda: user_texts(app)[-1:] == ["second chat"]
+            await until(pilot, timeout=30, check=lambda: user_texts(app)[-1:] == ["second chat"]
                         and not app._is_busy())
             await say(pilot, "/resume")
-            await until(pilot, lambda: app.query(SessionPickerApp))
+            await until(pilot, timeout=30, check=lambda: app.query(SessionPickerApp))
             picker = app.query_one(SessionPickerApp)
             options = picker.query_one("OptionList")
             # this chat, the branch and "Leave policy". The branch and its
             # source are saved in the same instant, so pick by id, not place
-            await until(pilot, lambda: options.option_count == 3)
+            await until(pilot, timeout=30, check=lambda: options.option_count == 3)
             options.highlighted = options.get_option_index(first)
             await pilot.press("enter")
-            await until(pilot, lambda: app.app_server.session_id == first)
-            await until(pilot, lambda: user_texts(app) == ["first chat"])
+            await until(pilot, timeout=30, check=lambda: app.app_server.session_id == first)
+            await until(pilot, timeout=30, check=lambda: user_texts(app) == ["first chat"])
             assert [m["content"] for m in fake.remembered.messages
                     if m["role"] == "user"] == ["first chat"]
             assert not app.query(ErrorMessage)

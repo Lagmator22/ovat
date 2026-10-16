@@ -128,8 +128,15 @@ class OvatCommandRegistry(CommandRegistry):
                 f"`{alias}`" for alias in sorted(
                     (a for a in cmd.aliases if a.startswith("/")),
                     key=lambda a: (a != canonical, a)))
-            # A usage like <engine> would be read as an HTML tag and vanish.
-            description = cmd.description.replace("<", "&lt;").replace(
-                ">", "&gt;")
-            lines.append(f"- {aliases}: {description}")
+            lines.append(f"- {aliases}: {_escape_tags(cmd.description)}")
         return "\n".join(lines)
+
+
+def _escape_tags(text: str) -> str:
+    """A usage like <engine> would be read as an HTML tag and vanish, so it
+    is escaped; but not inside a `code span`, where Markdown shows the
+    escape itself ("--resume &lt;id&gt;")."""
+    parts = text.split("`")
+    for i in range(0, len(parts), 2):      # the even parts are outside code
+        parts[i] = parts[i].replace("<", "&lt;").replace(">", "&gt;")
+    return "`".join(parts)

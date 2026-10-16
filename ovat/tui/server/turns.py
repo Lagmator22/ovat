@@ -307,7 +307,10 @@ class TurnManager:
             status = PublicTurnStatus.FAILED
         else:
             status = PublicTurnStatus.COMPLETED
-        error = (PublicError(message=event.answer or "The turn failed.")
+        # The app writes "Error: " in front of the message itself, and the
+        # session's own failures already start with it ("Error: Error: ...").
+        error = (PublicError(message=(event.answer or "").removeprefix(
+                     "Error: ") or "The turn failed.")
                  if status is PublicTurnStatus.FAILED else None)
         if status is PublicTurnStatus.COMPLETED:
             try:

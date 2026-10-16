@@ -782,7 +782,9 @@ def test_a_failed_turn_completes_failed_with_the_sentence_to_show():
             seen = await events_until(session, is_completed)
             turn = completed_turn(seen)
             assert turn.status is PublicTurnStatus.FAILED
-            assert turn.error.message == "Error: OVMS is not answering."
+            # the app writes "Error: " in front itself (seen doubled on the
+            # AI PC: "Error: Error: ...")
+            assert turn.error.message == "OVMS is not answering."
             assert not any(isinstance(e, HistoryEntryAdded)
                            and isinstance(e.entry, PublicMessageEntry)
                            and e.entry.role == "assistant" for e in seen)

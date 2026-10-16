@@ -123,7 +123,13 @@ def _context_window(config) -> int:
         return int(m.ovms_max_prompt_len or 4096)
     roots = ([m.model_repository_path] if m.model_repository_path else []) + (
         list(getattr(config, "model_search_paths", None) or []))
-    return read_context_window(m.name, roots)
+    # `ovms --pull` lays a model out by its source (models/OpenVINO/<name>),
+    # so that path is tried before the bare name.
+    for name in filter(None, (m.source_model, m.name)):
+        window = read_context_window(name, roots)
+        if window:
+            return window
+    return 0
 
 
 def describe_agent(config, agent, workflow: str) -> dict:
@@ -147,6 +153,10 @@ def describe_agent(config, agent, workflow: str) -> dict:
                                  "api" if s.api else "a2a")}
                       for s in config.subagents],
     }
+
+
+# How ovat/agent/subagents.py and ovat/tools/a2a_call.py open a reply.
+_FRAMES = ("[Answer from subagent", "[Reply from ")
 
 
 def _chat_message(m) -> bool:
@@ -334,9 +344,10 @@ class AgentSession:
 
         def run():
             answer = tools["delegate"]["function"](agent=name, task=task)
-            # The "[Answer from subagent ...]" line frames the reply for a
-            # MODEL; a person who asked directly just wants the reply.
-            if answer.startswith("[Answer from subagent") and "\n" in answer:
+            # The "[Answer from subagent ...]" and "[Reply from remote agent
+            # ...]" lines frame the reply for a MODEL; a person who asked
+            # directly just wants the reply.
+            if answer.startswith(_FRAMES) and "\n" in answer:
                 return answer.split("\n", 1)[1]
             return answer
         return self._spawn(self._turn, f"/ask {name} {task}", run)
