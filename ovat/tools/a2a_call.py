@@ -112,12 +112,13 @@ def _confirmation(reply) -> tuple[str, str, dict] | None:
 def a2a_call_impl(message: str, peer, name: str, url: str, bus=None,
                   token_env: str | None = None,
                   token_missing: bool = False,
-                  return_totals: bool = False):
+                  return_totals: bool = False, stop=None):
     """Send `message` to the remote agent; the reply as text. Never raises.
 
     Every failure is one sentence starting "Error: ", which the model can
     read and act on; a tool that failed does not fail the run. With
-    `return_totals`, (text, the remote run's checked totals).
+    `return_totals`, (text, the remote run's checked totals). The wait ends
+    when `stop` is set: the bus's own flag unless a subagent passes its own.
     """
     who = f'remote agent "{name}"'
 
@@ -130,6 +131,8 @@ def a2a_call_impl(message: str, peer, name: str, url: str, bus=None,
     if not message or not message.strip():
         return done(f"Error: an empty message was not sent to {who}.")
     approver = getattr(bus, "approver", None)
+    if stop is None:
+        stop = getattr(bus, "stop", None)
     context = getattr(bus, "context", None) or {}
     metadata = {"ovat": {"hops": context.get("hops", 0),
                          "chain": list(context.get("chain", []))}}
@@ -144,7 +147,7 @@ def a2a_call_impl(message: str, peer, name: str, url: str, bus=None,
                      metadata=meta or {}, **kwargs)
 
     try:
-        reply = peer.send(message, metadata, on_status)
+        reply = peer.send(message, metadata, on_status, stop=stop)
         # The remote asks before each tool that needs a person; the person
         # here answers through the same approval as a local tool.
         for _ in range(MAX_APPROVALS):
@@ -157,7 +160,7 @@ def a2a_call_impl(message: str, peer, name: str, url: str, bus=None,
             reply = peer.send_input(
                 {"callId": confirm_id,
                  "outcome": "proceed_once" if allowed else "cancel"},
-                task_id=reply.task_id, on_status=on_status)
+                task_id=reply.task_id, on_status=on_status, stop=stop)
     except PeerError as exc:
         if exc.kind == "unreachable":
             return done(f"Error: {who} is not reachable at {url}. Is "
@@ -175,6 +178,8 @@ def a2a_call_impl(message: str, peer, name: str, url: str, bus=None,
         if exc.kind == "timeout":
             return done(f"Error: {who} did not finish in time. It may still "
                         f"be working; it was asked to stop.")
+        if exc.kind == "cancelled":
+            return done(f"Error: the request to {who} was stopped.")
         return done(f"Error: {who} answered in a way OVAT did not understand.")
 
     totals = remote_totals(reply.metadata)

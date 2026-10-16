@@ -581,8 +581,9 @@ class ScriptedPeer:
         self.reply, self.error, self.statuses = reply, error, statuses
         self.sent = []
 
-    def send(self, text, metadata=None, on_status=None):
+    def send(self, text, metadata=None, on_status=None, stop=None):
         self.sent.append((text, metadata))
+        self.stop = stop
         for line in self.statuses:
             on_status(line)
         if self.error:
@@ -593,6 +594,14 @@ class ScriptedPeer:
 def _call(peer, bus=None, **kw):
     return a2a_call.a2a_call_impl("How many leave days?", peer, "team_docs",
                                   "http://127.0.0.1:9100", bus, **kw)
+
+
+def test_a_stopped_call_says_so_and_uses_the_buses_stop_flag():
+    bus = EventBus()
+    peer = ScriptedPeer(error=PeerError("cancelled", "stopped"))
+    out = _call(peer, bus)
+    assert out == 'Error: the request to remote agent "team_docs" was stopped.'
+    assert peer.stop is bus.stop
 
 
 def test_a_completed_reply_is_framed_as_information():
@@ -704,11 +713,11 @@ class ConfirmingPeer(ScriptedPeer):
                                    "args": {"n": n}})
         return RemoteReply(TaskState.COMPLETED, "all done")
 
-    def send(self, text, metadata=None, on_status=None):
+    def send(self, text, metadata=None, on_status=None, stop=None):
         self.sent.append((text, metadata))
         return self._next()
 
-    def send_input(self, data, task_id=None, on_status=None):
+    def send_input(self, data, task_id=None, on_status=None, stop=None):
         self.answers.append(data)
         return self._next()
 

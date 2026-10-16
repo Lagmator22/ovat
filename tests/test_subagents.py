@@ -390,6 +390,33 @@ def test_cancel_child_stops_one_without_stopping_parent_or_sibling(monkeypatch, 
     assert bus.stop.is_set() is False
 
 
+def test_cancelling_a_remote_child_stops_its_wait(monkeypatch):
+    """An a2a subagent's call never saw the child's stop flag, so cancelling
+    that one child left it waiting for the remote reply."""
+    pytest.importorskip("a2a")
+    from ovat.agent.events import CURRENT_CALL_ID
+    from ovat.tools import a2a_call
+    seen = {}
+
+    def fake_call(task, peer, name, url, bus, token_env, missing,
+                  return_totals=False, stop=None):
+        seen["stop"] = stop
+        runner.cancel_child("call-r")
+        assert stop.is_set() and not bus.stop.is_set()
+        return "Error: the request was stopped.", {}
+    monkeypatch.setattr(a2a_call, "a2a_call_impl", fake_call)
+    bus = EventBus()
+    runner = SubagentRunner(_cfg([{"name": "remote", "description": "d",
+                                   "a2a": {"url": "http://127.0.0.1:9"}}]
+                                 ).subagents, bus)
+    token = CURRENT_CALL_ID.set("call-r")
+    try:
+        runner.run("remote", "work")
+    finally:
+        CURRENT_CALL_ID.reset(token)
+    assert seen["stop"] is not None
+
+
 def test_child_tool_approval_records_agent_name(monkeypatch, tmp_path):
     from ovat.agent.events import observed
     from ovat.agent.permissions import ApprovalBroker

@@ -251,6 +251,27 @@ def test_the_token_goes_only_to_the_address_it_was_configured_for():
         peer.close()
 
 
+def test_a_waiting_call_stops_when_its_stop_flag_is_set():
+    """Esc (or cancelling one subagent) used to leave a remote call waiting
+    for its reply, up to the 900 s timeout."""
+    peer = SDKPeer("http://127.0.0.1:9", token=None, timeout=30)
+    stop = threading.Event()
+    threading.Timer(0.2, stop.set).start()
+    started = time.monotonic()
+    try:
+        with pytest.raises(PeerError) as caught:
+            peer._call(asyncio_sleep(30), 30, stop)
+    finally:
+        peer.close()
+    assert caught.value.kind == "cancelled"
+    assert time.monotonic() - started < 2
+
+
+def asyncio_sleep(seconds):
+    import asyncio
+    return asyncio.sleep(seconds)
+
+
 def test_nothing_listening_is_unreachable():
     peer = SDKPeer(f"http://127.0.0.1:{_free_port()}", token="t", timeout=5)
     try:

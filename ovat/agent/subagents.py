@@ -230,7 +230,7 @@ class SubagentRunner:
                 task, peer, cfg.name, cfg.a2a.url, self._bus,
                 cfg.a2a.token_env,
                 bool(cfg.a2a.token_env) and not token,
-                return_totals=True)
+                return_totals=True, stop=stop)
             return answer, totals
         finally:
             peer.close()

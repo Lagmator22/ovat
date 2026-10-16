@@ -16,6 +16,7 @@ import atexit
 import concurrent.futures
 import json
 import threading
+import time
 import uuid
 
 import httpx
@@ -113,26 +114,27 @@ class SDKPeer:
         return self._call(self._fetch_card(), timeout)
 
     def send(self, text: str, metadata: dict | None = None,
-             on_status=None) -> RemoteReply:
+             on_status=None, stop=None) -> RemoteReply:
         """Send one message and wait for the final state. Raises PeerError.
 
         on_status(text) is called for each progress line the remote sends,
-        on this object's own thread.
+        on this object's own thread. When `stop` (a threading.Event) is
+        set, the wait ends at once and the remote is asked to cancel.
         """
         self._ensure_open()
         return self._call(self._send(text, metadata or {}, on_status),
-                          self._timeout)
+                          self._timeout, stop)
 
     def send_input(self, data: dict, task_id: str | None = None,
                    metadata: dict | None = None,
-                   on_status=None) -> RemoteReply:
-        """Send a structured response or confirmation for an input-required task."""
+                   on_status=None, stop=None) -> RemoteReply:
+        """Answer a task waiting for input (a tool-call confirmation)."""
         self._ensure_open()
         text = json.dumps(data)
         return self._call(
             self._send(text, metadata or {}, on_status, task_id=task_id,
                        data_payload=data),
-            self._timeout)
+            self._timeout, stop)
 
     def reset(self) -> None:
         """Forget the conversation: the next message starts a new one."""
@@ -157,10 +159,23 @@ class SDKPeer:
         if self._closed:
             raise PeerError("protocol", "this connection was closed")
 
-    def _call(self, coro, timeout: float):
+    def _call(self, coro, timeout: float, stop=None):
+        """Run `coro` on this peer's loop and wait for it, at most `timeout`
+        seconds, or until `stop` is set. Cancelling the coroutine makes
+        _send ask the remote to cancel its task."""
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        deadline = time.monotonic() + timeout
         try:
-            return future.result(timeout)
+            while True:
+                left = deadline - time.monotonic()
+                try:
+                    return future.result(left if stop is None
+                                         else max(0.0, min(left, 0.1)))
+                except concurrent.futures.TimeoutError:
+                    if stop is not None and stop.is_set():
+                        raise PeerError("cancelled", "stopped by the caller")
+                    if time.monotonic() >= deadline:
+                        raise
         except BaseException as exc:
             future.cancel()
             raise _peer_error(exc) from exc

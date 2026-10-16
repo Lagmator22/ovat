@@ -69,15 +69,16 @@ class PeerError(Exception):
     """Talking to another agent failed. `kind` says how, in OVAT's words.
 
     The SDK raises its own exception classes; sdk/client.py maps each one
-    to a kind, so callers handle four cases instead of tracking the SDK's
+    to a kind, so callers handle these cases instead of tracking the SDK's
     class names:
       unreachable  nothing answered at that address
       auth         the token was missing or refused
       timeout      no final answer in time
       protocol     it answered, but not in a way OVAT understood
+      cancelled    this side stopped waiting (Esc, or one subagent cancelled)
     """
 
-    KINDS = ("unreachable", "auth", "timeout", "protocol")
+    KINDS = ("unreachable", "auth", "timeout", "protocol", "cancelled")
 
     def __init__(self, kind: str, detail: str = ""):
         if kind not in self.KINDS:
