@@ -1301,6 +1301,7 @@ def test_saved_conversations_rename_branch_log_and_resume_from_the_app(
             await say(pilot, "/rename Leave policy")
             await until(pilot, timeout=30, check=lambda: (saved_sessions.load(first) or {})
                         .get("title") == "Leave policy")
+            await until(pilot, timeout=30, check=lambda: not app._is_busy())
             await say(pilot, "/log")
             # The folder is checked in the message, not on screen: on Windows
             # CI it never showed up in the screen text, however long the test
