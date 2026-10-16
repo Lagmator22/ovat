@@ -47,9 +47,14 @@ class HardwareMonitor:
                 pass
 
 
+def _percent(value: float) -> str:
+    # A busy machine rounded down to "0%" reads as a dead gauge.
+    return "<1%" if 0 < value < 0.5 else f"{value:.0f}%"
+
+
 def format_reading(reading: dict) -> str:
     """"CPU 23% · NPU 41% · RAM 61%" (only the known ones)."""
-    parts = [f"{label} {reading[key]:.0f}%"
+    parts = [f"{label} {_percent(reading[key])}"
              for key, label in (("cpu", "CPU"), ("npu", "NPU"), ("ram", "RAM"))
              if key in reading]
     return "  ·  ".join(parts)

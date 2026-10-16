@@ -81,13 +81,39 @@ class SystemSource(TelemetrySource):
         self._proc = None
         # Whether a CPU reading has yet covered a real interval. See sample().
         self._cpu_primed = False
+        # The machine's busy and total CPU time at the last reading. The
+        # headline cpu_pct is worked out from OUR OWN pair of readings, not
+        # from psutil.cpu_percent(): that one keeps a single module-wide
+        # "previous call", so any other caller in the process shortens our
+        # window to microseconds and we read 0.0.
+        self._cpu_last: tuple[float, float] | None = None
         try:
             import psutil
             self._proc = psutil.Process()
+            self._cpu_last = self._cpu_times(psutil)
             psutil.cpu_percent(percpu=True)
             self._proc.cpu_percent()
         except Exception:
             self._proc = None
+
+    @staticmethod
+    def _cpu_times(psutil) -> tuple[float, float]:
+        """(busy, total) seconds of CPU time, summed over every core."""
+        times = psutil.cpu_times()
+        # On Linux guest time is already counted inside user time.
+        total = (sum(times) - getattr(times, "guest", 0.0)
+                 - getattr(times, "guest_nice", 0.0))
+        return total - times.idle, total
+
+    def _machine_cpu_pct(self, psutil) -> float | None:
+        """How busy the whole machine was since the last call, or None when
+        no time has passed."""
+        now = self._cpu_times(psutil)
+        last, self._cpu_last = self._cpu_last, now
+        if last is None or now[1] <= last[1]:
+            return None
+        busy = (now[0] - last[0]) / (now[1] - last[1])
+        return round(min(100.0, max(0.0, busy * 100)), 1)
 
     def sample(self) -> dict:
         try:
@@ -97,6 +123,7 @@ class SystemSource(TelemetrySource):
         out = {}
         try:
             cores = psutil.cpu_percent(percpu=True)
+            machine = self._machine_cpu_pct(psutil)
             # psutil's percentages are deltas since the PREVIOUS call, so the
             # first one after construction covers microseconds and comes back
             # 0.0 for every core. Priming in __init__ does not fix that: the
@@ -111,7 +138,10 @@ class SystemSource(TelemetrySource):
             if not self._cpu_primed:
                 self._cpu_primed = True
             elif cores:
-                out["cpu_pct"] = round(sum(cores) / len(cores), 1)
+                # (no CPU tick passed since the last reading: only
+                # back-to-back calls, so the cores' own mean will do)
+                out["cpu_pct"] = (machine if machine is not None
+                                  else round(sum(cores) / len(cores), 1))
                 for index, pct in enumerate(cores):
                     out[f"cpu{index}_pct"] = pct
         except Exception:

@@ -1017,6 +1017,27 @@ def test_the_first_cpu_reading_is_skipped_rather_than_reported_as_zero():
     assert any(key.startswith("cpu0") for key in second)
 
 
+def test_machine_cpu_comes_from_our_own_readings_not_psutils_shared_clock(
+        monkeypatch):
+    """psutil.cpu_percent() keeps ONE "previous call" for the whole process,
+    so another caller makes ours cover microseconds and read 0.0. The bar
+    showed CPU 0% for a whole session. The headline figure is now the busy
+    share of the machine's CPU time between OUR two readings."""
+    import collections
+    import psutil
+    from ovat.telemetry.sources import SystemSource
+
+    Times = collections.namedtuple("Times", "user system idle")
+    readings = iter([Times(10, 10, 80), Times(20, 20, 160), Times(30, 30, 240)])
+    monkeypatch.setattr(psutil, "cpu_times", lambda: next(readings))
+    # what a stolen clock looks like: every core 0.0
+    monkeypatch.setattr(psutil, "cpu_percent",
+                        lambda percpu=False: [0.0] * 4 if percpu else 0.0)
+    source = SystemSource()
+    source.sample()                          # the priming sample
+    assert source.sample()["cpu_pct"] == 20.0
+
+
 def test_memory_is_still_reported_on_the_very_first_sample():
     """Only the CPU deltas need priming. RAM is an absolute reading, so
     skipping it would lose a second of data for no reason."""

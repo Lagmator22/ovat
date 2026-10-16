@@ -301,6 +301,13 @@ def test_the_hardware_line_leaves_out_what_is_unknown():
     assert format_reading(monitor.sample()) == "NPU 41%"
 
 
+def test_a_small_but_busy_cpu_is_not_shown_as_zero():
+    from ovat.agentic.hardware import format_reading
+    assert format_reading({"cpu": 0.3}) == "CPU <1%"
+    assert format_reading({"cpu": 0.0}) == "CPU 0%"
+    assert format_reading({"cpu": 7.4}) == "CPU 7%"
+
+
 def test_a_local_model_folder_is_shown_by_its_name():
     cfg = WorkflowConfig(model={"name": "models/OpenVINO/Qwen3.5-0.8B-int4-ov",
                                 "provider": "genai"})
