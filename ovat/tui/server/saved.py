@@ -22,7 +22,10 @@ Everything here runs on the server's event loop.
 from __future__ import annotations
 
 from ovat.tui.server.projector import PREVIEW_CHARS, now_ms
-from ovat.tui.vibe.app_server.models import (IdleSessionStatus,
+from ovat.tui.vibe.app_server.models import (ArchivedSessionStatus,
+                                             FailedSessionStatus,
+                                             IdleSessionStatus,
+                                             PublicChildSession,
                                              PublicHistoryEntry, PublicSession,
                                              PublicTurn,
                                              validate_history_entry)
@@ -43,6 +46,8 @@ def record(ctx) -> dict:
         "engine": ctx.info.get("engine"),
         "history": [_dump(e) for e in projector.history],
         "turns": [_dump(t) for t in projector.turns],
+        "child_sessions": {cid: _dump(cs) for cid, cs in projector.child_sessions.items()},
+        "child_histories": {cid: [_dump(e) for e in entries] for cid, entries in projector.child_histories.items()},
         "memory": agent.memory() if agent is not None else None,
         "anchors": dict(ctx.anchors),
     }
@@ -123,6 +128,34 @@ def turns_of(rec: dict, session_id: str | None = None) -> list[PublicTurn]:
             turn = turn.model_copy(update={"session_id": session_id})
         turns.append(turn)
     return turns
+
+
+def child_sessions_of(rec: dict) -> dict[str, PublicChildSession]:
+    """Saved child sessions; non-terminal states are restored as idle."""
+    out = {}
+    for cid, raw in (rec.get("child_sessions") or {}).items():
+        try:
+            cs = PublicChildSession.model_validate(raw)
+            if not isinstance(cs.status, (IdleSessionStatus, FailedSessionStatus, ArchivedSessionStatus)):
+                cs = cs.model_copy(update={"status": IdleSessionStatus()})
+            out[cid] = cs
+        except Exception:
+            continue
+    return out
+
+
+def child_histories_of(rec: dict) -> dict[str, list[PublicHistoryEntry]]:
+    """Saved child histories."""
+    out = {}
+    for cid, entries_raw in (rec.get("child_histories") or {}).items():
+        entries = []
+        for raw in entries_raw:
+            try:
+                entries.append(validate_history_entry(raw))
+            except Exception:
+                continue
+        out[cid] = entries
+    return out
 
 
 def _dump(model) -> dict:

@@ -24,7 +24,8 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
-from ovat.agent.events import TOOL_ENDED, Event
+from ovat.agent.events import (SUBAGENT_DONE, SUBAGENT_EVENT,
+                               SUBAGENT_STARTED, TOOL_ENDED, Event)
 from ovat.tui.server.bridge import Bridge
 from ovat.tui.vibe.app_server._model import ProtocolModel
 from ovat.tui.vibe.app_server._patch import apply_json_patch, make_json_patch
@@ -35,17 +36,23 @@ from ovat.tui.vibe.app_server.models import (AgentStatsSnapshot,
                                              CancelledEffectState,
                                              EffectResultDisplay,
                                              FailedEffectState,
+                                             FailedSessionStatus,
+                                             IdleSessionStatus,
                                              JsonPatchOperation,
                                              PublicCallbackEntry,
+                                             PublicChildSession,
                                              PublicEffectEntry,
                                              PublicEntryGenerationStatus,
                                              PublicError, PublicHistoryEntry,
                                              PublicMessageEntry,
                                              PublicSession,
                                              PublicSessionState, PublicTurn,
-                                             PublicTurnQueue, RunningEffectState,
+                                             PublicTurnQueue,
+                                             RunningEffectState,
+                                             RunningSessionStatus, TokenUsage,
                                              validate_history_entry)
-from ovat.tui.vibe.app_server.protocol import (HistoryEntryAddedParams,
+from ovat.tui.vibe.app_server.protocol import (ChildSessionUpdatedParams,
+                                               HistoryEntryAddedParams,
                                                HistoryEntryUpdatedParams,
                                                ServerErrorParams,
                                                ServerWarningParams,
@@ -76,6 +83,9 @@ class Projector:
         # What the stats report beyond the session's token totals.
         self.tool_calls = {"succeeded": 0, "failed": 0, "rejected": 0,
                            "agreed": 0}
+        self.child_sessions: dict[str, PublicChildSession] = {}
+        self.child_histories: dict[str, list[PublicHistoryEntry]] = {}
+        self.child_bridges: dict[str, Bridge] = {}
         self._send = send
 
     # ---- the state a request reads ---------------------------------------------
@@ -100,6 +110,8 @@ class Projector:
                          for t in self.turns[-turns_limit:]]),
             active_callbacks=[e.model_copy(deep=True)
                               for e in self.open_callbacks()],
+            child_sessions=[s.model_copy(deep=True)
+                            for s in self.child_sessions.values()],
             turn_queue=self.queue.model_copy(deep=True))
 
     def open_callbacks(self) -> list[PublicCallbackEntry]:
@@ -219,6 +231,80 @@ class Projector:
     # ---- the agent's tool, subagent and remote events --------------------------
 
     def agent_event(self, event: Event, kinds: dict[str, str]) -> None:
+        if event.type == SUBAGENT_STARTED:
+            call_id = event.data.get("call_id") or ""
+            child_id = f"child-{call_id}"
+            agent_name = event.data.get("agent") or "subagent"
+            kind = event.data.get("kind", "workflow")
+            active_turn = self.bridge.turn_id or f"turn-{call_id}"
+            child_session = PublicChildSession(
+                id=child_id,
+                name=agent_name,
+                agent_type=kind,
+                status=RunningSessionStatus(active_turn_id=active_turn),
+                created_at=now_ms(),
+                updated_at=now_ms(),
+            )
+            self.child_sessions[child_id] = child_session
+            self.child_histories[child_id] = []
+            self.child_bridges[child_id] = Bridge(session_id=child_id)
+            self._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
+                       child_session=child_session)
+            return
+
+        if event.type == SUBAGENT_EVENT:
+            call_id = event.data.get("call_id") or ""
+            child_id = f"child-{call_id}"
+            raw_event = event.data.get("event")
+            if child_id in self.child_bridges and isinstance(raw_event, dict):
+                child_bridge = self.child_bridges[child_id]
+                child_ev = Event(raw_event.get("type", ""),
+                                 {k: v for k, v in raw_event.items()
+                                  if k not in ("type", "t")})
+                child_update = child_bridge.convert(child_ev, kinds)
+                child_history = self.child_histories.get(child_id, [])
+                if isinstance(child_update, HistoryEntryAdded):
+                    child_history.append(child_update.entry)
+                elif isinstance(child_update, HistoryEntryUpdated):
+                    for idx, e in enumerate(child_history):
+                        if e.id == child_update.entry.id:
+                            child_history[idx] = child_update.entry
+                            break
+            return
+
+        if event.type == SUBAGENT_DONE:
+            call_id = event.data.get("call_id") or ""
+            child_id = f"child-{call_id}"
+            if child_id in self.child_sessions:
+                child = self.child_sessions[child_id]
+                status_str = event.data.get("status", "ok")
+                status = (FailedSessionStatus() if status_str == "failed"
+                          else IdleSessionStatus())
+                totals = event.data.get("totals") or {}
+                prompt_toks = totals.get("prompt_tokens") or 0
+                compl_toks = totals.get("completion_tokens") or 0
+                tot_toks = totals.get("total_tokens") or (prompt_toks + compl_toks)
+                usage = TokenUsage(input_tokens=prompt_toks,
+                                   output_tokens=compl_toks,
+                                   total_tokens=tot_toks)
+                child = child.model_copy(update={
+                    "status": status,
+                    "token_usage": usage,
+                    "updated_at": now_ms(),
+                })
+                self.child_sessions[child_id] = child
+                self._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
+                           child_session=child)
+                curr_usage = self.session.token_usage
+                self.session = self.session.model_copy(update={
+                    "token_usage": TokenUsage(
+                        input_tokens=curr_usage.input_tokens + prompt_toks,
+                        output_tokens=curr_usage.output_tokens + compl_toks,
+                        total_tokens=curr_usage.total_tokens + tot_toks,
+                    )
+                })
+            return
+
         if event.type == TOOL_ENDED:
             status = event.data.get("status")
             key = {"ok": "succeeded", "error": "failed",
@@ -315,7 +401,9 @@ class Projector:
 
     def adopt(self, session: PublicSession,
               history: list[PublicHistoryEntry],
-              turns: list[PublicTurn]) -> None:
+              turns: list[PublicTurn],
+              child_sessions: dict[str, PublicChildSession] | None = None,
+              child_histories: dict[str, list[PublicHistoryEntry]] | None = None) -> None:
         """Become another conversation: a new one (/clear), a resumed one, a
         rewound one, a fork.
 
@@ -326,6 +414,9 @@ class Projector:
         self.session = session
         self.history = list(history)
         self.turns = list(turns)
+        self.child_sessions = dict(child_sessions or {})
+        self.child_histories = dict(child_histories or {})
+        self.child_bridges = {cid: Bridge(cid) for cid in self.child_sessions}
         self.queue = PublicTurnQueue()
         # A new bridge counts from 1 again, and an entry it made would
         # collide with one the kept history already holds ("msg-1"): a
@@ -333,4 +424,5 @@ class Projector:
         used = [int(e.id.rsplit("-", 1)[1]) for e in self.history
                 if e.id.rsplit("-", 1)[-1].isdigit()]
         self.bridge = Bridge(session.id, first_id=max(used, default=0) + 1)
+
 

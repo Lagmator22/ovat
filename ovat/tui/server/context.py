@@ -22,7 +22,8 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from ovat.agent.events import (REMOTE_STATUS, SUBAGENT_STATUS, TOOL_ENDED,
+from ovat.agent.events import (REMOTE_STATUS, SUBAGENT_DONE, SUBAGENT_EVENT,
+                              SUBAGENT_STARTED, SUBAGENT_STATUS, TOOL_ENDED,
                               TOOL_STARTED)
 from ovat.agentic import session as s
 from ovat.agentic import prefs, sessions
@@ -192,7 +193,9 @@ class ServerContext:
             "updated_at": rec.get("updated_at") or now_ms(),
             "token_usage": None, "status": IdleSessionStatus()})
         projector.adopt(session, saved.history_of(rec, rec["id"]),
-                        saved.turns_of(rec, rec["id"]))
+                        saved.turns_of(rec, rec["id"]),
+                        child_sessions=saved.child_sessions_of(rec),
+                        child_histories=saved.child_histories_of(rec))
         self.anchors = {k: int(v)
                         for k, v in (rec.get("anchors") or {}).items()}
         self._pending_memory = list(rec.get("memory") or [])
@@ -345,10 +348,15 @@ class ServerContext:
 
     def _on_AgentActivity(self, event: s.AgentActivity) -> None:
         if event.event.type not in (TOOL_STARTED, TOOL_ENDED, SUBAGENT_STATUS,
-                                    REMOTE_STATUS):
+                                    REMOTE_STATUS, SUBAGENT_STARTED,
+                                    SUBAGENT_EVENT, SUBAGENT_DONE):
             return
         if event.event.type == TOOL_STARTED:
             self.turns.flush_deltas(close_entries=True)
+        if event.event.type == SUBAGENT_DONE:
+            totals = event.event.data.get("totals") or {}
+            self.stats.prompt_tokens += totals.get("prompt_tokens") or 0
+            self.stats.completion_tokens += totals.get("completion_tokens") or 0
         kinds = {t["name"]: t["kind"] for t in self.info.get("tools", [])}
         self.projector.agent_event(event.event, kinds)
 

@@ -571,6 +571,26 @@ class AgentSession:
             stopped = True
         return stopped
 
+    def cancel_subagent(self, call_id: str) -> bool:
+        """Cancel a single delegated child agent run by its call_id."""
+        if self.agent is not None:
+            runner = getattr(self.agent, "subagent_runner", None)
+            if runner is None and hasattr(self.agent, "tools"):
+                runner = self.agent.tools.get("delegate", {}).get("runner")
+            if runner is not None:
+                return runner.cancel_child(call_id)
+        return False
+
+    def get_child_runs(self) -> list[dict]:
+        """All recorded child runs in this session."""
+        if self.agent is not None:
+            runner = getattr(self.agent, "subagent_runner", None)
+            if runner is None and hasattr(self.agent, "tools"):
+                runner = self.agent.tools.get("delegate", {}).get("runner")
+            if runner is not None and hasattr(runner, "get_runs"):
+                return runner.get_runs()
+        return []
+
     # ---- `!` shell ---------------------------------------------------------
 
     def run_shell(self, command: str) -> threading.Thread | None:

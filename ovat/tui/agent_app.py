@@ -422,8 +422,8 @@ class OvatAgentApp(VibeApp):
         await self._note(agent_text.tools_markdown(self._agent.info or {}))
 
     async def _cmd_agents(self, **kwargs: Any) -> None:
-        await self._note(agent_text.agents_markdown(
-            self._agent.info or {}, bool(self._agent.serving)))
+        from ovat.tui.agents_screen import AgentsScreen
+        self.push_screen(AgentsScreen(self._agent))
 
     async def _cmd_ask(self, cmd_args: str = "", **kwargs: Any) -> None:
         name, _, task = cmd_args.partition(" ")

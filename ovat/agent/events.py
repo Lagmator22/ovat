@@ -27,6 +27,7 @@ Rules that keep this safe:
   thread (Textual: post_message) instead of drawing from here.
 - With no listener the agent behaves exactly as it did before this existed.
 """
+import contextvars
 import functools
 import threading
 import time
@@ -44,6 +45,9 @@ from typing import Any, Callable
 #                 for tools that return structured output: the coding tools)
 #   remote_status agent, state, text      (a remote A2A agent's progress)
 #   subagent_status agent, text           (a delegated subagent's progress)
+#   subagent_started call_id, agent, kind, task, model, endpoint_host
+#   subagent_event   call_id, agent, event (child event dict)
+#   subagent_done    call_id, agent, answer, status, duration_s, totals
 #   answer_delta  text                    (streamed answer chunk)
 #   reasoning_delta text                  (streamed reasoning chunk)
 #   steer_taken   text, index             (the native loop took a steering
@@ -53,9 +57,35 @@ TOOL_STARTED = "tool_started"
 TOOL_ENDED = "tool_ended"
 REMOTE_STATUS = "remote_status"
 SUBAGENT_STATUS = "subagent_status"
+SUBAGENT_STARTED = "subagent_started"
+SUBAGENT_EVENT = "subagent_event"
+SUBAGENT_DONE = "subagent_done"
 ANSWER_DELTA = "answer_delta"
 REASONING_DELTA = "reasoning_delta"
 STEER_TAKEN = "steer_taken"
+
+# Context variables for the active tool call and running agent/subagent name.
+# Safe across threads and async tasks; reset in finally.
+CURRENT_CALL_ID: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "CURRENT_CALL_ID", default="")
+CURRENT_AGENT_NAME: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "CURRENT_AGENT_NAME", default="")
+
+
+class CombinedStopEvent(threading.Event):
+    """A stop event that is set if either itself or its parent is set.
+
+    Allows cancelling an individual child agent without cancelling the parent,
+    while still ensuring cancelling the parent cancels all children.
+    """
+
+    def __init__(self, parent: threading.Event | None = None) -> None:
+        super().__init__()
+        self._parent = parent
+
+    def is_set(self) -> bool:
+        return super().is_set() or (bool(self._parent and self._parent.is_set()))
+
 
 # What a cancelled tool hands the model instead of running. One sentence,
 # starting "Error: " like every other failure the model reads.
@@ -165,29 +195,33 @@ def observed(name: str, function: Callable, bus: EventBus,
         if bus.stop.is_set():
             return CANCELLED_TEXT
         call_id = uuid.uuid4().hex[:8]
-        bus.emit(TOOL_STARTED, call_id=call_id, name=name,
-                 arguments=dict(kwargs))
-        refusal = gate(bus, name, dict(kwargs), permission)
-        if refusal is not None:
-            bus.emit(TOOL_ENDED, call_id=call_id, name=name, status="denied",
-                     duration_s=0.0, result_chars=len(refusal))
-            return refusal
-        started = time.monotonic()
-        status, result_chars, display = "error", None, None
+        token_call_id = CURRENT_CALL_ID.set(call_id)
         try:
-            result = function(*args, **kwargs)
-            status, result_chars = "ok", len(str(result))
-            # A tool may hand back a str that also carries `display`, the
-            # structured version for a UI (see ovat/tools/project.Shown).
-            # The engines still get the same object, which is just a str.
-            display = getattr(result, "display", None)
-            if display and display.get("failed"):
-                status = "error"
-            return result
+            bus.emit(TOOL_STARTED, call_id=call_id, name=name,
+                     arguments=dict(kwargs))
+            refusal = gate(bus, name, dict(kwargs), permission)
+            if refusal is not None:
+                bus.emit(TOOL_ENDED, call_id=call_id, name=name, status="denied",
+                         duration_s=0.0, result_chars=len(refusal))
+                return refusal
+            started = time.monotonic()
+            status, result_chars, display = "error", None, None
+            try:
+                result = function(*args, **kwargs)
+                status, result_chars = "ok", len(str(result))
+                # A tool may hand back a str that also carries `display`, the
+                # structured version for a UI (see ovat/tools/project.Shown).
+                # The engines still get the same object, which is just a str.
+                display = getattr(result, "display", None)
+                if display and display.get("failed"):
+                    status = "error"
+                return result
+            finally:
+                extra = {"display": display} if display else {}
+                bus.emit(TOOL_ENDED, call_id=call_id, name=name, status=status,
+                         duration_s=round(time.monotonic() - started, 3),
+                         result_chars=result_chars, **extra)
         finally:
-            extra = {"display": display} if display else {}
-            bus.emit(TOOL_ENDED, call_id=call_id, name=name, status=status,
-                     duration_s=round(time.monotonic() - started, 3),
-                     result_chars=result_chars, **extra)
+            CURRENT_CALL_ID.reset(token_call_id)
 
     return wrapper

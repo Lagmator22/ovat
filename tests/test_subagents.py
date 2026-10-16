@@ -197,8 +197,10 @@ def _workflow_runner(monkeypatch, tmp_path, child=None, **sub):
     path.write_text("model:\n  name: m\n", encoding="utf-8")
     built = []
 
-    def fake_build(config, select_tools=None, **kw):
+    def fake_build(config, select_tools=None, events=None, **kw):
         agent = child or ChildAgent()
+        if events is not None:
+            agent.events = events
         agent.tools_seen = select_tools({
             "search_docs": {"kind": "builtin"},
             "delegate": {"kind": "subagent"}})
@@ -227,7 +229,10 @@ def test_a_workflow_subagent_runs_once_and_reports_progress(monkeypatch,
     child = built[0]
     assert child.closed
     assert "delegate" not in child.tools_seen         # one level deep only
-    assert child.events.stop is bus.stop               # Esc stops it too
+    assert child.events.stop.is_set() is False
+    bus.stop.set()
+    assert child.events.stop.is_set() is True          # Esc stops it too
+    bus.stop.clear()
     assert child.events.asker is bus.asker
     assert child.events.asker("Which database?", []) == "sqlite"
     texts = [e.data["text"] for e in seen if e.type == SUBAGENT_STATUS]
@@ -303,3 +308,355 @@ def test_the_delegate_tool_calls_the_runner(monkeypatch, tmp_path):
     tool = make_delegate_tool(list(cfg), bus)
     assert tool["function"](agent="researcher", task="t").startswith(
         "[Answer from subagent researcher]")
+
+
+def test_child_events_carry_call_id_and_totals(monkeypatch, tmp_path):
+    from ovat.agent.events import (CURRENT_CALL_ID, SUBAGENT_DONE,
+                                   SUBAGENT_EVENT, SUBAGENT_STARTED)
+    runner, bus, built = _workflow_runner(monkeypatch, tmp_path)
+    events = []
+    bus.subscribe(events.append)
+
+    token = CURRENT_CALL_ID.set("parent-call-123")
+    try:
+        out = runner.run("researcher", "find docs")
+    finally:
+        CURRENT_CALL_ID.reset(token)
+
+    assert out.startswith("[Answer from subagent researcher]")
+    types = [e.type for e in events]
+    assert SUBAGENT_STARTED in types
+    assert SUBAGENT_EVENT in types
+    assert SUBAGENT_DONE in types
+
+    start_ev = next(e for e in events if e.type == SUBAGENT_STARTED)
+    assert start_ev.data["call_id"] == "parent-call-123"
+    assert start_ev.data["agent"] == "researcher"
+    assert start_ev.data["kind"] == "workflow"
+
+    event_ev = next(e for e in events if e.type == SUBAGENT_EVENT)
+    assert event_ev.data["call_id"] == "parent-call-123"
+    assert event_ev.data["agent"] == "researcher"
+    assert event_ev.data["event"]["type"] == "tool_started"
+
+    done_ev = next(e for e in events if e.type == SUBAGENT_DONE)
+    assert done_ev.data["call_id"] == "parent-call-123"
+    assert done_ev.data["agent"] == "researcher"
+    assert done_ev.data["status"] == "ok"
+    assert "duration_s" in done_ev.data
+
+
+def test_cancel_child_stops_one_without_stopping_parent_or_sibling(monkeypatch, tmp_path):
+    from ovat.agent.events import CURRENT_CALL_ID
+    runner, bus, built = _workflow_runner(monkeypatch, tmp_path)
+
+    # Simulate child that checks stop inside run
+    class CancellableChild:
+        def __init__(self):
+            self.events = EventBus()
+            self.closed = False
+            self.last_trace = {}
+
+        def run(self, task):
+            # Check if this child's stop is set
+            if self.events.stop.is_set():
+                return "stopped early"
+            # Simulate cancel arriving mid-run
+            runner.cancel_child("call-c1")
+            if self.events.stop.is_set():
+                return "cancelled mid-flight"
+            return "finished"
+
+    c1 = CancellableChild()
+    built_agents = [c1]
+
+    def fake_build(config, select_tools=None, events=None, **kw):
+        agent = built_agents.pop(0)
+        if events is not None:
+            agent.events = events
+        return agent
+
+    import ovat.agent.factory as factory
+    monkeypatch.setattr(factory, "build_agent", fake_build)
+
+    token = CURRENT_CALL_ID.set("call-c1")
+    try:
+        out = runner.run("researcher", "work")
+    finally:
+        CURRENT_CALL_ID.reset(token)
+
+    assert "cancelled mid-flight" in out
+    # Child's stop was set, but parent bus.stop was NOT set
+    assert bus.stop.is_set() is False
+
+
+def test_child_tool_approval_records_agent_name(monkeypatch, tmp_path):
+    from ovat.agent.events import observed
+    from ovat.agent.permissions import ApprovalBroker
+    runner, bus, _ = _workflow_runner(monkeypatch, tmp_path)
+
+    requests = []
+    broker = ApprovalBroker(on_request=requests.append)
+    bus.approver = broker
+
+    class AskingChild:
+        def __init__(self):
+            self.events = EventBus()
+            self.closed = False
+            self.last_trace = {}
+
+        def run(self, task):
+            # Tool inside child agent wrapped in observed
+            def dangerous_tool():
+                return "done"
+            obs = observed("shell", dangerous_tool, self.events, permission="ask")
+            return obs()
+
+    child = AskingChild()
+
+    def fake_build(config, select_tools=None, events=None, **kw):
+        if events is not None:
+            child.events = events
+        return child
+
+    import ovat.agent.factory as factory
+    monkeypatch.setattr(factory, "build_agent", fake_build)
+
+    # Run in thread since broker blocks
+    import threading
+    t = threading.Thread(target=lambda: runner.run("researcher", "run shell"))
+    t.start()
+    for _ in range(50):
+        if requests:
+            break
+        time.sleep(0.02)
+    assert len(requests) == 1
+    assert requests[0].tool == "shell"
+    assert requests[0].agent == "researcher"
+    broker.resolve(requests[0].id, "once")
+    t.join(timeout=2.0)
+    assert not t.is_alive()
+
+
+def test_child_session_history_list():
+    import asyncio
+    from ovat.agent.events import Event, SUBAGENT_EVENT, SUBAGENT_STARTED
+    from ovat.tui.server.methods.session import history_list
+    from ovat.tui.server.projector import Projector
+    from ovat.tui.vibe.app_server.models import IdleSessionStatus, PublicSession
+    from ovat.tui.vibe.app_server.protocol import SessionHistoryListParams
+
+    emitted = []
+    session = PublicSession(
+        id="parent-s1",
+        status=IdleSessionStatus(),
+        created_at=0,
+        updated_at=0,
+    )
+    projector = Projector(session, lambda m, p: emitted.append((m, p)))
+    projector.agent_event(Event(SUBAGENT_STARTED, {"call_id": "c1", "agent": "researcher"}), {})
+    # Emit child events
+    projector.agent_event(Event(SUBAGENT_EVENT, {
+        "call_id": "c1",
+        "agent": "researcher",
+        "event": {"type": "tool_started", "name": "search_docs", "arguments": {"query": "test"}},
+    }), {"search_docs": "builtin"})
+
+    class FakeCtx:
+        def __init__(self, p):
+            self.projector = p
+
+    ctx = FakeCtx(projector)
+    params = SessionHistoryListParams.model_validate({"sessionId": "child-c1"})
+    res = asyncio.run(history_list(ctx, params))
+    assert len(res.items) >= 1
+    assert "search_docs" in res.items[0].detail.display.summary
+
+
+def test_child_approval_marks_blocked_and_unblocks():
+    from ovat.agent.events import Event, SUBAGENT_STARTED
+    from ovat.agent.permissions import ApprovalBroker, ApprovalRequest
+    from ovat.tui.server.approvals import Approvals
+    from ovat.tui.server.projector import Projector
+    from ovat.tui.vibe.app_server.models import (
+        ApprovalDecisionType,
+        BlockedSessionStatus,
+        IdleSessionStatus,
+        PublicSession,
+        RunningSessionStatus,
+    )
+    from ovat.tui.vibe.app_server.protocol import CallbackResultParams
+
+    emitted = []
+    session = PublicSession(
+        id="parent-s1",
+        status=IdleSessionStatus(),
+        created_at=0,
+        updated_at=0,
+    )
+    projector = Projector(session, lambda m, p: emitted.append((m, p)))
+    projector.agent_event(Event(SUBAGENT_STARTED, {"call_id": "c1", "agent": "researcher"}), {})
+    assert isinstance(projector.child_sessions["child-c1"].status, RunningSessionStatus)
+
+    broker = ApprovalBroker()
+
+    class FakeAgent:
+        def __init__(self):
+            self.broker = broker
+
+    class FakeTurns:
+        active_id = "turn-1"
+        def cancel_active(self): pass
+
+    class FakeCapabilities:
+        callback_kinds = ["approval"]
+
+    class FakeRpc:
+        def __init__(self):
+            self.requests = []
+        def request(self, method, params, callback):
+            self.requests.append((method, params, callback))
+
+    class FakeCtx:
+        def __init__(self, p):
+            self.projector = p
+            self.agent = FakeAgent()
+            self.turns = FakeTurns()
+            self.capabilities = FakeCapabilities()
+            self.rpc = FakeRpc()
+
+    ctx = FakeCtx(projector)
+    approvals = Approvals(ctx)
+
+    # Subagent asks for approval
+    req = ApprovalRequest(id=1, tool="shell", arguments={"cmd": "ls"}, reason="", agent="researcher")
+    broker._open[1] = req
+    approvals.request(req)
+
+    # Check that child session is now marked blocked
+    assert isinstance(projector.child_sessions["child-c1"].status, BlockedSessionStatus)
+    # Check title mentions subagent
+    cb_entry = ctx.rpc.requests[0][1].callback
+    assert "Allow subagent researcher to run shell?" in cb_entry.title
+
+    # Answer approval
+    res_params = CallbackResultParams.model_validate({
+        "sessionId": "parent-s1",
+        "result": {
+            "callbackId": "approval-1",
+            "output": {"type": "approval", "decision": {"type": "approve"}},
+        },
+    })
+    approvals.answer(res_params)
+
+    # Check that child session is unblocked back to RunningSessionStatus
+    assert isinstance(projector.child_sessions["child-c1"].status, RunningSessionStatus)
+
+
+def test_child_sessions_save_restore_and_rewind():
+    import asyncio
+    from ovat.agent.events import Event, SUBAGENT_STARTED
+    from ovat.tui.server import saved
+    from ovat.tui.server.methods.session import session_rewind
+    from ovat.tui.server.projector import Projector
+    from ovat.tui.vibe.app_server._effect_models import SubagentEffectDetail, SubagentEffectInput
+    from ovat.tui.vibe.utils.tool_presentation import EffectCallDisplay
+    from ovat.tui.vibe.app_server.models import (
+        BlockedSessionStatus,
+        IdleSessionStatus,
+        PublicEffectEntry,
+        PublicEntryGenerationStatus,
+        PublicMessageEntry,
+        PublicSession,
+        PublicTurn,
+        RunningEffectState,
+        TextContentBlock,
+    )
+    from ovat.tui.vibe.app_server.protocol import SessionRewindParams
+
+    session = PublicSession(id="p1", status=IdleSessionStatus(), created_at=0, updated_at=0)
+    projector = Projector(session, lambda m, p: None)
+    projector.agent_event(Event(SUBAGENT_STARTED, {"call_id": "c1", "agent": "researcher"}), {})
+    projector.agent_event(Event(SUBAGENT_STARTED, {"call_id": "c2", "agent": "writer"}), {})
+    # Mark c2 blocked to verify restore turns it idle
+    projector.child_sessions["child-c2"] = projector.child_sessions["child-c2"].model_copy(
+        update={"status": BlockedSessionStatus(active_turn_id="t1", callback_id="cb1", reason="approval")}
+    )
+
+    class FakeAgent:
+        def memory(self): return []
+        def truncate_memory(self, cut): pass
+
+    class FakeCtx:
+        def __init__(self, p):
+            self.projector = p
+            self.agent = FakeAgent()
+            self.workflow = "w.yml"
+            self.info = {"engine": "native"}
+            self.anchors = {"u1": 0, "u2": 1}
+            self.store = None
+            self.is_ready = True
+            self.turns = type("Turns", (), {"busy": False})()
+        def require_session(self, sid): return self.projector
+
+    ctx = FakeCtx(projector)
+
+    # 1. Verify saved.record includes child sessions
+    rec = saved.record(ctx)
+    assert "child-c1" in rec["child_sessions"]
+    assert "child-c2" in rec["child_sessions"]
+
+    # 2. Verify child_sessions_of restores non-terminal status as idle
+    restored_cs = saved.child_sessions_of(rec)
+    assert isinstance(restored_cs["child-c2"].status, IdleSessionStatus)
+
+    # 3. Verify rewind only keeps child sessions referenced by kept entries
+    # Add messages and a delegate effect for c1 only
+    u1 = PublicMessageEntry(
+        id="u1", session_id="p1", created_at=0, updated_at=0,
+        generation_status=PublicEntryGenerationStatus.COMPLETED,
+        role="user", content=[TextContentBlock(text="run c1")]
+    )
+    eff1 = PublicEffectEntry(
+        id="eff1", session_id="p1", created_at=1, updated_at=1,
+        generation_status=PublicEntryGenerationStatus.COMPLETED,
+        title="delegate",
+        state=RunningEffectState(),
+        detail=SubagentEffectDetail(
+            tool_name="delegate",
+            agent_name="researcher",
+            display=EffectCallDisplay(summary="researcher: t", status_text="running"),
+            input=SubagentEffectInput(task="t", agent="researcher"),
+            child_session_id="child-c1"
+        )
+    )
+    u2 = PublicMessageEntry(
+        id="u2", session_id="p1", created_at=2, updated_at=2,
+        generation_status=PublicEntryGenerationStatus.COMPLETED,
+        role="user", content=[TextContentBlock(text="run c2")]
+    )
+    eff2 = PublicEffectEntry(
+        id="eff2", session_id="p1", created_at=3, updated_at=3,
+        generation_status=PublicEntryGenerationStatus.COMPLETED,
+        title="delegate",
+        state=RunningEffectState(),
+        detail=SubagentEffectDetail(
+            tool_name="delegate",
+            agent_name="writer",
+            display=EffectCallDisplay(summary="writer: t2", status_text="running"),
+            input=SubagentEffectInput(task="t2", agent="writer"),
+            child_session_id="child-c2"
+        )
+    )
+    projector.history = [u1, eff1, u2, eff2]
+    projector.turns = [PublicTurn.model_validate({"id": "t1", "sessionId": "p1", "inputEntryId": "u1", "status": "completed", "startedAt": 0, "completedAt": 0})]
+
+    # Rewind to u2 (so u1 and eff1 remain, while u2 and eff2 are dropped)
+    res = asyncio.run(session_rewind(ctx, SessionRewindParams(session_id="p1", entry_id="u2", inplace=True)))
+    # Kept history has u1 and eff1
+    assert len(projector.history) == 2
+    # Only child-c1 is kept; child-c2 is dropped because eff2 was rewound!
+    assert "child-c1" in projector.child_sessions
+    assert "child-c2" not in projector.child_sessions
+
+

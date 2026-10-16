@@ -104,6 +104,7 @@ class ApprovalRequest:
     arguments: dict
     reason: str = ""
     decision: str | None = None
+    agent: str = ""
     _done: threading.Event = field(default_factory=threading.Event,
                                    repr=False)
 
@@ -142,8 +143,10 @@ class ApprovalBroker:
             return True
         if self.on_request is None:
             return False
+        from ovat.agent.events import CURRENT_AGENT_NAME
+        agent = CURRENT_AGENT_NAME.get("")
         request = ApprovalRequest(next(self._ids), tool, dict(arguments),
-                                  reason)
+                                  reason, agent=agent)
         with self._lock:
             self._open[request.id] = request
         try:

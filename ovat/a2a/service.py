@@ -45,6 +45,7 @@ class Reporter(Protocol):
     async def completed(self, trace: dict) -> None: ...
     async def failed(self, text: str, trace: dict | None = None) -> None: ...
     async def rejected(self, text: str) -> None: ...
+    async def input_required(self, call_id: str, tool: str, args: dict) -> None: ...
 
 
 @dataclass
@@ -57,6 +58,8 @@ class Task:
     text: str
     hops: int = 0
     chain: list[str] = field(default_factory=list)
+    data: dict | None = None
+    approval_capable: bool = False
 
 
 def public_event(event: Event) -> dict:
@@ -163,10 +166,27 @@ class AgentPool:
 
 
 @dataclass
+class _PendingApproval:
+    task_id: str
+    context_id: str
+    caller: str
+    call_id: str
+    tool: str
+    args: dict
+    event: threading.Event = field(default_factory=threading.Event)
+    allowed: bool = False
+
+
+@dataclass
 class _Running:
     stop: threading.Event = field(default_factory=threading.Event)
     agent: object = None
     lock: threading.Lock = field(default_factory=threading.Lock)
+    worker_task: asyncio.Task = None
+    current_reporter: Reporter = None
+    pending_approval: _PendingApproval | None = None
+    approval_needed_event: asyncio.Event = field(default_factory=asyncio.Event)
+    tools_used: list[str] = field(default_factory=list)
 
 
 class A2AService:
@@ -199,6 +219,46 @@ class A2AService:
     async def run(self, task: Task, reporter: Reporter) -> None:
         """Run one task to a final state. Never raises, except the
         CancelledError of a cancelled task (the adapter reports that)."""
+        # 1. Check if this is an approval continuation
+        if task.task_id in self._running and self._running[task.task_id].pending_approval is not None:
+            running = self._running[task.task_id]
+            pending = running.pending_approval
+            if pending.caller != task.caller or pending.context_id != task.context_id:
+                self.stats["rejected"] += 1
+                await reporter.rejected("task caller or context mismatch")
+                return
+            if not task.data or task.data.get("callId") != pending.call_id:
+                self.stats["rejected"] += 1
+                await reporter.rejected("missing or invalid approval outcome")
+                return
+
+            outcome = task.data.get("outcome")
+            pending.allowed = (outcome == "proceed_once")
+            running.current_reporter = reporter
+            running.pending_approval = None
+            pending.event.set()
+            try:
+                await self._wait_or_yield(task, running, reporter)
+            except asyncio.CancelledError:
+                self.cancel(task.task_id)
+                self.stats["canceled"] += 1
+                self._record(task, "canceled", None)
+                raise
+            except Exception:
+                log.exception("A2A task continuation %s failed", task.task_id)
+                self.stats["failed"] += 1
+                sentence = ("The agent could not answer because of an error on "
+                            "the serving machine. Its log has the details.")
+                try:
+                    await reporter.failed(sentence)
+                except Exception:
+                    pass
+                self._record(task, "failed", sentence)
+            finally:
+                if running.pending_approval is None:
+                    self._running.pop(task.task_id, None)
+            return
+
         key = (task.caller, task.context_id)
         refusal = self._admission.check(Ask(
             caller=task.caller, text=task.text, hops=task.hops,
@@ -210,7 +270,7 @@ class A2AService:
             self._record(task, "rejected", refusal)
             return
 
-        running = self._running[task.task_id] = _Running()
+        running = self._running[task.task_id] = _Running(current_reporter=reporter)
         try:
             await reporter.accepted()
             await self._run_admitted(task, key, running, reporter)
@@ -232,7 +292,8 @@ class A2AService:
                 pass
             self._record(task, "failed", sentence)
         finally:
-            self._running.pop(task.task_id, None)
+            if running.pending_approval is None:
+                self._running.pop(task.task_id, None)
 
     def cancel(self, task_id: str) -> bool:
         """Ask a task to stop. False if it is not running here."""
@@ -241,6 +302,9 @@ class A2AService:
             return False
         with running.lock:
             running.stop.set()
+            if running.pending_approval is not None:
+                running.pending_approval.allowed = False
+                running.pending_approval.event.set()
             if running.agent is not None:
                 running.agent.events.stop.set()
         return True
@@ -257,16 +321,18 @@ class A2AService:
 
     async def _run_admitted(self, task, key, running, reporter) -> None:
         loop = asyncio.get_running_loop()
-        tools_used: list[str] = []
 
         def on_event(event: Event) -> None:          # on the WORKER thread
             if event.type == TOOL_STARTED:
-                tools_used.append(event.data.get("name"))
+                running.tools_used.append(event.data.get("name"))
             text = describe(event)
             if text is None:
                 return
+            rep = running.current_reporter
+            if rep is None:
+                return
             future = asyncio.run_coroutine_threadsafe(
-                reporter.working(text, public_event(event)), loop)
+                rep.working(text, public_event(event)), loop)
             try:
                 future.result(timeout=5)
             except Exception:
@@ -299,22 +365,59 @@ class A2AService:
                     "hops": task.hops + 1,
                     "chain": [*task.chain, self.server_id]}
                 unsubscribe = agent.events.subscribe(on_event)
+
+                def approver(name: str, arguments: dict, reason: str = "") -> bool:
+                    if not task.approval_capable:
+                        return False
+                    call_id = uuid.uuid4().hex[:8]
+                    pend = _PendingApproval(
+                        task_id=task.task_id, context_id=task.context_id,
+                        caller=task.caller, call_id=call_id,
+                        tool=name, args=arguments)
+                    running.pending_approval = pend
+                    rep = running.current_reporter
+                    if rep is not None and hasattr(rep, "input_required"):
+                        fut = asyncio.run_coroutine_threadsafe(
+                            rep.input_required(call_id, name, arguments), loop)
+                        try:
+                            fut.result(timeout=5)
+                        except Exception:
+                            pass
+                    loop.call_soon_threadsafe(running.approval_needed_event.set)
+                    woke = pend.event.wait(timeout=self.s.task_timeout_s)
+                    if not woke or running.stop.is_set():
+                        return False
+                    return pend.allowed
+
+                old_approver = getattr(agent.events, "approver", None)
+                if task.approval_capable:
+                    agent.events.approver = approver
                 try:
                     answer = agent.run(task.text)
                     counted = True
                     return agent, answer
                 finally:
+                    agent.events.approver = old_approver
                     unsubscribe()
                     agent.events.context = {}
                     with running.lock:
                         running.agent = None
                     self._pool.release(slot, counted)
 
-        worker = asyncio.ensure_future(asyncio.to_thread(work))
+        running.worker_task = asyncio.ensure_future(asyncio.to_thread(work))
+        await self._wait_or_yield(task, running, reporter)
+
+    async def _wait_or_yield(self, task, running, reporter) -> None:
+        approval_waiter = asyncio.create_task(running.approval_needed_event.wait())
         try:
-            agent, answer = await asyncio.wait_for(
-                asyncio.shield(worker), self.s.task_timeout_s)
-        except asyncio.TimeoutError:
+            done, _ = await asyncio.wait(
+                [running.worker_task, approval_waiter],
+                return_when=asyncio.FIRST_COMPLETED,
+                timeout=self.s.task_timeout_s)
+        finally:
+            approval_waiter.cancel()
+
+        if not done:
             self.cancel(task.task_id)
             self.stats["failed"] += 1
             sentence = (f"The agent did not finish within "
@@ -322,9 +425,18 @@ class A2AService:
                         f"(a2a.server.task_timeout_s), so the task was "
                         f"stopped.")
             await reporter.failed(sentence)
-            self._record(task, "failed", sentence, tools_used)
+            self._record(task, "failed", sentence, running.tools_used)
             return
 
+        if running.approval_needed_event.is_set():
+            running.approval_needed_event.clear()
+            # An approval is pending; return to let SDK close stream with INPUT_REQUIRED
+            return
+
+        if running.worker_task.cancelled():
+            return
+
+        agent, answer = await running.worker_task
         if agent is None or running.stop.is_set():
             return                    # cancelled; the adapter says CANCELED
 
@@ -334,13 +446,13 @@ class A2AService:
         if failed:
             self.stats["failed"] += 1
             await reporter.failed(answer, totals)
-            self._record(task, "failed", answer, tools_used, totals=totals)
+            self._record(task, "failed", answer, running.tools_used, totals=totals)
             return
         sources = shape_sources(_sources_of(agent), self.s.expose_sources)
         await reporter.answer(answer, sources)
         await reporter.completed(totals)
         self.stats["done"] += 1
-        self._record(task, "completed", answer, tools_used, sources, totals)
+        self._record(task, "completed", answer, running.tools_used, sources, totals)
 
     def _record(self, task: Task, state: str, answer: str | None,
                 tools: list[str] | None = None,

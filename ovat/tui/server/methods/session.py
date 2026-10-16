@@ -13,6 +13,7 @@ from ovat.tui.vibe.app_server.models import (PublicCheckpointEntry,
                                              PublicEntryGenerationStatus,
                                              PublicHistoryEntry,
                                              PublicMessageEntry,
+                                             PublicSession,
                                              PublicSessionState,
                                              PublicTurnQueue)
 from ovat.tui.vibe.app_server.protocol import (AgentSwitchParams,
@@ -54,6 +55,26 @@ routes = Routes()
 async def session_read(ctx, params: SessionReadParams):
     history_limit = params.history_limit if params.include_history else None
     turns_limit = params.turns_limit if params.include_turns else None
+    if ctx.projector is not None and params.session_id in ctx.projector.child_sessions:
+        child = ctx.projector.child_sessions[params.session_id]
+        child_history = ctx.projector.child_histories.get(params.session_id, [])
+        state = PublicSessionState(
+            event_id=ctx.projector.event_id,
+            session=PublicSession(
+                id=child.id,
+                title=f"Subagent {child.name}",
+                created_at=child.created_at,
+                updated_at=child.updated_at,
+                status=child.status,
+                token_usage=child.token_usage,
+            ),
+            history=(None if history_limit is None
+                     else [e.model_copy(deep=True) for e in child_history[-history_limit:]]),
+            turns=[],
+            active_callbacks=[],
+            turn_queue=PublicTurnQueue(),
+        )
+        return SessionReadResponse(state=state, last_event_id=state.event_id)
     if ctx.projector is None or ctx.projector.session.id == params.session_id:
         projector = ctx.require_session(params.session_id)
         state = projector.state(history_limit=history_limit,
@@ -174,9 +195,19 @@ async def session_rewind(ctx, params: SessionRewindParams):
     if not params.inplace:
         session = session.model_copy(update={"id": str(uuid4()),
                                              "created_at": now_ms()})
+    kept_child_ids = {
+        getattr(e.detail, "child_session_id", None)
+        for e in kept if hasattr(e, "detail")
+    }
+    kept_child_sessions = {k: v for k, v in projector.child_sessions.items()
+                           if k in kept_child_ids}
+    kept_child_histories = {k: v for k, v in projector.child_histories.items()
+                            if k in kept_child_ids}
     projector.adopt(session, _owned(kept, session.id),
                     _owned([t for t in projector.turns
-                            if t.input_entry_id in kept_ids], session.id))
+                            if t.input_entry_id in kept_ids], session.id),
+                    child_sessions=kept_child_sessions,
+                    child_histories=kept_child_histories)
     saved.save(ctx)
     return SessionRewindResponse(
         message=entry.text, restore_errors=[], restored_paths=[],
@@ -239,7 +270,9 @@ async def session_fork(ctx, params: SessionForkParams):
         session = projector.session.model_copy(update={
             "id": copy["id"], "created_at": copy["created_at"]})
         projector.adopt(session, _owned(projector.history, session.id),
-                        _owned(projector.turns, session.id))
+                        _owned(projector.turns, session.id),
+                        child_sessions=dict(projector.child_sessions),
+                        child_histories=dict(projector.child_histories))
         saved.save(ctx)
         state = projector.state(history_limit=params.history_limit)
     else:
@@ -330,6 +363,17 @@ def history_page(entries: list[PublicHistoryEntry], *, turn_id: str | None,
 
 @routes.method("session/history/list", SessionHistoryListParams)
 async def history_list(ctx, params: SessionHistoryListParams):
+    if ctx.projector is not None and params.session_id in ctx.projector.child_sessions:
+        entries = ctx.projector.child_histories.get(params.session_id, [])
+        backward = params.sort_direction == "backward"
+        page, older, newer = history_page(
+            entries, turn_id=params.turn_id,
+            before=params.cursor if backward else None,
+            after=None if backward else params.cursor, limit=params.limit)
+        return SessionHistoryListResponse(
+            items=[e.model_copy(deep=True) for e in page],
+            next_cursor=older if backward else newer,
+            previous_cursor=newer if backward else older)
     projector = ctx.require_session(params.session_id)
     backward = params.sort_direction == "backward"
     page, older, newer = history_page(

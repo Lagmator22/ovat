@@ -286,13 +286,16 @@ class Bridge:
     def tool_started(self, event: Event, kind: str) -> HistoryEntryAdded:
         d = event.data
         call_id = d.get("call_id") or f"call-{next(self._ids)}"
+        detail = self._detail(d.get("name", "tool"), kind,
+                              d.get("arguments") or {})
+        if isinstance(detail, SubagentEffectDetail) and not detail.child_session_id:
+            detail = detail.model_copy(update={"child_session_id": f"child-{call_id}"})
         entry = PublicEffectEntry(
             id=call_id, session_id=self.session_id, turn_id=self.turn_id,
             created_at=_now_ms(), updated_at=_now_ms(),
             generation_status=PublicEntryGenerationStatus.IN_PROGRESS,
             title=d.get("name", "tool"),
-            detail=self._detail(d.get("name", "tool"), kind,
-                                d.get("arguments") or {}),
+            detail=detail,
             state=RunningEffectState())
         self._entries[call_id] = entry
         self._last_running = call_id
@@ -323,7 +326,7 @@ class Bridge:
             state = SkippedEffectState(
                 reason="not allowed",
                 display=EffectResultDisplay(success=False, verb="Skipped",
-                                            message="not allowed"))
+                                             message="not allowed"))
         else:
             # A coding tool says why in its own sentence ("Error: ...").
             reason = shown.get("error") or f"{previous.title} failed"
@@ -343,11 +346,11 @@ class Bridge:
     def progress(self, event: Event) -> HistoryEntryUpdated | None:
         """A subagent's or remote agent's progress line, shown under the
         running call that started it."""
-        call_id = self._last_running
+        d = event.data
+        call_id = d.get("call_id") or self._last_running
         previous = self._entries.get(call_id) if call_id else None
         if previous is None:
             return None
-        d = event.data
         text = f"{d.get('agent')}: {d.get('text')}"
         return HistoryEntryUpdated(
             previous=previous, entry=previous,

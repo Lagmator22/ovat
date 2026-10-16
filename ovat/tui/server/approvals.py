@@ -34,13 +34,16 @@ from ovat.tui.vibe.app_server._effect_models import GenericEffectDetail
 from ovat.tui.vibe.app_server.models import (ApprovalCallbackDetail,
                                              ApprovalCallbackOutput,
                                              ApprovalDecisionType,
+                                             BlockedSessionStatus,
                                              CallbackOutput, OpenCallbackState,
                                              PublicCallbackEntry,
-                                             PublicEntryGenerationStatus)
+                                             PublicEntryGenerationStatus,
+                                             RunningSessionStatus)
 from ovat.tui.vibe.app_server.protocol import (CallbackCallParams,
-                                               CallbackCallResponse,
-                                               CallbackResultParams,
-                                               ProtocolErrorCode)
+                                                CallbackCallResponse,
+                                                CallbackResultParams,
+                                                ChildSessionUpdatedParams,
+                                                ProtocolErrorCode)
 from ovat.tui.vibe.utils.tool_presentation import EffectCallDisplay
 
 # What the person is offered. "Permanently" is saved per project by the
@@ -67,6 +70,7 @@ class _Open:
     request: ApprovalRequest
     callback_id: str
     answer: dict | None = None        # the output the person gave, once given
+    child_id: str | None = None
 
 
 class Approvals:
@@ -103,18 +107,37 @@ class Approvals:
                 summary=request.tool,
                 status_text=f"Asking about {request.tool}"))
         stamp = now_ms()
+        child_id = None
+        if request.agent and projector:
+            for cid, cs in projector.child_sessions.items():
+                if cs.name == request.agent and isinstance(cs.status, RunningSessionStatus):
+                    child_id = cid
+                    blocked_cs = cs.model_copy(update={
+                        "status": BlockedSessionStatus(
+                            active_turn_id=ctx.turns.active_id or "",
+                            callback_id=callback_id,
+                            reason="approval"
+                        ),
+                        "updated_at": stamp
+                    })
+                    projector.child_sessions[cid] = blocked_cs
+                    projector._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
+                                    child_session=blocked_cs)
+                    break
+        title = (f"Allow subagent {request.agent} to run {request.tool}?"
+                 if request.agent else f"Allow {request.tool}?")
         entry = PublicCallbackEntry(
             id=f"callback:{callback_id}", session_id=projector.session.id,
             turn_id=ctx.turns.active_id, created_at=stamp, updated_at=stamp,
             generation_status=PublicEntryGenerationStatus.IN_PROGRESS,
             related_entry_id=running.id if running else None,
-            callback_id=callback_id, title=f"Allow {request.tool}?",
+            callback_id=callback_id, title=title,
             detail=ApprovalCallbackDetail(
                 effect=effect, choices=list(CHOICES),
                 related_entry_id=running.id if running else None,
                 reason=request.reason or None),
             state=OpenCallbackState())
-        self._open[callback_id] = _Open(request, callback_id)
+        self._open[callback_id] = _Open(request, callback_id, child_id=child_id)
         projector.open_callback(entry)
         projector.set_status({
             "type": "blocked", "activeTurnId": ctx.turns.active_id or "",
@@ -181,6 +204,17 @@ class Approvals:
         projector.close_callback(callback_id, {"status": "answered",
                                                "output": dumped})
         self._open.pop(callback_id, None)
+        if record.child_id and record.child_id in projector.child_sessions:
+            cs = projector.child_sessions[record.child_id]
+            if isinstance(cs.status, BlockedSessionStatus):
+                turn_id = cs.status.active_turn_id or ctx.turns.active_id or ""
+                unblocked_cs = cs.model_copy(update={
+                    "status": RunningSessionStatus(active_turn_id=turn_id),
+                    "updated_at": now_ms()
+                })
+                projector.child_sessions[record.child_id] = unblocked_cs
+                projector._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
+                                child_session=unblocked_cs)
         projector.set_status({"type": "running",
                               "activeTurnId": ctx.turns.active_id or ""})
         if parsed.decision.type is ApprovalDecisionType.CANCEL_TURN:
@@ -195,6 +229,17 @@ class Approvals:
         self._closed.add(callback_id)
         self._ctx.agent.broker.resolve(record.request.id, REFUSE)
         projector = self._ctx.projector
+        if record.child_id and projector and record.child_id in projector.child_sessions:
+            cs = projector.child_sessions[record.child_id]
+            if isinstance(cs.status, BlockedSessionStatus):
+                turn_id = cs.status.active_turn_id or self._ctx.turns.active_id or ""
+                unblocked_cs = cs.model_copy(update={
+                    "status": RunningSessionStatus(active_turn_id=turn_id),
+                    "updated_at": now_ms()
+                })
+                projector.child_sessions[record.child_id] = unblocked_cs
+                projector._emit("session/childSessionUpdated", ChildSessionUpdatedParams,
+                                child_session=unblocked_cs)
         projector.close_callback(callback_id, {"status": "cancelled",
                                                "reason": reason})
 

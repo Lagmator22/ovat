@@ -121,6 +121,18 @@ class SDKPeer:
         return self._call(self._send(text, metadata or {}, on_status),
                           self._timeout)
 
+    def send_input(self, data: dict, task_id: str | None = None,
+                   metadata: dict | None = None,
+                   on_status=None) -> RemoteReply:
+        """Send a structured response or confirmation for an input-required task."""
+        self._ensure_open()
+        import json
+        text = json.dumps(data)
+        return self._call(
+            self._send(text, metadata or {}, on_status, task_id=task_id,
+                       data_payload=data),
+            self._timeout)
+
     def reset(self) -> None:
         """Forget the conversation: the next message starts a new one."""
         self.context_id = None
@@ -170,10 +182,22 @@ class SDKPeer:
         await self._connect()
         return self._card
 
-    async def _send(self, text, metadata, on_status) -> RemoteReply:
+    async def _send(self, text, metadata, on_status, task_id=None,
+                    data_payload=None) -> RemoteReply:
         client = await self._connect()
+        part = Part(text=text)
+        if data_payload is not None:
+            try:
+                from google.protobuf.struct_pb2 import Value
+                from google.protobuf.json_format import ParseDict
+                val = Value()
+                ParseDict(data_payload, val)
+                part = Part(text=text, data=val)
+            except Exception:
+                part = Part(text=text)
         message = Message(role=Role.ROLE_USER, message_id=uuid.uuid4().hex,
-                          parts=[Part(text=text)],
+                          parts=[part],
+                          task_id=task_id or "",
                           context_id=self.context_id or "")
         request = SendMessageRequest(message=message, metadata=metadata)
         state, status_text, answer = TaskState.UNKNOWN, "", []
@@ -188,17 +212,27 @@ class SDKPeer:
                     state = _state(task.status.state)
                     status_text = get_message_text(task.status.message)
                     answer = [get_artifact_text(a) for a in task.artifacts]
+                    meta = MessageToDict(task.metadata) if task.metadata else {}
+                    if meta:
+                        extra.update(meta)
+                        if isinstance(meta.get("ovat"), dict):
+                            extra.update(meta["ovat"])
                 elif kind == "status_update":
                     update = response.status_update
                     task_id = update.task_id or task_id
                     context_id = update.context_id or context_id
                     state = _state(update.status.state)
                     status_text = get_message_text(update.status.message)
-                    ovat = MessageToDict(update.metadata).get("ovat")
-                    if isinstance(ovat, dict):
-                        extra = ovat
+                    meta = MessageToDict(update.metadata) if update.metadata else {}
+                    if meta:
+                        extra.update(meta)
+                        if isinstance(meta.get("ovat"), dict):
+                            extra.update(meta["ovat"])
                     if state is TaskState.WORKING and status_text and on_status:
-                        on_status(status_text)
+                        try:
+                            on_status(status_text, meta)
+                        except TypeError:
+                            on_status(status_text)
                 elif kind == "artifact_update":
                     answer.append(get_artifact_text(
                         response.artifact_update.artifact))

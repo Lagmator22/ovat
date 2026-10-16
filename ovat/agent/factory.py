@@ -501,7 +501,7 @@ AGENT_TYPES = ("native", "react", "llamaindex", "openai-agents")
 
 
 def build_agent(config: WorkflowConfig, skip_rag: bool = False,
-                select_tools=None):
+                select_tools=None, events: EventBus | None = None):
     """I assemble the full agent from a config: the one call the CLI makes.
 
     Dispatch on agent.type so the same YAML can pick my native loop or the
@@ -554,18 +554,22 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False,
     mcp_servers: list = []
     # One bus per agent: the TUI and the A2A server subscribe to it, and its
     # `stop` flag is how either of them cancels a run.
-    events = EventBus()
+    if events is None:
+        events = EventBus()
     tools = build_tools(config, retriever=retriever, servers=mcp_servers,
                         events=events)
     if select_tools is not None:
         tools = select_tools(tools)
     tools = observe_tools(tools, events)
 
+    subagent_runner = tools.get("delegate", {}).get("runner")
     agent_type = config.agent.type
     def _own(agent):
         """Hand the agent its subprocesses and its event bus."""
         agent.mcp_servers = mcp_servers
         agent.events = events
+        if subagent_runner is not None:
+            agent.subagent_runner = subagent_runner
         return agent
 
     if agent_type == "native":
