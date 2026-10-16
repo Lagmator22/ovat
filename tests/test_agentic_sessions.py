@@ -254,3 +254,107 @@ def test_framework_engine_has_no_reachable_memory(tmp_path):
     assert agent_session.memory() is None
     assert agent_session.restore_memory([{"role": "user", "content": "q"}]) is False
     assert agent_session.truncate_memory(0) is False
+
+
+# ---- /compact -----------------------------------------------------------------
+
+def _talked(agent_session):
+    agent_session.agent.session.add_user("q1")
+    agent_session.agent.session.add_assistant(
+        content=None, tool_calls=[{"id": "c1", "type": "function", "function": {
+            "name": "search_docs", "arguments": '{"query": "leave"}'}}])
+    agent_session.agent.session.add_tool_result("c1", "20 days")
+    agent_session.agent.session.add_assistant(content="20 days")
+
+
+def test_compact_asks_for_a_summary_without_tools_and_keeps_only_that(tmp_path):
+    from tests.conftest import reply
+    agent_session = native_session(tmp_path)
+    agent_session.agent.llm = FakeLLMProvider([reply(
+        "stop", "<think>hm</think><summary>They asked about leave.</summary>")])
+    _talked(agent_session)
+    assert agent_session.compact("keep the numbers") == "They asked about leave."
+    (call,) = agent_session.agent.llm.calls
+    assert call["tools"] is None
+    sent = call["messages"][-1]["content"]
+    assert "keep the numbers" in sent
+    # the tool call and its result travel as text, never cut apart
+    assert "[calls search_docs" in sent and "20 days" in sent
+    memory = agent_session.memory()
+    assert [m["role"] for m in memory] == ["system", "user", "assistant"]
+    assert memory[0]["content"] == "new prompt"
+    assert "They asked about leave." in memory[1]["content"]
+    assert "<previous_user_message>\nq1\n" in memory[1]["content"]
+    assert agent_session.busy is False
+
+
+def test_a_second_compaction_does_not_nest_the_first_envelope(tmp_path):
+    from tests.conftest import reply
+    agent_session = native_session(tmp_path)
+    agent_session.agent.llm = FakeLLMProvider([
+        reply("stop", "<summary>first</summary>"),
+        reply("stop", "<summary>second</summary>")])
+    _talked(agent_session)
+    agent_session.compact()
+    agent_session.agent.session.add_user("q2")
+    agent_session.agent.session.add_assistant(content="a2")
+    agent_session.compact()
+    envelope = agent_session.memory()[1]["content"]
+    assert envelope.count("You are continuing a trajectory") == 1
+    assert "<previous_user_message>\nq2\n" in envelope
+    assert "second" in envelope
+
+
+def test_a_summary_without_tags_is_still_taken(tmp_path):
+    from tests.conftest import reply
+    agent_session = native_session(tmp_path)
+    agent_session.agent.llm = FakeLLMProvider([reply("stop", "just words")])
+    _talked(agent_session)
+    assert agent_session.compact() == "just words"
+
+
+@pytest.mark.parametrize("bad, said", [
+    (lambda r: r("stop", "  "), "empty summary"),
+    (lambda r: r("length", "<summary>cut"), "max_tokens"),
+    (lambda r: r("tool_calls", "x", [object()]), "tool call"),
+])
+def test_a_bad_summary_leaves_the_memory_alone(tmp_path, bad, said):
+    from ovat.agent.compaction import CompactionFailed
+    from tests.conftest import reply
+    agent_session = native_session(tmp_path)
+    agent_session.agent.llm = FakeLLMProvider([bad(reply)])
+    _talked(agent_session)
+    before = agent_session.memory()
+    with pytest.raises(CompactionFailed, match=said):
+        agent_session.compact()
+    assert agent_session.memory() == before
+    assert agent_session.busy is False
+
+
+def test_a_model_error_leaves_the_memory_alone(tmp_path):
+    from ovat.agent.compaction import CompactionFailed
+
+    class Down(FakeLLMProvider):
+        def chat(self, messages, tools=None):
+            raise ConnectionError("OVMS is not running")
+
+    agent_session = native_session(tmp_path)
+    agent_session.agent.llm = Down([])
+    _talked(agent_session)
+    before = agent_session.memory()
+    with pytest.raises(CompactionFailed, match="OVMS is not running"):
+        agent_session.compact()
+    assert agent_session.memory() == before and agent_session.busy is False
+
+
+def test_compact_is_refused_on_a_framework_engine_and_during_a_turn(tmp_path):
+    from ovat.agent.compaction import CompactionFailed
+    agent_session = s.AgentSession("w.yml", sink=[].append, cwd=str(tmp_path))
+    agent_session.agent = types.SimpleNamespace()
+    with pytest.raises(CompactionFailed, match="native engine"):
+        agent_session.compact()
+    busy = native_session(tmp_path)
+    busy.busy = True
+    with pytest.raises(CompactionFailed, match="turn to end"):
+        busy.compact()
+    assert busy.busy is True            # not ours to clear

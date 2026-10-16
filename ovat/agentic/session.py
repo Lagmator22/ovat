@@ -278,6 +278,44 @@ class AgentSession:
         session.truncate(length)
         return True
 
+    def compact(self, instructions: str = "") -> str:
+        """/compact: replace what the model remembers with a summary of it.
+
+        One extra model call, with no tools, over the memory written out as
+        text (ovat/agent/compaction.py). BLOCKING: the app server runs it on
+        a worker thread, so its event loop keeps answering. It holds `busy`
+        for the whole call, so a turn cannot start in the middle of it and
+        change the memory under it. Any failure (a framework engine, an OVMS
+        error, an empty summary) raises CompactionFailed with one sentence
+        and leaves the memory as it was. Returns the summary."""
+        from ovat.agent.compaction import (CompactionFailed, compacted_memory,
+                                           summary_messages, summary_of)
+        memory = self.memory()
+        if memory is None:
+            raise CompactionFailed(
+                "Compacting needs the native engine: it is the one whose "
+                "memory OVAT can rewrite. `/engine native` switches.")
+        with self._lock:
+            if self.busy:
+                raise CompactionFailed(
+                    "Wait for the current turn to end, or interrupt it, "
+                    "before compacting.")
+            self.busy = True
+        try:
+            try:
+                reply = self.agent.llm.chat(summary_messages(memory,
+                                                             instructions))
+            except Exception as exc:
+                raise CompactionFailed(
+                    f"The model could not write the summary, so nothing was "
+                    f"compacted: {_brief(exc)}") from exc
+            summary = summary_of(reply)
+            self.restore_memory(compacted_memory(memory, summary))
+            return summary
+        finally:
+            with self._lock:
+                self.busy = False
+
     def close(self) -> None:
         self.cancel()
         self.stop_server()

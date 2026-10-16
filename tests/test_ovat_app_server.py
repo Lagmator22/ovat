@@ -25,6 +25,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from ovat.agent.compaction import CompactionFailed, compacted_memory
 from ovat.agent.events import (SUBAGENT_STATUS, TOOL_ENDED, TOOL_STARTED,
                                Event)
 from ovat.agent.permissions import (ONCE, REFUSE, SESSION, ApprovalBroker)
@@ -101,8 +102,10 @@ class FakeSession:
                  approval=None, tool=True, shell_lines=("one", "two"),
                  shell_code=0, hold_shell=False, rebuild=False,
                  failed=False, totals=None, start_raises=False,
-                 hold_start=False):
+                 hold_start=False, compact_error=None):
         self.workflow, self.sink = workflow, sink
+        self.compact_error = compact_error      # a model that cannot summarize
+        self.compacts = []                      # the instructions it was given
         self.cwd = cwd or os.getcwd()
         self.broker = ApprovalBroker(
             on_request=lambda r: sink(s.ApprovalNeeded(r)))
@@ -251,6 +254,34 @@ class FakeSession:
             return False
         self.remembered.truncate(length)
         return True
+
+    def compact(self, instructions=""):
+        """As the real one: native only, the memory becomes the summary
+        envelope plus an acknowledgement, a failure leaves it alone."""
+        if not self.native:
+            raise CompactionFailed("Compacting needs the native engine")
+        if self.compact_error:
+            raise CompactionFailed(self.compact_error)
+        self.compacts.append(instructions)
+        memory = self.remembered.snapshot()
+        summary = "they asked: " + ", ".join(
+            m["content"] for m in memory if m["role"] == "user")
+        self.restore_memory(compacted_memory(memory, summary))
+        return summary
+
+    def compact(self, instructions=""):
+        """As the real one: native only, the memory becomes the summary
+        envelope plus an acknowledgement, a failure leaves it alone."""
+        if not self.native:
+            raise CompactionFailed("Compacting needs the native engine")
+        if self.compact_error:
+            raise CompactionFailed(self.compact_error)
+        self.compacts.append(instructions)
+        memory = self.remembered.snapshot()
+        summary = "they asked: " + ", ".join(
+            m["content"] for m in memory if m["role"] == "user")
+        self.restore_memory(compacted_memory(memory, summary))
+        return summary
 
     def _turn(self, text):
         self.start_gate.wait(T)
@@ -2220,6 +2251,105 @@ def test_rewind_is_refused_on_an_engine_whose_memory_ovat_cannot_cut():
             assert err.value.error.code is ProtocolErrorCode.NOT_IMPLEMENTED
             assert "native engine" in str(err.value)
             assert [e.id for e in session.history] == before
+    run(go())
+
+
+def _checkpoints(session):
+    return [e for e in session.history if e.type == "checkpoint"]
+
+
+def test_compact_replaces_the_memory_and_leaves_a_checkpoint(saved_sessions):
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await _ask(session, "two")
+            texts = _texts(session.history)
+            summary = await session.compact("keep the numbers")
+            assert summary == "they asked: one, two"
+            assert fake.compacts == ["keep the numbers"]
+            # the model remembers a summary now, not the two questions
+            assert _remembered_questions(fake)[0].startswith(
+                "You are continuing a trajectory")
+            assert len(fake.memory()) == 3      # system, summary, ack
+            # the person's transcript is untouched, with a checkpoint added
+            assert _texts(session.history) == texts
+            (mark,) = _checkpoints(session)
+            assert (mark.kind, mark.message) == ("compaction",
+                                                 "Context compacted")
+            assert mark.details == {"summaryLength": len(summary)}
+            # and it is saved that way, with no rewind anchors left
+            rec = saved_sessions.load(session.session_id)
+            assert rec["memory"] == fake.memory() and rec["anchors"] == {}
+            assert [e["type"] for e in rec["history"]].count("checkpoint") == 1
+            await _ask(session, "three")        # the conversation goes on
+            assert _remembered_questions(fake)[-1] == "three"
+    run(go())
+
+
+def test_compact_that_fails_says_why_and_changes_nothing():
+    async def go():
+        async with served(compact_error="The model returned an empty "
+                                        "summary.") as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            memory, history = fake.memory(), [e.id for e in session.history]
+            with pytest.raises(AppServerResponseError) as err:
+                await session.compact()
+            assert err.value.error.code is ProtocolErrorCode.COMPACTION_FAILED
+            assert "empty summary" in str(err.value)
+            assert fake.memory() == memory
+            assert [e.id for e in session.history] == history
+    run(go())
+
+
+def test_compact_is_refused_on_a_framework_engine_and_during_a_turn():
+    async def go():
+        async with served(native=False) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            with pytest.raises(AppServerResponseError) as err:
+                await session.compact()
+            assert err.value.error.code is ProtocolErrorCode.COMPACTION_FAILED
+            assert "native engine" in str(err.value)
+        async with served(hold_turn=True) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("long one")
+            await events_until(session, lambda e: isinstance(e, TurnStarted))
+            with pytest.raises(AppServerResponseError) as err:
+                await session.compact()
+            assert err.value.error.code is ProtocolErrorCode.CONFLICT
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_rewind_after_a_compaction_works_and_before_it_is_refused():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            before = next(e for e in session.history
+                          if isinstance(e, PublicMessageEntry))
+            await session.compact()
+            await _ask(session, "two")
+            await _ask(session, "three")
+            memory = fake.memory()
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.sessions.rewind(
+                    before.id, restore_files=False, inplace=True)
+            assert err.value.error.code is ProtocolErrorCode.INVALID_PARAMS
+            assert "compacted" in str(err.value)
+            assert fake.memory() == memory      # refused, nothing cut
+            target = next(e for e in session.history
+                          if isinstance(e, PublicMessageEntry)
+                          and e.text == "three")
+            await session.resources.sessions.rewind(
+                target.id, restore_files=False, inplace=True)
+            # back to the summary and "two"
+            assert _remembered_questions(fake)[1:] == ["two"]
+            assert _remembered_questions(fake)[0].startswith(
+                "You are continuing")
     run(go())
 
 
