@@ -33,8 +33,6 @@ from textual.worker import (
     Worker,
     WorkerCancelled,
     WorkerError,
-    WorkerFailed,
-    WorkerState,
 )
 
 from ovat.tui.vibe._compat import StrEnum
@@ -292,7 +290,6 @@ from ovat.tui.vibe.observability.logging import (
     set_config_log_level,
     set_session_override,
 )
-from ovat.tui.vibe.observability.sentry import capture_sentry_exception
 from ovat.tui.vibe.utils.audio import RecordingMode
 from ovat.tui.vibe.utils.cache_store import FileSystemCacheStore
 from ovat.tui.vibe.utils.data_retention import DATA_RETENTION_MESSAGE
@@ -302,17 +299,6 @@ from ovat.tui.vibe.utils.retry_prompt import build_retry_prompt
 from ovat.tui.vibe.utils.session_id import shorten_session_id
 
 _VSCODE_FAMILY_TERMINALS = {Terminal.VSCODE, Terminal.VSCODE_INSIDERS, Terminal.CURSOR}
-
-# Expected turn outcomes with bespoke user messages; not worth reporting to Sentry.
-_BENIGN_TURN_ERROR_CODES = {
-    TurnErrorCode.RATE_LIMIT,
-    TurnErrorCode.CONTEXT_TOO_LONG,
-    TurnErrorCode.RESPONSE_TOO_LONG,
-    TurnErrorCode.REFUSAL,
-    TurnErrorCode.INCOMPLETE_STREAM,
-    TurnErrorCode.INVALID_MODEL,
-    TurnErrorCode.INVALID_API_KEY,
-}
 
 _RETRYABLE_TURN_ERROR_CODES = {
     TurnErrorCode.BACKEND_ERROR,
@@ -3446,24 +3432,8 @@ class VibeApp(App):  # noqa: PLR0904
                 if self.event_handler is not None:
                     self.event_handler.offer_retry()
             else:
-                public_error = e.error if isinstance(e, AppServerTurnError) else None
-                # Reaching here with INCOMPLETE_STREAM means the retry budget is
-                # exhausted -- a persistent provider/network regression rather
-                # than a transient blip, so keep it observable in Sentry even
-                # though the code is otherwise benign.
-                exhausted_incomplete_stream = (
-                    public_error is not None
-                    and public_error.code == TurnErrorCode.INCOMPLETE_STREAM
-                )
-                if (
-                    public_error is None
-                    or public_error.code not in _BENIGN_TURN_ERROR_CODES
-                    or exhausted_incomplete_stream
-                ):
-                    capture_sentry_exception(
-                        e, fatal=False, tags={"vibe_boundary": "app_server_turn"}
-                    )
-
+                # OVAT edit: Vibe reported this to an error service; OVAT
+                # reports nowhere.
                 message = self._resolve_turn_error_message(e)
                 self._narrator_manager.on_turn_error(message)
 
@@ -6600,24 +6570,6 @@ class VibeApp(App):  # noqa: PLR0904
             request_metadata_getter=self._get_audio_request_metadata,
         )
 
-    def _handle_exception(self, error: Exception) -> None:
-        if not isinstance(error, WorkerFailed):
-            capture_sentry_exception(
-                error, fatal=True, tags={"vibe_boundary": "textual_app"}
-            )
-        return super()._handle_exception(error)
-
-    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        error = event.worker.error
-        if event.state == WorkerState.ERROR and error:
-            capture_sentry_exception(
-                error,
-                fatal=False,
-                tags={
-                    "vibe_boundary": "textual_worker",
-                    "worker_name": event.worker.name or "",
-                },
-            )
 
 
 async def _run_app_with_cleanup(app: VibeApp) -> SessionExitSummary | None:

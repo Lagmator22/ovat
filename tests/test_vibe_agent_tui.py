@@ -1612,15 +1612,14 @@ def test_the_copied_app_builds_its_banner_through_a_hook_and_ovat_swaps_it():
     run(go())
 
 
-def test_reporting_an_error_without_sentry_installed_does_nothing(monkeypatch):
-    """The copied app reports errors to a service OVAT does not ship. Without
-    the package the call returns, instead of raising its own ImportError over
-    the error it was asked to report."""
-    import sys
-
-    from ovat.tui.vibe.observability.sentry import capture_sentry_exception
-    monkeypatch.setitem(sys.modules, "sentry_sdk", None)
-    assert capture_sentry_exception(RuntimeError("x"), fatal=True) is None
+def test_the_copied_app_reports_errors_to_no_service():
+    """Vibe sends crashes to Sentry. OVAT reports nowhere, so the reporting
+    code is gone, not only switched off; this keeps it from coming back."""
+    from pathlib import Path
+    vibe = Path(__file__).parents[1] / "ovat" / "tui" / "vibe"
+    offenders = [str(f.relative_to(vibe)) for f in vibe.rglob("*.py")
+                 if "sentry" in f.read_text(encoding="utf-8").lower()]
+    assert offenders == []
 
 
 def test_streamed_reasoning_and_answer_deltas_grow_in_the_transcript():
