@@ -126,10 +126,33 @@ def _context_window(config) -> int:
     return read_context_window(m.name, roots)
 
 
-def describe_agent(config, agent, workflow: str) -> dict:
-    """What the banner and the bottom bar show. Plain values only."""
+def _model_choices(config) -> list[dict]:
+    """The /model picker's list, as plain values. Never raises: a list that
+    cannot be had is only a picker with one choice."""
+    try:
+        from ovat.agentic import models
+        return [{"id": c.id, "label": c.label} for c in models.choices(config)]
+    except Exception:
+        name = config.model.name
+        return [{"id": name, "label": name}]
+
+
+def describe_agent(config, agent, workflow: str,
+                   default_model: str | None = None) -> dict:
+    """What the banner and the bottom bar show. Plain values only.
+
+    `default_model` is the model the workflow FILE names, when this session
+    runs another one (see AgentSession.switch_model)."""
     tools = getattr(agent, "tools", None) or {}
     return {
+        # For /model and /thinking: the model by the name it is set with (the
+        # display name below drops a local folder's path), the list to pick
+        # from, the workflow's own model, and the thinking switch (None: the
+        # chat template decides).
+        "model_id": config.model.name,
+        "models": _model_choices(config),
+        "default_model_id": default_model or config.model.name,
+        "thinking": config.model.enable_thinking,
         "workflow": workflow,
         "name": Path(workflow).stem if workflow else "",
         # A local model is named by its folder; show the folder's name.
@@ -174,14 +197,36 @@ class AgentSession:
         self._shell: subprocess.Popen | None = None
         self._server: subprocess.Popen | None = None
         self._unsubscribe = None
+        # What this session runs instead of what the workflow file says
+        # (`model.name`, `model.enable_thinking`). Kept here, not in the
+        # config, because every rebuild (/engine, /clear on a framework
+        # engine) loads the file again and must not forget the pick.
+        self._overrides: dict = {}
 
     # ---- lifecycle ---------------------------------------------------------
 
     def start(self, engine: str | None = None) -> threading.Thread:
         """Load and build on a worker; ends in Ready or BuildFailed."""
-        return self._spawn(self._build_now, engine)
+        return self._spawn(self._build_now, engine, {})
 
-    def _build_now(self, engine: str | None) -> None:
+    def switch_model(self, model: str | None = None,
+                     enable_thinking: bool | None = None
+                     ) -> threading.Thread:
+        """/model and /thinking: build again with another model and/or the
+        thinking switch, for this session only (the workflow file is not
+        touched). `model` "" goes back to the workflow's own; None leaves it.
+        The engine stays the one running now. The pick counts only once the
+        build succeeds, so a failed one leaves the old agent and old pick."""
+        picked = {}
+        if model is not None:
+            picked["name"] = model
+        if enable_thinking is not None:
+            picked["enable_thinking"] = enable_thinking
+        engine = self.config.agent.type if self.config else None
+        return self._spawn(self._build_now, engine, picked)
+
+    def _build_now(self, engine: str | None, picked: dict,
+                   fresh: bool = False) -> None:
         if not self.workflow:
             self._emit(BuildFailed(
                 "No workflow here. Run `/workflow path/to/workflow.yml`, or "
@@ -190,6 +235,13 @@ class AgentSession:
             return
         try:
             config = self._load(self.workflow)
+            default_model = config.model.name
+            overrides = {**({} if fresh else self._overrides), **picked}
+            if overrides.get("name") == "":
+                del overrides["name"]               # back to the file's own
+            if overrides:
+                config = config.model_copy(update={
+                    "model": config.model.model_copy(update=overrides)})
             if engine:
                 config = config.model_copy(update={
                     "agent": config.agent.model_copy(update={"type": engine})})
@@ -200,6 +252,7 @@ class AgentSession:
             return
         self._drop_agent()
         self.config, self.agent = config, agent
+        self._overrides = overrides
         agent.events.approver = self.broker
 
         def _on_bus(e: Event) -> None:
@@ -211,12 +264,13 @@ class AgentSession:
                 self._emit(AgentActivity(e))
 
         self._unsubscribe = agent.events.subscribe(_on_bus)
-        self.info = describe_agent(config, agent, self.workflow)
+        self.info = describe_agent(config, agent, self.workflow, default_model)
         self._emit(Ready(self.info))
 
     def switch_workflow(self, path: str) -> threading.Thread:
+        """Another workflow starts from its own file: no picks carry over."""
         self.workflow = path
-        return self.start()
+        return self._spawn(self._build_now, None, {}, True)
 
     def new_conversation(self) -> threading.Thread | None:
         """Forget the conversation. The native loop just gets an empty

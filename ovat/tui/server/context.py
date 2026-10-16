@@ -88,6 +88,11 @@ class ServerContext:
         self.anchors: dict[str, int] = {}
         self._pending_memory: list[dict] | None = None
         self.save_failed = False
+        # Why the last build failed (None while it did not), for /model and
+        # /reload, which answer for their own build; and the workflow file's
+        # time stamp when the agent was built, which /reload compares.
+        self.last_failure: str | None = None
+        self._built_stamp: int | None = None
 
     # ---- the handshake ---------------------------------------------------------
 
@@ -286,6 +291,7 @@ class ServerContext:
         self.build_error = None
         self._switch = None
         self.workflow = getattr(self.agent, "workflow", None) or self.workflow
+        self._built_stamp = self._workflow_stamp()
         self.ready.set()
         if self._pending_memory is not None:
             self._apply_memory()
@@ -298,10 +304,13 @@ class ServerContext:
 
     def _on_BuildFailed(self, event: s.BuildFailed) -> None:
         switch, self._switch = self._switch, None
+        self.last_failure = event.text
         if switch is not None and switch.agent_kept:
             # /engine or /workflow could not build the new one. The old agent
-            # was never closed, so it stays, and its workflow with it.
+            # was never closed, so it stays, and its workflow with it, and it
+            # still remembers its own conversation.
             self.agent.workflow = switch.workflow
+            self._pending_memory = None
             self.build_error = None
         else:
             self.build_error = event.text
@@ -355,8 +364,11 @@ class ServerContext:
     # ---- /engine and /workflow -------------------------------------------------
 
     async def rebuild(self, *, engine: str | None = None,
-                      workflow: str | None = None) -> None:
-        """Build the agent again with another engine or another workflow.
+                      workflow: str | None = None,
+                      pick: dict | None = None) -> None:
+        """Build the agent again with another engine or another workflow, or
+        (`pick`: model / enable_thinking, see AgentSession.switch_model) with
+        another model or thinking switch, which keeps the conversation.
 
         The agent is "not ready" while it builds, so a prompt sent meanwhile
         waits for the new one instead of running on an agent that is about
@@ -375,18 +387,63 @@ class ServerContext:
             self._switch = switch
             self.ready.clear()
             self.build_error = None
+            self.last_failure = None
             try:
-                self._build_thread = (agent.switch_workflow(workflow)
-                                      if workflow is not None
-                                      else agent.start(engine))
+                if pick is not None:
+                    # The new agent starts with an empty memory; the old
+                    # one's goes in as soon as it is ready (as /resume does),
+                    # so what the model remembers survives the switch and the
+                    # rewind anchors stay where they point.
+                    self._pending_memory = agent.memory()
+                    self._build_thread = agent.switch_model(**pick)
+                elif workflow is not None:
+                    self._build_thread = agent.switch_workflow(workflow)
+                else:
+                    self._build_thread = agent.start(engine)
             except Exception as exc:
                 self._switch = None
+                self._pending_memory = None
                 agent.workflow = switch.workflow
                 if not switch.agent_kept:
                     self.build_error = f"Could not start the agent: {exc}"
                 self.ready.set()
                 raise RpcError(ProtocolErrorCode.INTERNAL_ERROR,
                                f"Could not start the agent: {exc}") from None
+
+    async def pick(self, *, model: str | None = None,
+                   enable_thinking: bool | None = None) -> str | None:
+        """/model and /thinking: run on another model and/or thinking switch
+        for this session. Waits for the new agent; returns None when it is
+        running, or the sentence saying it could not be built (the old agent
+        is still the one running)."""
+        if not self.is_ready:
+            raise RpcError(ProtocolErrorCode.CONFLICT,
+                           "The agent is not ready yet.")
+        await self.rebuild(pick={"model": model,
+                                 "enable_thinking": enable_thinking})
+        await self.ready.wait()
+        if self.last_failure is not None:
+            return ("The model was not changed: the new one could not be "
+                    "started. The old one is still in use.")
+        return None
+
+    def _workflow_stamp(self) -> int | None:
+        try:
+            return os.stat(self.workflow).st_mtime_ns if self.workflow else None
+        except OSError:
+            return None
+
+    async def reload(self) -> None:
+        """/reload: read the workflow file again. The agent is rebuilt (with
+        this session's picks and its conversation) only when the file changed
+        since it was built; otherwise there is nothing to read."""
+        if self._workflow_stamp() == self._built_stamp:
+            return
+        failure = await self.pick()
+        if failure is not None:
+            raise RpcError(ProtocolErrorCode.INTERNAL_ERROR,
+                           "The workflow could not be loaded again. The "
+                           "agent from before is still running.")
 
     # ---- /clear ----------------------------------------------------------------
 
