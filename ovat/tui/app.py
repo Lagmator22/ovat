@@ -607,12 +607,21 @@ class OvatAgentApp(App):
         self.notify("Copied the last answer.", timeout=2)
 
     async def _cmd_doctor(self, rest: str) -> None:
-        from ovat.cli.doctor_screen import DoctorScreen
-        self.push_screen(DoctorScreen(self.session.workflow))
+        from ovat.tui.widgets.doctor import DoctorReport
+        if rest.strip() == "copy":
+            done = [r for r in self._chat_screen.query(DoctorReport)
+                    if r.checks is not None]
+            if not done:
+                await self.note("Nothing to copy yet: run `/doctor` first.")
+                return
+            self.copy_to_clipboard(done[-1].report)
+            self.notify("Copied the doctor report.", timeout=2)
+            return
+        await self._mount_message(DoctorReport(self.session.workflow))
 
     async def _cmd_telemetry(self, rest: str) -> None:
-        from ovat.cli.telemetry_screen import TelemetryScreen
-        self.push_screen(TelemetryScreen())
+        from ovat.tui.telemetry import TelemetryView
+        self.push_screen(TelemetryView())
 
     async def _cmd_quit(self, rest: str) -> None:
         self.exit()
@@ -631,6 +640,8 @@ class OvatAgentApp(App):
         self._tools_collapsed = not self._tools_collapsed
         for group in self._chat_screen.query(ToolGroup):
             group.set_collapsed(self._tools_collapsed)
+        for section in self._chat_screen.query(".doctor-ok"):
+            section.set_collapsed(self._tools_collapsed)
 
     def action_cancel_or_quit(self) -> None:
         if self.screen.get_selected_text():

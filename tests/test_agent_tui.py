@@ -439,3 +439,180 @@ def test_approval_text_cannot_dress_up_as_the_panels_own_options():
             assert "\u21b5" in text and "\n" not in text
             assert "\\n" not in text and "\\x1b" not in text
     run(go())
+
+
+# --- /doctor and /telemetry -----------------------------------------------
+#
+# Both used to push the LAUNCHER's screens (ovat/cli/doctor_screen.py and
+# telemetry_screen.py) into this app, whose copied stylesheet makes every
+# Screen transparent and every Horizontal auto-height: the chat showed
+# through both, and the telemetry cards stretched to the bottom of the
+# window, pushing the table and the source line off screen.
+
+def _plain(widgets) -> str:
+    """What the widgets show, as plain text with the whitespace squeezed out,
+    so a wrapped line still matches. A rich Table renders to its repr under
+    str(), so each one is printed through a console instead."""
+    import io
+
+    from rich.console import Console
+    out = io.StringIO()
+    console = Console(file=out, width=100, color_system=None)
+    for widget in widgets:
+        # Hidden (folded) widgets stay in the tree; only what shows counts.
+        if all(node.display for node in widget.ancestors_with_self
+               if hasattr(node, "display")):
+            console.print(widget.content)
+    return "".join(out.getvalue().split())
+
+
+def _fake_checks(config_path=None):
+    from ovat.cli.diagnostics import Check
+    long_fix = ("ovms not found (config, OVAT_OVMS, PATH, known folders all "
+                "empty). Run 'ovat setup' to install it (no PATH change "
+                "needed), or point model.ovms_binary at C:\\x\\[/y]")
+    return [Check("Python", "ok", "3.12"),
+            Check("OVMS serving", "warn", long_fix),
+            Check("Core dependencies", "ok", "all 9 importable"),
+            Check("Workflow config", "fail", "no such file: w.yml")]
+
+
+def test_doctor_is_a_block_in_the_chat_with_the_problems_first(monkeypatch):
+    from ovat.cli import diagnostics
+    from ovat.tui.widgets.doctor import DoctorReport
+    monkeypatch.setattr(diagnostics, "run_checks", _fake_checks)
+
+    async def go():
+        app = _app([])
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _type(pilot, "/doctor")
+            await pilot.press("enter")
+            await _until(pilot, lambda: app.query(DoctorReport)
+                         and app.query_one(DoctorReport).checks is not None)
+            await pilot.pause(0.2)
+            report = app.query_one(DoctorReport)
+            assert report.screen is app.screen          # in the chat
+            shown = _plain(report.query("Static"))
+            # Worst first, and the fix at the end of a long detail is not
+            # cut off at the right edge.
+            assert shown.index("Workflowconfig") < shown.index(
+                "OVMSserving")
+            assert "C:\\x\\[/y]" in shown and "ovatsetup" in shown
+            # The two that passed are folded into one row until asked for.
+            assert "2checksok" in shown and "3.12" not in shown
+            await pilot.press("ctrl+o")
+            await pilot.pause(0.2)
+            assert "all9importable" in _plain(report.query("Static"))
+    run(go())
+
+
+def test_doctor_copy_puts_the_plain_report_on_the_clipboard(monkeypatch):
+    from ovat.cli import diagnostics
+    from ovat.tui.widgets.doctor import DoctorReport
+    monkeypatch.setattr(diagnostics, "run_checks", _fake_checks)
+
+    async def go():
+        app = _app([])
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _type(pilot, "/doctor")
+            await pilot.press("enter")
+            await _until(pilot, lambda: app.query(DoctorReport)
+                         and app.query_one(DoctorReport).checks is not None)
+            await _type(pilot, "/doctor copy")
+            await pilot.press("enter")
+            await _until(pilot, lambda: app.clipboard)
+            lines = app.clipboard.splitlines()
+            assert "1 fail · 1 warn · 2 ok" in lines[0]
+            assert lines[2].startswith("fail") and lines[3].startswith("warn")
+    run(go())
+
+
+def test_a_doctor_that_cannot_run_says_why_and_the_app_lives(monkeypatch):
+    from ovat.cli import diagnostics
+    from ovat.tui.widgets.doctor import DoctorReport
+
+    def broken(config_path=None):
+        raise ImportError("openvino is broken")
+    monkeypatch.setattr(diagnostics, "run_checks", broken)
+
+    async def go():
+        app = _app([])
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _type(pilot, "/doctor")
+            await pilot.press("enter")
+            await _until(pilot, lambda: app.query(DoctorReport)
+                         and app.query_one(DoctorReport).error)
+            assert "openvino is broken" in app.query_one(DoctorReport).error
+            assert app.is_running
+    run(go())
+
+
+class _FakeSource:
+    def __init__(self, name, values=None, unavailable=None):
+        self.name, self._values, self._unavailable = name, values, unavailable
+        self.stopped = False
+
+    @property
+    def unavailable(self):
+        return self._unavailable
+
+    def sample(self):
+        return dict(self._values or {})
+
+    def start(self):
+        pass
+
+    def stop(self):
+        self.stopped = True
+
+
+def _telemetry_sources():
+    return [_FakeSource("system", {"cpu_pct": 97.0, "ram_used_pct": 40.0,
+                                   "threads": 4.0, "cpu0_pct": 12.0}),
+            _FakeSource("npu", unavailable="no NPU found. Install the "
+                                           "driver; then retry")]
+
+
+def test_telemetry_is_opaque_and_fits_80x24(monkeypatch):
+    from textual.widgets import DataTable
+
+    from ovat.tui import telemetry
+    sources = _telemetry_sources()
+    monkeypatch.setattr(telemetry, "_default_sources", lambda: sources)
+
+    async def go():
+        app = _app([])
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _type(pilot, "/telemetry")
+            await pilot.press("enter")
+            await _until(pilot, lambda: isinstance(app.screen,
+                                                    telemetry.TelemetryView)
+                         and app.screen._tiles)
+            view = app.screen
+            # Opaque: the chat must not show through the page.
+            assert view.styles.background.a == 1
+            # The tiles keep their height and the table starts on screen.
+            assert view.query_one("#tel-tiles").region.height == 4
+            table = view.query_one("#tel-table", DataTable)
+            assert table.region.y < 20 and table.row_count >= 3
+            line = str(view.query_one("#tel-sources").render())
+            assert "npu n/a (no NPU found)" in line and "system live" in line
+            await pilot.press("escape")
+            await _until(pilot, lambda: not isinstance(
+                app.screen, telemetry.TelemetryView))
+            assert all(src.stopped for src in sources)   # nothing left running
+    run(go())
+
+
+def test_telemetry_prints_whole_numbers_whole_and_flags_a_pinned_cpu():
+    from ovat.tui import telemetry
+    threads = telemetry.tile_text("THREADS", "", "system.threads", 4.0)
+    assert threads.plain.splitlines()[1] == "4"
+    cpu = telemetry.tile_text("SYS CPU", "%", "system.cpu_pct", 97.0)
+    assert "red" in str(cpu.spans) or telemetry.ui.RED in str(cpu.spans)
+    assert telemetry.level_style("system.cpu_pct", 50.0) == ""
+    assert telemetry.ui.YELLOW in telemetry.level_style("npu.utilization", 90)
+    # Not alarms: a dynamic KV cache sits near 100% normally, and a
+    # process's CPU is summed over cores.
+    assert telemetry.level_style("ovms.kv_cache_pct", 99.0) == ""
+    assert telemetry.level_style("system.proc_cpu_pct", 103.0) == ""
