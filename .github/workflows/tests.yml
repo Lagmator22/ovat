@@ -52,6 +52,12 @@ jobs:
                     - os: macos-latest
                       python: "3.13"
                       note: " · dev only"
+                    # The newest Python pyproject advertises, on the OS the
+                    # owner's AI PC runs it on (Windows, Python 3.14.3). It
+                    # was a classifier that no job ever ran.
+                    - os: windows-latest
+                      python: "3.14"
+                      note: " · newest supported"
 
         steps:
             - uses: actions/checkout@v5
