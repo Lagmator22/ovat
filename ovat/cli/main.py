@@ -1203,7 +1203,8 @@ def setup(
     ovms_version: str = typer.Option(None, "--ovms-version",
                                      help="Pin a different OVMS release."),
     force: bool = typer.Option(False, "--force",
-                               help="Re-download even if one is installed."),
+                               help="Re-download even if one is installed. "
+                                    "Only replaces a folder OVAT installed."),
     print_path: bool = typer.Option(False, "--print-path",
                                     help="Print the binary path and exit."),
 ):
@@ -1265,6 +1266,16 @@ def setup(
     if note:
         rprint(f"  [yellow]note[/yellow]     : {esc(note)}")
     rprint(f"  install  : [bold]{esc(root)}[/bold]")
+    if force and os.path.exists(root):
+        # Name the exact folder, symlinks resolved, BEFORE anything is
+        # deleted, and refuse here rather than after a 200 MB download.
+        try:
+            replacing = ovms_installer.check_replaceable(root)
+        except RuntimeError as exc:
+            rprint(f"[red]{esc(exc)}[/red]")
+            raise typer.Exit(code=1)
+        rprint(f"  replace  : [bold]{esc(replacing)}[/bold] [dim](deleted "
+               f"first)[/dim]")
     if not yes and sys.stdin.isatty():
         # Same reasoning as _offer_ovms_install: a prompt that cannot be
         # answered is a "no", not a traceback-shaped "Aborted."

@@ -19,12 +19,14 @@ The install goes to ~/.ovat/ovms, which ovms_locator searches, so nothing here
 ever edits PATH.
 """
 import hashlib
+import json
 import os
 import re
 import shutil
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 import zipfile
 
@@ -48,6 +50,11 @@ _RELEASE_URL = ("https://github.com/openvinotoolkit/model_server/releases/"
 DEFAULT_ROOT = os.path.join(os.path.expanduser("~"), ".ovat", "ovms")
 
 _EXE = "ovms.exe" if sys.platform == "win32" else "ovms"
+
+#: Written into every folder OVAT installs OVMS into. `--force` deletes a
+#: folder only when it carries this file (or is empty), so a typo in --dest,
+#: or a folder reused for something else, is refused instead of erased.
+MARKER = ".ovat-ovms"
 
 
 def _os_release() -> dict:
@@ -392,6 +399,70 @@ def _extract(archive: str, into: str) -> None:
         shutil.rmtree(staging, ignore_errors=True)
 
 
+def _write_marker(root: str, version: str) -> None:
+    """Record that OVAT put this OVMS here: which OVAT, which OVMS, when."""
+    try:
+        from importlib.metadata import version as package_version
+        ovat_version = package_version("ovat")
+    except Exception:
+        ovat_version = None
+    with open(os.path.join(root, MARKER), "w", encoding="utf-8") as f:
+        json.dump({"ovat": ovat_version, "ovms": version,
+                   "installed": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, f)
+
+
+def _never_delete(real: str) -> str | None:
+    """Why `real` must never be deleted, even with the marker; or None.
+
+    `real` is already resolved, so a symlink pointing at home is judged as
+    home. These are the folders a slip of the keyboard is most likely to
+    name, and deleting any of them would cost far more than an OVMS folder.
+    """
+    def same(a: str, b: str) -> bool:
+        return os.path.normcase(a) == os.path.normcase(b)
+
+    if same(os.path.dirname(real), real):
+        return "it is the root of the filesystem"
+    if same(real, os.path.realpath(os.path.expanduser("~"))):
+        return "it is your home folder"
+    if same(real, os.path.realpath(os.getcwd())):
+        return "it is the current folder"
+    if os.path.exists(os.path.join(real, ".git")):
+        return "it holds a git repository"
+    return None
+
+
+def check_replaceable(root: str) -> str:
+    """The resolved folder `--force` would delete, or RuntimeError if it may not.
+
+    It may be deleted when it is missing, empty, or carries MARKER. The one
+    exception is OVAT's own default folder holding an OVMS binary: installs
+    made before the marker existed have none, and `ovat setup --force` is the
+    upgrade path ovat setup and ovat doctor tell those users to take.
+    """
+    real = os.path.realpath(root)
+    reason = _never_delete(real)
+    if reason:
+        raise RuntimeError(f"Will not replace {real}: {reason}.")
+    if not os.path.exists(real):
+        return real
+    if not os.path.isdir(real):
+        raise RuntimeError(f"Will not replace {real}: it is a file, not a "
+                           f"folder.")
+    if (not os.listdir(real)
+            or os.path.isfile(os.path.join(real, MARKER))):
+        return real
+    default = os.path.realpath(DEFAULT_ROOT)
+    if (os.path.normcase(real) == os.path.normcase(default)
+            and installed_binary(real)):
+        return real
+    raise RuntimeError(
+        f"Will not replace {real}: it does not look like an OVMS folder OVAT "
+        f"installed (no {MARKER} file), so --force leaves it alone. Pick an "
+        f"empty folder with --dest, or delete it yourself if it really is "
+        f"an old OVMS.")
+
+
 def install(root: str = DEFAULT_ROOT, version: str = OVMS_VERSION,
             force: bool = False, on_progress=None) -> tuple:
     """Put a usable OVMS under `root`. Returns (binary_path, what_happened).
@@ -412,6 +483,14 @@ def install(root: str = DEFAULT_ROOT, version: str = OVMS_VERSION,
     if resolved is None:
         raise RuntimeError("OVMS has no macOS build; nothing to install.")
     asset, url = resolved
+    if force:
+        # Before the download: a refusal should not cost 200 MB first.
+        root = check_replaceable(root)
+    # The marker says "everything in here is OVAT's". That is only true when
+    # the folder starts out missing or empty, or is about to be wiped; an
+    # install into a folder already holding other things gets no marker, so
+    # a later --force cannot delete those things along with OVMS.
+    owned = force or not os.path.isdir(root) or not os.listdir(root)
 
     workdir = tempfile.mkdtemp(prefix="ovat-dl-")
     archive = os.path.join(workdir, asset)
@@ -447,6 +526,8 @@ def install(root: str = DEFAULT_ROOT, version: str = OVMS_VERSION,
         raise RuntimeError(
             f"unpacked {asset} into {root} but found no {_EXE} afterwards; "
             f"the archive layout may have changed upstream.")
+    if owned:
+        _write_marker(root, version)
     if sys.platform != "win32":
         # tarfile preserves the executable bit, but a restrictive umask during
         # extraction can still land it non-executable.
