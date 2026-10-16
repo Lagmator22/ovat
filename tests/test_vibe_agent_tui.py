@@ -194,6 +194,24 @@ def test_the_app_starts_with_ovats_banner_and_bar():
     run(go())
 
 
+def test_the_banner_shows_the_model_and_stops_saying_loading():
+    # Seen with a real model: the banner's base on_mount ran twice (once
+    # through super(), once through Textual's own dispatch), and the first
+    # wave timer, no longer referenced, kept writing "loading" over the
+    # model line after the agent was ready.
+    async def go():
+        async with running(animate=True, ready="",
+                           hold_build=True) as (app, pilot, fake, handle):
+            await pilot.pause(0.3)
+            assert "loading" in banner_text(app)
+            fake.build_gate.set()
+            await until(pilot, lambda: handle.ready)
+            await pilot.pause(0.5)
+            assert "loading" not in banner_text(app)
+            assert "Qwen3.5-4B-int4-ov" in banner_text(app)
+    run(go())
+
+
 def test_nothing_that_phones_home_or_nags_is_on():
     """No update check, no telemetry, no feedback prompt, no editor promo,
     no what's-new from the app this was copied from, no notifications."""
