@@ -537,3 +537,61 @@ def test_an_exact_name_carries_no_requested_field():
     agent.run("q")
     (call,) = agent.last_trace["turns"][0]["tool_calls"]
     assert call["name"] == "get_weather" and "requested" not in call
+
+
+# ---- steering: extra guidance for the run in progress --------------------------
+
+def test_steering_is_taken_before_the_next_model_call_and_reported():
+    from ovat.agent.events import STEER_TAKEN, EventBus
+    bus = EventBus()
+    taken = []
+    bus.subscribe(lambda e: taken.append(e.data) if e.type == STEER_TAKEN
+                  else None)
+    agent = None
+
+    def get_weather(city):
+        # the person types while the tool runs
+        agent.steer("answer in one word")
+        return "sunny"
+    tools = _weather_tool()
+    tools["get_weather"]["function"] = get_weather
+    llm = FakeLLMProvider([
+        reply("tool_calls", tool_calls=[
+            make_tool_call("c1", "get_weather", {"city": "Tokyo"})]),
+        reply("stop", content="Sunny.")])
+    agent = AgentLoop(llm, tools=tools, events=bus)
+
+    assert agent.run("weather in Tokyo?") == "Sunny."
+
+    # the second model call saw it, after the tool result
+    seen = llm.calls[1]["messages"]
+    assert seen[-1] == {"role": "user", "content": "answer in one word"}
+    assert seen[-2]["role"] == "tool"
+    # and the bus said where it sits in the memory
+    assert taken == [{"text": "answer in one word", "index": len(seen) - 1}]
+
+
+def test_steering_that_arrives_during_the_final_answer_is_not_lost():
+    agent = None
+
+    class Steering(FakeLLMProvider):
+        def chat(self, messages, tools=None):
+            if len(self.calls) == 0:
+                agent.steer("also mention the date")
+            return super().chat(messages, tools=tools)
+    llm = Steering([reply("stop", content="First answer."),
+                    reply("stop", content="Answer with the date.")])
+    agent = AgentLoop(llm, tools={})
+    assert agent.run("hi") == "Answer with the date."
+    assert len(llm.calls) == 2
+    assert llm.calls[1]["messages"][-2:] == [
+        {"role": "assistant", "content": "First answer."},
+        {"role": "user", "content": "also mention the date"}]
+
+
+def test_steering_left_over_from_a_finished_run_is_not_used_by_the_next():
+    llm = FakeLLMProvider([reply("stop", content="one")])
+    agent = AgentLoop(llm, tools={})
+    agent.steer("late")                 # nobody was running
+    agent.run("a")
+    assert [m["content"] for m in llm.calls[0]["messages"]] == ["a"]

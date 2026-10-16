@@ -1011,26 +1011,52 @@ def test_ctrl_c_copies_a_selection_and_then_counts_towards_quit(copied):
     run(go())
 
 
-def test_steering_and_the_debug_console_keys_do_nothing_instead_of_failing():
-    """Ctrl+Enter, or Enter on an empty prompt while prompts wait (steering
-    the running turn), and Ctrl+Backslash (the debug console) are keys of the
-    copied app whose server side OVAT does not have. They must not reach the
-    server."""
-    from ovat.tui.vibe.cli.textual_ui.widgets.debug_console import DebugConsole
-
+def test_ctrl_enter_steers_a_waiting_prompt_into_the_running_turn():
+    """A prompt typed while the agent works waits in the queue. Ctrl+Enter
+    (or Enter on an empty prompt) hands it to the running turn instead of
+    waiting for the next one."""
     async def go():
         async with running(hold_turn=True) as (app, pilot, fake, handle):
             await say(pilot, "first")
             await until(pilot, lambda: fake.busy)
             await say(pilot, "second")                  # waits in the queue
-            await pilot.pause(0.3)
-            await pilot.press("enter")                  # empty: would steer
+            await until(pilot, lambda: "second" in screen_text(app))
             await pilot.press("ctrl+enter")
+            await until(pilot, lambda: fake.steered == ["second"])
+            assert not app.query(ErrorMessage)
+            fake.turn_gate.set()
+            await until(pilot, lambda: not fake.busy)
+            # it joined the first turn; it was not asked as a turn of its own
+            assert fake.asked == ["first"]
+            assert "second" in screen_text(app)
+    run(go())
+
+
+def test_ctrl_enter_on_a_framework_engine_says_why_and_the_prompt_still_runs():
+    async def go():
+        async with running(hold_turn=True, native=False) as (
+                app, pilot, fake, handle):
+            await say(pilot, "first")
+            await until(pilot, lambda: fake.busy)
+            await say(pilot, "second")
+            await until(pilot, lambda: "second" in screen_text(app))
+            await pilot.press("ctrl+enter")
+            await until(pilot, lambda: "native engine" in screen_text(app))
+            fake.turn_gate.set()
+            await until(pilot, lambda: fake.asked == ["first", "second"])
+    run(go())
+
+
+def test_the_debug_console_key_does_nothing_instead_of_failing():
+    """Ctrl+Backslash (the debug console) is a key of the copied app whose
+    server side OVAT does not have. It must not reach the server."""
+    from ovat.tui.vibe.cli.textual_ui.widgets.debug_console import DebugConsole
+
+    async def go():
+        async with running() as (app, pilot, fake, handle):
             await pilot.press("ctrl+backslash")
             await pilot.pause(0.3)
             assert not app.query(DebugConsole) and not app.query(ErrorMessage)
-            fake.turn_gate.set()
-            await until(pilot, lambda: fake.asked == ["first", "second"])
     run(go())
 
 

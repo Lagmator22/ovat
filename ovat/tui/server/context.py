@@ -319,6 +319,9 @@ class ServerContext:
     def _on_AnswerDelta(self, event: s.AnswerDelta) -> None:
         self.turns.on_answer_delta(event.text)
 
+    def _on_Steered(self, event: s.Steered) -> None:
+        self.turns.on_steered(event)
+
     def _on_AgentActivity(self, event: s.AgentActivity) -> None:
         if event.event.type not in (TOOL_STARTED, TOOL_ENDED, SUBAGENT_STATUS,
                                     REMOTE_STATUS):

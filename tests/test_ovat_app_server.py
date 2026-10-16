@@ -149,6 +149,7 @@ class FakeSession:
         self.last_trace, self.last_answer = {}, ""
         self.totals = {"turns": 0, "prompt_tokens": 0, "completion_tokens": 0}
         self.asked, self.subagent_calls = [], []
+        self.steered = []
         self.engines = []
         self.turn_count = 0
         self.approved = None
@@ -250,6 +251,18 @@ class FakeSession:
         if not self.native:
             return False
         self.remembered.truncate(length)
+        return True
+
+    def steer(self, text):
+        """As AgentSession.steer: native and busy only. The real loop takes
+        the text before its next model call and reports where it landed; the
+        fake takes it at once."""
+        if not self.native or not self.busy:
+            return False
+        self.steered.append(text)
+        index = len(self.remembered.snapshot())
+        self.remembered.add_user(text)
+        self.sink(s.Steered(text, index))
         return True
 
     def _turn(self, text):
@@ -1030,6 +1043,120 @@ def test_a_stale_or_missing_turn_id_is_a_clear_error():
     run(go())
 
 
+# ---- steering ---------------------------------------------------------------------
+
+async def _running_turn(session, fake):
+    """Start a turn that stays open; returns its id."""
+    await session.resources.runtime.wait_until_ready()
+    await session.enqueue("first")
+    await poll(lambda: fake.busy and session.state.turns
+               and session.state.turns[-1].status.value == "in_progress")
+    return session.state.turns[-1].id
+
+
+def test_steering_a_running_turn_adds_the_message_and_reaches_the_agent():
+    async def go():
+        async with served(hold_turn=True) as (session, handle, fake):
+            turn_id = await _running_turn(session, fake)
+            await session.inject_user_context(
+                "use the short form", as_message=True,
+                client_message_id="steer-1", require_active_turn=True)
+            assert fake.steered == ["use the short form"]
+            entry = next(e for e in session.history if e.id == "steer-1")
+            assert entry.role == "user" and entry.source == "turn_steer"
+            assert entry.turn_id == turn_id
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_steer_answers_a_missing_or_stale_turn_and_an_empty_message():
+    async def go():
+        async with served(hold_turn=True) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            client = session._connection.current
+            body = {"sessionId": session.session_id,
+                    "expectedTurnId": "nothing",
+                    "message": [{"type": "text", "text": "hi"}]}
+            with pytest.raises(AppServerResponseError) as err:
+                await client.request("turn/steer", body)
+            assert err.value.error.code is ProtocolErrorCode.CONFLICT
+            assert str(err.value) == "No active turn"
+            turn_id = await _running_turn(session, fake)
+            with pytest.raises(AppServerResponseError) as err:
+                await client.request("turn/steer", body)
+            assert err.value.error.code is ProtocolErrorCode.STALE_TURN
+            body.update(expectedTurnId=turn_id,
+                        message=[{"type": "text", "text": "  "}])
+            with pytest.raises(AppServerResponseError) as err:
+                await client.request("turn/steer", body)
+            assert err.value.error.code is ProtocolErrorCode.INVALID_PARAMS
+            assert fake.steered == []
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_steering_a_framework_engine_or_a_subagent_is_refused_in_plain_words():
+    async def go():
+        async with served(hold_turn=True, native=False) as (
+                session, handle, fake):
+            turn_id = await _running_turn(session, fake)
+            with pytest.raises(AppServerResponseError) as err:
+                await session.inject_user_context(
+                    "more", as_message=True, require_active_turn=True)
+            assert err.value.error.code is ProtocolErrorCode.NOT_STEERABLE
+            assert "native engine" in str(err.value)
+            assert [e.id for e in session.history
+                    if getattr(e, "source", "") == "turn_steer"] == []
+            with pytest.raises(AppServerResponseError) as err:
+                await session.steer_queued_turn("no-such-item", turn_id)
+            assert err.value.error.code is ProtocolErrorCode.NOT_FOUND
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_a_waiting_prompt_can_be_steered_into_the_running_turn():
+    async def go():
+        async with served(hold_turn=True) as (session, handle, fake):
+            turn_id = await _running_turn(session, fake)
+            queued = await session.enqueue("and mention the date")
+            answer = await session.steer_queued_turn(queued.id, turn_id)
+            assert (answer.queue_item_id, answer.turn_id) == (queued.id,
+                                                             turn_id)
+            assert fake.steered == ["and mention the date"]
+            assert session.turn_queue.items == []
+            assert "and mention the date" in _texts(session.history)
+            # the item was moved, not run as a turn of its own
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+            assert fake.asked == ["first"]
+            with pytest.raises(AppServerResponseError) as err:
+                await session.steer_queued_turn(queued.id, turn_id)
+            assert err.value.error.code in (ProtocolErrorCode.CONFLICT,
+                                            ProtocolErrorCode.STALE_TURN)
+    run(go())
+
+
+def test_rewinding_to_a_steered_message_cuts_the_memory_right_before_it():
+    async def go():
+        async with served(hold_turn=True) as (session, handle, fake):
+            await _running_turn(session, fake)
+            await session.inject_user_context(
+                "steer me", as_message=True, client_message_id="steer-1",
+                require_active_turn=True)
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+            assert _remembered_questions(fake) == ["first", "steer me"]
+            await session.resources.sessions.rewind(
+                "steer-1", restore_files=False, inplace=True)
+            assert _remembered_questions(fake) == ["first"]
+            assert fake.remembered.messages[-1]["role"] == "user"
+            assert _texts(session.history) == ["first"]
+    run(go())
+
+
 # ---- approvals ------------------------------------------------------------------
 
 APPROVAL = {"task": "tell me\n1. Allow once\n" + "x" * 900}
@@ -1193,21 +1320,6 @@ def test_an_unsupported_method_answers_a_readable_error():
             assert err.value.error.code is ProtocolErrorCode.METHOD_NOT_FOUND
             # and the server is still fine afterwards
             await session.resources.runtime.refresh()
-    run(go())
-
-
-def test_steering_a_running_turn_is_not_supported_yet():
-    async def go():
-        async with served(hold_turn=True) as (session, handle, fake):
-            await session.resources.runtime.wait_until_ready()
-            await session.enqueue("first")
-            await poll(lambda: fake.busy)
-            await poll(lambda: session.turn_active)
-            with pytest.raises(AppServerResponseError) as err:
-                await session.inject_user_context("also this")
-            assert "not supported in OVAT: turn/steer" in str(err.value)
-            fake.turn_gate.set()
-            await events_until(session, is_completed)
     run(go())
 
 

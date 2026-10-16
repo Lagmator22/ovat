@@ -45,12 +45,16 @@ from typing import Any, Callable
 #   subagent_status agent, text           (a delegated subagent's progress)
 #   answer_delta  text                    (streamed answer chunk)
 #   reasoning_delta text                  (streamed reasoning chunk)
+#   steer_taken   text, index             (the native loop took a steering
+#                                          message; index is where it sits
+#                                          in the model's memory)
 TOOL_STARTED = "tool_started"
 TOOL_ENDED = "tool_ended"
 REMOTE_STATUS = "remote_status"
 SUBAGENT_STATUS = "subagent_status"
 ANSWER_DELTA = "answer_delta"
 REASONING_DELTA = "reasoning_delta"
+STEER_TAKEN = "steer_taken"
 
 # What a cancelled tool hands the model instead of running. One sentence,
 # starting "Error: " like every other failure the model reads.
