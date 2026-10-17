@@ -422,6 +422,46 @@ Up/Down history, sessions saved to `.ovat/sessions/`, an in-app `doctor` and
 indexing progress, and `/engine` to swap between the local `openvino_genai`
 model and OVMS-with-tools without leaving the conversation.
 
+There is a second app in the same extra: `ovat agent`. It is a chat-first
+terminal agent. You point it at a workflow,
+and it streams the answer, shows every tool call as a card, and asks before
+it does anything that writes a file, runs a command or sends data off the
+machine.
+
+<div align="center">
+<img src="assets/screens/agent-tui/hero-agent-start.png" width="820px" alt="The OVAT agent TUI right after start on an Intel AI PC: the banner says OVAT v1.2.0, Qwen3.5-4B-int4-ov on GPU, native engine, 1 tool and 4 subagents. The slash menu is open, and the bar shows live CPU, GPU, NPU and RAM.">
+</div>
+
+The part worth showing is the subagents. A workflow can
+name other agents it may hand a task to: another OVAT workflow, a model behind
+any OpenAI-compatible API, or an agent running somewhere else and reached over
+the Agent2Agent protocol (A2A). In the screenshot below, `/serve` offers the
+open workflow over A2A, and the same TUI then asks it a question through the
+`team_docs` subagent. The answer comes back over A2A with its source, and the
+bar says `a2a serving`.
+
+<div align="center">
+<img src="assets/screens/agent-tui/hero-agent-serve-and-a2a-answer.png" width="820px" alt="The agent TUI after /serve: the A2A server listens on 127.0.0.1 port 9100 and prints its card address, the exposed tool search_docs, and that delegate is not exposed. A question to the team_docs subagent returns a cited answer over A2A, and the bar shows a2a serving.">
+</div>
+
+Two details matter here. The served agent is built with only the tools you
+chose to expose, and `delegate` is deliberately not one of them, so a remote
+caller cannot make your agent hand its work on to yet another agent. And a
+call that leaves the agent asks first:
+
+<div align="center">
+<img src="assets/screens/agent-tui/agent-approval-local-api.png" width="760px" alt="The approval panel for the local_api subagent: it warns that the task is sent to http://localhost:8000/v3 and offers Allow once, Allow for the remainder of the session, Always allow this tool in this project, and Deny.">
+</div>
+
+Afterwards you can see exactly what happened. `/trace` lists each turn of the
+last answer, the tool that ran in it, how long it took and how many tokens
+went in and out. In this run the model searched the notes twice and then
+handed the question to a subagent, which took 53 of the 82 seconds.
+
+<div align="center">
+<img src="assets/screens/agent-tui/agent-trace-and-model-picker.png" width="760px" alt="The /tools table, the /status token totals and the /trace of the last answer: three turns with the tool calls search_docs and delegate and their times and token counts.">
+</div>
+
 The constraint that shaped it is worth stating, because it is a constraint
 rather than a feature: **the CLI must work with no TUI installed.** `textual`
 and `pyfiglet` live in the `[tui]` extra only, a module-level `import textual`

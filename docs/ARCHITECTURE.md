@@ -1183,6 +1183,14 @@ so callers never share memory.
 
 ## The agent TUI (`ovat agent`)
 
+This is what the three layers below draw. The banner and the bar at the top
+and bottom come from the client, the live CPU, GPU and NPU numbers from
+OVAT's own telemetry sources, and every card from an event on the agent's bus:
+
+<div align="center">
+<img src="assets/screens/agent-tui/hero-agent-start.png" width="820px" alt="The OVAT agent TUI right after start on an Intel AI PC: the banner says OVAT v1.2.0, Qwen3.5-4B-int4-ov on GPU, native engine, 1 tool and 4 subagents. The slash menu is open, and the bar shows live CPU, GPU, NPU and RAM.">
+</div>
+
 Three layers, each talking to the next through a small interface:
 
 ```
@@ -1216,11 +1224,27 @@ anything that ends up outside the project folder, symlinks included. `shell`
 starts in that folder but is not confined to it. Writes go to a temporary file
 that replaces the target, so a failure leaves the old file.
 
+**What the person sees.** A tool or subagent that needs a decision stops the
+worker and shows one panel (the approval broker below); `/agents` is the live
+list of subagent calls; `/trace` is the engine's own trace, drawn as text:
+
+<div align="center">
+<img src="assets/screens/agent-tui/hero-agent-agents-table.png" width="820px" alt="The /agents screen: the A2A server is serving, four configured subagents, and a table with the team_docs call finished ok in 12.51 seconds with 1663 tokens.">
+</div>
+
 **Permissions.** Each tool is `allow`, `ask` or `deny`
 (`ovat/agent/permissions.py`). The check runs inside the one tool wrapper, so
 it holds on all four engines. When a tool asks, the `ApprovalBroker` holds the
 worker until the person answers once, for the session, or always. With nobody
 to ask, `ask` means no.
+
+**Settings.** `/config` is drawn from the same schema as `workflow.yml`: each
+row says where its value is set, and a save goes through the all-or-nothing
+writer that keeps the file's comments.
+
+<div align="center">
+<img src="assets/screens/agent-tui/hero-agent-config-settings.png" width="820px" alt="The /config settings screen: active model, device, engine, enable_thinking and theme, then temperature, max_tokens, request_timeout, max_iterations, the system prompt and the permission of each tool and subagent.">
+</div>
 
 **The user folder.** "Always" answers and the A2A server token live in
 `~/.ovat/` (`ovat/userdata.py`), keyed by project, not in the project's own
