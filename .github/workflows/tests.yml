@@ -11,12 +11,23 @@ on:
         branches: [main]
     pull_request:
     workflow_dispatch:
+    # Weekly, with nothing pushed. Most dependencies have no upper bound,
+    # so a new release of any of them can break a commit that was green
+    # when it merged. This finds that before a user does. Monday 05:17 UTC
+    # (not on the hour, when scheduled runs queue up).
+    schedule:
+        - cron: "17 5 * * 1"
+    # publish.yml runs this whole file on the exact commit it is about to
+    # release, and publishes only if every job here passes.
+    workflow_call:
 
 concurrency:
     # A new push supersedes an in-flight run on the same ref. Reviewing the
     # results of code that has already been replaced wastes minutes and,
     # worse, invites a decision based on a stale answer.
-    group: tests-${{ github.ref }}
+    # github.workflow keeps a release's run (called from "Publish to PyPI")
+    # in its own group, so a push cannot cancel it.
+    group: tests-${{ github.workflow }}-${{ github.ref }}
     cancel-in-progress: true
 
 jobs:
@@ -52,11 +63,17 @@ jobs:
                     - os: macos-latest
                       python: "3.13"
                       note: " · dev only"
+                    # The newest Python pyproject advertises, on the OS the
+                    # owner's AI PC runs it on (Windows, Python 3.14.3). It
+                    # was a classifier that no job ever ran.
+                    - os: windows-latest
+                      python: "3.14"
+                      note: " · newest supported"
 
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-            - uses: actions/setup-python@v6
+            - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
               with:
                   python-version: ${{ matrix.python }}
                   cache: pip
@@ -129,8 +146,8 @@ jobs:
         runs-on: ubuntu-22.04
         timeout-minutes: 12
         steps:
-            - uses: actions/checkout@v5
-            - uses: actions/setup-python@v6
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+            - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
               with:
                   python-version: "3.10"
                   cache: pip
@@ -172,8 +189,8 @@ jobs:
         runs-on: ubuntu-22.04
         timeout-minutes: 12
         steps:
-            - uses: actions/checkout@v5
-            - uses: actions/setup-python@v6
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+            - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
               with:
                   python-version: "3.10"
                   cache: pip

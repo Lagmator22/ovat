@@ -90,6 +90,15 @@ PURPOSE = {
                                       "because OVMS's own NPU cap of 1024 is "
                                       "smaller than one agent turn; set it to "
                                       "go lower. Left to OVMS on CPU and GPU.",
+    ("model", "ovms_bind_address"): "Address `ovat serve` makes OVMS listen "
+                                    "on. The default keeps it on this "
+                                    "machine; `0.0.0.0` opens it to the "
+                                    "network. `ovat serve --host` overrides "
+                                    "it.",
+    ("model", "ovms_api_key_env"): "Name of an environment variable holding "
+                                   "an API key (not the key itself). `ovat "
+                                   "serve` makes OVMS require it, and OVAT "
+                                   "sends it.",
 
     ("tools", "name"): "`search_docs`, `transcribe`, `describe_image`, or any "
                        "tool an MCP server advertises.",
@@ -274,6 +283,12 @@ def type_name(annotation) -> str:
     if origin is list:
         inner = typing.get_args(annotation)
         return f"list[{type_name(inner[0])}]" if inner else "list"
+    if origin is dict:
+        # Before the union branch below, which reads ANY args as a union:
+        # dict[str, str] used to come out as "string | string".
+        inner = typing.get_args(annotation)
+        return (f"map of {type_name(inner[0])} to {type_name(inner[1])}"
+                if inner else "map")
     args = typing.get_args(annotation)
     if args:                                   # a union
         return " \\| ".join(type_name(a) for a in args)

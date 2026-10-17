@@ -56,6 +56,8 @@ Which model to run, where, and how to reach it.
 | `ovms_cache_size_gb` | integer \| null | `null` | > 0 | KV cache size in GB. Setting it also makes the cache **static** rather than dynamic. Whole numbers only. |
 | `ovms_max_prompt_len` | integer \| null | `null` | > 0 | Longest prompt OVMS accepts. On `NPU` an unset value becomes **4096**, because OVMS's own NPU cap of 1024 is smaller than one agent turn; set it to go lower. Left to OVMS on CPU and GPU. |
 | `ovms_tool_guided_generation` | boolean | `false` | - | Make OVMS hold each tool call to the tool's schema while generating. Read by `ovat serve`. |
+| `ovms_bind_address` | string | `127.0.0.1` | - | Address `ovat serve` makes OVMS listen on. The default keeps it on this machine; `0.0.0.0` opens it to the network. `ovat serve --host` overrides it. |
+| `ovms_api_key_env` | string \| null | `null` | - | Name of an environment variable holding an API key (not the key itself). `ovat serve` makes OVMS require it, and OVAT sends it. |
 
 ## `tools`
 
@@ -66,7 +68,7 @@ One entry per tool. `tools:` is a LIST.
 | `name` | string | **required** | - | `search_docs`, `transcribe`, `describe_image`, or any tool an MCP server advertises. |
 | `type` | string | `builtin` | - | `builtin` runs in-process; `mcp_stdio` launches an external MCP server; `a2a` asks another agent over A2A (needs `pip install 'ovat[a2a]'`). |
 | `command` | list[string] \| null | `null` | - | Argv that launches the MCP server. Required when `type: mcp_stdio`. |
-| `env` | string \| string \| null | `null` | - | Extra environment for an `mcp_stdio` server, which otherwise sees only HOME, PATH and a few more. `${VAR}` is expanded from your shell. |
+| `env` | map of string to string \| null | `null` | - | Extra environment for an `mcp_stdio` server, which otherwise sees only HOME, PATH and a few more. `${VAR}` is expanded from your shell. |
 | `model` | string \| null | `null` | - | Where this tool's own weights live. `transcribe` and `describe_image` only. |
 | `device` | string \| null | `null` | - | Device for this tool's model, separate from the agent's. Omit to let the device router choose. |
 | `url` | string \| null | `null` | - | Base URL of the other agent. Its Agent Card is read from there. Required when `type: a2a`. |
@@ -171,7 +173,7 @@ How `ovat a2a serve` offers this workflow. Safe by default.
 | `host` | string | `127.0.0.1` | - | Address to listen on. The default is this machine only. |
 | `port` | integer | `9100` | > 0, < 65536 | Port to listen on. |
 | `public_url` | string \| null | `null` | - | URL the card advertises, when callers reach this server through a tunnel or proxy. |
-| `tokens` | string \| string | empty | - | Caller name to the NAME of the environment variable holding that caller's token. Unset: one generated token in `.ovat/a2a/token`. |
+| `tokens` | map of string to string | empty | - | Caller name to the NAME of the environment variable holding that caller's token. Unset: one generated token in `.ovat/a2a/token`. |
 | `expose_tools` | list[string] \| null | `null` | - | Tools a remote caller may trigger. Unset: every builtin that takes no file path; MCP tools only when listed. |
 | `expose_sources` | names \| full \| none | `names` | - | Citations sent back: file `names`, `full` paths, or `none`. |
 | `max_message_chars` | integer | `8000` | > 0 | Longest message accepted. |
