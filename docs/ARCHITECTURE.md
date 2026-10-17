@@ -1153,6 +1153,13 @@ just left off the card: the served agent is built without it. Limits on
 message size, queue, rate, run time, conversations, turns and hops (so two
 agents cannot call each other forever).
 
+One request, from the caller to the answer:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/a2a-flow-dark.svg">
+  <img src="assets/diagrams/a2a-flow-light.svg" alt="A caller sends a message. The server checks the host, the body size and the bearer token, then admission limits, then gives each caller and conversation its own agent. A run takes the conversation lock and then the one-model gate, runs only the exposed tools, and the answer comes back as a task update.">
+</picture>
+
 **How it is built** (`ovat/a2a/`):
 
 | Layer | Files | Imports the SDK? |
@@ -1201,6 +1208,11 @@ terminal client (ovat/tui/vibe/)  --JSON-RPC-->  app server (ovat/tui/server/)
                                       the four engines and the tools
 ```
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/agent-tui-dark.svg">
+  <img src="assets/diagrams/agent-tui-light.svg" alt="You type in the terminal client. It sends a JSON-RPC request to OVAT's app server, which starts a turn on AgentSession. AgentSession runs the chosen engine on a worker thread; the engine asks the model on OVMS, and every tool call goes through one wrapper that reports events. The events travel back up the same layers and the client draws them.">
+</picture>
+
 - **The client** (`ovat/tui/vibe/`) is a copied terminal client: widgets,
   layout, keys, the slash-command menu. See `NOTICE`. It knows nothing about
   OVAT's engines. It sends requests and draws what comes back.
@@ -1232,6 +1244,14 @@ list of subagent calls; `/trace` is the engine's own trace, drawn as text:
 <img src="assets/screens/agent-tui/hero-agent-agents-table.png" width="820px" alt="The /agents screen: the A2A server is serving, four configured subagents, and a table with the team_docs call finished ok in 12.51 seconds with 1663 tokens.">
 </div>
 
+**Subagents.** `subagents:` in the YAML become one `delegate(agent, task)`
+tool with three kinds behind it:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/subagents-dark.svg">
+  <img src="assets/diagrams/subagents-light.svg" alt="The main agent gets one tool, delegate(agent, task). A subagent is another OVAT workflow in this process, a model behind an OpenAI-compatible API, or an agent reached over A2A. Answers come back framed as information. Progress is reported as events and shown in the /agents table.">
+</picture>
+
 **Permissions.** Each tool is `allow`, `ask` or `deny`
 (`ovat/agent/permissions.py`). The check runs inside the one tool wrapper, so
 it holds on all four engines. When a tool asks, the `ApprovalBroker` holds the
@@ -1250,6 +1270,13 @@ writer that keeps the file's comments.
 `~/.ovat/` (`ovat/userdata.py`), keyed by project, not in the project's own
 `.ovat/`. A repository could otherwise ship a file there that switches on
 "always allow" for `shell`, or hands its author a working token.
+
+One wrapper decides, for every engine:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/approval-flow-dark.svg">
+  <img src="assets/diagrams/approval-flow-light.svg" alt="The model asks for a tool. One wrapper, events.observed, checks the permission of that tool or subagent. Allow runs it. Ask opens an approval panel with once, session, always and deny when someone is there to answer, and counts as no when nobody is. Deny sends the model a plain sentence.">
+</picture>
 
 **A2A approvals.** A remote caller that says it can approve may answer a
 tool's question on the serving machine. In `ovat/a2a/service.py`:

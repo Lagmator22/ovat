@@ -476,6 +476,22 @@ can ask for approval on the machine that serves it. Voice dictation is
 local: the audio never leaves the machine. [`examples/agent/`](examples/agent/)
 and [`examples/coding/`](examples/coding/) have the commands.
 
+The TUI is three layers: the terminal client, OVAT's own app server, and
+`AgentSession`, which runs the engine. Every tool call passes one wrapper, and
+its events travel back up to the screen:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/diagrams/agent-tui-dark.svg">
+  <img src="docs/assets/diagrams/agent-tui-light.svg" alt="You type in the terminal client. It sends a JSON-RPC request to OVAT's app server, which starts a turn on AgentSession. AgentSession runs the chosen engine on a worker thread; the engine asks the model on OVMS, and every tool call goes through one wrapper that reports events. The events travel back up the same layers and the client draws them.">
+</picture>
+
+A subagent is one tool, `delegate(agent, task)`, with three kinds behind it:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/diagrams/subagents-dark.svg">
+  <img src="docs/assets/diagrams/subagents-light.svg" alt="The main agent gets one tool, delegate(agent, task). A subagent is another OVAT workflow in this process, a model behind an OpenAI-compatible API, or an agent reached over A2A. Answers come back framed as information. Progress is reported as events and shown in the /agents table.">
+</picture>
+
 Here `/serve` offers the open workflow to other agents over A2A, and the same
 TUI then asks it a question through the `team_docs` subagent. The answer
 comes back over A2A, and the bar says `a2a serving`:
@@ -483,6 +499,13 @@ comes back over A2A, and the bar says `a2a serving`:
 <div align="center">
 <img src="docs/assets/screens/agent-tui/hero-agent-serve-and-a2a-answer.png" width="860px" alt="The agent TUI after /serve: the A2A server listens on 127.0.0.1 port 9100 and prints its card address, the exposed tool search_docs, and that delegate is not exposed. A question to the team_docs subagent returns a cited answer over A2A, and the bar shows a2a serving.">
 </div>
+
+A request over A2A is checked at four doors before any model work starts:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/diagrams/a2a-flow-dark.svg">
+  <img src="docs/assets/diagrams/a2a-flow-light.svg" alt="A caller sends a message. The server checks the host, the body size and the bearer token, then admission limits, then gives each caller and conversation its own agent. A run takes the conversation lock and then the one-model gate, runs only the exposed tools, and the answer comes back as a task update.">
+</picture>
 
 `/agents` is the live table of every subagent call, with its kind, status,
 time and tokens. Press `x` on a row to cancel that one child while the parent
@@ -492,9 +515,16 @@ carries on:
 <img src="docs/assets/screens/agent-tui/hero-agent-agents-table.png" width="860px" alt="The /agents screen: the A2A server is serving, four configured subagents (researcher as a workflow, team_docs over A2A, cloud and local_api as API subagents), and a table with the team_docs call finished ok in 12.51 seconds with 1663 tokens.">
 </div>
 
-Anything that leaves the agent asks first. A subagent that is a model behind
-an API shows where the task would be sent, and you choose once, for the
-session, for this project, or deny:
+Anything that leaves the agent asks first. Every tool call goes through the
+same permission check, and a subagent that is a model behind an API shows
+where the task would be sent:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/diagrams/approval-flow-dark.svg">
+  <img src="docs/assets/diagrams/approval-flow-light.svg" alt="The model asks for a tool. One wrapper, events.observed, checks the permission of that tool or subagent. Allow runs it. Ask opens an approval panel with once, session, always and deny when someone is there to answer, and counts as no when nobody is. Deny sends the model a plain sentence.">
+</picture>
+
+You choose once, for the session, for this project, or deny:
 
 <div align="center">
 <img src="docs/assets/screens/agent-tui/agent-approval-local-api.png" width="800px" alt="The approval panel for the local_api subagent: it warns that the task is sent to http://localhost:8000/v3 and offers Allow once, Allow for the remainder of the session, Always allow this tool in this project, and Deny.">

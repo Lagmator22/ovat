@@ -246,9 +246,12 @@ as always `"stop"`.
 - `docs/ARCHITECTURE.md` (layers 1-9, the design record the mentors asked
   for), `docs/BLOG.md`, `examples/` (minimal, rag, react, audio-multimodal,
   document-qa, document-qa-npu, plano).
-- `docs/assets/diagrams/`: 5 animated SVG diagrams, each as `-light` and
-  `-dark` picked with `<picture>` (core-flow, agent-loop, engines, devices,
-  rag). Their generator script is NOT in the repo; edit the SVGs directly.
+- `docs/assets/diagrams/`: 9 animated SVG diagrams, each as `-light` and
+  `-dark` picked with `<picture>`. core-flow, agent-loop, engines, devices
+  and rag have no generator: edit the SVGs directly. agent-tui, approval-flow,
+  a2a-flow and subagents come from `scripts/gen_agent_diagrams.py`: change the
+  spec there and run it (`--site-out DIR` also writes the interactive version
+  that the docs site uses). Do not hand-edit those four.
 - The documentation site lives in its OWN repo, Lagmator22/ovat-navigate
   (local folder ~/ovat_navigate, GitHub Pages:
   https://lagmator22.github.io/ovat-navigate/). Never add its files here;
