@@ -399,3 +399,346 @@ def test_an_unreadable_binary_has_no_version(monkeypatch):
     monkeypatch.setattr(subprocess, "run", boom)
     assert ovms_installer.binary_version("/x/ovms") is None
 
+
+
+# --------------------------------------------------------------------------
+# --force deletes only a folder OVAT installed
+# --------------------------------------------------------------------------
+#
+# install(force=True) used to run shutil.rmtree(root) on whatever root was. A
+# typo in --dest, or a folder reused for something else, was deleted whole.
+
+
+# Spelled out rather than read from the module, so these tests fail on what
+# install() does, not on a missing name, when the guard is backed out.
+MARKER = ".ovat-ovms"
+
+
+def _folder_with(path, *names):
+    path.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (path / name).write_text("keep me", encoding="utf-8")
+    return path
+
+
+def _fake_home(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))      # expanduser on Windows
+    return home
+
+
+def test_a_fresh_install_leaves_the_marker(tmp_path, monkeypatch):
+    import json
+    _install_from_local_zip(tmp_path, monkeypatch)
+    root = tmp_path / "root"
+    installer.install(root=str(root))
+    data = json.loads((root / MARKER).read_text(encoding="utf-8"))
+    assert data["ovms"] == installer.OVMS_VERSION
+    assert "ovat" in data and data["installed"]
+
+
+def test_force_refuses_a_folder_without_the_marker(tmp_path, monkeypatch):
+    _install_from_local_zip(tmp_path, monkeypatch)
+    downloads = []
+    real_download = installer._download
+    monkeypatch.setattr(installer, "_download",
+                        lambda *a, **k: downloads.append(a)
+                        or real_download(*a, **k))
+    victim = _folder_with(tmp_path / "photos", "holiday.jpg")
+
+    try:
+        installer.install(root=str(victim), force=True)
+    except RuntimeError as exc:
+        assert "does not look like an OVMS folder" in str(exc)
+    assert (victim / "holiday.jpg").read_text(encoding="utf-8") == "keep me"
+    assert downloads == []                    # refused before downloading
+
+
+def test_force_replaces_a_folder_ovat_installed(tmp_path, monkeypatch):
+    _install_from_local_zip(tmp_path, monkeypatch)
+    root = tmp_path / "root"
+    installer.install(root=str(root))
+    (root / "stale-from-the-old-version.txt").write_text("x", encoding="utf-8")
+
+    binary, what = installer.install(root=str(root), force=True)
+    assert what == "installed"
+    assert os.path.isfile(binary)
+    assert not (root / "stale-from-the-old-version.txt").exists()
+    assert (root / MARKER).is_file()
+
+
+def test_force_into_an_empty_folder_is_fine(tmp_path, monkeypatch):
+    _install_from_local_zip(tmp_path, monkeypatch)
+    root = tmp_path / "empty"
+    root.mkdir()
+    binary, _what = installer.install(root=str(root), force=True)
+    assert os.path.isfile(binary)
+
+
+def test_an_install_next_to_other_files_gets_no_marker(tmp_path, monkeypatch):
+    """Otherwise a later --force would delete those files along with OVMS."""
+    _install_from_local_zip(tmp_path, monkeypatch)
+    shared = _folder_with(tmp_path / "tools", "notes.txt")
+    installer.install(root=str(shared))
+    assert not (shared / MARKER).exists()
+    with pytest.raises(RuntimeError):
+        installer.install(root=str(shared), force=True)
+    assert (shared / "notes.txt").exists()
+
+
+def test_the_old_default_folder_without_a_marker_can_still_be_upgraded(
+        tmp_path, monkeypatch):
+    """Installs made before the marker existed have none, and
+    `ovat setup --force` is the upgrade path setup and doctor point them at."""
+    _install_from_local_zip(tmp_path, monkeypatch)
+    legacy = tmp_path / "dot-ovat" / "ovms"
+    (legacy / "bin").mkdir(parents=True)
+    (legacy / "bin" / "ovms").write_text("old", encoding="utf-8")
+    (legacy / "ovms.exe").write_text("old", encoding="utf-8")
+    monkeypatch.setattr(installer, "DEFAULT_ROOT", str(legacy))
+
+    binary, _what = installer.install(root=str(legacy), force=True)
+    assert os.path.isfile(binary)
+    assert (legacy / MARKER).is_file()
+
+
+@pytest.mark.parametrize("where", ["home", "cwd", "git repo"])
+def test_force_never_deletes_home_cwd_or_a_repo_even_with_the_marker(
+        tmp_path, monkeypatch, where):
+    _install_from_local_zip(tmp_path, monkeypatch)
+    home = _fake_home(tmp_path, monkeypatch)
+    if where == "home":
+        target = home
+    elif where == "cwd":
+        target = tmp_path / "project"
+        monkeypatch.chdir(_folder_with(target))
+    else:
+        target = _folder_with(tmp_path / "repo")
+        (target / ".git").mkdir()
+    _folder_with(target, MARKER, "precious.txt")
+
+    try:
+        installer.install(root=str(target), force=True)
+    except RuntimeError as exc:
+        assert "Will not replace" in str(exc)
+    assert (target / "precious.txt").exists()
+
+
+def test_a_symlink_to_home_is_judged_as_home(tmp_path, monkeypatch):
+    _install_from_local_zip(tmp_path, monkeypatch)
+    home = _fake_home(tmp_path, monkeypatch)
+    _folder_with(home, MARKER, "precious.txt")
+    link = tmp_path / "looks-harmless"
+    try:
+        link.symlink_to(home, target_is_directory=True)
+    except OSError:
+        pytest.skip("this machine cannot create symlinks")
+
+    # With the trailing separator that tab completion adds. rmtree refuses a
+    # bare symlink, but "link/" names the folder it points at.
+    try:
+        installer.install(root=str(link) + os.sep, force=True)
+    except RuntimeError as exc:
+        assert "home folder" in str(exc)
+    except OSError:
+        # Without the guard rmtree empties home and only then fails to
+        # remove the link itself. The check below is what matters.
+        pass
+    assert (home / "precious.txt").exists()
+
+
+def test_the_filesystem_root_is_never_replaceable():
+    # Only the check is called here, never install(): this is the one case a
+    # broken guard must not be allowed to act on.
+    with pytest.raises(RuntimeError, match="root of the filesystem"):
+        installer.check_replaceable(os.path.abspath(os.sep))
+
+
+def test_setup_force_names_the_folder_before_deleting_it(tmp_path,
+                                                         monkeypatch):
+    from typer.testing import CliRunner
+
+    from ovat.cli.main import app
+
+    _install_from_local_zip(tmp_path, monkeypatch)
+    root = tmp_path / "root"
+    installer.install(root=str(root))
+    result = CliRunner().invoke(app, ["setup", "--yes", "--force", "--dest",
+                                      str(root)])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert f"replace : {os.path.realpath(root)}" in flat, result.output
+
+
+def test_setup_force_refuses_a_foreign_folder_and_says_which(tmp_path,
+                                                             monkeypatch):
+    from typer.testing import CliRunner
+
+    from ovat.cli.main import app
+
+    _install_from_local_zip(tmp_path, monkeypatch)
+    victim = _folder_with(tmp_path / "photos", "holiday.jpg")
+    result = CliRunner().invoke(app, ["setup", "--yes", "--force", "--dest",
+                                      str(victim)])
+    assert result.exit_code == 1
+    assert "photos" in result.output
+    assert (victim / "holiday.jpg").exists()
+
+
+# Link members: where they POINT, not just what they are called
+# --------------------------------------------------------------------------
+#
+# _is_safe_member checks member names only. A symlink or hardlink whose
+# target leaves the staging folder was extracted as is: Python's `tar`
+# filter does not check link targets, and 3.10/3.11 have no filter at all.
+
+
+def _tar(path, entries):
+    """Build a .tar.gz from (kind, name, extra) tuples, in order.
+
+    kind is "dir", "file" (extra = text), "sym" or "hard" (extra = target).
+    """
+    with tarfile.open(path, "w:gz") as tf:
+        for kind, name, extra in entries:
+            info = tarfile.TarInfo(name)
+            data = None
+            if kind == "dir":
+                info.type, info.mode = tarfile.DIRTYPE, 0o755
+            elif kind == "file":
+                data = extra.encode()
+                info.size, info.mode = len(data), 0o644
+            elif kind == "sym":
+                info.type, info.linkname = tarfile.SYMTYPE, extra
+            else:
+                info.type, info.linkname = tarfile.LNKTYPE, extra
+            tf.addfile(info, io.BytesIO(data) if data is not None else None)
+    return str(path)
+
+
+def _staging_under(tmp_path, monkeypatch):
+    """Put _extract's staging folder somewhere the test can see around."""
+    parent = tmp_path / "around"
+    parent.mkdir()
+    real_mkdtemp = installer.tempfile.mkdtemp
+    monkeypatch.setattr(installer.tempfile, "mkdtemp",
+                        lambda **kw: real_mkdtemp(dir=str(parent), **kw))
+    return parent
+
+
+_OVMS = [("dir", "ovms", None), ("dir", "ovms/bin", None),
+         ("file", "ovms/bin/ovms", "binary")]
+
+
+def test_a_symlink_out_of_the_archive_is_refused(tmp_path, monkeypatch):
+    _staging_under(tmp_path, monkeypatch)
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("sym", "ovms/escape", "../../outside"),
+    ])
+    into = tmp_path / "root"
+
+    with pytest.raises(RuntimeError, match="outside the install folder"):
+        installer._extract(archive, str(into))
+    assert not os.path.lexists(into / "escape")
+    assert not into.exists() or not os.listdir(into)       # nothing installed
+
+
+def test_nothing_is_written_through_a_link_out_of_the_archive(tmp_path,
+                                                             monkeypatch):
+    """The link, then a file "inside" it. On 3.10/3.11 there is no filter to
+    stop the file landing outside; on 3.12+ the `tar` filter stops the file
+    but not the link."""
+    around = _staging_under(tmp_path, monkeypatch)
+    (around / "outside").mkdir()
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("sym", "ovms/escape", "../../outside"),
+        ("file", "ovms/escape/pwned.txt", "written outside"),
+    ])
+
+    with pytest.raises(RuntimeError):
+        installer._extract(archive, str(tmp_path / "root"))
+    assert not (around / "outside" / "pwned.txt").exists()
+
+
+def test_a_hardlink_out_of_the_archive_is_refused(tmp_path, monkeypatch):
+    around = _staging_under(tmp_path, monkeypatch)
+    secret = around / "outside.txt"
+    secret.write_text("not yours", encoding="utf-8")
+    secret.chmod(0o400)
+    # Read back, not assumed: Windows keeps only a read-only flag and
+    # reports 0o444 here.
+    mode = secret.stat().st_mode
+    # A hardlink target is named from the ARCHIVE root: this is
+    # <staging>/../outside.txt, a file next to the staging folder.
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("hard", "ovms/bin/evil", "../outside.txt"),
+    ])
+    into = tmp_path / "root"
+
+    with pytest.raises(RuntimeError, match="outside the install folder"):
+        installer._extract(archive, str(into))
+    assert not (into / "bin" / "evil").exists()
+    assert secret.stat().st_mode == mode               # not made writable
+
+
+def test_a_chain_of_links_that_each_look_inside_is_refused(tmp_path,
+                                                           monkeypatch):
+    """ovms/l2 -> "." makes "l2/.." one level shallower than it reads, so
+    ../l2/../.. from ovms/sub reads as the archive root and is really the
+    folder above it."""
+    _staging_under(tmp_path, monkeypatch)
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("sym", "ovms/l2", "."),
+        ("dir", "ovms/sub", None),
+        ("sym", "ovms/sub/l3", "../l2/../.."),
+    ])
+    with pytest.raises(RuntimeError, match="outside the install folder"):
+        installer._extract(archive, str(tmp_path / "root"))
+
+
+def test_internal_library_links_are_kept(tmp_path, monkeypatch):
+    """What every real Linux archive holds: libfoo.so -> libfoo.so.414."""
+    _staging_under(tmp_path, monkeypatch)
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("dir", "ovms/lib", None),
+        ("file", "ovms/lib/libfoo.so.414", "lib"),
+        ("sym", "ovms/lib/libfoo.so", "libfoo.so.414"),
+    ])
+    into = tmp_path / "root"
+    installer._extract(archive, str(into))
+    link = into / "lib" / "libfoo.so"
+    assert link.is_symlink()
+    assert os.readlink(link) == "libfoo.so.414"
+    assert link.read_text(encoding="utf-8") == "lib"
+
+
+def test_the_docker_path_link_in_the_ubuntu_archives_is_dropped(tmp_path,
+                                                               monkeypatch):
+    """ubuntu22/24 2026.4.1 ship one absolute symlink to /ovms/lib/...,
+    the path inside OVMS's Docker image. Refusing it would break `ovat
+    setup` on Ubuntu; it points at nothing here, so it is left out."""
+    _staging_under(tmp_path, monkeypatch)
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("dir", "ovms/lib", None),
+        ("file", "ovms/lib/libopenvino_tokenizers.so", "lib"),
+        ("dir", "ovms/lib/python", None),
+        ("sym", "ovms/lib/python/libopenvino_tokenizers.so",
+         "/ovms/lib/libopenvino_tokenizers.so"),
+    ])
+    into = tmp_path / "root"
+    installer._extract(archive, str(into))
+    assert (into / "bin" / "ovms").is_file()
+    assert not os.path.lexists(into / "lib" / "python"
+                               / "libopenvino_tokenizers.so")
+
+
+def test_an_absolute_hardlink_is_refused(tmp_path, monkeypatch):
+    _staging_under(tmp_path, monkeypatch)
+    target = tmp_path / "abs-target.txt"
+    target.write_text("x", encoding="utf-8")
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("hard", "ovms/bin/evil", str(target)),
+    ])
+    with pytest.raises(RuntimeError, match="outside the install folder"):
+        installer._extract(archive, str(tmp_path / "root"))
