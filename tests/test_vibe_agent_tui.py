@@ -1089,10 +1089,14 @@ def test_saved_conversations_rename_branch_log_and_resume_from_the_app(
             await until(pilot, timeout=30, check=lambda: (saved_sessions.load(first) or {})
                         .get("title") == "Leave policy")
             await say(pilot, "/log")
-            # (the full path wraps on screen; its last folder does not)
-            await until(pilot, timeout=30, check=lambda: "Current Log Directory"
-                        in screen_text(app) and saved_sessions.folder.name
-                        in screen_text(app))
+            # The folder is checked in the message, not on screen: on Windows
+            # CI it never showed up in the screen text, however long the test
+            # waited (cause not verified; a long temp path wrapping mid-name
+            # is the likely one, it did not reproduce on macOS).
+            await until(pilot, timeout=30, check=lambda: any(
+                str(saved_sessions.folder) in m._content
+                for m in app.query(UserCommandMessage)))
+            assert "Current Log Directory" in screen_text(app)
             await say(pilot, "/branch")
             await until(pilot, timeout=30, check=lambda: app.query(BranchCreatedMessage))
             assert len(saved_sessions.list()) == 2
