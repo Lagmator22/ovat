@@ -14,6 +14,7 @@ from PIL import Image
 import openvino as ov
 import openvino_genai as ov_genai
 
+from ovat.core.precision import precision_properties as _precision_properties
 from ovat.providers.base import VLMProvider
 
 
@@ -65,30 +66,3 @@ class GenAIVLMProvider(VLMProvider):
         with Image.open(path) as img:
             arr = np.array(img.convert("RGB"), dtype=np.uint8)
         return ov.Tensor(arr)
-
-
-def _precision_properties(device: str, core=None) -> dict:
-    """Pipeline properties that keep a CPU run in f32 where it would not be.
-
-    On an ARM CPU (Apple Silicon) OpenVINO's CPU plugin defaults
-    INFERENCE_PRECISION_HINT to f16. Qwen2-VL overflows in f16 and, a few
-    tokens in, every logit is NaN, so greedy picks token 0 forever -- which in
-    Qwen's vocabulary is "!". Measured on an M-series Mac: "The image features
-    the logo!!!!!!..." at the default, and "The image features the logo of
-    OpenVINO, which is a toolkit for AI models." with f32 (about 2.8x slower,
-    58.6 s vs 21.2 s for 60 tokens, but the fast answer was garbage).
-
-    Only when the CPU's own default is f16, so an x86 CPU (f32 already, or
-    bf16 on hardware that has it) keeps exactly what it had: those were never
-    measured broken. GPU and NPU are left alone for the same reason.
-    """
-    if (device or "").upper() != "CPU":
-        return {}
-    try:
-        core = core or ov.Core()
-        default = core.get_property("CPU", "INFERENCE_PRECISION_HINT")
-    except Exception:                  # a property it cannot read: change nothing
-        return {}
-    if default == ov.Type.f16:
-        return {"INFERENCE_PRECISION_HINT": "f32"}
-    return {}

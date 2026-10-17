@@ -115,7 +115,9 @@ def _load_cached_pipeline(key):
         # Imported here, not at the top, so the module loads even on a machine
         # without the model. This is the real OpenVINO GenAI Whisper pipeline.
         import openvino_genai as ov_genai
-        _pipelines[key] = ov_genai.WhisperPipeline(*key)
+        from ovat.core.precision import precision_properties
+        _pipelines[key] = ov_genai.WhisperPipeline(
+            *key, **precision_properties(key[1]))
     return _pipelines[key]
 
 
