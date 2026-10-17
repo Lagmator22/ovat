@@ -25,11 +25,17 @@ The YAML I am parsing looks like this:
       type: native
       max_iterations: 10
 """
+import os
 import re
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (BaseModel, ConfigDict, Field, field_validator,
+                      model_validator)
+
+
+# What an environment variable name looks like (POSIX shell rules).
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 class StrictModel(BaseModel):
@@ -238,6 +244,19 @@ class ModelConfig(StrictModel):
     # the window is unknown.
     context_window: int | None = Field(default=None, gt=0)
 
+    # Which network address `ovat serve` tells OVMS to listen on
+    # (--rest_bind_address). OVMS's own default is every interface, 0.0.0.0,
+    # and with no API key its /v3 endpoints need no password (both from the
+    # OVMS parameter table). So a plain `ovat serve` used to put the model on
+    # the whole network. 127.0.0.1 keeps it on this machine; set 0.0.0.0 (or
+    # use `ovat serve --host`) to reach it from another one.
+    ovms_bind_address: str = "127.0.0.1"
+    # The NAME of an environment variable that holds an API key, never the
+    # key itself, so the secret stays out of the YAML. When set, `ovat serve`
+    # hands the key to OVMS (--api_key_file) and every OVAT client sends it.
+    # OVMS checks it on the /v3 generation endpoints only.
+    ovms_api_key_env: str | None = None
+
     # Which OVMS parser suits which model family. Data, not branching, so a
     # new family is one line. Longest prefix first: "qwen3.5" has to be tested
     # before "qwen3", or every Qwen3.5 model matches the Qwen3 rule.
@@ -258,6 +277,35 @@ class ModelConfig(StrictModel):
                          ("llama-3.2", "llama3"),
                          ("devstral", "devstral"))
     _DEFAULT_TOOL_PARSER = "hermes3"
+
+    @field_validator("ovms_api_key_env")
+    @classmethod
+    def _api_key_env_is_a_variable_name(cls, value):
+        """A name like OVAT_OVMS_KEY. Someone pasting the key itself here is
+        the mistake this catches: it would sit in the YAML in plain text."""
+        if value is not None and not _ENV_NAME.fullmatch(value):
+            raise ValueError(
+                "ovms_api_key_env must be the NAME of an environment "
+                "variable (letters, digits and _, not starting with a "
+                f"digit), not the key itself. Got {value!r}.")
+        return value
+
+    def ovms_api_key(self) -> str | None:
+        """The API key from the environment, or None when none is configured.
+
+        Raises ValueError when the variable is named but not set, because
+        sending no key to a server that wants one only comes back as a bare
+        401 that names neither the variable nor the setting.
+        """
+        if self.ovms_api_key_env is None:
+            return None
+        key = os.environ.get(self.ovms_api_key_env, "")
+        if not key:
+            raise ValueError(
+                f"model.ovms_api_key_env names {self.ovms_api_key_env}, but "
+                f"that environment variable is not set. Set it to the OVMS "
+                f"API key, or remove ovms_api_key_env from the workflow.")
+        return key
 
     @model_validator(mode="after")
     def _top_k_is_never_zero(self):
