@@ -782,6 +782,14 @@ three builds, and macOS has none. The archive's single `ovms/` folder is
 flattened into `~/.ovat/ovms`, and every member's owner-write bit is set before
 extraction, because OVMS ships its files read-only.
 
+Every member is checked before anything is extracted, on every Python version.
+A name with `..` or an absolute path is skipped. A link whose target leaves the
+archive, directly or through another of the archive's links, stops the install
+with nothing extracted. The Linux archives' own library links
+(`libfoo.so -> libfoo.so.414`) stay. One absolute link in the Ubuntu archives
+points at `/ovms/lib`, the folder inside OVMS's Docker image, so it points at
+nothing on a normal machine and is left out.
+
 ### Installing it by hand (air-gapped machines, or a build you already have)
 
 `ovat setup` is the supported path. When it cannot be used, these are the steps
@@ -872,6 +880,14 @@ server.
 model, and that can take any amount of time. The clock resets whenever the log
 file or the model folder grows, so a download that keeps moving is never
 interrupted, while a stuck server still fails after five minutes.
+
+**OVMS listens on this machine only.** Left to itself OVMS listens on every
+network interface and asks for no password, so `serve` passes
+`--rest_bind_address 127.0.0.1` (`model.ovms_bind_address`, or `--host`).
+`model.ovms_api_key_env` names an environment variable holding a key; `serve`
+gives it to OVMS in a file only the user can read, deletes the file once OVMS
+has started, and every engine sends the key. OVMS checks it on its generation
+endpoints (chat, embeddings); the health check and `/v3/models` stay open.
 
 **Logs go to a file, never a pipe.** A pipe that nobody reads blocks OVMS once
 the OS buffer (about 64 KB) is full.

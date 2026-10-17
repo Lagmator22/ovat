@@ -10,11 +10,13 @@ continue even with a new model.
 Uses urllib (standard library) for health checks, so there's no extra
 dependency. Needs the `ovms` binary to actually start (Linux/Windows/Docker).
 """
+import ipaddress
 import json
 import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -24,6 +26,25 @@ import urllib.request
 # process survives on disk, so a later `ovat serve --stop` can find and stop
 # a server it did not start itself.
 DEFAULT_PID_PATH = "ovms.pid"
+
+
+def is_loopback(address: str) -> bool:
+    """Does OVMS listening on `address` keep it on this machine only?
+
+    OVMS takes a comma separated list, so every entry has to be loopback.
+    "localhost" counts; any other host name does not, because it is not
+    known what it resolves to.
+    """
+    for part in address.split(","):
+        part = part.strip().strip("[]")
+        if part.lower() == "localhost":
+            continue
+        try:
+            if not ipaddress.ip_address(part).is_loopback:
+                return False
+        except ValueError:
+            return False
+    return True
 
 
 def ovms_env(binary: str, base: dict | None = None) -> dict:
@@ -91,6 +112,8 @@ class ModelServer:
                  cache_size_gb: int | None = None,
                  max_prompt_len: int | None = None,
                  tool_guided_generation: bool = False,
+                 bind_address: str = "127.0.0.1",
+                 api_key: str | None = None,
                  binary: str = "ovms"):
         self.model_name = model_name
         # Note to myself: source_model is the Hugging Face id OVMS downloads if
@@ -109,6 +132,14 @@ class ModelServer:
         self.cache_size_gb = cache_size_gb
         self.max_prompt_len = max_prompt_len
         self.tool_guided_generation = tool_guided_generation
+        # Where OVMS listens. OVMS's own default is 0.0.0.0, every interface,
+        # so leaving the flag out put the model on the whole network.
+        self.bind_address = bind_address
+        # None means OVMS asks for no key, as before. The key goes to OVMS in
+        # a file (see start), never on the command line, where any user on
+        # the machine can read it in the process list.
+        self.api_key = api_key
+        self._api_key_file: str | None = None
         # The resolved executable ("ovms" if on PATH, or a full path found by
         # ovms_locator). Launching by full path means no setupvars.bat needed.
         self.binary = binary
@@ -177,6 +208,7 @@ class ModelServer:
         cmd = [
             self.binary,
             "--rest_port", str(self.port),
+            "--rest_bind_address", self.bind_address,
             "--model_repository_path", self.model_repository_path,
             "--model_name", self.model_name,
             "--task", self.task,
@@ -220,6 +252,8 @@ class ModelServer:
         # to download the model, about 5 GB, then later runs see it on disk.
         if self.source_model:
             cmd += ["--source_model", self.source_model]
+        if self.api_key:
+            cmd += ["--api_key_file", self._write_api_key_file()]
         # Note: send OVMS logs to a FILE, not subprocess.PIPE. Piping without
         # ever draining the pipe deadlocks OVMS once its output fills the ~64KB
         # OS pipe buffer. A file has no such limit, and it lets me show the real
@@ -389,6 +423,26 @@ class ModelServer:
             pid_path = getattr(self, "pid_path", None)
             if pid_path and os.path.exists(pid_path):
                 os.remove(pid_path)
+            self.forget_api_key_file()
+
+    def _write_api_key_file(self) -> str:
+        """Put the key in a file only this user can read; return its path.
+
+        mkstemp creates the file with mode 0600 on POSIX. OVMS reads the
+        first line once, while it parses its options at startup, so the file
+        is only needed until the server is up (forget_api_key_file).
+        """
+        fd, path = tempfile.mkstemp(prefix="ovat-ovms-key-", suffix=".txt")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(self.api_key + "\n")
+        self._api_key_file = path
+        return path
+
+    def forget_api_key_file(self) -> None:
+        """Delete the key file. Safe to call more than once."""
+        path, self._api_key_file = self._api_key_file, None
+        if path and os.path.exists(path):
+            os.remove(path)
 
 
 def _pid_is_running(pid: int) -> bool:

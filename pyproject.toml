@@ -98,6 +98,13 @@ markers = [
 [project.scripts]
 ovat = "ovat.cli.main:app"
 
+# The links PyPI shows in the project page's sidebar.
+[project.urls]
+Homepage = "https://lagmator22.github.io/ovat-navigate/"
+Source = "https://github.com/Lagmator22/ovat"
+Issues = "https://github.com/Lagmator22/ovat/issues"
+Changelog = "https://github.com/Lagmator22/ovat/releases"
+
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"

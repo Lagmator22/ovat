@@ -1054,6 +1054,9 @@ def _macos_has_no_ovms() -> None:
     rprint("")
     rprint("To run the full agent, point at a Linux/Windows box:")
     rprint("  [bold]model.ovms_url: http://<ai-pc>:8000/v3[/bold]")
+    rprint("  [dim]and start OVMS there with[/dim] ovat serve <config> "
+           "--host 0.0.0.0 [dim](it listens on that machine only by "
+           "default)[/dim]")
 
 
 def _install_ovms(root=None, version=None, force=False) -> tuple:
@@ -1328,6 +1331,11 @@ def serve(
                                              "limit: a download that keeps "
                                              "moving is waited on for as long "
                                              "as it takes."),
+    host: str = typer.Option(None, "--host",
+                             help="Address OVMS listens on. Default "
+                                  "model.ovms_bind_address (127.0.0.1, this "
+                                  "machine only). 0.0.0.0 opens it to the "
+                                  "network."),
 ):
     """Start OVMS in the background (or stop it again with --stop). AI PC only.
 
@@ -1335,7 +1343,8 @@ def serve(
     background; that is the point, so `ovat run` can talk to it. The pid is
     recorded in ovms.pid; `ovat serve <config> --stop` shuts it down cleanly.
     """
-    from ovat.core.model_server import ModelServer, stop_from_pidfile
+    from ovat.core.model_server import (ModelServer, is_loopback,
+                                        stop_from_pidfile)
     from ovat.core.ovms_locator import find_ovms
 
     if stop:
@@ -1344,6 +1353,12 @@ def serve(
         return
 
     cfg = _load_config(config)
+    bind_address = host or cfg.model.ovms_bind_address
+    try:
+        api_key = cfg.model.ovms_api_key()
+    except ValueError as exc:
+        rprint(f"[red]{esc(exc)}[/red]")
+        raise typer.Exit(code=1)
     # Resolve the binary FIRST (config field → OVAT_OVMS env → PATH → known
     # folders), so a setupvars.bat-style install just works with no PATH edit.
     binary, how = find_ovms(cfg.model.ovms_binary)
@@ -1370,6 +1385,8 @@ def serve(
         cache_size_gb=cfg.model.ovms_cache_size_gb,
         max_prompt_len=_max_prompt_len_for(cfg.model),
         tool_guided_generation=cfg.model.ovms_tool_guided_generation,
+        bind_address=bind_address,
+        api_key=api_key,
         binary=binary,
     )
     # Refuse to start a SECOND server on a port that already has one. On
@@ -1402,6 +1419,15 @@ def serve(
         # a served model and there is one.
         raise typer.Exit(code=0 if same else 1)
 
+    if not is_loopback(bind_address):
+        if api_key:
+            rprint(f"[yellow]OVMS will listen on {esc(bind_address)}: other "
+                   f"machines can reach the model server, with the API key "
+                   f"from {esc(cfg.model.ovms_api_key_env)}.[/yellow]")
+        else:
+            rprint(f"[yellow]OVMS will listen on {esc(bind_address)}: other "
+                   f"machines can reach the model server with no password. "
+                   f"Set model.ovms_api_key_env to require a key.[/yellow]")
     if stall_timeout is None:
         stall_timeout = ModelServer.DEFAULT_STALL_TIMEOUT
     rprint(f"[green]Starting OVMS[/green] for {esc(cfg.model.name)} on "
@@ -1427,8 +1453,13 @@ def serve(
             mins, secs = divmod(int(elapsed), 60)
             progress.update(task, description=f"starting OVMS... {mins}m{secs:02d}s")
 
-        ready = server.wait_until_ready(stall_timeout=stall_timeout,
-                                        on_progress=_tick)
+        try:
+            ready = server.wait_until_ready(stall_timeout=stall_timeout,
+                                            on_progress=_tick)
+        finally:
+            # OVMS read the key while parsing its options, before it could
+            # become ready (or fail), so the file has done its job.
+            server.forget_api_key_file()
 
     if ready:
         rprint(f"[green]OVMS is ready[/green] at {esc(server.base_url)}  "

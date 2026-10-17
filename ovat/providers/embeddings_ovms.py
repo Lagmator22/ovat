@@ -14,10 +14,12 @@ class OVMSEmbeddingsProvider(EmbeddingsProvider):
     """Embeddings via OVMS /v3/embeddings (OpenAI-compatible)."""
 
     def __init__(self, base_url: str = "http://localhost:8000/v3",
-                 model: str = "bge-small-en-v1.5", timeout: float = 120.0):
+                 model: str = "bge-small-en-v1.5", timeout: float = 120.0,
+                 api_key: str = "not-needed"):
         # Same discipline as the LLM plug: never hang for the SDK's ~600s
         # default when the server is down; fail in a bounded time instead.
-        self.client = OpenAI(base_url=base_url, api_key="not-needed",
+        # api_key matters only when OVMS was started with one.
+        self.client = OpenAI(base_url=base_url, api_key=api_key,
                              timeout=timeout)
         self.model = model
 
