@@ -5,7 +5,7 @@ mentors Freddy Chiu and Ravi Panchumarthy). Owner: Gurman (GitHub
 Lagmator22). Mission: "one YAML + one command." Turn tool-calling agent
 boilerplate into `ovat run workflow.yml --input "..."`, backed by OVMS on
 Intel AI PCs, with a local no-server path for dev machines. Published on
-PyPI as `ovat` (pyproject says 1.0.9 at the time of writing), with an
+PyPI as `ovat` (the version is in pyproject.toml), with an
 optional Claude-Code-style TUI.
 
 This file is the project's agent instructions for every coding agent.
@@ -155,10 +155,10 @@ as always `"stop"`.
   wrapper. `factory.observe_tools` applies it to every tool, so all four
   engines emit `tool_started` / `tool_ended` and honour `stop` with no
   engine file changed. The native loop also checks `stop` before each
-  model call. The TUI's live tool cards are meant to use the same bus.
+  model call. The agent TUI draws its tool cards from the same bus.
 - `ovat/a2a/`: OVAT's own A2A logic, NEVER importing the SDK.
-  `protocol.py` (TaskState, RemoteCard, RemoteReply, PeerError with four
-  kinds), `exposure.py` (what a remote caller may trigger; the served
+  `protocol.py` (TaskState, RemoteCard, RemoteReply, PeerError with five
+  kinds, one is `cancelled`), `exposure.py` (what a remote caller may trigger; the served
   agent is BUILT with those tools only, via `build_agent(select_tools=)`),
   `card.py` (the card as spec JSON; never the system prompt), `policy.py`
   (admission), `tokens.py`, `audit.py`, `service.py` (one agent per
@@ -195,11 +195,26 @@ as always `"stop"`.
   `!` shell via `cli/shell.py`, `/serve` as a subprocess), `commands.py`
   (THE slash-command table), `hardware.py` (CPU/NPU/RAM from the
   telemetry sources).
-- `ovat/tui/`: `app.py` (`OvatAgentApp`: draws session events; posts them
-  across threads with `post_message`), `widgets/` (banner with the Intel
-  mark from `cli/tui._StartupIntelAnimation`, loading line, messages,
-  folding tool group, input with history + `/` completion + `!` mode,
-  approval panel). The launcher (`ovat tui`, bare `ovat`) is untouched.
+  Also here: `voice.py` (local dictation), `rules.py` and `prefs.py` (saved
+  grants and UI preferences), `atomic.py` (all-or-nothing file writes),
+  `workflow_edit.py` (/config edits keeping comments), `mcp.py`,
+  `sessions.py` (saved conversations).
+- `ovat/userdata.py`: the user folder `~/.ovat`. "Always allow" grants
+  (`permissions.json`, per project) and the A2A server token
+  (`a2a/<id>.token`) live there, NEVER in the project's own `.ovat/`: a
+  cloned repo could plant either one.
+- `ovat/tools/` coding tools: `project.py` (the project fence,
+  `resolve_inside`, `save_text`), `read_file.py`, `write_file.py`, `edit.py`,
+  `grep.py`, `shell.py`, `todo.py`, `ask_user.py`, `web_fetch.py`,
+  `web_search.py`. Writes are all-or-nothing. `shell` is not fenced in.
+- `ovat/tui/`: the agent TUI. `agent_app.py` starts it, `agent_commands.py`
+  is the slash-command table, `agents_screen.py` is /agents.
+  `vibe/` is the COPIED terminal client (Apache-2.0, see `NOTICE` and
+  `vibe/LICENSE`); it talks JSON-RPC to OVAT's own app server in `server/`
+  (`projector`, `bridge`, `turns`, `approvals`, `questions`, `settings`,
+  `methods/`), which drives `AgentSession`. `app.py` is the classic app
+  (`OVAT_AGENT_UI=classic`), to be removed after the AI PC test. The
+  launcher (`ovat tui`, bare `ovat`) is untouched.
 
 ### CLI and TUI
 - `ovat/cli/main.py`: all 11 typer commands plus the `a2a` group: run,
@@ -279,7 +294,7 @@ as always `"stop"`.
    to OVMS, and how /chat refused the Qwen3.5 model `ovat chat` accepted.
 6. **Tests gate everything.** Run `python -m pytest -q` with the venv's own
    interpreter (`.venv/bin/python` on macOS, `.\.venv\Scripts\python.exe` on
-   the AI PC), never the system one. About 810 tests; must end green
+   the AI PC), never the system one. About 1500 tests; must end green
    (`-n auto` works, pytest-xdist is in `[dev]`). Every fix ships with a
    test, and that test must FAIL with the fix backed out: verify it, do not
    assume. A test that passes against the broken code is worse than none,
@@ -582,6 +597,23 @@ Do not "improve" any of these without reading the reason first.
   stops before its next model call.
 
 ### Agent TUI
+- **`edit` matches on `\n` text.** `read_file` shows the model LF lines, so
+  comparing against a raw CRLF file failed every multi-line edit on Windows.
+  The file's own line ending is put back on write.
+- **The copied path completion swallows Tab while a lookup is pending.**
+  Tests wait for `_pending_future is None` before pressing Tab.
+- **`App.query_one` searches the DEFAULT screen (Textual 8)**, not the
+  active one.
+- **Never `"localhost" in url`.** Use `permissions.is_loopback` (parsed host).
+- **The A2A SDK sends messages to the URL on the remote card.** The token is
+  added per request only for the configured origin (`SDKPeer._add_token`).
+- **A2A approval: never hold the model gate while a person decides, and take
+  the conversation's slot lock BEFORE the gate**, or two messages in one
+  conversation deadlock.
+- **Voice: while recording every key is swallowed; only Ctrl+R stops.**
+- **The A2A audit log is 0600**, a pool refuses a new conversation when all
+  `max_contexts` are busy, and the public card shows only the model's last
+  path part (the card is readable without a token).
 - **Never name a widget attribute after a Textual private one.**
   `self._running` on the tool group shadowed the message pump's own flag:
   Textual set it back to True when the widget's loop started, so finished
@@ -650,7 +682,7 @@ Tests that scan the disk (`model_scout`, `fuzzy`) must isolate with
 `monkeypatch.chdir` (and a fake HOME), or they describe the developer's
 machine instead of the code.
 
-## Open work (2026-10-08)
+## Open work (2026-10-17)
 
 On the AI PC:
 - llamaindex on V3 (describe an image AND transcribe audio in one
@@ -679,7 +711,23 @@ Code and docs:
 Back IN scope (owner, 2026-10-10): A2A (Layer 6), on the `feat/a2a`
 branch. The layering rule for it is in the A2A section of the map above:
 only `ovat/a2a/sdk/` may import `a2a`. Studying other agent TUIs (Mistral
-Vibe, OpenCode and others) for IDEAS is allowed; copying their code is not.
+Vibe, OpenCode and others) for IDEAS is allowed. The Vibe terminal client
+is copied into `ovat/tui/vibe/` under Apache-2.0 (`NOTICE`); outside that
+folder copy nothing new without the owner, and keep the origin notes and the
+LICENSE.
+
+After the `wip/phase3` branch:
+- The AI PC A-to-Z test (`~/claude-projects/ovat/test_guide/`).
+- Remote A2A approvals: an AUTHENTICATED caller that says it can approve may
+  approve `ask` tools on the serving machine. Add a server opt-in, default off.
+- The launcher's /chat remembers its workflow in the project's
+  `.ovat/chat_prefs.json`; a cloned repo could pre-set it. Decide: fix or not.
+- `workspace/trust/status` always answers trusted: the copied trust prompt is
+  inert. Implement real trust or remove the affordance.
+- Remove the classic agent app after the test, and the connector code with a
+  careful edit of the MCP panel.
+- A docs site refresh after merge, and a PyPI release.
+- GPU utilisation without Intel UT on real hardware; GPU/NPU on Linux.
 
 Scoped OUT by the owner, so do not re-propose: OVMS Docker integration
 tests. "Use every Textual widget" is not a goal:
