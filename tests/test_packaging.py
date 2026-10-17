@@ -147,3 +147,15 @@ def test_the_copied_clients_license_ships_in_the_wheel():
     assert (root / "ovat" / "tui" / "vibe" / "LICENSE").is_file()
     assert "ovat/tui/vibe/LICENSE" in (root / "NOTICE").read_text(
         encoding="utf-8")
+
+
+def test_pypi_links_to_the_site_the_source_the_issues_and_the_changelog():
+    """PyPI's sidebar comes from [project.urls]. Without it, the project
+    page linked nowhere: no docs site, no repo, no place to report a bug."""
+    pyproject = Path(__file__).parents[1] / "pyproject.toml"
+    urls = tomllib.loads(pyproject.read_text(encoding="utf-8"))[
+        "project"].get("urls", {})
+    assert urls.get("Homepage") == "https://lagmator22.github.io/ovat-navigate/"
+    assert urls.get("Source") == "https://github.com/Lagmator22/ovat"
+    assert urls.get("Issues") == "https://github.com/Lagmator22/ovat/issues"
+    assert urls.get("Changelog") == "https://github.com/Lagmator22/ovat/releases"

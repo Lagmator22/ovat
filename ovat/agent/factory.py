@@ -135,7 +135,8 @@ def build_llm(config: WorkflowConfig) -> LLMProvider:
                            max_tokens=backend.max_tokens,
                            sampling=backend.openai_kwargs(),
                            extra_body=backend.extra_body(),
-                           stream=(m.device.upper() != "NPU"))
+                           stream=(m.device.upper() != "NPU"),
+                           api_key=backend.api_key)
 
 
 def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:
@@ -181,7 +182,9 @@ def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:
         from ovat.providers.embeddings_ovms import OVMSEmbeddingsProvider
         # The server path reuses the same OVMS url (and timeout) the LLM uses.
         return OVMSEmbeddingsProvider(base_url=config.model.ovms_url, model=emb.model,
-                                      timeout=config.model.request_timeout)
+                                      timeout=config.model.request_timeout,
+                                      api_key=config.model.ovms_api_key()
+                                      or "not-needed")
     raise ValueError(
         f"Unknown embeddings provider '{emb.provider}'. Supported: genai, ovms."
     )

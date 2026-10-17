@@ -726,7 +726,11 @@ installer, the docs and the tests cannot disagree. It is **2026.4.1**, chosen
 by measurement (see [DECISIONS.md, D26](DECISIONS.md#serving-ovms)). `ovat
 setup` and `ovat doctor` both ask the installed binary for its version
 (`ovms --version`, run under `ovms_env()`) and say when it differs from the
-pin. `ovat setup --force` replaces it.
+pin. `ovat setup --force` replaces it, and names the folder before it deletes
+anything. It only deletes a folder holding the `.ovat-ovms` file that every
+install writes (or an empty one, or `~/.ovat/ovms` from before that file
+existed), and never the filesystem root, your home folder, the current folder
+or a git repository.
 
 ### Getting OVMS onto the machine: `ovat setup`
 
@@ -777,6 +781,14 @@ OVMS is not part of `pip install`: the archive is 126 to 185 MB, Linux has
 three builds, and macOS has none. The archive's single `ovms/` folder is
 flattened into `~/.ovat/ovms`, and every member's owner-write bit is set before
 extraction, because OVMS ships its files read-only.
+
+Every member is checked before anything is extracted, on every Python version.
+A name with `..` or an absolute path is skipped. A link whose target leaves the
+archive, directly or through another of the archive's links, stops the install
+with nothing extracted. The Linux archives' own library links
+(`libfoo.so -> libfoo.so.414`) stay. One absolute link in the Ubuntu archives
+points at `/ovms/lib`, the folder inside OVMS's Docker image, so it points at
+nothing on a normal machine and is left out.
 
 ### Installing it by hand (air-gapped machines, or a build you already have)
 
@@ -864,10 +876,33 @@ shared objects at `<root>/lib`, so the root is the directory *above* the
 binary. It is a module-level function so it can be tested without launching a
 server.
 
+**On Linux, OVMS needs Jinja2 in the system Python.** The `python_on` build
+embeds the system `python3` (`python3.12` on RHEL 9.6), and the Linux archives
+carry neither Jinja2 nor MarkupSafe. OVMS's bare-metal guide
+([v2026.4.1](https://github.com/openvinotoolkit/model_server/blob/v2026.4.1/docs/deploying_server_baremetal.md))
+says to run `pip3 install "Jinja2==3.1.6" "MarkupSafe==3.0.2"` (`pip3.12` on
+RHEL). Without them OVMS still loads and reports ready, but logs "Chat template
+has not been loaded properly" and answers every chat request with a 400. So
+`model_server.jinja_status()` starts the same-version system Python under
+`ovms_env()` and imports both modules. `ovat doctor` reports the result, `ovat
+setup` prints the command after an install, and `ovat serve` prints it when
+`ovms.log` has that line. OVAT never installs it for you. The Windows zip ships
+its own `python` folder with Jinja2 3.1.6 inside, so nothing is checked there.
+Not verified: other Linux distros, and that the probe interpreter is byte for
+byte the one OVMS embeds.
+
 **Readiness is a stall budget, not a deadline.** A first run downloads the
 model, and that can take any amount of time. The clock resets whenever the log
 file or the model folder grows, so a download that keeps moving is never
 interrupted, while a stuck server still fails after five minutes.
+
+**OVMS listens on this machine only.** Left to itself OVMS listens on every
+network interface and asks for no password, so `serve` passes
+`--rest_bind_address 127.0.0.1` (`model.ovms_bind_address`, or `--host`).
+`model.ovms_api_key_env` names an environment variable holding a key; `serve`
+gives it to OVMS in a file only the user can read, deletes the file once OVMS
+has started, and every engine sends the key. OVMS checks it on its generation
+endpoints (chat, embeddings); the health check and `/v3/models` stay open.
 
 **Logs go to a file, never a pipe.** A pipe that nobody reads blocks OVMS once
 the OS buffer (about 64 KB) is full.
