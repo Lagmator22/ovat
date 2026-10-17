@@ -1394,43 +1394,107 @@ def test_setup_says_nothing_to_do_on_macos_and_exits_zero(monkeypatch):
     assert "ovat chat" in result.output          # says what DOES work
 
 def test_serve_passes_ovms_port_to_modelserver(monkeypatch, tmp_path):
+    result, kwargs, _ = _serve(monkeypatch, tmp_path,
+                               model_yaml="  ovms_port: 8002\n")
+    assert result.exit_code == 0, result.output
+    assert kwargs.get("port") == 8002
+
+
+def _serve(monkeypatch, tmp_path, model_yaml="", args=()):
+    """Run `ovat serve` with a fake server; return (result, kwargs, events)."""
     from ovat.cli import main as cli_main
     monkeypatch.setattr(cli_main.sys, "platform", "linux")
     cfg = tmp_path / "w.yml"
-    cfg.write_text("model:\n  name: X\n  ovms_port: 8002\nagent:\n  type: native\n", encoding="utf-8")
-
-    captured_kwargs = {}
+    cfg.write_text(f"model:\n  name: X\n{model_yaml}agent:\n  type: native\n",
+                   encoding="utf-8")
+    captured, events = {}, []
 
     class FakeModelServer:
         DEFAULT_STALL_TIMEOUT = 120
+
         def __init__(self, **kwargs):
-            captured_kwargs.update(kwargs)
-            self.model_name = kwargs.get("model_name")
-            self.port = kwargs.get("port")
+            captured.update(kwargs)
+            self.base_url = "http://localhost:8000/v3"
+            self.log_path = ""
+
             class DummyProc:
                 pid = 1234
-                def poll(self): return None
+
+                def poll(self):
+                    return None
             self.process = DummyProc()
-            self.log_path = ""
-            self.base_url = f"http://localhost:{self.port or 8000}/v3"
-        def wait_until_ready(self, *args, **kwargs):
-            return True
+
+        def already_serving(self):
+            return None
+
         def start(self, *args, **kwargs):
-            pass
+            events.append("start")
+
+        def wait_until_ready(self, *args, **kwargs):
+            events.append("wait")
+            return True
+
+        def forget_api_key_file(self):
+            events.append("forget")
+
         def stop(self):
             pass
-        def already_serving(self):
-            return None                    # nothing on the port in this test
 
-    from ovat.core import model_server
+    from ovat.core import model_server, ovms_locator
     monkeypatch.setattr(model_server, "ModelServer", FakeModelServer)
-    from ovat.core import model_scout, ovms_locator
-    monkeypatch.setattr(model_scout, "identify_model", lambda *args: "llm")
-    monkeypatch.setattr(ovms_locator, "find_ovms", lambda *args: ("/path/to/ovms", "1.0"))
+    monkeypatch.setattr(ovms_locator, "find_ovms",
+                        lambda *args: ("/path/to/ovms", "1.0"))
+    result = runner.invoke(app, ["serve", str(cfg), *args])
+    return result, captured, events
 
-    result = runner.invoke(app, ["serve", str(cfg)])
+
+def test_serve_keeps_ovms_on_this_machine_by_default(monkeypatch, tmp_path):
+    result, kwargs, _ = _serve(monkeypatch, tmp_path)
     assert result.exit_code == 0, result.output
-    assert captured_kwargs.get("port") == 8002
+    assert kwargs["bind_address"] == "127.0.0.1"
+    assert kwargs["api_key"] is None
+    assert "other machines" not in result.output
+
+
+def test_serve_host_opens_it_and_says_so(monkeypatch, tmp_path):
+    result, kwargs, _ = _serve(monkeypatch, tmp_path,
+                               args=("--host", "0.0.0.0"))
+    assert result.exit_code == 0, result.output
+    assert kwargs["bind_address"] == "0.0.0.0"
+    text = " ".join(result.output.split())
+    assert "other machines can reach the model server with no password" in text
+
+
+def test_serve_host_beats_the_config(monkeypatch, tmp_path):
+    result, kwargs, _ = _serve(
+        monkeypatch, tmp_path, model_yaml="  ovms_bind_address: 0.0.0.0\n",
+        args=("--host", "127.0.0.1"))
+    assert result.exit_code == 0, result.output
+    assert kwargs["bind_address"] == "127.0.0.1"
+    assert "other machines" not in result.output
+
+
+def test_serve_hands_the_api_key_over_and_then_forgets_the_file(
+        monkeypatch, tmp_path):
+    monkeypatch.setenv("OVAT_TEST_OVMS_KEY", "s3cret")
+    result, kwargs, events = _serve(
+        monkeypatch, tmp_path,
+        model_yaml="  ovms_api_key_env: OVAT_TEST_OVMS_KEY\n")
+    assert result.exit_code == 0, result.output
+    assert kwargs["api_key"] == "s3cret"
+    assert "s3cret" not in result.output
+    # The key file is deleted once OVMS has read it, not left in temp.
+    assert events == ["start", "wait", "forget"]
+
+
+def test_serve_names_an_api_key_variable_that_is_not_set(monkeypatch, tmp_path):
+    monkeypatch.delenv("OVAT_TEST_OVMS_KEY", raising=False)
+    result, _kwargs, events = _serve(
+        monkeypatch, tmp_path,
+        model_yaml="  ovms_api_key_env: OVAT_TEST_OVMS_KEY\n")
+    assert result.exit_code == 1
+    assert "OVAT_TEST_OVMS_KEY" in result.output
+    assert events == []                       # nothing was started
 
 
 def _serve_with_occupied_port(monkeypatch, tmp_path, serving, model="X"):
@@ -2020,35 +2084,8 @@ def test_the_thinking_switch_reaches_the_local_chat_model(monkeypatch, tmp_path)
 
 def test_serve_passes_tool_guided_generation_from_the_config(monkeypatch,
                                                              tmp_path):
-    from ovat.cli import main as cli_main
-    from ovat.core import model_server, ovms_locator
-
-    monkeypatch.setattr(cli_main.sys, "platform", "linux")
-    seen = {}
-
-    class FakeModelServer:
-        DEFAULT_STALL_TIMEOUT = 120
-
-        def __init__(self, **kwargs):
-            seen.update(kwargs)
-            self.port, self.log_path = 8000, ""
-            self.base_url = "http://localhost:8000/v3"
-            self.process = type("P", (), {"pid": 1, "poll": lambda s: None})()
-
-        def already_serving(self):
-            return None
-
-        def start(self, *a, **k):
-            pass
-
-        def wait_until_ready(self, *a, **k):
-            return True
-
-    monkeypatch.setattr(model_server, "ModelServer", FakeModelServer)
-    monkeypatch.setattr(ovms_locator, "find_ovms", lambda *a: ("/ovms", "x"))
-    config = tmp_path / "w.yml"
-    config.write_text("model:\n  name: m\n  ovms_tool_guided_generation: true\n",
-                      encoding="utf-8")
-    result = runner.invoke(app, ["serve", str(config)])
+    result, kwargs, _ = _serve(
+        monkeypatch, tmp_path,
+        model_yaml="  ovms_tool_guided_generation: true\n")
     assert result.exit_code == 0, result.output
-    assert seen.get("tool_guided_generation") is True
+    assert kwargs.get("tool_guided_generation") is True

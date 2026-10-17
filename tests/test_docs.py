@@ -201,3 +201,14 @@ def test_every_local_image_in_the_docs_exists():
                         f"{os.path.relpath(path, ROOT)} -> {src}")
     assert not offenders, (
         "these images are referenced but missing:\n  " + "\n  ".join(offenders))
+
+
+def test_a_map_field_is_named_a_map_not_a_union():
+    """tools.env is dict[str, str] | None. The generator read every type
+    with arguments as a union, so the reference told YAML authors it was
+    "string | string | null", which nobody can write."""
+    generator = _generator()
+    assert generator.type_name(dict[str, str]) == "map of string to string"
+    assert generator.type_name(dict[str, str] | None) == (
+        "map of string to string \\| null")
+    assert generator.type_name(dict[str, int]) == "map of string to integer"

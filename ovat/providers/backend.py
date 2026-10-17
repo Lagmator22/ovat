@@ -43,9 +43,9 @@ class LLMBackend:
     # four engines read this description -- and an unbounded generation is not
     # an engine's problem to solve four times.
     max_tokens: int | None = None
-    # OVMS ignores the key entirely, but every OpenAI-shaped SDK requires the
-    # field to be present, so it is part of the description rather than a
-    # literal repeated at four call sites.
+    # Every OpenAI-shaped SDK requires the field. OVMS ignores it unless it
+    # was started with an API key (model.ovms_api_key_env), and then the
+    # real key has to be here, for all four engines alike.
     api_key: str = "not-needed"
     # Optional sampling settings; None means "do not send". See ModelConfig.
     top_p: float | None = None
@@ -63,7 +63,8 @@ class LLMBackend:
                    timeout=m.request_timeout, max_tokens=m.max_tokens,
                    top_p=m.top_p, top_k=m.top_k, min_p=m.min_p,
                    presence_penalty=m.presence_penalty, seed=m.seed,
-                   enable_thinking=m.enable_thinking)
+                   enable_thinking=m.enable_thinking,
+                   api_key=m.ovms_api_key() or "not-needed")
 
     def openai_kwargs(self) -> dict:
         """Settings the OpenAI chat-completions API names itself.

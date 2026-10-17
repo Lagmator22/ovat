@@ -200,6 +200,41 @@ def check_ovms_serving(config_binary: str | None = None) -> Check:
                  f"you already have")
 
 
+def check_ovms_python(config_binary: str | None = None) -> Check | None:
+    """On Linux, can the system Python that OVMS embeds import Jinja2?
+
+    OVMS's python_on build runs against the system Python and needs Jinja2 and
+    MarkupSafe there, or every chat request fails with a 400 even though the
+    server reports ready. The fix is OVMS's own documented command
+    (docs/deploying_server_baremetal.md, v2026.4.1); this check only reports
+    and never installs. None when there is nothing to say (no OVMS, not
+    Linux, not a python_on layout).
+    """
+    if sys.platform != "linux":
+        return None
+    from ovat.core.model_server import jinja_fix_lines, jinja_status
+    from ovat.core.ovms_locator import find_ovms
+    path, _how = find_ovms(config_binary)
+    if not path:
+        return None
+    state, python = jinja_status(path)
+    if state == "n/a":
+        return None
+    name = "OVMS Python (Jinja2)"
+    if state == "ok":
+        return Check(name, OK, f"{python} can import jinja2 and markupsafe")
+    if state == "missing":
+        return Check(name, WARN,
+                     f"{python} cannot import jinja2 or markupsafe, so OVMS "
+                     f"will start but fail every chat request. Fix (from "
+                     f"OVMS's docs): {jinja_fix_lines(python)[0]}  "
+                     f"(if pip refuses on Ubuntu 24.04, see the README)")
+    return Check(name, WARN,
+                 f"not verified: could not run {python} to test whether it "
+                 f"can import jinja2. OVMS needs it there: "
+                 f"{jinja_fix_lines(python)[0]}")
+
+
 def check_config(config_path: str) -> list[Check]:
     """Validate a workflow file and report what it asks for.
 
@@ -343,6 +378,9 @@ def run_checks(config_path: str | None = None) -> list[Check]:
         check_device_routing(config),
         check_ovms_serving(config_binary),
     ]
+    python_check = check_ovms_python(config_binary)
+    if python_check is not None:
+        checks.append(python_check)
     if config_path:
         checks.extend(check_config(config_path))
     return checks

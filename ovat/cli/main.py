@@ -1054,6 +1054,9 @@ def _macos_has_no_ovms() -> None:
     rprint("")
     rprint("To run the full agent, point at a Linux/Windows box:")
     rprint("  [bold]model.ovms_url: http://<ai-pc>:8000/v3[/bold]")
+    rprint("  [dim]and start OVMS there with[/dim] ovat serve <config> "
+           "--host 0.0.0.0 [dim](it listens on that machine only by "
+           "default)[/dim]")
 
 
 def _install_ovms(root=None, version=None, force=False) -> tuple:
@@ -1194,6 +1197,18 @@ def _ovms_not_found(how: str) -> None:
     rprint("  4. classic      →  add the OVMS folder to PATH")
 
 
+def _say_jinja_missing(python: str) -> None:
+    """Tell the user how to give OVMS's Python its Jinja2 (Linux, python_on).
+
+    Printed by `setup` right after an install and by `serve` when ovms.log says
+    the chat template did not load. Never installs anything for the user.
+    """
+    from ovat.core.model_server import jinja_fix_lines
+    command, around_pip = jinja_fix_lines(python)
+    rprint(f"  [bold]{esc(command)}[/bold]")
+    rprint(f"  [dim]{esc(around_pip)}[/dim]")
+
+
 @app.command()
 def setup(
     yes: bool = typer.Option(False, "--yes", "-y",
@@ -1203,7 +1218,8 @@ def setup(
     ovms_version: str = typer.Option(None, "--ovms-version",
                                      help="Pin a different OVMS release."),
     force: bool = typer.Option(False, "--force",
-                               help="Re-download even if one is installed."),
+                               help="Re-download even if one is installed. "
+                                    "Only replaces a folder OVAT installed."),
     print_path: bool = typer.Option(False, "--print-path",
                                     help="Print the binary path and exit."),
 ):
@@ -1265,6 +1281,16 @@ def setup(
     if note:
         rprint(f"  [yellow]note[/yellow]     : {esc(note)}")
     rprint(f"  install  : [bold]{esc(root)}[/bold]")
+    if force and os.path.exists(root):
+        # Name the exact folder, symlinks resolved, BEFORE anything is
+        # deleted, and refuse here rather than after a 200 MB download.
+        try:
+            replacing = ovms_installer.check_replaceable(root)
+        except RuntimeError as exc:
+            rprint(f"[red]{esc(exc)}[/red]")
+            raise typer.Exit(code=1)
+        rprint(f"  replace  : [bold]{esc(replacing)}[/bold] [dim](deleted "
+               f"first)[/dim]")
     if not yes and sys.stdin.isatty():
         # Same reasoning as _offer_ovms_install: a prompt that cannot be
         # answered is a "no", not a traceback-shaped "Aborted."
@@ -1300,7 +1326,48 @@ def setup(
         rprint(f"  workflow.yml →  [bold]model.ovms_binary: {esc(binary)}"
                f"[/bold]")
         rprint(f"  env var      →  [bold]{setter} OVAT_OVMS={esc(binary)}[/bold]")
+    # Linux only: OVMS's Python needs Jinja2 from the system, and the archive
+    # does not carry it. Without it OVMS says ready and then fails every chat.
+    from ovat.core.model_server import jinja_status
+    state, python = jinja_status(binary)
+    if state == "missing":
+        rprint(f"[yellow]One more step on Linux:[/yellow] OVMS uses the system "
+               f"{esc(python)}, which cannot import Jinja2 or MarkupSafe. Without "
+               f"them `ovat serve` starts but every chat request fails. Run "
+               f"(from OVMS's own docs):")
+        _say_jinja_missing(python)
     rprint("[dim]Check it with[/dim] [bold]ovat doctor[/bold]")
+
+
+def _warn_if_chat_template_failed(server, binary: str, config: str) -> None:
+    """After "ready": say so if OVMS logged that it cannot apply chat templates.
+
+    OVMS reports ready and then answers every chat request with a 400, so the
+    log line is the only early sign. On Linux the usual cause is a missing
+    Jinja2 in the system Python (OVMS's docs); the cause on other systems is
+    not verified, so there the warning only points at the log.
+    """
+    from ovat.core.model_server import chat_template_failed
+    if not chat_template_failed(server.log_path):
+        return
+    rprint("[yellow]Warning: OVMS could not load the chat template.[/yellow] "
+           "It says ready, but every chat request will fail with a 400 "
+           "(\"Chat template not loaded correctly\").")
+    state, python = "n/a", ""
+    if sys.platform == "linux":
+        from ovat.core.model_server import jinja_status
+        state, python = jinja_status(binary)
+    if state in ("missing", "unknown"):
+        why = ("that Python has no Jinja2" if state == "missing" else
+               "Jinja2 is likely missing there (not verified)")
+        rprint(f"On Linux OVMS uses the system {esc(python)}; {why}. Install "
+               f"it (from OVMS's own docs):")
+        _say_jinja_missing(python)
+        rprint(f"Then restart OVMS so it loads the template: ovat serve "
+               f"{esc(config)} --stop, then ovat serve {esc(config)}")
+    else:
+        rprint(f"[dim]See the \"Chat template\" line in "
+               f"{esc(server.log_path)} for the reason.[/dim]")
 
 
 @app.command()
@@ -1317,6 +1384,11 @@ def serve(
                                              "limit: a download that keeps "
                                              "moving is waited on for as long "
                                              "as it takes."),
+    host: str = typer.Option(None, "--host",
+                             help="Address OVMS listens on. Default "
+                                  "model.ovms_bind_address (127.0.0.1, this "
+                                  "machine only). 0.0.0.0 opens it to the "
+                                  "network."),
 ):
     """Start OVMS in the background (or stop it again with --stop). AI PC only.
 
@@ -1324,7 +1396,8 @@ def serve(
     background; that is the point, so `ovat run` can talk to it. The pid is
     recorded in ovms.pid; `ovat serve <config> --stop` shuts it down cleanly.
     """
-    from ovat.core.model_server import ModelServer, stop_from_pidfile
+    from ovat.core.model_server import (ModelServer, is_loopback,
+                                        stop_from_pidfile)
     from ovat.core.ovms_locator import find_ovms
 
     if stop:
@@ -1333,6 +1406,12 @@ def serve(
         return
 
     cfg = _load_config(config)
+    bind_address = host or cfg.model.ovms_bind_address
+    try:
+        api_key = cfg.model.ovms_api_key()
+    except ValueError as exc:
+        rprint(f"[red]{esc(exc)}[/red]")
+        raise typer.Exit(code=1)
     # Resolve the binary FIRST (config field → OVAT_OVMS env → PATH → known
     # folders), so a setupvars.bat-style install just works with no PATH edit.
     binary, how = find_ovms(cfg.model.ovms_binary)
@@ -1359,6 +1438,8 @@ def serve(
         cache_size_gb=cfg.model.ovms_cache_size_gb,
         max_prompt_len=_max_prompt_len_for(cfg.model),
         tool_guided_generation=cfg.model.ovms_tool_guided_generation,
+        bind_address=bind_address,
+        api_key=api_key,
         binary=binary,
     )
     # Refuse to start a SECOND server on a port that already has one. On
@@ -1391,6 +1472,15 @@ def serve(
         # a served model and there is one.
         raise typer.Exit(code=0 if same else 1)
 
+    if not is_loopback(bind_address):
+        if api_key:
+            rprint(f"[yellow]OVMS will listen on {esc(bind_address)}: other "
+                   f"machines can reach the model server, with the API key "
+                   f"from {esc(cfg.model.ovms_api_key_env)}.[/yellow]")
+        else:
+            rprint(f"[yellow]OVMS will listen on {esc(bind_address)}: other "
+                   f"machines can reach the model server with no password. "
+                   f"Set model.ovms_api_key_env to require a key.[/yellow]")
     if stall_timeout is None:
         stall_timeout = ModelServer.DEFAULT_STALL_TIMEOUT
     rprint(f"[green]Starting OVMS[/green] for {esc(cfg.model.name)} on "
@@ -1416,8 +1506,13 @@ def serve(
             mins, secs = divmod(int(elapsed), 60)
             progress.update(task, description=f"starting OVMS... {mins}m{secs:02d}s")
 
-        ready = server.wait_until_ready(stall_timeout=stall_timeout,
-                                        on_progress=_tick)
+        try:
+            ready = server.wait_until_ready(stall_timeout=stall_timeout,
+                                            on_progress=_tick)
+        finally:
+            # OVMS read the key while parsing its options, before it could
+            # become ready (or fail), so the file has done its job.
+            server.forget_api_key_file()
 
     if ready:
         rprint(f"[green]OVMS is ready[/green] at {esc(server.base_url)}  "
@@ -1425,6 +1520,7 @@ def serve(
                f"logs in {esc(server.log_path)})[/dim]")
         rprint(f"[dim]It keeps running in the background. Stop it with:[/dim] "
                f"ovat serve {esc(config)} --stop")
+        _warn_if_chat_template_failed(server, binary, config)
     elif server.process is not None and server.process.poll() is None:
         # Still ALIVE, just not ready yet: almost always a download still in
         # flight. Saying only "did not become ready" left the user with a
