@@ -94,6 +94,8 @@ def facts_text(info: dict, totals: dict, serving: bool,
     if info.get("model"):
         facts.append(info["device"], style=f"bold {ui.CYAN}")
         facts.append(f" {info['model']} · {info.get('engine')}")
+        if info.get("thinking"):
+            facts.append(" · thinking")
     used = totals.get("prompt_tokens", 0) + totals.get("completion_tokens", 0)
     if used:
         facts.append(f" · {used:,} tokens")

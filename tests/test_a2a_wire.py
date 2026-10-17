@@ -212,6 +212,20 @@ def test_a_wrong_token_is_an_auth_error(server_url):
     finally:
         peer.close()
     assert caught.value.kind == "auth"
+    assert "mozilla" not in caught.value.detail.lower()
+
+
+def test_a_refused_token_is_one_plain_sentence_without_a_docs_link():
+    from a2a.client import AgentCardResolutionError
+    from ovat.a2a.sdk.client import _peer_error
+
+    noisy = AgentCardResolutionError(
+        "Client error '401 Unauthorized' for url 'http://x/card'\nFor more "
+        "information check: https://developer.mozilla.org/en-US/docs/Web/"
+        "HTTP/Status/401", status_code=401)
+    error = _peer_error(noisy)
+    assert error.kind == "auth"
+    assert error.detail == "the agent refused the token"
 
 
 def test_nothing_listening_is_unreachable():

@@ -85,8 +85,6 @@ DEFAULT_MAX_TOKENS = None
 # still readable; only the formatting of the far scrollback is given up.
 REPLAY_RICH_TURNS = 6
 
-PREFS_FILE = "chat_prefs.json"
-
 # strip_thinking and split_thinking live in ovat/text.py: the plain CLI and the
 # agent session need them too, and this module imports textual. One copy, per
 # the single-source-of-truth rule -- two would drift the moment a new tag
@@ -94,27 +92,19 @@ PREFS_FILE = "chat_prefs.json"
 from ovat.text import split_thinking, strip_thinking
 # Where saved conversations live is shared with the agent apps (one folder,
 # so /load here and /save there see the same files).
+from ovat.agentic import prefs
 from ovat.agentic.sessions import sessions_dir
-
-
-def _ovat_dir(cwd: str) -> str:
-    return os.path.join(cwd, ".ovat")
 
 
 def load_prefs(cwd: str) -> dict:
     """The last config/model-path used, so `/chat` alone just works next time."""
-    try:
-        with open(os.path.join(_ovat_dir(cwd), PREFS_FILE), encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
+    return prefs.load(cwd)
 
 
 def save_prefs(cwd: str, config_path: str, model_path: str) -> None:
+    # Only these two keys: the agent app keeps its theme in the same file.
     try:
-        os.makedirs(_ovat_dir(cwd), exist_ok=True)
-        with open(os.path.join(_ovat_dir(cwd), PREFS_FILE), "w", encoding="utf-8") as f:
-            json.dump({"config": config_path, "model_path": model_path}, f, indent=2)
+        prefs.update(cwd, config=config_path, model_path=model_path)
     except OSError:
         pass
 

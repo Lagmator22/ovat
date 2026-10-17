@@ -66,7 +66,7 @@ One entry per tool. `tools:` is a LIST.
 
 | Field | Type | Default | Constraints | Purpose |
 | --- | --- | --- | --- | --- |
-| `name` | string | **required** | - | `search_docs`, `transcribe`, `describe_image`, or any tool an MCP server advertises. |
+| `name` | string | **required** | - | `search_docs`, `transcribe`, `describe_image`, the coding tools `read_file`, `write_file`, `edit`, `grep`, `shell` (they work inside the folder you run from; the last three ask first), `todo` (the agent's own task list), `ask_user` (asks the person a question; agent TUI only), `web_fetch` and `web_search` (ask first), or any tool an MCP server advertises. |
 | `type` | string | `builtin` | - | `builtin` runs in-process; `mcp_stdio` launches an external MCP server; `a2a` asks another agent over A2A (needs `pip install 'ovat[a2a]'`). |
 | `command` | list[string] \| null | `null` | - | Argv that launches the MCP server. Required when `type: mcp_stdio`. |
 | `env` | map of string to string \| null | `null` | - | Extra environment for an `mcp_stdio` server, which otherwise sees only HOME, PATH and a few more. `${VAR}` is expanded from your shell. |
@@ -76,7 +76,10 @@ One entry per tool. `tools:` is a LIST.
 | `token_env` | string \| null | `null` | - | NAME of the environment variable holding the bearer token for that agent. Never the token itself. |
 | `timeout` | float \| null | `null` | > 0 | Seconds to wait for the other agent's answer. Unset: 900. |
 | `description` | string \| null | `null` | - | What the model is told this agent does. Unset: built from the agent's card. |
-| `permission` | allow \| ask \| deny \| null | `null` | - | `allow`, `ask` (a person says yes first; with nobody to ask, as in `ovat run`, it does not run) or `deny`. Unset: `ask` for an `a2a` tool on another machine, `allow` otherwise. |
+| `permission` | allow \| ask \| deny \| null | `null` | - | `allow`, `ask` (a person says yes first; with nobody to ask, as in `ovat run`, it does not run) or `deny`. Unset: `ask` for an `a2a` tool on another machine and for the `write_file`, `edit`, `shell`, `web_fetch` and `web_search` tools, `allow` otherwise. |
+| `provider` | searxng \| tavily \| serper \| brave \| null | `null` | - | Which search service `web_search` uses: `searxng`, `tavily`, `serper` or `brave`. `web_search` only. Unset: the tool tells the person how to set it up. |
+| `base_url` | string \| null | `null` | - | Address of your SearXNG instance, for example `http://localhost:8080`. `web_search` with `provider: searxng` only. |
+| `api_key_env` | string \| null | `null` | - | NAME of the environment variable holding the search API key (tavily, serper, brave). Never the key itself. `web_search` only. |
 
 ## `agent`
 
@@ -87,6 +90,7 @@ Which engine drives the tool loop.
 | `type` | string | `native` | - | Which engine runs the tool loop: `native` (built in), `react` (LangChain), `llamaindex`, or `openai-agents`. Each non-native one needs its matching extra, e.g. `pip install 'ovat[langchain]'`. |
 | `max_iterations` | integer | `10` | - | Safety cap on tool-calling rounds before the loop gives up. |
 | `system_prompt` | string \| null | `null` | - | The agent's persona and standing instructions. |
+| `project_context` | boolean | `false` | - | Add the AGENTS.md and OVAT.md of the folder you run from to the system prompt (cut at 12,000 characters each). Off by default. |
 
 ## `rag.embeddings`
 

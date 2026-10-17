@@ -1,9 +1,9 @@
 # ovat/tui/server/methods/turn.py
 """Turns, the queue behind them, and the answers to approvals.
 
-`turn/steer` and `session/turn/queue/steer` are not here: the agent cannot
-take a new instruction in the middle of a turn, so they get the standard
-"not supported in OVAT" answer.
+`turn/steer` and `session/turn/queue/steer` need the native engine (its loop
+reads the new instruction before its next model call); any other engine
+answers NOT_STEERABLE.
 """
 from ovat.tui.server.rpc import Routes
 from ovat.tui.vibe.app_server.protocol import (CallbackResultParams,
@@ -16,7 +16,9 @@ from ovat.tui.vibe.app_server.protocol import (CallbackResultParams,
                                                TurnQueueRemoveParams,
                                                TurnQueueReplaceParams,
                                                TurnQueueResumeParams,
-                                               TurnStartParams)
+                                               TurnQueueSteerParams,
+                                               TurnStartParams,
+                                               TurnSteerParams)
 
 routes = Routes()
 
@@ -31,6 +33,16 @@ async def turn_interrupt(ctx, params: TurnInterruptParams):
     projector = ctx.require_session(params.session_id)
     ctx.turns.interrupt(params.expected_turn_id)
     return TurnInterruptResponse(last_event_id=projector.event_id)
+
+
+@routes.method("turn/steer", TurnSteerParams)
+async def turn_steer(ctx, params: TurnSteerParams):
+    return ctx.turns.steer(params)
+
+
+@routes.method("session/turn/queue/steer", TurnQueueSteerParams)
+async def queue_steer(ctx, params: TurnQueueSteerParams):
+    return ctx.turns.steer_queued(params)
 
 
 @routes.method("session/turn/enqueue", TurnEnqueueParams)
@@ -64,5 +76,9 @@ async def queue_resume(ctx, params: TurnQueueResumeParams):
 @routes.method("callback/result", CallbackResultParams)
 async def callback_result(ctx, params: CallbackResultParams):
     projector = ctx.require_session(params.session_id)
-    ctx.approvals.answer(params)
+    # A question (ask_user) and an approval share this one method.
+    if ctx.questions.owns(params.callback_id):
+        ctx.questions.answer(params)
+    else:
+        ctx.approvals.answer(params)
     return CallbackResultResponse(last_event_id=projector.event_id)

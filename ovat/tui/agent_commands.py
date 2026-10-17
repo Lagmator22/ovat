@@ -26,7 +26,7 @@ from ovat.tui.vibe.cli.commands import Command, CommandRegistry
 VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "help": (),
     "config": ("config/fields/read", "config/write"),
-    "model": ("config/model/write",),
+    "model": ("config/fields/read", "config/model/write"),
     "skills": ("skills/installed",),
     "thinking": ("config/model/write",),
     "reload": ("config/reload",),
@@ -34,7 +34,9 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "copy": (),
     "paste-image": ("capability:image input",),
     "log": ("session/log/read",),
-    "log-level": ("config/write",),
+    # It writes Vibe's log_level, which OVAT does not use: config/write
+    # answers "not used by OVAT", so the command would only end in that.
+    "log-level": ("capability:a log level setting",),
     "debug": ("diagnostics/logs/read",),
     "compact": ("session/compact",),
     "exit": ("session/stop",),
@@ -46,11 +48,14 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "resume": ("session/list", "session/read", "session/resume",
                "session/delete"),
     "rename": ("session/rename",),
-    "mcp": ("mcp_catalog/read",),
+    "mcp": ("mcp_catalog/read", "mcp_catalog/toggle", "mcp_catalog/refresh",
+            "connector_catalog/read"),
     "plugins": ("plugin_catalog/read",),
     "reload-plugins": ("plugin/reload",),
     "todo": ("capability:a todo tool",),
-    "voice": ("config/write",),
+    # The voice panel writes voice_mode_enabled, also refused (voice comes
+    # with its own step).
+    "voice": ("capability:voice input",),
     "leanstall": ("agents/install",),
     "unleanstall": ("agents/uninstall",),
     "rewind": ("session/rewind/read", "session/rewind"),
@@ -76,7 +81,7 @@ KEYS = """### Keys
 - `!cmd` runs a shell command here
 - `Esc` stops the answer or the command
 - `Esc Esc` on an empty prompt goes back to an earlier message (rewind)
-- `Ctrl+O` opens or folds the tool calls
+- `Ctrl+O` (or `Ctrl+T`) opens or folds the tool calls
 - `Shift+Tab` switches between asking and auto-approve
 - `Ctrl+C` copies a selection, stops the answer, and quits when pressed twice
 """

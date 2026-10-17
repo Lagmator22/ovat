@@ -327,5 +327,10 @@ class Projector:
         self.history = list(history)
         self.turns = list(turns)
         self.queue = PublicTurnQueue()
-        self.bridge = Bridge(session.id)
+        # A new bridge counts from 1 again, and an entry it made would
+        # collide with one the kept history already holds ("msg-1"): a
+        # compacted or rewound conversation could not show its next answer.
+        used = [int(e.id.rsplit("-", 1)[1]) for e in self.history
+                if e.id.rsplit("-", 1)[-1].isdigit()]
+        self.bridge = Bridge(session.id, first_id=max(used, default=0) + 1)
 

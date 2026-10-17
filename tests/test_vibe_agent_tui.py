@@ -24,7 +24,7 @@ import pytest
 
 pytest.importorskip("textual")
 
-from ovat.agent.permissions import ONCE, REFUSE, SESSION  # noqa: E402
+from ovat.agent.permissions import ALWAYS, ONCE, REFUSE, SESSION  # noqa: E402
 from ovat.agent.session import Session  # noqa: E402
 from ovat.agentic import commands as ovat_commands  # noqa: E402
 from ovat.agentic import session as s  # noqa: E402
@@ -38,12 +38,12 @@ from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.container import \
     ChatInputContainer  # noqa: E402
 from ovat.tui.vibe.cli.textual_ui.widgets.messages import (  # noqa: E402
     AssistantMessage, ErrorMessage, InterruptMessage, ReasoningMessage,
-    UserCommandMessage, UserMessage, WarningMessage)
+    SlashCommandMessage, UserCommandMessage, UserMessage, WarningMessage)
 from ovat.tui.vibe.cli.textual_ui.widgets.theme_picker import \
     ThemePickerApp  # noqa: E402
 from ovat.tui.vibe.cli.textual_ui.widgets.tools import ToolGroup  # noqa: E402
 from ovat.tui.widgets.banner import Banner  # noqa: E402
-from tests.test_ovat_app_server import FakeAgent, FakeSession  # noqa: E402
+from tests.test_ovat_app_server import FakeAgent, FakeSession, _wf  # noqa: E402
 
 SIZE = (120, 40)
 # A path with no brand word in it, so a scan of the screen is about the app.
@@ -364,8 +364,8 @@ def test_a_question_typed_while_busy_waits_in_the_queue_and_runs_next():
 
 @pytest.mark.parametrize("key, decision, said_yes", [
     ("1", ONCE, True), ("y", ONCE, True), ("2", SESSION, True),
-    # OVAT's panel has three options, so 3 is Deny (and 4, the last, is too)
-    ("3", REFUSE, False), ("4", REFUSE, False), ("n", REFUSE, False)])
+    # 3 is "always allow" (saved for the project), 4 and n are Deny
+    ("3", ALWAYS, True), ("4", REFUSE, False), ("n", REFUSE, False)])
 def test_the_approval_panel_answers_reach_the_broker(
         monkeypatch, key, decision, said_yes):
     monkeypatch.setattr(approval_app, "_INPUT_GRACE_PERIOD_S", 0.0)
@@ -480,7 +480,7 @@ def test_an_empty_bang_says_what_to_type():
 
 def test_help_lists_the_commands_and_keys_and_nothing_that_cannot_work():
     async def go():
-        async with running() as (app, pilot, fake, handle):
+        async with running(size=(120, 60)) as (app, pilot, fake, handle):
             await say(pilot, "/help")
             await until(pilot, lambda: len(app.query(UserCommandMessage)))
             await pilot.pause(0.3)
@@ -488,9 +488,10 @@ def test_help_lists_the_commands_and_keys_and_nothing_that_cannot_work():
             for name in [c.name for c in ovat_commands.COMMANDS
                          if c.name not in ("quit", "new")] + [
                              "clear", "exit", "status", "theme", "resume",
-                             "rewind", "rename", "branch", "log"]:
+                             "rewind", "rename", "branch", "log", "compact",
+                             "model", "thinking", "reload", "config", "mcp"]:
                 assert f"/{name}" in text, name
-            for gone in ("/teleport", "/mcp", "/model", "/config"):
+            for gone in ("/teleport", "/retry"):
                 assert gone not in text, gone
             assert "Ctrl+O" in text and "Shift+Tab" in text
             # /branch's own text has `ovat agent --resume <id>` in a code
@@ -512,6 +513,62 @@ def test_slash_lists_every_command_in_the_popup():
             for name in ("help", "doctor", "telemetry", "agents", "ask"):
                 assert f"/{name}" in text
             await pilot.press("escape")
+    run(go())
+
+
+def _highlighted(popup) -> int:
+    rows = list(popup.query("_CompletionRow"))
+    return next(i for i, r in enumerate(rows)
+                if r.has_class("completion-selected"))
+
+
+def test_the_wheel_moves_the_highlight_in_the_completion_popup():
+    from textual import events
+
+    async def go():
+        async with running(size=(120, 50)) as (app, pilot, fake, handle):
+            await pilot.press("/")
+            popup = app.query_one("#completion-popup")
+            await until(pilot, lambda: popup.styles.display == "block")
+            assert _highlighted(popup) == 0
+            popup.post_message(events.MouseScrollDown(
+                popup, 1, 1, 0, 1, 0, False, False, False))
+            await until(pilot, lambda: _highlighted(popup) == 1)
+            popup.post_message(events.MouseScrollUp(
+                popup, 1, 1, 0, -1, 0, False, False, False))
+            await until(pilot, lambda: _highlighted(popup) == 0)
+            await pilot.press("escape")
+    run(go())
+
+
+def test_a_click_on_a_row_of_the_completion_popup_chooses_it():
+    async def go():
+        async with running(size=(120, 50)) as (app, pilot, fake, handle):
+            await pilot.press("/")
+            popup = app.query_one("#completion-popup")
+            await until(pilot, lambda: popup.styles.display == "block")
+            rows = list(popup.query("_CompletionRow"))
+            label = str(rows[2].query_one(".completion-command").render())
+            await pilot.click(rows[2].query_one(".completion-command"))
+            box = app.query_one("#input-body")
+            await until(pilot, lambda: box.value.strip() == label.strip())
+            assert popup.styles.display == "none"
+    run(go())
+
+
+def test_at_offers_the_subagents_before_any_file():
+    async def go():
+        async with running(size=(120, 50)) as (app, pilot, fake, handle):
+            await type_text(pilot, "@resear")
+            popup = app.query_one("#completion-popup")
+            await until(pilot, lambda: popup.styles.display == "block")
+            first = popup.query("_CompletionRow").first()
+            assert "researcher" in str(
+                first.query_one(".completion-command").render())
+            assert "reads docs" in popup.content_text
+            await pilot.press("tab")
+            box = app.query_one("#input-body")
+            await until(pilot, lambda: box.value.startswith("@researcher"))
     run(go())
 
 
@@ -578,6 +635,10 @@ def test_ask_sends_the_task_straight_to_the_subagent():
                 ("researcher", "find the leave rules")]
             assert fake.asked == []                  # not the main model
             await until(pilot, lambda: app.query(AssistantMessage))
+            # one line for what was asked, not the command AND an @ line
+            assert not app.query(SlashCommandMessage)
+            assert [m._content for m in app.query(UserMessage)] == [
+                "@researcher find the leave rules"]
     run(go())
 
 
@@ -777,9 +838,11 @@ def test_quit_leaves_the_app():
     run(go())
 
 
-def test_theme_picks_a_theme_for_the_session_and_esc_goes_back():
+def test_theme_saves_the_choice_and_esc_restores_the_previous_theme(tmp_path):
+    from ovat.agentic import prefs
+
     async def go():
-        async with running() as (app, pilot, fake, handle):
+        async with running(cwd=str(tmp_path)) as (app, pilot, fake, handle):
             assert app.theme == "ovat"
             await say(pilot, "/theme")
             await until(pilot, lambda: app.query(ThemePickerApp))
@@ -799,7 +862,8 @@ def test_theme_picks_a_theme_for_the_session_and_esc_goes_back():
             await until(pilot, lambda: not app.query(ThemePickerApp))
             chosen = app.theme
             assert chosen != "ovat"
-            # a later runtime update ("auto" from the server) keeps the pick
+            await until(pilot, lambda: prefs.load(str(tmp_path)).get("theme") == chosen)
+            # A later runtime update keeps the saved choice.
             await say(pilot, "/engine react")
             await until(pilot, lambda: "react" in facts(app))
             await pilot.pause(0.3)
@@ -969,6 +1033,19 @@ def test_ctrl_o_folds_and_opens_the_tool_calls():
     run(go())
 
 
+def test_ctrl_t_also_folds_the_tool_calls_for_terminals_that_eat_ctrl_o():
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await say(pilot, "q")
+            await until(pilot, lambda: app.query(AssistantMessage))
+            group = app.query_one(ToolGroup)
+            await pilot.press("ctrl+t")
+            await until(pilot, lambda: not group._is_collapsed)
+            await pilot.press("ctrl+t")
+            await until(pilot, lambda: group._is_collapsed)
+    run(go())
+
+
 def test_ctrl_c_twice_quits_when_idle():
     async def go():
         async with running() as (app, pilot, fake, handle):
@@ -1014,26 +1091,52 @@ def test_ctrl_c_copies_a_selection_and_then_counts_towards_quit(copied):
     run(go())
 
 
-def test_steering_and_the_debug_console_keys_do_nothing_instead_of_failing():
-    """Ctrl+Enter, or Enter on an empty prompt while prompts wait (steering
-    the running turn), and Ctrl+Backslash (the debug console) are keys of the
-    copied app whose server side OVAT does not have. They must not reach the
-    server."""
-    from ovat.tui.vibe.cli.textual_ui.widgets.debug_console import DebugConsole
-
+def test_ctrl_enter_steers_a_waiting_prompt_into_the_running_turn():
+    """A prompt typed while the agent works waits in the queue. Ctrl+Enter
+    (or Enter on an empty prompt) hands it to the running turn instead of
+    waiting for the next one."""
     async def go():
         async with running(hold_turn=True) as (app, pilot, fake, handle):
             await say(pilot, "first")
             await until(pilot, lambda: fake.busy)
             await say(pilot, "second")                  # waits in the queue
-            await pilot.pause(0.3)
-            await pilot.press("enter")                  # empty: would steer
+            await until(pilot, lambda: "second" in screen_text(app))
             await pilot.press("ctrl+enter")
+            await until(pilot, lambda: fake.steered == ["second"])
+            assert not app.query(ErrorMessage)
+            fake.turn_gate.set()
+            await until(pilot, lambda: not fake.busy)
+            # it joined the first turn; it was not asked as a turn of its own
+            assert fake.asked == ["first"]
+            assert "second" in screen_text(app)
+    run(go())
+
+
+def test_ctrl_enter_on_a_framework_engine_says_why_and_the_prompt_still_runs():
+    async def go():
+        async with running(hold_turn=True, native=False) as (
+                app, pilot, fake, handle):
+            await say(pilot, "first")
+            await until(pilot, lambda: fake.busy)
+            await say(pilot, "second")
+            await until(pilot, lambda: "second" in screen_text(app))
+            await pilot.press("ctrl+enter")
+            await until(pilot, lambda: "native engine" in screen_text(app))
+            fake.turn_gate.set()
+            await until(pilot, lambda: fake.asked == ["first", "second"])
+    run(go())
+
+
+def test_the_debug_console_key_does_nothing_instead_of_failing():
+    """Ctrl+Backslash (the debug console) is a key of the copied app whose
+    server side OVAT does not have. It must not reach the server."""
+    from ovat.tui.vibe.cli.textual_ui.widgets.debug_console import DebugConsole
+
+    async def go():
+        async with running() as (app, pilot, fake, handle):
             await pilot.press("ctrl+backslash")
             await pilot.pause(0.3)
             assert not app.query(DebugConsole) and not app.query(ErrorMessage)
-            fake.turn_gate.set()
-            await until(pilot, lambda: fake.asked == ["first", "second"])
     run(go())
 
 
@@ -1068,6 +1171,116 @@ def test_esc_esc_rewinds_to_a_message_and_puts_it_back_in_the_prompt(
     run(go())
 
 
+def test_compact_summarizes_the_memory_and_marks_the_transcript():
+    from ovat.tui.vibe.cli.textual_ui.widgets.compact import CompactMessage
+
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await say(pilot, "first")
+            await until(pilot, lambda: len(app.query(AssistantMessage)) == 1
+                        and not app._is_busy())
+            await say(pilot, "/compact keep the numbers")
+            await until(pilot, lambda: app.query(CompactMessage)
+                        and "Compaction completed."
+                        in app.query_one(CompactMessage).get_content())
+            assert fake.compacts == ["keep the numbers"]
+            assert [e.kind for e in app.app_server.history
+                    if e.type == "checkpoint"] == ["compaction"]
+            assert len(fake.memory()) == 3      # system, summary, ack
+            assert not app.query(ErrorMessage), [
+                e._error for e in app.query(ErrorMessage)]
+            # and the next question goes on from the summary
+            await say(pilot, "second")
+            await until(pilot, lambda: fake.asked == ["first", "second"]
+                        and not app._is_busy())
+            assert not app.query(ErrorMessage), [
+                e._error for e in app.query(ErrorMessage)]
+    run(go())
+
+
+def test_model_picker_switches_the_model_and_the_conversation_is_kept(tmp_path):
+    from ovat.tui.vibe.cli.textual_ui.widgets.model_picker import \
+        ModelPickerApp
+
+    async def go():
+        async with running(workflow=_wf(tmp_path)) as (app, pilot, fake, handle):
+            await say(pilot, "first")
+            await until(pilot, lambda: fake.asked == ["first"]
+                        and not app._is_busy())
+            await say(pilot, "/model")
+            await until(pilot, lambda: app.query(ModelPickerApp))
+            # rows: Default, then the models in the order the server lists
+            await pilot.press("down", "down", "enter")
+            await until(pilot, lambda: fake.picks == [(None, None)])
+            await until(pilot, lambda: "Qwen3-8B-int4-ov" in facts(app))
+            await until(pilot, lambda: "Qwen3-8B-int4-ov" in banner_text(app))
+            assert not app.query(ErrorMessage), [
+                e._error for e in app.query(ErrorMessage)]
+            # the model remembers the first question, and a second one runs
+            await say(pilot, "second")
+            await until(pilot, lambda: fake.asked == ["first", "second"]
+                        and not app._is_busy())
+            assert [m["content"] for m in fake.memory()
+                    if m["role"] == "user"] == ["first", "second"]
+    run(go())
+
+
+def test_model_picker_default_row_goes_back_to_the_workflows_model(tmp_path):
+    from ovat.tui.vibe.cli.textual_ui.widgets.model_picker import \
+        ModelPickerApp
+
+    async def go():
+        async with running(workflow=_wf(tmp_path)) as (app, pilot, fake, handle):
+            await fake_pick(app, pilot, ["down", "down", "enter"])
+            await until(pilot, lambda: "Qwen3-8B-int4-ov" in facts(app))
+            await say(pilot, "/model")
+            await until(pilot, lambda: app.query(ModelPickerApp))
+            await pilot.press("home", "enter")           # the Default row
+            await until(pilot, lambda: fake.picks[-1] == (None, None))
+            await until(pilot, lambda: "Qwen3-8B-int4-ov" in facts(app))
+    run(go())
+
+
+async def fake_pick(app, pilot, keys):
+    await say(pilot, "/model")
+    await until(pilot, lambda: app.query("#modelpicker-app"))
+    await pilot.press(*keys)
+
+
+def test_thinking_picker_switches_thinking_and_the_bar_says_so(tmp_path):
+    from ovat.tui.vibe.cli.textual_ui.widgets.thinking_picker import \
+        ThinkingPickerApp
+
+    async def go():
+        async with running(workflow=_wf(tmp_path)) as (app, pilot, fake, handle):
+            await say(pilot, "first")
+            await until(pilot, lambda: fake.asked == ["first"]
+                        and not app._is_busy())
+            await say(pilot, "/thinking")
+            await until(pilot, lambda: app.query(ThinkingPickerApp))
+            await pilot.press("down", "enter")          # off -> high
+            await until(pilot, lambda: fake.picks == [(None, None)])
+            await until(pilot, lambda: "thinking" in facts(app))
+            assert [m["content"] for m in fake.memory()
+                    if m["role"] == "user"] == ["first"]
+            assert not app.query(ErrorMessage)
+    run(go())
+
+
+def test_reload_says_it_is_done_and_builds_nothing_when_the_file_is_the_same():
+    from ovat.tui.vibe.cli.textual_ui.widgets.reload_message import \
+        ReloadConfigMessage
+
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await say(pilot, "/reload")
+            await until(pilot, lambda: app.query(ReloadConfigMessage))
+            await pilot.pause(0.3)
+            assert not app.query(ErrorMessage)
+            assert fake.picks == []
+    run(go())
+
+
 def test_saved_conversations_rename_branch_log_and_resume_from_the_app(
         saved_sessions):
     from ovat.tui.vibe.cli.textual_ui.widgets.branch_created_message import \
@@ -1088,6 +1301,7 @@ def test_saved_conversations_rename_branch_log_and_resume_from_the_app(
             await say(pilot, "/rename Leave policy")
             await until(pilot, timeout=30, check=lambda: (saved_sessions.load(first) or {})
                         .get("title") == "Leave policy")
+            await until(pilot, timeout=30, check=lambda: not app._is_busy())
             await say(pilot, "/log")
             # The folder is checked in the message, not on screen: on Windows
             # CI it never showed up in the screen text, however long the test
@@ -1258,7 +1472,8 @@ def test_the_registry_keeps_a_vibe_command_only_when_the_server_serves_it():
     # what that comes to today (it grows when the server learns a method)
     assert set(registry.commands) & vibe == {
         "help", "clear", "copy", "exit", "status", "theme", "resume",
-        "rewind", "rename", "branch", "log"}
+        "rewind", "rename", "branch", "log", "compact", "model", "thinking",
+        "reload", "config", "mcp"}
 
 
 def test_a_removed_command_would_only_have_ended_in_not_supported():
@@ -1461,3 +1676,59 @@ def test_ovat_agent_continue_and_resume_on_the_command_line(
     assert calls == [((str(workflow),), {})]
     result = invoke(cli, ["agent", str(workflow), "--continue"])
     assert result.exit_code == 1 and "need the new app" in result.output
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_ask_user_shows_the_question_and_answers_or_cancels(cancelled):
+    from ovat.tui.vibe.cli.textual_ui.widgets.question_app import QuestionApp
+
+    async def go():
+        async with running(question={"question": "Which database?",
+                                      "choices": ["sqlite", "postgres"]}) as (
+                app, pilot, fake, handle):
+            await say(pilot, "pick one")
+            await until(pilot, lambda: app.query(QuestionApp))
+            await until(pilot, lambda: "Which database?" in screen_text(app))
+            question = app.query_one(QuestionApp)
+            await until(pilot, lambda: not question.is_within_grace_period())
+            await pilot.press("escape" if cancelled else "enter")
+            await until(pilot, lambda: app.query(AssistantMessage))
+            assert fake.answered == (None if cancelled else "sqlite")
+            await until(pilot, lambda: not app.query(QuestionApp))
+    run(go())
+
+
+def test_config_edits_the_workflow_and_reloads_with_memory_kept(tmp_path):
+    from ovat.tui.vibe.cli.textual_ui.screens.config.config_screen import ConfigScreen
+    from ovat.config.workflow import load_workflow
+    path = _wf(tmp_path)
+
+    async def go():
+        async with running(workflow=path) as (app, pilot, fake, handle):
+            await say(pilot, "first")
+            await until(pilot, lambda: not app._is_busy())
+            await say(pilot, "/config")
+            await until(pilot, lambda: isinstance(app.screen, ConfigScreen))
+            await until(pilot, lambda: app.screen.query("#config-screen-options"))
+            await type_text(pilot, "device")
+            await pilot.press("enter")
+            await until(pilot, lambda: app.screen.query("#config-edit-options"))
+            await pilot.press("down", "enter")
+            await until(pilot, lambda: load_workflow(path).model.device == "NPU")
+            await until(pilot, lambda: isinstance(app.screen, ConfigScreen))
+            await pilot.press("escape")
+            await until(pilot, lambda: not isinstance(app.screen, ConfigScreen))
+            await until(pilot, lambda: fake.picks == [(None, None)])
+            assert [m["content"] for m in fake.memory() if m["role"] == "user"] == ["first"]
+            assert "# the model" in Path(path).read_text()
+    run(go())
+
+
+def test_the_app_starts_with_the_saved_theme(tmp_path):
+    from ovat.agentic import prefs
+    prefs.update(str(tmp_path), theme="nord")
+
+    async def go():
+        async with running(cwd=str(tmp_path)) as (app, pilot, fake, handle):
+            await until(pilot, lambda: app.theme == "nord")
+    run(go())

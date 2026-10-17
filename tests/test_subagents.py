@@ -218,6 +218,7 @@ def _workflow_runner(monkeypatch, tmp_path, child=None, **sub):
 def test_a_workflow_subagent_runs_once_and_reports_progress(monkeypatch,
                                                             tmp_path):
     runner, bus, built = _workflow_runner(monkeypatch, tmp_path)
+    bus.asker = lambda question, choices: "sqlite"
     seen = []
     bus.subscribe(seen.append)
     out = runner.run("researcher", "find the leave policy")
@@ -227,6 +228,8 @@ def test_a_workflow_subagent_runs_once_and_reports_progress(monkeypatch,
     assert child.closed
     assert "delegate" not in child.tools_seen         # one level deep only
     assert child.events.stop is bus.stop               # Esc stops it too
+    assert child.events.asker is bus.asker
+    assert child.events.asker("Which database?", []) == "sqlite"
     texts = [e.data["text"] for e in seen if e.type == SUBAGENT_STATUS]
     assert texts[0] == "started (workflow)"
     assert "calling search_docs" in texts

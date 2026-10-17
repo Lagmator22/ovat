@@ -48,6 +48,11 @@ def _state(value) -> TaskState:
     return _STATES.get(value, TaskState.UNKNOWN)
 
 
+# httpx's own text for a 401 carries a docs link on developer.mozilla.org,
+# which is noise for a person who only needs to fix the token.
+REFUSED_TOKEN = "the agent refused the token"
+
+
 def _peer_error(exc: BaseException) -> PeerError:
     """One of four kinds, whatever the SDK or httpx raised."""
     text = str(exc)
@@ -58,13 +63,13 @@ def _peer_error(exc: BaseException) -> PeerError:
         return PeerError("timeout", text)
     if isinstance(exc, AgentCardResolutionError):
         if getattr(exc, "status_code", None) in (401, 403):
-            return PeerError("auth", text)
+            return PeerError("auth", REFUSED_TOKEN)
         return PeerError("unreachable", text)
     if isinstance(exc, httpx.TransportError):
         return PeerError("unreachable", text)
     if isinstance(exc, A2AClientError):
         if "401" in text or "403" in text:
-            return PeerError("auth", text)
+            return PeerError("auth", REFUSED_TOKEN)
         if "Network communication error" in text:
             return PeerError("unreachable", text)
     return PeerError("protocol", text)

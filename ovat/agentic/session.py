@@ -21,8 +21,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from ovat.agent.events import ANSWER_DELTA, REASONING_DELTA, Event
+from ovat.agent.events import (ANSWER_DELTA, REASONING_DELTA, STEER_TAKEN,
+                               Event)
 from ovat.agent.permissions import ApprovalBroker, ApprovalRequest
+from ovat.agent.questions import QuestionBroker, QuestionRequest
+from ovat.agentic import rules
 from ovat.text import split_thinking
 
 
@@ -61,8 +64,22 @@ class AnswerDelta:
 
 
 @dataclass(frozen=True)
+class Steered:
+    """The native loop took a steering message into the model's memory, at
+    message number `index`."""
+    text: str
+    index: int
+
+
+@dataclass(frozen=True)
 class ApprovalNeeded:
     request: ApprovalRequest
+
+
+@dataclass(frozen=True)
+class QuestionNeeded:
+    """The ask_user tool wants a person's answer (agent/questions.py)."""
+    request: QuestionRequest
 
 
 @dataclass(frozen=True)
@@ -132,10 +149,33 @@ def _context_window(config) -> int:
     return 0
 
 
-def describe_agent(config, agent, workflow: str) -> dict:
-    """What the banner and the bottom bar show. Plain values only."""
+def _model_choices(config) -> list[dict]:
+    """The /model picker's list, as plain values. Never raises: a list that
+    cannot be had is only a picker with one choice."""
+    try:
+        from ovat.agentic import models
+        return [{"id": c.id, "label": c.label} for c in models.choices(config)]
+    except Exception:
+        name = config.model.name
+        return [{"id": name, "label": name}]
+
+
+def describe_agent(config, agent, workflow: str,
+                   default_model: str | None = None) -> dict:
+    """What the banner and the bottom bar show. Plain values only.
+
+    `default_model` is the model the workflow FILE names, when this session
+    runs another one (see AgentSession.switch_model)."""
     tools = getattr(agent, "tools", None) or {}
     return {
+        # For /model and /thinking: the model by the name it is set with (the
+        # display name below drops a local folder's path), the list to pick
+        # from, the workflow's own model, and the thinking switch (None: the
+        # chat template decides).
+        "model_id": config.model.name,
+        "models": _model_choices(config),
+        "default_model_id": default_model or config.model.name,
+        "thinking": config.model.enable_thinking,
         "workflow": workflow,
         "name": Path(workflow).stem if workflow else "",
         # A local model is named by its folder; show the folder's name.
@@ -176,18 +216,26 @@ class AgentSession:
                  load=None, build=None, close=None,
                  cwd: str | None = None):
         from ovat.agent.factory import build_agent, close_agent
+        from ovat.agentic.mcp import MCPSelection
         from ovat.config.workflow import load_workflow
         self.workflow = workflow
         self.sink = sink
         self.cwd = cwd or os.getcwd()
         self._load = load or load_workflow
-        self._build = build or build_agent
+        self.mcp_selection = MCPSelection()
+        self._build = build or (lambda config: build_agent(
+            config, select_tools=self.mcp_selection.select_tools))
         self._close = close or close_agent
         self.config = None
         self.agent = None
         self.info: dict = {}
+        # The project's "always allow" rules are preloaded here and nowhere
+        # else: this session has a person to ask, `ovat run` does not.
         self.broker = ApprovalBroker(
-            on_request=lambda r: self._emit(ApprovalNeeded(r)))
+            on_request=lambda r: self._emit(ApprovalNeeded(r)),
+            always=rules.load(self.cwd), on_always=self._remember_always)
+        self.questions = QuestionBroker(
+            on_request=lambda r: self._emit(QuestionNeeded(r)))
         self.busy = False
         self.last_answer = ""
         self.last_trace: dict = {}
@@ -196,14 +244,57 @@ class AgentSession:
         self._shell: subprocess.Popen | None = None
         self._server: subprocess.Popen | None = None
         self._unsubscribe = None
+        # What this session runs instead of what the workflow file says
+        # (`model.name`, `model.enable_thinking`). Kept here, not in the
+        # config, because every rebuild (/engine, /clear on a framework
+        # engine) loads the file again and must not forget the pick.
+        self._overrides: dict = {}
 
     # ---- lifecycle ---------------------------------------------------------
 
     def start(self, engine: str | None = None) -> threading.Thread:
         """Load and build on a worker; ends in Ready or BuildFailed."""
-        return self._spawn(self._build_now, engine)
+        return self._spawn(self._build_now, engine, {})
 
-    def _build_now(self, engine: str | None) -> None:
+    def switch_model(self, model: str | None = None,
+                     enable_thinking: bool | None = None,
+                     follow_workflow: bool = False) -> threading.Thread:
+        """/model and /thinking: build again with another model and/or the
+        thinking switch, for this session only (the workflow file is not
+        touched). `model` "" goes back to the workflow's own; None leaves it.
+        The engine stays the one running now. The pick counts only once the
+        build succeeds, so a failed one leaves the old agent and old pick."""
+        picked = {}
+        if model is not None:
+            picked["name"] = model
+        if enable_thinking is not None:
+            picked["enable_thinking"] = enable_thinking
+        # A settings reload must also honour an edited agent.type. Ordinary
+        # model picks retain a session's current engine.
+        engine = (self.config.agent.type if self.config else None) \
+            if not follow_workflow else None
+        return self._spawn(self._build_now, engine, picked)
+
+    def _remember_always(self, tool: str) -> None:
+        """A person chose "always allow" for `tool`: keep it for the next
+        session in this project (ovat/agentic/rules.py)."""
+        try:
+            rules.add(self.cwd, tool)
+        except OSError as exc:
+            self._emit(Notice(
+                "warn", f"Could not save \"always allow {tool}\" "
+                        f"({exc.strerror or exc}); it lasts for this "
+                        f"session only."))
+
+    def forget_picks(self, *names: str) -> None:
+        """`/config` saved a model setting in the workflow file, so the
+        /model or /thinking pick for it (`name`, `enable_thinking`) must stop
+        winning over the file. Takes effect at the next build."""
+        for name in names:
+            self._overrides.pop(name, None)
+
+    def _build_now(self, engine: str | None, picked: dict,
+                   fresh: bool = False) -> None:
         if not self.workflow:
             self._emit(BuildFailed(
                 "No workflow here. Run `/workflow path/to/workflow.yml`, or "
@@ -212,33 +303,51 @@ class AgentSession:
             return
         try:
             config = self._load(self.workflow)
+            default_model = config.model.name
+            overrides = {**({} if fresh else self._overrides), **picked}
+            if overrides.get("name") == "":
+                del overrides["name"]               # back to the file's own
+            if overrides:
+                config = config.model_copy(update={
+                    "model": config.model.model_copy(update=overrides)})
             if engine:
                 config = config.model_copy(update={
                     "agent": config.agent.model_copy(update={"type": engine})})
-            agent = self._build(config)
+            agent = self._build(self.mcp_selection.config_for_build(config))
         except Exception as exc:
             self._emit(BuildFailed(f"Could not build {self.workflow}: "
                                    f"{_brief(exc)}"))
             return
         self._drop_agent()
         self.config, self.agent = config, agent
+        self._overrides = overrides
         agent.events.approver = self.broker
+        agent.events.asker = self.questions
 
         def _on_bus(e: Event) -> None:
             if e.type == ANSWER_DELTA:
                 self._emit(AnswerDelta(e.data.get("text") or ""))
             elif e.type == REASONING_DELTA:
                 self._emit(ReasoningDelta(e.data.get("text") or ""))
+            elif e.type == STEER_TAKEN:
+                self._emit(Steered(e.data.get("text") or "",
+                                   int(e.data.get("index") or 0)))
             else:
                 self._emit(AgentActivity(e))
 
         self._unsubscribe = agent.events.subscribe(_on_bus)
-        self.info = describe_agent(config, agent, self.workflow)
+        self.info = describe_agent(config, agent, self.workflow, default_model)
+        self.refresh_mcp()
         self._emit(Ready(self.info))
 
+    def refresh_mcp(self) -> None:
+        if self.config is not None:
+            self.info["mcp"] = self.mcp_selection.catalog(self.config, self.agent)
+
     def switch_workflow(self, path: str) -> threading.Thread:
+        """Another workflow starts from its own file: no picks carry over."""
         self.workflow = path
-        return self.start()
+        return self._spawn(self._build_now, None, {}, True)
 
     def new_conversation(self) -> threading.Thread | None:
         """Forget the conversation. The native loop just gets an empty
@@ -247,10 +356,11 @@ class AgentSession:
         self.broker.forget_session_grants()
         self.last_trace, self.last_answer = {}, ""
         from ovat.agent.loop import AgentLoop
+        from ovat.agent.factory import compose_system_prompt
         from ovat.agent.session import Session
         if isinstance(self.agent, AgentLoop):
             self.agent.session = Session(
-                system_prompt=self.config.agent.system_prompt)
+                system_prompt=compose_system_prompt(self.config, Path(self.cwd)))
             self._emit(Notice("info", "New conversation."))
             return None
         engine = self.config.agent.type if self.config else None
@@ -284,8 +394,9 @@ class AgentSession:
         session = self._memory()
         if session is None:
             return False
+        from ovat.agent.factory import compose_system_prompt
         from ovat.agent.session import Session
-        prompt = self.config.agent.system_prompt if self.config else None
+        prompt = compose_system_prompt(self.config, Path(self.cwd)) if self.config else None
         fresh = Session(system_prompt=prompt)
         fresh.messages.extend(dict(m) for m in messages if _chat_message(m))
         self.agent.session = fresh
@@ -299,6 +410,44 @@ class AgentSession:
             return False
         session.truncate(length)
         return True
+
+    def compact(self, instructions: str = "") -> str:
+        """/compact: replace what the model remembers with a summary of it.
+
+        One extra model call, with no tools, over the memory written out as
+        text (ovat/agent/compaction.py). BLOCKING: the app server runs it on
+        a worker thread, so its event loop keeps answering. It holds `busy`
+        for the whole call, so a turn cannot start in the middle of it and
+        change the memory under it. Any failure (a framework engine, an OVMS
+        error, an empty summary) raises CompactionFailed with one sentence
+        and leaves the memory as it was. Returns the summary."""
+        from ovat.agent.compaction import (CompactionFailed, compacted_memory,
+                                           summary_messages, summary_of)
+        memory = self.memory()
+        if memory is None:
+            raise CompactionFailed(
+                "Compacting needs the native engine: it is the one whose "
+                "memory OVAT can rewrite. `/engine native` switches.")
+        with self._lock:
+            if self.busy:
+                raise CompactionFailed(
+                    "Wait for the current turn to end, or interrupt it, "
+                    "before compacting.")
+            self.busy = True
+        try:
+            try:
+                reply = self.agent.llm.chat(summary_messages(memory,
+                                                             instructions))
+            except Exception as exc:
+                raise CompactionFailed(
+                    f"The model could not write the summary, so nothing was "
+                    f"compacted: {_brief(exc)}") from exc
+            summary = summary_of(reply)
+            self.restore_memory(compacted_memory(memory, summary))
+            return summary
+        finally:
+            with self._lock:
+                self.busy = False
 
     def close(self) -> None:
         self.cancel()
@@ -329,6 +478,18 @@ class AgentSession:
                 return None
             self.busy = True
         return self._spawn(self._turn, text)
+
+    def steer(self, text: str) -> bool:
+        """Give the running turn one more instruction (Ctrl+Enter). The native
+        loop reads it before its next model call. False when no turn runs or
+        the engine is not native: a framework engine has no step of its own
+        to slip it into."""
+        from ovat.agent.loop import AgentLoop
+        with self._lock:
+            if not self.busy or not isinstance(self.agent, AgentLoop):
+                return False
+        # The loop itself refuses once it has decided its answer is final.
+        return self.agent.steer(text)
 
     def ask_subagent(self, name: str, task: str) -> threading.Thread | None:
         """`/ask name task`: straight to one subagent, no main model."""
@@ -400,6 +561,7 @@ class AgentSession:
             self.agent.events.stop.set()
             stopped = True
         self.broker.cancel_all()
+        self.questions.cancel_all()
         if self._shell is not None and self._shell.poll() is None:
             from ovat.cli.shell import kill
             try:

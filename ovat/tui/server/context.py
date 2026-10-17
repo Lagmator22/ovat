@@ -25,10 +25,11 @@ from uuid import uuid4
 from ovat.agent.events import (REMOTE_STATUS, SUBAGENT_STATUS, TOOL_ENDED,
                               TOOL_STARTED)
 from ovat.agentic import session as s
-from ovat.agentic import sessions
+from ovat.agentic import prefs, sessions
 from ovat.tui.server import saved, views
 from ovat.tui.server.approvals import Approvals
 from ovat.tui.server.projector import Projector, now_ms
+from ovat.tui.server.questions import Questions
 from ovat.tui.server.rpc import RpcError, RpcServer
 from ovat.tui.server.shell_runs import ShellRuns
 from ovat.tui.server.turns import BuildFailedError, TurnManager
@@ -67,6 +68,7 @@ class ServerContext:
         self.stats = views.StatsBook()
         self.turns = TurnManager(self)
         self.approvals = Approvals(self)
+        self.questions = Questions(self)
         self.shell = ShellRuns(self)
         self.lifecycle = asyncio.Lock()
         self.closed = False
@@ -88,6 +90,17 @@ class ServerContext:
         self.anchors: dict[str, int] = {}
         self._pending_memory: list[dict] | None = None
         self.save_failed = False
+        # Why the last build failed (None while it did not), for /model and
+        # /reload, which answer for their own build; and the workflow file's
+        # time stamp when the agent was built, which /reload compares.
+        self.last_failure: str | None = None
+        self._built_stamp: int | None = None
+        # The theme saved in the UI preferences file ("auto": none saved);
+        # and whether /config changed the settings under the built agent
+        # (see settings_changed).
+        self.theme = views.AUTO_THEME
+        self.theme_saved = False
+        self._settings_stale = False
 
     # ---- the handshake ---------------------------------------------------------
 
@@ -133,6 +146,9 @@ class ServerContext:
             raise RpcError(ProtocolErrorCode.CONFLICT,
                            "A session is already open on this server")
         cwd = self.project_dir(options)
+        saved_theme = prefs.load(cwd).get("theme")
+        self.theme_saved = isinstance(saved_theme, str) and bool(saved_theme)
+        self.theme = saved_theme if self.theme_saved else views.AUTO_THEME
         agent = self.session_factory(self.workflow, self._sink, cwd=cwd)
         self.cwd = cwd
         self.agent = agent
@@ -204,6 +220,7 @@ class ServerContext:
                            "it, before resuming another session")
         saved.save(self)
         self.approvals.forget()
+        self.questions.forget()
         self.turns.reset()
         self.agent.broker.forget_session_grants()
         self.stats.last_prompt = None
@@ -225,7 +242,7 @@ class ServerContext:
 
     def runtime(self) -> RuntimeSnapshot:
         return views.runtime_snapshot(self.info, self.workflow, self.profile,
-                                      self.stats.snapshot())
+                                      self.stats.snapshot(), self.theme)
 
     def refresh_runtime(self) -> None:
         """Tell the client the runtime changed (the agent finished building,
@@ -286,6 +303,7 @@ class ServerContext:
         self.build_error = None
         self._switch = None
         self.workflow = getattr(self.agent, "workflow", None) or self.workflow
+        self._built_stamp = self._workflow_stamp()
         self.ready.set()
         if self._pending_memory is not None:
             self._apply_memory()
@@ -298,10 +316,13 @@ class ServerContext:
 
     def _on_BuildFailed(self, event: s.BuildFailed) -> None:
         switch, self._switch = self._switch, None
+        self.last_failure = event.text
         if switch is not None and switch.agent_kept:
             # /engine or /workflow could not build the new one. The old agent
-            # was never closed, so it stays, and its workflow with it.
+            # was never closed, so it stays, and its workflow with it, and it
+            # still remembers its own conversation.
             self.agent.workflow = switch.workflow
+            self._pending_memory = None
             self.build_error = None
         else:
             self.build_error = event.text
@@ -319,6 +340,9 @@ class ServerContext:
     def _on_AnswerDelta(self, event: s.AnswerDelta) -> None:
         self.turns.on_answer_delta(event.text)
 
+    def _on_Steered(self, event: s.Steered) -> None:
+        self.turns.on_steered(event)
+
     def _on_AgentActivity(self, event: s.AgentActivity) -> None:
         if event.event.type not in (TOOL_STARTED, TOOL_ENDED, SUBAGENT_STATUS,
                                     REMOTE_STATUS):
@@ -330,6 +354,9 @@ class ServerContext:
 
     def _on_ApprovalNeeded(self, event: s.ApprovalNeeded) -> None:
         self.approvals.request(event.request)
+
+    def _on_QuestionNeeded(self, event: s.QuestionNeeded) -> None:
+        self.questions.request(event.request)
 
     def _on_TurnDone(self, event: s.TurnDone) -> None:
         self.turns.finish(event)
@@ -355,8 +382,11 @@ class ServerContext:
     # ---- /engine and /workflow -------------------------------------------------
 
     async def rebuild(self, *, engine: str | None = None,
-                      workflow: str | None = None) -> None:
-        """Build the agent again with another engine or another workflow.
+                      workflow: str | None = None,
+                      pick: dict | None = None) -> None:
+        """Build the agent again with another engine or another workflow, or
+        (`pick`: model / enable_thinking, see AgentSession.switch_model) with
+        another model or thinking switch, which keeps the conversation.
 
         The agent is "not ready" while it builds, so a prompt sent meanwhile
         waits for the new one instead of running on an agent that is about
@@ -375,18 +405,76 @@ class ServerContext:
             self._switch = switch
             self.ready.clear()
             self.build_error = None
+            self.last_failure = None
             try:
-                self._build_thread = (agent.switch_workflow(workflow)
-                                      if workflow is not None
-                                      else agent.start(engine))
+                if pick is not None:
+                    # The new agent starts with an empty memory; the old
+                    # one's goes in as soon as it is ready (as /resume does),
+                    # so what the model remembers survives the switch and the
+                    # rewind anchors stay where they point.
+                    self._pending_memory = agent.memory()
+                    self._build_thread = agent.switch_model(**pick)
+                elif workflow is not None:
+                    self._build_thread = agent.switch_workflow(workflow)
+                else:
+                    self._build_thread = agent.start(engine)
             except Exception as exc:
                 self._switch = None
+                self._pending_memory = None
                 agent.workflow = switch.workflow
                 if not switch.agent_kept:
                     self.build_error = f"Could not start the agent: {exc}"
                 self.ready.set()
                 raise RpcError(ProtocolErrorCode.INTERNAL_ERROR,
                                f"Could not start the agent: {exc}") from None
+
+    async def pick(self, *, model: str | None = None,
+                   enable_thinking: bool | None = None,
+                   follow_workflow: bool = False) -> str | None:
+        """/model and /thinking: run on another model and/or thinking switch
+        for this session. Waits for the new agent; returns None when it is
+        running, or the sentence saying it could not be built (the old agent
+        is still the one running)."""
+        if not self.is_ready:
+            raise RpcError(ProtocolErrorCode.CONFLICT,
+                           "The agent is not ready yet.")
+        pick = {"model": model, "enable_thinking": enable_thinking}
+        if follow_workflow:
+            pick["follow_workflow"] = True
+        await self.rebuild(pick=pick)
+        await self.ready.wait()
+        if self.last_failure is not None:
+            return ("The model was not changed: the new one could not be "
+                    "started. The old one is still in use.")
+        return None
+
+    def _workflow_stamp(self) -> int | None:
+        try:
+            return os.stat(self.workflow).st_mtime_ns if self.workflow else None
+        except OSError:
+            return None
+
+    def settings_changed(self) -> None:
+        """/config wrote the workflow, or dropped a session pick: the built
+        agent is out of date even if the file's time stamp looks the same
+        (two writes within one clock tick)."""
+        self._settings_stale = True
+
+    async def reload(self) -> None:
+        """/reload: read the workflow file again. The agent is rebuilt (with
+        this session's picks and its conversation) only when the file changed
+        since it was built or /config changed a setting; otherwise there is
+        nothing to read."""
+        if (self._workflow_stamp() == self._built_stamp
+                and not self._settings_stale):
+            return
+        self._settings_stale = False
+        failure = await self.pick(follow_workflow=True)
+        if failure is not None:
+            self._settings_stale = True
+            raise RpcError(ProtocolErrorCode.INTERNAL_ERROR,
+                           "The workflow could not be loaded again. The "
+                           "agent from before is still running.")
 
     # ---- /clear ----------------------------------------------------------------
 
@@ -396,6 +484,7 @@ class ServerContext:
                            "Wait for the current turn to end, or interrupt it, "
                            "before clearing the conversation")
         self.approvals.forget()
+        self.questions.forget()
         self.turns.reset()
         # The session says "New conversation." about itself; the app draws its
         # own confirmation, so that notice (delivered a moment later, in

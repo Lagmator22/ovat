@@ -25,9 +25,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from ovat.agent.compaction import CompactionFailed, compacted_memory
 from ovat.agent.events import (SUBAGENT_STATUS, TOOL_ENDED, TOOL_STARTED,
                                Event)
-from ovat.agent.permissions import (ONCE, REFUSE, SESSION, ApprovalBroker)
+from ovat.agent.permissions import (ALWAYS, ONCE, REFUSE, SESSION,
+                                    ApprovalBroker)
+from ovat.agent.questions import QuestionBroker
 from ovat.agent.session import Session
 from ovat.agentic import session as s
 from ovat.tui.server import saved, serve_on_memory, start_ovat_app_server
@@ -63,7 +66,12 @@ from ovat.tui.vibe.app_server.protocol import (AppServerResponseError,
 
 T = 10.0                       # the longest any single wait may take
 
+MODELS = [{"id": "Qwen3.5-4B-int4-ov", "label": "Qwen3.5-4B-int4-ov"},
+          {"id": "Qwen3-8B-int4-ov", "label": "Qwen3-8B-int4-ov"}]
+
 INFO = {"workflow": "w.yml", "name": "w", "model": "Qwen3.5-4B-int4-ov",
+        "model_id": "Qwen3.5-4B-int4-ov", "models": MODELS,
+        "default_model_id": "Qwen3.5-4B-int4-ov", "thinking": None,
         "device": "GPU", "provider": "ovms", "engine": "native",
         "tools": [{"name": "search_docs", "kind": "builtin",
                    "permission": "allow"},
@@ -101,8 +109,11 @@ class FakeSession:
                  approval=None, tool=True, shell_lines=("one", "two"),
                  shell_code=0, hold_shell=False, rebuild=False,
                  failed=False, totals=None, start_raises=False,
-                 hold_start=False):
+                 question=None, extra_tools=(),
+                 hold_start=False, compact_error=None, fail_pick=False):
         self.workflow, self.sink = workflow, sink
+        self.compact_error = compact_error      # a model that cannot summarize
+        self.compacts = []                      # the instructions it was given
         self.cwd = cwd or os.getcwd()
         self.broker = ApprovalBroker(
             on_request=lambda r: sink(s.ApprovalNeeded(r)))
@@ -113,6 +124,10 @@ class FakeSession:
             self.resolved.append((request_id, decision))
             return real_resolve(request_id, decision)
         self.broker.resolve = spy
+        self.questions = QuestionBroker(
+            on_request=lambda r: sink(s.QuestionNeeded(r)))
+        self.question, self.extra_tools = question, tuple(extra_tools)
+        self.answered = "not asked"             # what ask_user got back
         self.native, self.answer, self.reasoning = native, answer, reasoning
         self.answer_deltas = tuple(answer_deltas)
         self.reasoning_deltas = tuple(reasoning_deltas)
@@ -149,7 +164,16 @@ class FakeSession:
         self.last_trace, self.last_answer = {}, ""
         self.totals = {"turns": 0, "prompt_tokens": 0, "completion_tokens": 0}
         self.asked, self.subagent_calls = [], []
+        self.steered = []
         self.engines = []
+        # /model and /thinking: every switch asked for, the model and the
+        # thinking switch the session runs now, and whether a switch fails.
+        self.picks = []
+        self.forgotten = []             # session picks /config dropped
+        self.fail_pick = fail_pick
+        self.model_id, self.thinking = INFO["model_id"], None
+        self.default_model_id = INFO["default_model_id"]
+        self.engine = INFO["engine"]
         self.turn_count = 0
         self.approved = None
         self.closed = False
@@ -184,11 +208,50 @@ class FakeSession:
                 return
             # as the real session: the old agent is replaced only now
             self.agent = self.agent_class(self.native)
-            self.info = dict(INFO, workflow=self.workflow,
-                             engine=engine or INFO["engine"],
-                             context_window=self.context_window)
+            self.info = self._describe(engine)
             self.sink(s.Ready(self.info))
         return self._thread(go)
+
+    def _describe(self, engine=None):
+        return dict(INFO, workflow=self.workflow,
+                    engine=engine or self.engine,
+                    context_window=self.context_window,
+                    model_id=self.model_id,
+                    model=self.model_id, thinking=self.thinking,
+                    default_model_id=self.default_model_id)
+
+    def switch_model(self, model=None, enable_thinking=None,
+                     follow_workflow=False):
+        self.picks.append((model, enable_thinking))
+
+        def go():
+            self.build_gate.wait(T)
+            if self.fail_pick:
+                self.sink(s.BuildFailed("Could not build w.yml: no such "
+                                        "model"))
+                return
+            if os.path.isfile(self.workflow):
+                from ovat.config.workflow import load_workflow
+                config = load_workflow(self.workflow)
+                self.model_id = config.model.name
+                self.default_model_id = config.model.name
+                self.thinking = config.model.enable_thinking
+                if follow_workflow:
+                    self.engine = config.agent.type
+            if model is not None:
+                self.model_id = model or self.default_model_id
+            if enable_thinking is not None:
+                self.thinking = enable_thinking
+            # as a real rebuild: the new agent remembers nothing until the
+            # server hands the old memory back
+            self.remembered = Session(system_prompt="be brief")
+            self.agent = self.agent_class(self.native)
+            self.info = self._describe()
+            self.sink(s.Ready(self.info))
+        return self._thread(go)
+
+    def forget_picks(self, *names):
+        self.forgotten.extend(names)
 
     def switch_workflow(self, path):
         self.workflow = path
@@ -252,6 +315,32 @@ class FakeSession:
         self.remembered.truncate(length)
         return True
 
+    def steer(self, text):
+        """As AgentSession.steer: native and busy only. The real loop takes
+        the text before its next model call and reports where it landed; the
+        fake takes it at once."""
+        if not self.native or not self.busy:
+            return False
+        self.steered.append(text)
+        index = len(self.remembered.snapshot())
+        self.remembered.add_user(text)
+        self.sink(s.Steered(text, index))
+        return True
+
+    def compact(self, instructions=""):
+        """As the real one: native only, the memory becomes the summary
+        envelope plus an acknowledgement, a failure leaves it alone."""
+        if not self.native:
+            raise CompactionFailed("Compacting needs the native engine")
+        if self.compact_error:
+            raise CompactionFailed(self.compact_error)
+        self.compacts.append(instructions)
+        memory = self.remembered.snapshot()
+        summary = "they asked: " + ", ".join(
+            m["content"] for m in memory if m["role"] == "user")
+        self.restore_memory(compacted_memory(memory, summary))
+        return summary
+
     def _turn(self, text):
         self.start_gate.wait(T)
         self.stop.clear()
@@ -271,6 +360,27 @@ class FakeSession:
         if self.approval is not None:
             self.approved = self.broker(
                 "search_docs", self.approval, "sends the question away")
+        for n, extra in enumerate(self.extra_tools, start=1):
+            # A tool that reports a `display`, as the real observed() does.
+            extra_id = f"x{n}"
+            self.sink(s.AgentActivity(Event(TOOL_STARTED, {
+                "call_id": extra_id, "name": extra["name"],
+                "arguments": extra["arguments"]})))
+            self.sink(s.AgentActivity(Event(TOOL_ENDED, {
+                "call_id": extra_id, "name": extra["name"], "status": "ok",
+                "duration_s": 0.1, "result_chars": 5,
+                "display": extra["display"]})))
+        if self.question is not None:
+            self.sink(s.AgentActivity(Event(TOOL_STARTED, {
+                "call_id": "q1", "name": "ask_user",
+                "arguments": self.question})))
+            self.answered = self.questions(
+                self.question["question"], self.question.get("choices", []))
+            self.sink(s.AgentActivity(Event(TOOL_ENDED, {
+                "call_id": "q1", "name": "ask_user", "status": "ok",
+                "duration_s": 0.1, "result_chars": 5, "display": {
+                    "kind": "ask_user", "answer": self.answered,
+                    "cancelled": self.answered is None}})))
         self.turn_gate.wait(T)
         if self.tool:
             denied = self.approval is not None and not self.approved
@@ -322,6 +432,7 @@ class FakeSession:
             self.turn_gate.set()
             stopped = True
         self.broker.cancel_all()
+        self.questions.cancel_all()
         if self.shell_busy:
             self.shell_killed.set()
             self.shell_gate.set()
@@ -1032,6 +1143,120 @@ def test_a_stale_or_missing_turn_id_is_a_clear_error():
     run(go())
 
 
+# ---- steering ---------------------------------------------------------------------
+
+async def _running_turn(session, fake):
+    """Start a turn that stays open; returns its id."""
+    await session.resources.runtime.wait_until_ready()
+    await session.enqueue("first")
+    await poll(lambda: fake.busy and session.state.turns
+               and session.state.turns[-1].status.value == "in_progress")
+    return session.state.turns[-1].id
+
+
+def test_steering_a_running_turn_adds_the_message_and_reaches_the_agent():
+    async def go():
+        async with served(hold_turn=True) as (session, handle, fake):
+            turn_id = await _running_turn(session, fake)
+            await session.inject_user_context(
+                "use the short form", as_message=True,
+                client_message_id="steer-1", require_active_turn=True)
+            assert fake.steered == ["use the short form"]
+            entry = next(e for e in session.history if e.id == "steer-1")
+            assert entry.role == "user" and entry.source == "turn_steer"
+            assert entry.turn_id == turn_id
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_steer_answers_a_missing_or_stale_turn_and_an_empty_message():
+    async def go():
+        async with served(hold_turn=True) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            client = session._connection.current
+            body = {"sessionId": session.session_id,
+                    "expectedTurnId": "nothing",
+                    "message": [{"type": "text", "text": "hi"}]}
+            with pytest.raises(AppServerResponseError) as err:
+                await client.request("turn/steer", body)
+            assert err.value.error.code is ProtocolErrorCode.CONFLICT
+            assert str(err.value) == "No active turn"
+            turn_id = await _running_turn(session, fake)
+            with pytest.raises(AppServerResponseError) as err:
+                await client.request("turn/steer", body)
+            assert err.value.error.code is ProtocolErrorCode.STALE_TURN
+            body.update(expectedTurnId=turn_id,
+                        message=[{"type": "text", "text": "  "}])
+            with pytest.raises(AppServerResponseError) as err:
+                await client.request("turn/steer", body)
+            assert err.value.error.code is ProtocolErrorCode.INVALID_PARAMS
+            assert fake.steered == []
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_steering_a_framework_engine_or_a_subagent_is_refused_in_plain_words():
+    async def go():
+        async with served(hold_turn=True, native=False) as (
+                session, handle, fake):
+            turn_id = await _running_turn(session, fake)
+            with pytest.raises(AppServerResponseError) as err:
+                await session.inject_user_context(
+                    "more", as_message=True, require_active_turn=True)
+            assert err.value.error.code is ProtocolErrorCode.NOT_STEERABLE
+            assert "native engine" in str(err.value)
+            assert [e.id for e in session.history
+                    if getattr(e, "source", "") == "turn_steer"] == []
+            with pytest.raises(AppServerResponseError) as err:
+                await session.steer_queued_turn("no-such-item", turn_id)
+            assert err.value.error.code is ProtocolErrorCode.NOT_FOUND
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_a_waiting_prompt_can_be_steered_into_the_running_turn():
+    async def go():
+        async with served(hold_turn=True) as (session, handle, fake):
+            turn_id = await _running_turn(session, fake)
+            queued = await session.enqueue("and mention the date")
+            answer = await session.steer_queued_turn(queued.id, turn_id)
+            assert (answer.queue_item_id, answer.turn_id) == (queued.id,
+                                                             turn_id)
+            assert fake.steered == ["and mention the date"]
+            assert session.turn_queue.items == []
+            assert "and mention the date" in _texts(session.history)
+            # the item was moved, not run as a turn of its own
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+            assert fake.asked == ["first"]
+            with pytest.raises(AppServerResponseError) as err:
+                await session.steer_queued_turn(queued.id, turn_id)
+            assert err.value.error.code in (ProtocolErrorCode.CONFLICT,
+                                            ProtocolErrorCode.STALE_TURN)
+    run(go())
+
+
+def test_rewinding_to_a_steered_message_cuts_the_memory_right_before_it():
+    async def go():
+        async with served(hold_turn=True) as (session, handle, fake):
+            await _running_turn(session, fake)
+            await session.inject_user_context(
+                "steer me", as_message=True, client_message_id="steer-1",
+                require_active_turn=True)
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+            assert _remembered_questions(fake) == ["first", "steer me"]
+            await session.resources.sessions.rewind(
+                "steer-1", restore_files=False, inplace=True)
+            assert _remembered_questions(fake) == ["first"]
+            assert fake.remembered.messages[-1]["role"] == "user"
+            assert _texts(session.history) == ["first"]
+    run(go())
+
+
 # ---- approvals ------------------------------------------------------------------
 
 APPROVAL = {"task": "tell me\n1. Allow once\n" + "x" * 900}
@@ -1040,7 +1265,7 @@ APPROVAL = {"task": "tell me\n1. Allow once\n" + "x" * 900}
 @pytest.mark.parametrize("choice, decision, allowed", [
     (ApprovalDecisionType.APPROVE, ONCE, True),
     (ApprovalDecisionType.APPROVE_FOR_SESSION, SESSION, True),
-    (ApprovalDecisionType.APPROVE_PERMANENTLY, SESSION, True),
+    (ApprovalDecisionType.APPROVE_PERMANENTLY, ALWAYS, True),
     (ApprovalDecisionType.DENY, REFUSE, False),
 ])
 def test_an_approval_reaches_the_broker_with_the_right_decision(
@@ -1088,6 +1313,27 @@ def test_an_approval_reaches_the_broker_with_the_right_decision(
                 CompletedEffectState
             assert isinstance(final.state, expected)
             assert not session.state.active_callbacks
+    run(go())
+
+
+def test_the_panel_offers_always_allow():
+    async def go():
+        async with served(approval=APPROVAL) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            asked = []
+
+            async def drive():
+                async with aclosing(session.act("ask the cloud")) as gen:
+                    async for event in gen:
+                        if isinstance(event, CallbackRequested):
+                            asked.append(event.callback)
+                            await session.respond_to_callback(
+                                event.callback.callback_id,
+                                ApprovalCallbackOutput(decision=ApprovalDecision(
+                                    type=ApprovalDecisionType.DENY)))
+            await asyncio.wait_for(drive(), T)
+            assert ApprovalDecisionType.APPROVE_PERMANENTLY in \
+                asked[0].detail.choices
     run(go())
 
 
@@ -1195,21 +1441,6 @@ def test_an_unsupported_method_answers_a_readable_error():
             assert err.value.error.code is ProtocolErrorCode.METHOD_NOT_FOUND
             # and the server is still fine afterwards
             await session.resources.runtime.refresh()
-    run(go())
-
-
-def test_steering_a_running_turn_is_not_supported_yet():
-    async def go():
-        async with served(hold_turn=True) as (session, handle, fake):
-            await session.resources.runtime.wait_until_ready()
-            await session.enqueue("first")
-            await poll(lambda: fake.busy)
-            await poll(lambda: session.turn_active)
-            with pytest.raises(AppServerResponseError) as err:
-                await session.inject_user_context("also this")
-            assert "not supported in OVAT: turn/steer" in str(err.value)
-            fake.turn_gate.set()
-            await events_until(session, is_completed)
     run(go())
 
 
@@ -1327,7 +1558,10 @@ def test_a_full_queue_and_context_entries_are_refused_with_a_reason():
     run(go())
 
 
-def test_small_reads_before_and_after_a_session_exists():
+def test_small_reads_before_and_after_a_session_exists(monkeypatch):
+    # diagnostics/list runs the doctor's checks; this machine's are not the point
+    from ovat.cli import diagnostics
+    monkeypatch.setattr(diagnostics, "run_checks", lambda config_path=None: [])
     async def go():
         client, handle, made = await raw_client()
         try:
@@ -1911,6 +2145,88 @@ def test_the_bridge_names_the_session_and_the_turn():
     assert plain.answer("x").entry.turn_id is None
 
 
+def _bridge_run(tmp_path, monkeypatch, name, arguments):
+    """Run one real coding tool and return the card the bridge settles."""
+    from ovat.agent import factory
+    from ovat.agent.events import EventBus
+    from ovat.config.workflow import WorkflowConfig
+    from ovat.tui.server.bridge import Bridge
+    monkeypatch.chdir(tmp_path)
+    bus = EventBus()
+    bus.approver = lambda tool, args, reason: True
+    events = []
+    bus.subscribe(events.append)
+    tools = factory.observe_tools(factory.build_tools(
+        WorkflowConfig(model={"name": "m"}, tools=[{"name": name}]),
+        events=bus), bus)
+    tools[name]["function"](**arguments)
+    bridge = Bridge("s1")
+    started = bridge.convert(events[0], {})
+    updated = bridge.convert(events[-1], {})
+    # What goes over the wire must survive being written out as JSON.
+    updated.entry.model_dump_json(by_alias=True)
+    return started.entry.detail, updated.entry.state
+
+
+def test_an_edit_reaches_the_diff_card_with_its_occurrences(
+        tmp_path, monkeypatch):
+    (tmp_path / "a.py").write_text("a = 1\nb = 2\n")
+    detail, state = _bridge_run(tmp_path, monkeypatch, "edit", {
+        "file_path": "a.py", "old_string": "b = 2", "new_string": "b = 3"})
+    assert detail.kind == "file_edit"
+    assert detail.input.old_string == "b = 2"
+    assert state.status == "completed"
+    # The wire form is camelCase, like every Vibe effect output.
+    assert state.output["occurrences"] == [
+        {"startLine": 2, "oldText": "b = 2", "newText": "b = 3"}]
+    assert state.display.message == "a.py"
+
+
+def test_a_shell_command_reaches_the_card_with_its_output(
+        tmp_path, monkeypatch):
+    detail, state = _bridge_run(tmp_path, monkeypatch, "shell", {
+        "command": f'"{sys.executable}" -c "print(42)"'})
+    assert detail.kind == "shell" and "print(42)" in detail.input.command
+    assert state.status == "completed"
+    assert state.output["stdout"].strip() == "42"
+    assert state.output["output"].strip() == "42"
+
+
+def test_a_shell_command_that_fails_keeps_its_output_on_the_failed_card(
+        tmp_path, monkeypatch):
+    detail, state = _bridge_run(tmp_path, monkeypatch, "shell", {
+        "command": f'"{sys.executable}" -c "import sys; print(1); '
+                   f'sys.exit(2)"'})
+    assert state.status == "failed"
+    assert "code 2" in state.error.message
+    assert state.output["stdout"].strip() == "1"
+
+
+def test_write_read_and_grep_cards_carry_their_outputs(tmp_path, monkeypatch):
+    detail, state = _bridge_run(tmp_path, monkeypatch, "write_file", {
+        "file_path": "n/new.txt", "content": "hi"})
+    assert detail.kind == "file_write"
+    assert state.output == {"filePath": "n/new.txt", "content": "hi",
+                            "fileExisted": False, "previousContent": None}
+    (tmp_path / "r.txt").write_text("one\ntwo\n")
+    detail, state = _bridge_run(tmp_path, monkeypatch, "read_file", {
+        "file_path": "r.txt"})
+    assert detail.kind == "file_read" and state.output["numLines"] == 2
+    detail, state = _bridge_run(tmp_path, monkeypatch, "grep", {
+        "pattern": "two"})
+    assert detail.kind == "file_search"
+    assert state.output["matchCount"] == 1
+    assert state.output["parsedMatches"][0]["line"] == 2
+
+
+def test_a_refused_coding_call_shows_the_sentence_not_a_traceback(
+        tmp_path, monkeypatch):
+    detail, state = _bridge_run(tmp_path, monkeypatch, "read_file", {
+        "file_path": "../outside.txt"})
+    assert state.status == "failed"
+    assert "outside the project folder" in state.error.message
+
+
 # ---- shutdown -------------------------------------------------------------------
 
 def _leftover_threads():
@@ -2225,6 +2541,105 @@ def test_rewind_is_refused_on_an_engine_whose_memory_ovat_cannot_cut():
     run(go())
 
 
+def _checkpoints(session):
+    return [e for e in session.history if e.type == "checkpoint"]
+
+
+def test_compact_replaces_the_memory_and_leaves_a_checkpoint(saved_sessions):
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await _ask(session, "two")
+            texts = _texts(session.history)
+            summary = await session.compact("keep the numbers")
+            assert summary == "they asked: one, two"
+            assert fake.compacts == ["keep the numbers"]
+            # the model remembers a summary now, not the two questions
+            assert _remembered_questions(fake)[0].startswith(
+                "You are continuing a trajectory")
+            assert len(fake.memory()) == 3      # system, summary, ack
+            # the person's transcript is untouched, with a checkpoint added
+            assert _texts(session.history) == texts
+            (mark,) = _checkpoints(session)
+            assert (mark.kind, mark.message) == ("compaction",
+                                                 "Context compacted")
+            assert mark.details == {"summaryLength": len(summary)}
+            # and it is saved that way, with no rewind anchors left
+            rec = saved_sessions.load(session.session_id)
+            assert rec["memory"] == fake.memory() and rec["anchors"] == {}
+            assert [e["type"] for e in rec["history"]].count("checkpoint") == 1
+            await _ask(session, "three")        # the conversation goes on
+            assert _remembered_questions(fake)[-1] == "three"
+    run(go())
+
+
+def test_compact_that_fails_says_why_and_changes_nothing():
+    async def go():
+        async with served(compact_error="The model returned an empty "
+                                        "summary.") as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            memory, history = fake.memory(), [e.id for e in session.history]
+            with pytest.raises(AppServerResponseError) as err:
+                await session.compact()
+            assert err.value.error.code is ProtocolErrorCode.COMPACTION_FAILED
+            assert "empty summary" in str(err.value)
+            assert fake.memory() == memory
+            assert [e.id for e in session.history] == history
+    run(go())
+
+
+def test_compact_is_refused_on_a_framework_engine_and_during_a_turn():
+    async def go():
+        async with served(native=False) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            with pytest.raises(AppServerResponseError) as err:
+                await session.compact()
+            assert err.value.error.code is ProtocolErrorCode.COMPACTION_FAILED
+            assert "native engine" in str(err.value)
+        async with served(hold_turn=True) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("long one")
+            await events_until(session, lambda e: isinstance(e, TurnStarted))
+            with pytest.raises(AppServerResponseError) as err:
+                await session.compact()
+            assert err.value.error.code is ProtocolErrorCode.CONFLICT
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_rewind_after_a_compaction_works_and_before_it_is_refused():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            before = next(e for e in session.history
+                          if isinstance(e, PublicMessageEntry))
+            await session.compact()
+            await _ask(session, "two")
+            await _ask(session, "three")
+            memory = fake.memory()
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.sessions.rewind(
+                    before.id, restore_files=False, inplace=True)
+            assert err.value.error.code is ProtocolErrorCode.INVALID_PARAMS
+            assert "compacted" in str(err.value)
+            assert fake.memory() == memory      # refused, nothing cut
+            target = next(e for e in session.history
+                          if isinstance(e, PublicMessageEntry)
+                          and e.text == "three")
+            await session.resources.sessions.rewind(
+                target.id, restore_files=False, inplace=True)
+            # back to the summary and "two"
+            assert _remembered_questions(fake)[1:] == ["two"]
+            assert _remembered_questions(fake)[0].startswith(
+                "You are continuing")
+    run(go())
+
+
 def test_branch_saves_a_copy_and_leaves_the_open_conversation_alone(
         saved_sessions):
     async def go():
@@ -2305,4 +2720,715 @@ def test_a_save_that_fails_is_said_once_and_the_conversation_goes_on(
                     if isinstance(e, ServerWarning)]
             assert len(said) == 1 and "disk full" in said[0]
             assert _texts(session.history) == ["one", "two", "three"]
+    run(go())
+
+
+# ---- /model and /thinking (config/model/write) ----------------------------------
+
+def _config(session):
+    return session.resources.config.current
+
+
+def test_the_runtime_offers_the_models_the_session_can_switch_to():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            config = _config(session)
+            assert [m.alias for m in config.models] == [
+                "Qwen3.5-4B-int4-ov", "Qwen3-8B-int4-ov"]
+            assert config.active_model.alias == "Qwen3.5-4B-int4-ov"
+            assert not config.active_model_pinned
+            assert config.active_model.thinking_levels == ["off", "high"]
+            assert config.active_model.thinking == "off"
+    run(go())
+
+
+def test_no_setting_is_fixed_by_an_administrator():
+    """The /model picker asks which fields are fixed before it opens. With no
+    workflow file only the theme is listed, and the one layer a write may
+    name is the workflow."""
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await session.resources.config.read_fields()
+            assert [f.name for f in response.fields] == ["theme"]
+            assert response.targets == ["workflow"]
+            assert all(f.origin != "admin" for f in response.fields)
+    run(go())
+
+
+def test_picking_a_model_builds_again_and_the_conversation_survives(
+        saved_sessions, tmp_path):
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await _ask(session, "two")
+            status = await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            assert status.name == "APPLIED"
+            assert fake.picks == [(None, None)]
+            config = _config(session)
+            assert config.active_model.alias == "Qwen3-8B-int4-ov"
+            assert not config.active_model_pinned
+            # the new agent remembers what the old one did, and the
+            # transcript is where it was
+            assert _remembered_questions(fake) == ["one", "two"]
+            assert _texts(session.history) == ["one", "two"]
+            await _ask(session, "three")
+            assert _remembered_questions(fake) == ["one", "two", "three"]
+    run(go())
+
+
+def test_the_rewind_points_stay_valid_after_a_model_switch(saved_sessions, tmp_path):
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await _ask(session, "two")
+            before = dict(handle._ctx.anchors)
+            assert len(before) == 2
+            await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            assert handle._ctx.anchors == before
+    run(go())
+
+
+def test_the_empty_alias_goes_back_to_the_workflows_own_model(tmp_path):
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            await session.resources.config.write_model(model_alias="")
+            assert fake.picks[-1] == (None, None)
+            assert not _config(session).active_model_pinned
+            assert _config(session).active_model.alias == "Qwen3-8B-int4-ov"
+    run(go())
+
+
+def test_picking_the_model_already_running_builds_nothing(tmp_path):
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.resources.config.write_model(
+                model_alias="Qwen3.5-4B-int4-ov", reasoning_effort="off")
+            assert fake.picks == [(None, None)]
+    run(go())
+
+
+def test_a_model_the_session_does_not_offer_is_refused_in_words():
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.config.write_model(
+                    model_alias="nope")
+            assert err.value.error.code is ProtocolErrorCode.INVALID_PARAMS
+            assert "Unknown model: nope" in err.value.error.message
+            assert "Qwen3-8B-int4-ov" in err.value.error.message
+            assert fake.picks == []
+    run(go())
+
+
+def test_thinking_is_the_enable_thinking_switch(tmp_path):
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.resources.config.set_thinking("high")
+            assert fake.picks == [(None, None)]
+            assert _config(session).active_model.thinking == "high"
+            await session.resources.config.set_thinking("off")
+            assert fake.picks[-1] == (None, None)
+            assert _config(session).active_model.thinking == "off"
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.config.set_thinking("max")
+            assert err.value.error.code is ProtocolErrorCode.INVALID_PARAMS
+    run(go())
+
+
+def test_a_switch_is_refused_while_a_turn_runs():
+    async def go():
+        async with served(hold_turn=True) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("slow")
+            await events_until(session, lambda e: isinstance(e, TurnStarted))
+            await poll(lambda: fake.busy)
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.config.write_model(
+                    model_alias="Qwen3-8B-int4-ov")
+            assert err.value.error.code is ProtocolErrorCode.CONFLICT
+            assert fake.picks == []
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_a_model_that_cannot_start_leaves_the_old_one_and_says_so(tmp_path):
+    async def go():
+        async with served(_wf(tmp_path), fail_pick=True) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.config.write_model(
+                    model_alias="Qwen3-8B-int4-ov")
+            assert "agent from before is still running" in err.value.error.message
+            assert _config(session).active_model.alias == "Qwen3.5-4B-int4-ov"
+            assert handle.ready
+            # the old agent was never touched: still the same conversation
+            assert _remembered_questions(fake) == ["one"]
+            assert len(handle._ctx.anchors) == 1
+    run(go())
+
+
+def test_a_framework_engine_is_told_it_forgets_on_a_model_switch(tmp_path):
+    async def go():
+        async with served(_wf(tmp_path), native=False) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("one")
+            await events_until(session, is_completed)
+            await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            seen = await events_until(
+                session, lambda e: isinstance(e, ServerWarning))
+            assert "keeps its own memory" in next(
+                e.params.warning.message for e in seen
+                if isinstance(e, ServerWarning))
+    run(go())
+
+
+def test_reload_rebuilds_only_when_the_workflow_file_changed(tmp_path):
+    workflow = tmp_path / "w.yml"
+    workflow.write_text("model: {name: Qwen3.5-4B-int4-ov}\n")
+
+    async def go():
+        async with served(str(workflow)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await session.resources.config.reload()
+            assert fake.picks == []                  # nothing to read again
+            workflow.write_text("model: {name: other}\n")
+            os.utime(workflow, ns=(1, time.time_ns() + 10**9))
+            await session.resources.config.reload()
+            assert len(fake.picks) == 1
+            assert _remembered_questions(fake) == ["one"]
+    run(go())
+
+
+# ---- ask_user: the question callback --------------------------------------------
+
+QUESTION = {"question": "Which database?", "choices": ["sqlite", "postgres"]}
+
+
+def _answer_with(text=None, cancelled=False, other=False):
+    from ovat.tui.vibe.app_server.models import (UserAnswer,
+                                                 UserInputCallbackOutput,
+                                                 UserQuestionResult)
+    answers = [] if text is None else [UserAnswer(
+        question="Which database?", answer=text, is_other=other)]
+    return UserInputCallbackOutput(result=UserQuestionResult(
+        answers=answers, cancelled=cancelled))
+
+
+def test_a_question_round_trips_to_the_asking_tool():
+    from ovat.tui.vibe.app_server.models import UserInputCallbackDetail
+
+    async def go():
+        async with served(question=QUESTION) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            events = []
+
+            async def drive():
+                async with aclosing(session.act("pick one")) as gen:
+                    async for event in gen:
+                        events.append(event)
+                        if isinstance(event, CallbackRequested):
+                            await session.respond_to_callback(
+                                event.callback.callback_id,
+                                _answer_with("sqlite"))
+            await asyncio.wait_for(drive(), T)
+
+            asked = next(e.callback for e in events
+                         if isinstance(e, CallbackRequested))
+            assert isinstance(asked.detail, UserInputCallbackDetail)
+            question = asked.detail.request.questions[0]
+            assert question.question == "Which database?"
+            assert [o.label for o in question.options] == ["sqlite",
+                                                           "postgres"]
+            assert fake.answered == "sqlite"
+            assert any(isinstance(e, HistoryEntryUpdated)
+                       and isinstance(e.entry, PublicCallbackEntry)
+                       and e.entry.state.status == "answered"
+                       for e in events)
+            card = next(e for e in session.history if e.id == "q1")
+            assert isinstance(card.state, CompletedEffectState)
+            assert card.state.display.message == "sqlite"
+            assert not session.state.active_callbacks
+    run(go())
+
+
+def test_a_question_without_choices_still_shows_two_options():
+    async def go():
+        async with served(question={"question": "Name it?"}) as (
+                session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("go")
+            seen = await events_until(
+                session, lambda e: isinstance(e, CallbackRequested))
+            options = seen[-1].callback.detail.request.questions[0].options
+            assert [o.label for o in options] == ["Not sure", "Skip"]
+            await session.respond_to_callback(
+                seen[-1].callback.callback_id,
+                _answer_with("Widget", other=True))
+            await events_until(session, is_completed)
+            assert fake.answered == "Widget"
+    run(go())
+
+
+def test_the_person_cancelling_the_question_gives_the_tool_no_answer():
+    async def go():
+        async with served(question=QUESTION) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("pick one")
+            seen = await events_until(
+                session, lambda e: isinstance(e, CallbackRequested))
+            await session.respond_to_callback(
+                seen[-1].callback.callback_id, _answer_with(cancelled=True))
+            await events_until(session, is_completed)
+            assert fake.answered is None
+    run(go())
+
+
+def test_interrupting_closes_an_open_question():
+    async def go():
+        async with served(question=QUESTION) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("pick one")
+            seen = await events_until(
+                session, lambda e: isinstance(e, CallbackRequested))
+            callback = seen[-1].callback
+            await session.interrupt()
+            more = await events_until(session, is_completed)
+            assert completed_turn(more).status is PublicTurnStatus.INTERRUPTED
+            assert fake.answered is None
+            closed = [e.entry for e in more
+                      if isinstance(e, HistoryEntryUpdated)
+                      and isinstance(e.entry, PublicCallbackEntry)]
+            assert closed and closed[0].state.status == "cancelled"
+            with pytest.raises(AppServerResponseError) as err:
+                await session.respond_to_callback(
+                    callback.callback_id, _answer_with("sqlite"))
+            assert err.value.error.code is ProtocolErrorCode.CALLBACK_CLOSED
+    run(go())
+
+
+def test_a_client_that_cannot_show_questions_gets_no_answer_at_once():
+    async def go():
+        made = []
+
+        def factory(workflow, sink, cwd=None):
+            made.append(FakeSession(workflow, sink, cwd, question=QUESTION))
+            return made[0]
+        session, handle = await start_ovat_app_server(
+            "w.yml", session_factory=factory,
+            capabilities=ClientCapabilities(callback_kinds=["approval"]))
+        try:
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("pick one")
+            seen = await events_until(session, is_completed)
+            assert made[0].answered is None
+            assert any(isinstance(e, ServerWarning) and "cannot show" in
+                       e.params.warning.message for e in seen)
+        finally:
+            await asyncio.wait_for(session.close(), T)
+            await asyncio.wait_for(handle.close(), T)
+    run(go())
+
+
+# ---- the todo and web tools as Vibe cards ---------------------------------------
+
+def test_todo_and_web_results_become_vibe_cards():
+    from ovat.tui.vibe.app_server.models import (TodoEffectDetail,
+                                                 TodoEffectOutput,
+                                                 WebFetchEffectDetail,
+                                                 WebFetchEffectOutput,
+                                                 WebSearchEffectDetail,
+                                                 WebSearchEffectOutput)
+    todos = [{"id": "1", "content": "read it", "status": "in_progress",
+              "priority": "high"}]
+    tools = [
+        {"name": "todo", "arguments": {"action": "write", "todos": todos},
+         "display": {"kind": "todo", "action": "write", "todos": todos}},
+        {"name": "web_fetch", "arguments": {"url": "https://example.com"},
+         "display": {"kind": "web_fetch", "url": "https://example.com/",
+                     "content": "# Hi", "content_type": "text/html",
+                     "was_truncated": False}},
+        {"name": "web_search", "arguments": {"query": "ovms"},
+         "display": {"kind": "web_search", "query": "ovms", "answer": "a",
+                     "sources": [{"title": "T", "url": "https://x.org"}]}},
+    ]
+
+    async def go():
+        async with served(extra_tools=tools) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "plan")
+            todo, fetch, search = (next(e for e in session.history
+                                        if e.id == f"x{n}")
+                                   for n in (1, 2, 3))
+            assert isinstance(todo.detail, TodoEffectDetail)
+            assert todo.detail.input.action == "write"
+            assert TodoEffectOutput.model_validate(
+                todo.state.output).todos[0].content == "read it"
+            assert todo.state.display.message == "1 todo"
+            assert isinstance(fetch.detail, WebFetchEffectDetail)
+            assert WebFetchEffectOutput.model_validate(
+                fetch.state.output).url == "https://example.com/"
+            assert isinstance(search.detail, WebSearchEffectDetail)
+            out = WebSearchEffectOutput.model_validate(search.state.output)
+            assert out.sources[0].url == "https://x.org"
+            assert search.state.display.message == "ovms (1 result)"
+    run(go())
+
+
+# ---- /config and /theme (config/write, config/fields/read) -----------------------
+
+WORKFLOW = """\
+# my agent
+model:
+  name: Qwen3.5-4B-int4-ov   # the model
+  device: GPU
+tools:
+  - name: search_docs
+    type: builtin
+agent:
+  type: native
+"""
+
+
+def _wf(tmp_path, text=WORKFLOW):
+    path = tmp_path / "w.yml"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+def _op(path, value=None, op="set", target=None):
+    from ovat.tui.vibe.app_server.protocol import ConfigWriteOpWire
+    return ConfigWriteOpWire(op=op, path=path, value=value,
+                             target_layer=target)
+
+
+async def _write(session, *ops, reload=False):
+    return await session.resources.config.write(
+        list(ops), reason="test", reload_runtime=reload)
+
+
+def test_the_settings_screen_lists_the_workflows_own_settings(tmp_path):
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await session.resources.config.read_fields()
+            by_name = {f.name: f for f in response.fields}
+            device = by_name["device"]
+            assert device.kind.value == "enum" and device.value == "GPU"
+            assert device.enum_choices == ["CPU", "GPU", "NPU"]
+            assert [v.layer for v in device.layer_values] == [
+                "workflow", "default"]
+            temperature = by_name["temperature"]
+            assert [v.layer for v in temperature.layer_values] == ["default"]
+            assert by_name["search_docs.permission"].path == \
+                "/tools/search_docs/permission"
+            assert by_name["engine"].enum_choices[0] == "native"
+            assert by_name["theme"].value == "auto"
+            # no Vibe-only setting is listed
+            assert not {"voice_mode_enabled", "narrator_enabled", "log_level",
+                        "enable_telemetry"} & set(by_name)
+            assert response.targets == ["workflow"]
+    run(go())
+
+
+def test_a_model_picker_choice_is_saved_in_the_workflow_layer(tmp_path):
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            fields = {f.name: f for f in
+                      (await session.resources.config.read_fields()).fields}
+            model = fields["active_model"]
+            assert model.value == "Qwen3-8B-int4-ov"
+            assert [(v.layer, v.value) for v in model.layer_values] == [
+                ("workflow", "Qwen3-8B-int4-ov")]
+            assert "name: Qwen3-8B-int4-ov" in Path(fake.workflow).read_text()
+    run(go())
+
+
+def test_a_setting_is_written_into_the_file_and_the_comments_stay(tmp_path):
+    path = _wf(tmp_path)
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await _write(session,
+                                    _op("/model/temperature", 0.3),
+                                    _op("/tools/search_docs/permission",
+                                        "ask"))
+            assert response.applied
+            text = open(path, encoding="utf-8").read()
+            assert "# my agent" in text and "# the model" in text
+            from ovat.config.workflow import load_workflow
+            config = load_workflow(path)
+            assert config.model.temperature == 0.3
+            assert config.tools[0].permission == "ask"
+            # written, not yet rebuilt: the screen sends config/reload on close
+            assert fake.picks == []
+            await session.resources.config.reload()
+            assert fake.picks == [(None, None)]
+    run(go())
+
+
+def test_reload_runtime_builds_again_and_the_conversation_survives(tmp_path):
+    path = _wf(tmp_path)
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            response = await _write(session, _op("/model/device", "NPU"),
+                                    reload=True)
+            assert response.applied
+            assert fake.picks == [(None, None)]
+            assert _remembered_questions(fake) == ["one"]
+            assert _texts(session.history) == ["one"]
+            await _ask(session, "two")
+            assert _remembered_questions(fake) == ["one", "two"]
+    run(go())
+
+
+def test_an_invalid_value_is_refused_with_the_message_and_changes_nothing(
+        tmp_path):
+    path = _wf(tmp_path)
+    before = open(path, "rb").read()
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await _write(session, _op("/model/top_p", 5.0))
+            assert response.rejected and not response.applied
+            assert "model.top_p" in response.failures[0]
+            assert open(path, "rb").read() == before
+            seen = await events_until(
+                session, lambda e: isinstance(e, ServerWarning))
+            assert "model.top_p" in next(
+                e.params.warning.message for e in seen
+                if isinstance(e, ServerWarning))
+            assert fake.picks == []
+    run(go())
+
+
+def test_a_batch_with_one_bad_op_writes_none_of_it(tmp_path):
+    path = _wf(tmp_path)
+    before = open(path, "rb").read()
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await _write(session,
+                                    _op("/model/temperature", 0.3),
+                                    _op("/model/device", "TPU"))
+            assert response.failures == [
+                "device must be one of: CPU, GPU, NPU."]
+            assert open(path, "rb").read() == before
+    run(go())
+
+
+def test_a_vibe_only_setting_is_answered_not_used_and_changes_nothing(
+        tmp_path):
+    path = _wf(tmp_path)
+    before = open(path, "rb").read()
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            for name in ("voice_mode_enabled", "log_level",
+                         "enable_telemetry"):
+                response = await _write(session, _op(f"/{name}", True))
+                assert not response.applied and not response.rejected
+                assert response.failures == [
+                    f"'{name}' is not used by OVAT, so nothing was changed."]
+            response = await _write(session, _op("/no_such_thing", 1))
+            assert response.failures == ["Unknown setting: /no_such_thing"]
+            response = await _write(session, _op("/model/device", "CPU",
+                                                 target="project-toml"))
+            assert "Unknown layer" in response.failures[0]
+            assert open(path, "rb").read() == before
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.config.update({"log_level": "debug"})
+            assert "not used by OVAT" in str(err.value)
+    run(go())
+
+
+def test_a_setting_is_reset_by_removing_it(tmp_path):
+    path = _wf(tmp_path)
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _write(session, _op("/model/temperature", 0.3))
+            await _write(session, _op("/model/temperature", op="remove",
+                                      target="workflow"))
+            assert "temperature" not in open(path, encoding="utf-8").read()
+    run(go())
+
+
+def test_saving_the_model_in_the_file_drops_the_sessions_own_pick(tmp_path):
+    path = _wf(tmp_path)
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            await session.resources.config.write_model(
+                model_alias="Qwen3-8B-int4-ov")
+            fake.picks.clear()
+            response = await _write(session,
+                                    _op("/active_model", "Qwen3-8B-int4-ov"),
+                                    reload=True)
+            assert response.applied
+            assert "name: Qwen3-8B-int4-ov" in open(
+                path, encoding="utf-8").read()
+            assert fake.forgotten == ["name", "name"]
+            assert fake.picks == [(None, None)]          # built from the file
+            assert _remembered_questions(fake) == ["one"]
+    run(go())
+
+
+def test_the_default_model_choice_only_drops_the_pick_and_leaves_the_file(
+        tmp_path):
+    path = _wf(tmp_path)
+    before = open(path, "rb").read()
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await _write(session, _op("/active_model", ""))
+            assert response.applied
+            assert open(path, "rb").read() == before
+            assert fake.forgotten == ["name"]
+            # the file did not change, but the agent is out of date anyway
+            await session.resources.config.reload()
+            assert fake.picks == [(None, None)]
+    run(go())
+
+
+def test_writing_settings_is_refused_while_a_turn_runs(tmp_path):
+    path = _wf(tmp_path)
+    before = open(path, "rb").read()
+
+    async def go():
+        async with served(path, hold_turn=True) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("slow")
+            await events_until(session, lambda e: isinstance(e, TurnStarted))
+            await poll(lambda: fake.busy)
+            with pytest.raises(AppServerResponseError) as err:
+                await _write(session, _op("/model/device", "CPU"))
+            assert err.value.error.code is ProtocolErrorCode.CONFLICT
+            assert open(path, "rb").read() == before
+            fake.turn_gate.set()
+            await events_until(session, is_completed)
+    run(go())
+
+
+def test_a_workflow_that_will_not_load_is_a_sentence(tmp_path):
+    path = _wf(tmp_path, "model: {name: m, devise: GPU}\n")
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            response = await _write(session, _op("/model/device", "CPU"))
+            assert not response.applied
+            assert "Cannot read" in response.failures[0]
+    run(go())
+
+
+def test_the_theme_is_saved_in_the_ui_preferences_file(tmp_path):
+    from ovat.agentic import prefs
+
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            cwd = handle._ctx.cwd
+            prefs.update(cwd, config="keep.yml")
+            response = await _write(session, _op("/theme", "nord"))
+            assert response.applied
+            assert _config(session).theme == "nord"
+            assert prefs.load(cwd) == {"config": "keep.yml", "theme": "nord"}
+            fields = {f.name: f for f in
+                      (await session.resources.config.read_fields()).fields}
+            assert [v.layer for v in fields["theme"].layer_values] == [
+                "preferences", "default"]
+            # a theme that does not exist is refused, the saved one stays
+            response = await _write(session, _op("/theme", "neon-pink"))
+            assert response.failures == ["Unknown theme: neon-pink"]
+            assert prefs.load(cwd)["theme"] == "nord"
+            # and removing it goes back to auto, keeping the other keys
+            await _write(session, _op("/theme", op="remove"))
+            assert prefs.load(cwd) == {"config": "keep.yml"}
+            assert _config(session).theme == "auto"
+            assert fake.picks == []            # a theme never rebuilds
+    run(go())
+
+
+def test_a_saved_theme_is_what_the_next_session_starts_with(tmp_path):
+    from ovat.agentic import prefs
+
+    async def go():
+        prefs.update(os.getcwd(), theme="nord")
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            assert _config(session).theme == "nord"
+    run(go())
+
+
+def test_diagnostics_are_the_doctors_checks_that_are_not_ok(monkeypatch,
+                                                            tmp_path):
+    from ovat.cli import diagnostics
+    from ovat.tui.vibe.app_server.protocol import DiagnosticsListResponse
+    seen = []
+
+    def checks(config_path=None):
+        seen.append(config_path)
+        return [diagnostics.Check("Python", "ok", "3.13"),
+                diagnostics.Check("OVMS serving", "warn", "ovms not found"),
+                diagnostics.Check("Workflow config", "fail", "no model")]
+    monkeypatch.setattr(diagnostics, "run_checks", checks)
+    path = _wf(tmp_path)
+
+    async def go():
+        async with served(path) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            client = session._connection.current
+            raw = await client.request(
+                "diagnostics/list",
+                {"sessionId": handle._ctx.projector.session.id})
+            response = DiagnosticsListResponse.model_validate(
+                raw, by_alias=True)
+            # worst first, ok ones left out, and the same checks /doctor runs
+            assert [(i.file, i.message) for i in response.issues] == [
+                ("Workflow config", "fail: no model"),
+                ("OVMS serving", "warn: ovms not found")]
+            assert response.hooks_count == 0
+            assert seen == [path]
+    run(go())
+
+
+def test_saving_the_engine_uses_the_new_workflow_engine_and_keeps_memory(tmp_path):
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            result = await _write(session, _op("/agent/type", "react"), reload=True)
+            assert result.applied
+            assert handle._ctx.info["engine"] == "react"
+            assert _remembered_questions(fake) == ["one"]
     run(go())

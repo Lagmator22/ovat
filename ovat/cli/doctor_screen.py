@@ -34,7 +34,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
-from ovat.cli import ui
+from ovat.cli import diagnostics, ui
 from ovat.cli.commands import ScreenCommands
 from ovat.cli.widgets import Footer, SelectableRichLog
 
@@ -51,10 +51,6 @@ DOCTOR_COMMANDS = [
 
 # Derived from ui's palette aliases, never redefined here.
 _STATUS_COLOUR = {"ok": ui.GREEN, "warn": ui.YELLOW, "fail": ui.RED}
-# Worst first. This is the order the table sorts into, because the whole
-# point of running doctor is to find what is broken, and a fail sitting below
-# nine oks is a fail you scroll past.
-_SEVERITY = {"fail": 0, "warn": 1, "ok": 2}
 _NAME_COLOUR = {"ok": ui.CYAN, "warn": ui.YELLOW, "fail": ui.RED}
 
 
@@ -256,8 +252,6 @@ class DoctorScreen(Screen):
     @work(thread=True)
     def _run_checks(self) -> None:
         """Off the UI thread: this imports openvino and opens a socket."""
-        from ovat.cli import diagnostics
-
         try:
             checks = diagnostics.run_checks(self._config_path)
         except Exception as exc:          # a check should never raise, but a
@@ -313,8 +307,7 @@ class DoctorScreen(Screen):
 
         rows = list(self._checks)
         if self._worst_first:
-            # Stable, so checks of equal severity keep the order they ran in.
-            rows.sort(key=lambda c: _SEVERITY.get(c.status, 9))
+            rows = diagnostics.worst_first(rows)
         for index, c in enumerate(rows):
             # Text cells, not str: a DataTable renders a str cell as MARKUP,
             # so a config value or an exception message containing a bracket

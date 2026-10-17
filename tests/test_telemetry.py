@@ -1017,6 +1017,27 @@ def test_the_first_cpu_reading_is_skipped_rather_than_reported_as_zero():
     assert any(key.startswith("cpu0") for key in second)
 
 
+def test_machine_cpu_comes_from_our_own_readings_not_psutils_shared_clock(
+        monkeypatch):
+    """psutil.cpu_percent() keeps ONE "previous call" for the whole process,
+    so another caller makes ours cover microseconds and read 0.0. The bar
+    showed CPU 0% for a whole session. The headline figure is now the busy
+    share of the machine's CPU time between OUR two readings."""
+    import collections
+    import psutil
+    from ovat.telemetry.sources import SystemSource
+
+    Times = collections.namedtuple("Times", "user system idle")
+    readings = iter([Times(10, 10, 80), Times(20, 20, 160), Times(30, 30, 240)])
+    monkeypatch.setattr(psutil, "cpu_times", lambda: next(readings))
+    # what a stolen clock looks like: every core 0.0
+    monkeypatch.setattr(psutil, "cpu_percent",
+                        lambda percpu=False: [0.0] * 4 if percpu else 0.0)
+    source = SystemSource()
+    source.sample()                          # the priming sample
+    assert source.sample()["cpu_pct"] == 20.0
+
+
 def test_memory_is_still_reported_on_the_very_first_sample():
     """Only the CPU deltas need priming. RAM is an absolute reading, so
     skipping it would lose a second of data for no reason."""
@@ -1386,3 +1407,71 @@ def test_a_late_power_reading_takes_a_card_slot():
             assert len(screen._cards) == MAX_CARDS
     asyncio.run(scenario())
 
+
+
+# --- the GPU counter (Windows), the sibling of the NPU one -------------------
+
+def test_the_gpu_adapter_is_the_graphics_one_with_most_engines_never_the_npu():
+    from ovat.telemetry.sources import _WindowsGPUCounter
+
+    assert _WindowsGPUCounter.choose_gpu_adapter(_REAL_INSTANCES) == \
+        "0x00000000_0x0000b75a"          # not Basic Render, not AI Boost
+
+
+def test_no_graphics_adapter_or_a_tie_is_not_guessed():
+    from ovat.telemetry.sources import _WindowsGPUCounter
+
+    npu_only = [i for i in _REAL_INSTANCES if "bb15" in i]
+    assert _WindowsGPUCounter.choose_gpu_adapter(npu_only) is None
+    tied = [i for i in _REAL_INSTANCES if "baea" in i] + [
+        "pid_4_luid_0x00000000_0x0000cccc_phys_0_eng_0_engtype_3d",
+        "pid_4_luid_0x00000000_0x0000cccc_phys_0_eng_1_engtype_3d"]
+    assert _WindowsGPUCounter.choose_gpu_adapter(tied) is None
+
+
+def test_gpu_utilisation_is_the_busiest_engine_type_summed_over_processes():
+    from ovat.telemetry.sources import _WindowsGPUCounter
+
+    base = "pid_{}_luid_0x00000000_0x0000b75a_phys_0_eng_0_engtype_{}"
+    readings = [(base.format(1, "3d"), 30.0), (base.format(2, "3d"), 25.0),
+                (base.format(1, "videodecode"), 40.0),
+                (base.format(3, "copy"), 5.0)]
+    assert _WindowsGPUCounter.busiest_engine_type(readings) == 55.0
+    assert _WindowsGPUCounter.busiest_engine_type(
+        [(base.format(1, "3d"), 80.0), (base.format(2, "3d"), 70.0)]) == 100.0
+    assert _WindowsGPUCounter.busiest_engine_type([]) is None
+
+
+def test_the_gpu_source_reports_what_its_counter_reads_and_nothing_otherwise():
+    from ovat.telemetry.sources import GPUSource
+
+    class Busy:
+        utilization = staticmethod(lambda: 37.5)
+        unavailable = None
+
+    class Silent:
+        utilization = staticmethod(lambda: None)
+        unavailable = "no single graphics adapter"
+
+    assert GPUSource(counter=Busy()).sample() == {"utilization": 37.5}
+    assert GPUSource(counter=Silent()).sample() == {}
+    assert GPUSource(counter=Silent()).unavailable == \
+        "no single graphics adapter"
+
+
+def test_the_bottom_bar_shows_gpu_only_when_a_source_reads_one():
+    from ovat.agentic.hardware import HardwareMonitor, format_reading
+    from ovat.telemetry.sources import GPUSource
+
+    class Silent:
+        utilization = staticmethod(lambda: None)
+        unavailable = None
+
+    class Busy:
+        utilization = staticmethod(lambda: 12.0)
+        unavailable = None
+
+    assert "GPU" not in format_reading(
+        HardwareMonitor([GPUSource(counter=Silent())]).sample())
+    assert format_reading(
+        HardwareMonitor([GPUSource(counter=Busy())]).sample()) == "GPU 12%"

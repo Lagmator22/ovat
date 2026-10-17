@@ -1,13 +1,17 @@
 # ovat/tui/server/methods/session.py
 """Reading the session, its history, saved conversations (list, rename,
 delete, rewind, fork), the `!` shell, and small settings."""
+import asyncio
 from uuid import uuid4
 
+from ovat.agent.compaction import CompactionFailed
 from ovat.tui.server import saved, views
 from ovat.tui.server.projector import PREVIEW_CHARS, now_ms
 from ovat.tui.server.rpc import Reply, Routes, RpcError
 from ovat.tui.server.turns import BuildFailedError
-from ovat.tui.vibe.app_server.models import (PublicHistoryEntry,
+from ovat.tui.vibe.app_server.models import (PublicCheckpointEntry,
+                                             PublicEntryGenerationStatus,
+                                             PublicHistoryEntry,
                                              PublicMessageEntry,
                                              PublicSessionState,
                                              PublicTurnQueue)
@@ -15,6 +19,8 @@ from ovat.tui.vibe.app_server.protocol import (AgentSwitchParams,
                                                EmptyResponse,
                                                ProtocolErrorCode,
                                                RuntimeMutationResponse,
+                                               SessionCompactParams,
+                                               SessionCompactResponse,
                                                SessionDeleteParams,
                                                SessionForkParams,
                                                SessionForkResponse,
@@ -140,6 +146,11 @@ async def session_rewind(ctx, params: SessionRewindParams):
                        "Rewind goes back to one of your messages.")
     if ctx.agent.memory() is None:
         raise RpcError(ProtocolErrorCode.NOT_IMPLEMENTED, NATIVE_ONLY)
+    if index < _last_compaction(history):
+        raise RpcError(ProtocolErrorCode.INVALID_PARAMS,
+                       "That message is from before the conversation was "
+                       "compacted, and the model no longer remembers it. "
+                       "Pick a message after the compaction.")
     # The first agent turn at or after the entry is where the memory is cut;
     # none (only `@name` questions since) leaves the memory as it is.
     cut = next((ctx.anchors[e.id] for e in history[index:]
@@ -171,6 +182,45 @@ async def session_rewind(ctx, params: SessionRewindParams):
         message=entry.text, restore_errors=[], restored_paths=[],
         state=projector.state(),
         session_log=views.session_log(session.id, ctx.store))
+
+
+def _last_compaction(history: list[PublicHistoryEntry]) -> int:
+    """Index of the newest compaction checkpoint, -1 when there is none."""
+    return next((i for i in range(len(history) - 1, -1, -1)
+                 if isinstance(history[i], PublicCheckpointEntry)
+                 and history[i].kind == "compaction"), -1)
+
+
+@routes.method("session/compact", SessionCompactParams)
+async def session_compact(ctx, params: SessionCompactParams):
+    """/compact: the model's memory becomes a summary of itself. The
+    transcript keeps everything the person saw and gains a checkpoint where
+    it happened. Mirrors vibe/app_server/_handler.py `_compact`: refused
+    while a turn runs, COMPACTION_FAILED when no summary came."""
+    projector = _idle_session(ctx, params.session_id, "compacting")
+    try:
+        # The summary is a blocking model call: off the event loop.
+        summary = await asyncio.to_thread(
+            ctx.agent.compact, params.extra_instructions)
+    except CompactionFailed as exc:
+        raise RpcError(ProtocolErrorCode.COMPACTION_FAILED, str(exc))
+    # Every message before the summary is gone from the model's memory, so
+    # no anchor points at a message that is still there.
+    ctx.anchors.clear()
+    ctx.stats.last_prompt = None
+    stamp = now_ms()
+    checkpoint = PublicCheckpointEntry(
+        id=str(uuid4()), session_id=projector.session.id,
+        created_at=stamp, updated_at=stamp,
+        generation_status=PublicEntryGenerationStatus.COMPLETED,
+        kind="compaction", message="Context compacted",
+        details={"summaryLength": len(summary)})
+    projector.adopt(projector.session.model_copy(update={"updated_at": stamp}),
+                    [*projector.history, checkpoint], projector.turns)
+    saved.save(ctx)
+    return SessionCompactResponse(
+        summary=summary, state=projector.state(),
+        session_log=views.session_log(projector.session.id, ctx.store))
 
 
 @routes.method("session/fork", SessionForkParams)

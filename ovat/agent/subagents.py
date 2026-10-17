@@ -31,7 +31,7 @@ from ovat.agent.permissions import ALLOW, default_permission, gate
 _MAX_ANSWER = 16000
 
 
-def _kind(cfg) -> str:
+def kind_of(cfg) -> str:
     return "workflow" if cfg.workflow else "api" if cfg.api else "a2a"
 
 
@@ -53,7 +53,7 @@ class SubagentRunner:
 
     def permission(self, cfg) -> str:
         url = cfg.a2a.url if cfg.a2a else None
-        return cfg.permission or default_permission(_kind(cfg), url)
+        return cfg.permission or default_permission(kind_of(cfg), url)
 
     def run(self, agent: str, task: str) -> str:
         cfg = self._by_name.get(agent)
@@ -62,7 +62,7 @@ class SubagentRunner:
                     f"Subagents: {', '.join(self._by_name) or 'none'}.")
         if not task or not task.strip():
             return f"Error: an empty task was not sent to {agent}."
-        kind = _kind(cfg)
+        kind = kind_of(cfg)
         where = {"workflow": "runs on this machine",
                  "api": f"sends the task to {cfg.api.base_url if cfg.api else ''}",
                  "a2a": f"sends the task to {cfg.a2a.url if cfg.a2a else ''}"}
@@ -99,6 +99,7 @@ class SubagentRunner:
         if hasattr(child, "stop"):
             child.stop = self._bus.stop
         child.events.approver = self._bus.approver
+        child.events.asker = self._bus.asker
         child.events.subscribe(lambda e: self._forward(cfg.name, e))
         try:
             answer = child.run(task)

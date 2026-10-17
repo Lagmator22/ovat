@@ -84,6 +84,14 @@ def _plain_console_output():
 
 
 @pytest.fixture(autouse=True)
+def _no_model_listing(monkeypatch):
+    """Building an agent session asks the OVMS server which models it serves
+    (the /model picker's list). No test should depend on whether something
+    listens on the default port of the machine it runs on."""
+    monkeypatch.setattr("ovat.agentic.models.served_models", lambda url: [])
+
+
+@pytest.fixture(autouse=True)
 def saved_sessions(tmp_path, monkeypatch):
     """The agent app saves every conversation after every turn, into the
     project folder it runs in. In a test that folder is the developer's
@@ -95,6 +103,23 @@ def saved_sessions(tmp_path, monkeypatch):
     store = sessions.SessionStore(tmp_path / "saved-sessions")
     monkeypatch.setattr(sessions, "store_for", lambda cwd: store)
     return store
+
+
+@pytest.fixture(autouse=True)
+def project_files(tmp_path, monkeypatch):
+    """The agent app keeps two small files in the project folder: the UI
+    preferences (the theme) and the "always allow" rules. A test that runs
+    the app in a made-up folder (/work/ovat-project) or in the checkout
+    would write there, so unless a test uses its own temporary folder, both
+    go to a temporary one."""
+    from ovat.agentic import prefs, rules
+    for module, name, real in ((prefs, "prefs_path", prefs.prefs_path),
+                               (rules, "rules_path", rules.rules_path)):
+        def path(cwd, real=real, name=name):
+            if cwd and str(cwd).startswith(str(tmp_path)):
+                return real(cwd)
+            return tmp_path / "project-files" / name
+        monkeypatch.setattr(module, name, path)
 
 
 class FakeLLMProvider(LLMProvider):

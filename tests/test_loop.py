@@ -537,3 +537,84 @@ def test_an_exact_name_carries_no_requested_field():
     agent.run("q")
     (call,) = agent.last_trace["turns"][0]["tool_calls"]
     assert call["name"] == "get_weather" and "requested" not in call
+
+
+# ---- steering: extra guidance for the run in progress --------------------------
+
+def test_steering_is_taken_before_the_next_model_call_and_reported():
+    from ovat.agent.events import STEER_TAKEN, EventBus
+    bus = EventBus()
+    taken = []
+    bus.subscribe(lambda e: taken.append(e.data) if e.type == STEER_TAKEN
+                  else None)
+    agent = None
+
+    def get_weather(city):
+        # the person types while the tool runs
+        agent.steer("answer in one word")
+        return "sunny"
+    tools = _weather_tool()
+    tools["get_weather"]["function"] = get_weather
+    llm = FakeLLMProvider([
+        reply("tool_calls", tool_calls=[
+            make_tool_call("c1", "get_weather", {"city": "Tokyo"})]),
+        reply("stop", content="Sunny.")])
+    agent = AgentLoop(llm, tools=tools, events=bus)
+
+    assert agent.run("weather in Tokyo?") == "Sunny."
+
+    # the second model call saw it, after the tool result
+    seen = llm.calls[1]["messages"]
+    assert seen[-1] == {"role": "user", "content": "answer in one word"}
+    assert seen[-2]["role"] == "tool"
+    # and the bus said where it sits in the memory
+    assert taken == [{"text": "answer in one word", "index": len(seen) - 1}]
+
+
+def test_steering_that_arrives_during_the_final_answer_is_not_lost():
+    agent = None
+
+    class Steering(FakeLLMProvider):
+        def chat(self, messages, tools=None):
+            if len(self.calls) == 0:
+                agent.steer("also mention the date")
+            return super().chat(messages, tools=tools)
+    llm = Steering([reply("stop", content="First answer."),
+                    reply("stop", content="Answer with the date.")])
+    agent = AgentLoop(llm, tools={})
+    assert agent.run("hi") == "Answer with the date."
+    assert len(llm.calls) == 2
+    assert llm.calls[1]["messages"][-2:] == [
+        {"role": "assistant", "content": "First answer."},
+        {"role": "user", "content": "also mention the date"}]
+
+
+def test_steering_with_no_run_going_is_refused_and_not_kept():
+    llm = FakeLLMProvider([reply("stop", content="one")])
+    agent = AgentLoop(llm, tools={})
+    assert agent.steer("late") is False         # nobody was running
+    agent.run("a")
+    assert [m["content"] for m in llm.calls[0]["messages"]] == ["a"]
+    assert agent.steer("after") is False        # and nobody is now
+
+
+def test_steering_after_the_answer_is_final_is_refused_not_dropped(
+        monkeypatch):
+    """Once the loop has decided its answer is final, a steer must come back
+    refused (the TUI then sends it as a new question), never be accepted
+    and then thrown away with the finished run."""
+    from ovat.agent import loop as loop_module
+    agent = None
+    answers = []
+    original = loop_module.looks_like_undecoded_tool_call
+
+    def steer_too_late(text):
+        # runs after the final-answer decision, before run() returns
+        answers.append(agent.steer("too late"))
+        return original(text)
+    monkeypatch.setattr(loop_module, "looks_like_undecoded_tool_call",
+                        steer_too_late)
+    llm = FakeLLMProvider([reply("stop", content="Done.")])
+    agent = AgentLoop(llm, tools={})
+    assert agent.run("hi") == "Done."
+    assert answers == [False] and len(llm.calls) == 1

@@ -25,8 +25,10 @@ import ipaddress
 import itertools
 import threading
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Iterable
 from urllib.parse import urlparse
+
+from ovat.tools.project import ASK_BY_DEFAULT
 
 ALLOW, ASK, DENY = "allow", "ask", "deny"
 PERMISSIONS = (ALLOW, ASK, DENY)
@@ -34,6 +36,7 @@ PERMISSIONS = (ALLOW, ASK, DENY)
 # Decisions a person can give.
 ONCE = "once"              # this call only
 SESSION = "session"        # this tool, for the rest of the session
+ALWAYS = "always"          # this tool, in this project, saved for next time
 REFUSE = "deny"            # not this time
 
 
@@ -48,12 +51,18 @@ def is_loopback(url: str) -> bool:
         return False
 
 
-def default_permission(kind: str, url: str | None = None) -> str:
+def default_permission(kind: str, url: str | None = None,
+                       name: str | None = None) -> str:
     """The permission a tool gets when the workflow names none.
 
     Anything that sends data off this machine asks; everything that stays
     local is allowed, which keeps every existing workflow working as before.
+    The one local exception: the coding tools that change files or run
+    commands (`name` says which builtin) ask, because a model that is wrong
+    about a command costs the person their files.
     """
+    if kind == "builtin" and name in ASK_BY_DEFAULT:
+        return ASK
     if kind == "api":
         return ASK
     if kind == "a2a":
@@ -108,10 +117,19 @@ class ApprovalBroker:
     """
 
     def __init__(self, on_request: Callable[[ApprovalRequest], None]
-                 | None = None, timeout: float | None = 600.0):
+                 | None = None, timeout: float | None = 600.0,
+                 always: Iterable[str] = (),
+                 on_always: Callable[[str], None] | None = None):
         self.on_request = on_request
         self.timeout = timeout
         self.auto_approve = False            # /yolo: every ask is a yes
+        # Tools a person said "always allow" to, in this project: loaded from
+        # .ovat/permissions.json by whoever builds an INTERACTIVE session
+        # (ovat/agentic/session.py), and saved through `on_always` when one
+        # more is added. Only a broker has this, so a run with no person to
+        # ask never sees it: gate() still says no there.
+        self._always_allowed: set[str] = set(always)
+        self.on_always = on_always
         self._session_allowed: set[str] = set()
         self._open: dict[int, ApprovalRequest] = {}
         self._lock = threading.Lock()
@@ -119,7 +137,8 @@ class ApprovalBroker:
 
     def __call__(self, tool: str, arguments: dict, reason: str = "") -> bool:
         """The approver signature permissions.gate() expects."""
-        if self.auto_approve or tool in self._session_allowed:
+        if (self.auto_approve or tool in self._session_allowed
+                or tool in self._always_allowed):
             return True
         if self.on_request is None:
             return False
@@ -136,7 +155,14 @@ class ApprovalBroker:
             self._finish(request, REFUSE)
         if request.decision == SESSION:
             self._session_allowed.add(tool)
-        return request.decision in (ONCE, SESSION)
+        elif request.decision == ALWAYS:
+            self._always_allowed.add(tool)
+            if self.on_always is not None:
+                try:
+                    self.on_always(tool)
+                except Exception:
+                    pass        # the owner of on_always tells the person
+        return request.decision in (ONCE, SESSION, ALWAYS)
 
     def resolve(self, request_id: int, decision: str) -> bool:
         """Answer an open request. False if it was already answered."""

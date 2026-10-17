@@ -26,7 +26,7 @@ from rich.table import Table
 from rich.text import Text
 from textual.containers import Vertical
 
-from ovat.cli import ui
+from ovat.cli import diagnostics, ui
 from ovat.tui.vibe.cli.textual_ui.widgets.collapsible import \
     HeaderCollapsibleSection
 from ovat.tui.vibe.cli.textual_ui.widgets.no_markup_static import \
@@ -36,7 +36,6 @@ from ovat.tui.vibe.cli.textual_ui.widgets.status_message import (
 
 _GLYPH = {"fail": ("✕", ui.RED), "warn": ("!", ui.YELLOW),
           "ok": ("✓", ui.GREEN)}
-_SEVERITY = {"fail": 0, "warn": 1, "ok": 2}
 
 
 def machine_line(config_path: str | None) -> str:
@@ -67,7 +66,7 @@ def verdict(checks: list) -> str:
 def report_text(checks: list, config_path: str | None = None) -> str:
     """The plain-text report `/doctor copy` puts on the clipboard: worst
     first, no colour, so it pastes cleanly into an issue or a chat."""
-    rows = sorted(checks, key=lambda c: _SEVERITY.get(c.status, 9))
+    rows = diagnostics.worst_first(checks)
     width = max((len(c.name) for c in rows), default=0)
     lines = [f"ovat doctor: {verdict(checks)}  ({machine_line(config_path)})",
              ""]
@@ -130,7 +129,7 @@ class DoctorReport(Vertical):
     def _work(self) -> None:
         run_checks = self._run_checks
         if run_checks is None:
-            from ovat.cli.diagnostics import run_checks
+            run_checks = diagnostics.run_checks
         try:
             checks = list(run_checks(self.config_path))
         except Exception as exc:
@@ -160,8 +159,7 @@ class DoctorReport(Vertical):
         width = max((len(c.name) for c in checks), default=0)
         widgets = [NoMarkupStatic(machine_line(self.config_path),
                                   classes="doctor-machine")]
-        problems = sorted((c for c in checks if c.status != "ok"),
-                          key=lambda c: _SEVERITY.get(c.status, 9))
+        problems = diagnostics.problems(checks)
         if problems:
             widgets.append(NoMarkupStatic(_rows(problems, width),
                                           classes="doctor-problems"))

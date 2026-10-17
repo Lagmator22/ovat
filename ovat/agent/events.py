@@ -40,17 +40,22 @@ from typing import Any, Callable
 #
 #   tool_started  call_id, name, arguments
 #   tool_ended    call_id, name, status ("ok" | "error" | "denied"),
-#                 duration_s, result_chars
+#                 duration_s, result_chars, and `display` (a dict, only
+#                 for tools that return structured output: the coding tools)
 #   remote_status agent, state, text      (a remote A2A agent's progress)
 #   subagent_status agent, text           (a delegated subagent's progress)
 #   answer_delta  text                    (streamed answer chunk)
 #   reasoning_delta text                  (streamed reasoning chunk)
+#   steer_taken   text, index             (the native loop took a steering
+#                                          message; index is where it sits
+#                                          in the model's memory)
 TOOL_STARTED = "tool_started"
 TOOL_ENDED = "tool_ended"
 REMOTE_STATUS = "remote_status"
 SUBAGENT_STATUS = "subagent_status"
 ANSWER_DELTA = "answer_delta"
 REASONING_DELTA = "reasoning_delta"
+STEER_TAKEN = "steer_taken"
 
 # What a cancelled tool hands the model instead of running. One sentence,
 # starting "Error: " like every other failure the model reads.
@@ -93,6 +98,11 @@ class EventBus:
         # approver(name, arguments, reason) -> bool, may block. None means
         # nobody can be asked, so `ask` is a no (see agent/permissions.py).
         self.approver: Callable[[str, dict, str], bool] | None = None
+        # Asks a person a question for the ask_user tool:
+        # asker(question, choices) -> answer text, or None if nobody
+        # answered. May block. None here means there is no person to ask and
+        # the tool says so at once (see agent/questions.py).
+        self.asker: Callable[[str, list[str]], str | None] | None = None
 
     def subscribe(self, listener: Listener) -> Callable[[], None]:
         """Add a listener. Returns the function that removes it again."""
@@ -163,14 +173,21 @@ def observed(name: str, function: Callable, bus: EventBus,
                      duration_s=0.0, result_chars=len(refusal))
             return refusal
         started = time.monotonic()
-        status, result_chars = "error", None
+        status, result_chars, display = "error", None, None
         try:
             result = function(*args, **kwargs)
             status, result_chars = "ok", len(str(result))
+            # A tool may hand back a str that also carries `display`, the
+            # structured version for a UI (see ovat/tools/project.Shown).
+            # The engines still get the same object, which is just a str.
+            display = getattr(result, "display", None)
+            if display and display.get("failed"):
+                status = "error"
             return result
         finally:
+            extra = {"display": display} if display else {}
             bus.emit(TOOL_ENDED, call_id=call_id, name=name, status=status,
                      duration_s=round(time.monotonic() - started, 3),
-                     result_chars=result_chars)
+                     result_chars=result_chars, **extra)
 
     return wrapper

@@ -258,8 +258,10 @@ class ApprovalApp(VimNavigationMixin, Container):
             return [
                 ("Allow once", "yes", "once", None),
                 ("Allow for remainder of this session", "yes", "session", None),
-                # OVAT edit: no "Always allow"; permanent rules live in the
-                # workflow (permission: allow), where they can be reviewed.
+                # OVAT edit: "Always allow" is this tool, in this project,
+                # kept in .ovat/permissions.json (ovat/agentic/rules.py).
+                ("Always allow this tool in this project", "yes",
+                 "permanent", None),
                 ("Deny", "no", "deny", None),
             ]
         return [

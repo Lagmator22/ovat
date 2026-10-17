@@ -140,6 +140,14 @@ class MCPStdioServer:
                  if getattr(block, "text", None) is not None]
         return "\n".join(parts) if parts else str(result.content)
 
+    def status(self) -> dict:
+        """A public snapshot for the MCP panel, without environment secrets."""
+        return {"connected": self._session is not None,
+                "error": ("The MCP server disconnected." if self._error
+                          is not None else None),
+                "command": list(self.command),
+                "tools": [tool.name for tool in self.tools]}
+
     def _stop_manager(self) -> None:
         """On the loop thread: ask the manager to unwind, however far it got."""
         if self._shutdown is not None:

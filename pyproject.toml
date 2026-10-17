@@ -78,6 +78,9 @@ openai-agents = ["openai-agents>=0.1"]
 # other packages today, but nothing guarantees that, so they are named here.
 tui = ["textual", "pyfiglet", "anyio", "certifi", "httpx", "jsonpatch", "keyring",
        "packaging", "pyperclip", "truststore",
+       # /config edits workflow.yml and must keep the user's comments; PyYAML
+       # drops them. Not in the base install: only the settings screen writes.
+       "ruamel.yaml",
        # tomllib is stdlib from 3.11; the copied cache store needs it on 3.10.
        "tomli; python_version < '3.11'"]
 # a2a: Agent2Agent, `ovat a2a ...` and `type: a2a` tools. The ceiling is
@@ -89,7 +92,7 @@ dev = ["pytest", "pytest-cov", "pytest-xdist", "langchain>=1", "langchain-openai
        "langgraph>=1", "llama-index-core>=0.14",
        "llama-index-llms-openai-like>=0.5", "openai-agents>=0.1",
        "textual", "pyfiglet", "anyio", "certifi", "httpx", "jsonpatch",
-       "keyring", "packaging", "pyperclip", "truststore",
+       "keyring", "packaging", "pyperclip", "truststore", "ruamel.yaml",
        "a2a-sdk[http-server]>=1.2.2,<2", "uvicorn>=0.30",
        # tomllib is stdlib from 3.11; on 3.10, which we support and advertise,
        # the packaging tests need it under its original name.

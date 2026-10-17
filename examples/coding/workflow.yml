@@ -1,0 +1,82 @@
+# Sample Agent: a coding agent for your own project
+#
+# It reads, searches, edits and tests the code in the folder you start it
+# from. Nothing leaves your machine unless you allow a web tool.
+#
+#   cd path/to/your/project
+#   ovat serve path/to/examples/coding/workflow.yml     # start OVMS (not on macOS)
+#   ovat agent path/to/examples/coding/workflow.yml     # the agent TUI
+#
+# File tools stay inside the folder you start from. Shell commands run
+# from that folder and can act elsewhere, so review them before allowing.
+# Writing, editing, running a command and web requests ask you first. The
+# first time, pick "for the session" if you trust the task. `ovat run` has
+# nobody to ask, so those tools do not run there.
+#
+# The model is a 35B mixture-of-experts export (about 3B active per token).
+# Check that your machine has the memory for it before the first run, or
+# swap in a smaller Qwen3.5 export and keep the rest of the file.
+
+model:
+  name: Qwen3.6-35B-A3B-int4-ov
+  device: GPU
+  ovms_url: http://localhost:8000/v3
+  tool_parser: qwen3coder       # Qwen3.5, Qwen3.6 and Qwen3-Coder use this one
+  source_model: OpenVINO/Qwen3.6-35B-A3B-int4-ov
+  model_repository_path: models
+  request_timeout: 1800         # a big model on a cold start is not quick
+
+tools:
+  # Look first.
+  - name: read_file
+    type: builtin
+  - name: grep
+    type: builtin
+  # Change things (ask first, by default).
+  - name: edit
+    type: builtin
+  - name: write_file
+    type: builtin
+  - name: shell
+    type: builtin
+  # Keep a plan for a job with several steps.
+  - name: todo
+    type: builtin
+  # Ask you a question instead of guessing (agent TUI only).
+  - name: ask_user
+    type: builtin
+  # Read a web page you point it to (asks first).
+  - name: web_fetch
+    type: builtin
+  # Web search needs a provider. Uncomment ONE and set the variable it
+  # names in your shell before starting (the file holds the NAME, not the key):
+  #
+  # - name: web_search
+  #   type: builtin
+  #   provider: tavily              # or serper, or brave
+  #   api_key_env: TAVILY_API_KEY
+  #
+  # Or your own SearXNG instance (no key; json must be enabled in its settings):
+  #
+  # - name: web_search
+  #   type: builtin
+  #   provider: searxng
+  #   base_url: http://localhost:8080
+
+agent:
+  type: native
+  max_iterations: 30            # a coding task takes many small steps
+  project_context: true         # also read AGENTS.md / OVAT.md from your project
+  system_prompt: >-
+    You are a careful coding assistant working inside the user's project
+    folder. Read before you change: use read_file and grep to understand the
+    code first, and never edit a file you have not read in this session.
+    Make small, focused edits with the edit tool instead of rewriting whole
+    files, and change only what the task needs. After a change, run the
+    project's tests or the relevant check with the shell tool and read the
+    output; if it fails, fix it or say plainly what is still broken. For a
+    task with several steps, write a short plan with the todo tool and keep
+    it up to date. If the request is unclear, or a choice is the user's to
+    make, ask with the ask_user tool instead of guessing. Use web_fetch only
+    for a page the user named or documentation you need. When you finish,
+    say what you changed and what you ran, in a few plain sentences.

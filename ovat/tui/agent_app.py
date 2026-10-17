@@ -37,7 +37,7 @@ from textual.widgets import Static
 
 from ovat.agentic import session as s
 from ovat.cli.theme import OVAT_THEME
-from ovat.tui import agent_text
+from ovat.tui import agent_completion, agent_text
 from ovat.tui.agent_commands import OvatCommandRegistry
 from ovat.tui.server import OvatServerHandle, start_ovat_app_server
 from ovat.tui.vibe.app_server import AppServerSession
@@ -51,6 +51,8 @@ from ovat.tui.vibe.cli.textual_ui.app import (BottomApp, StartupOptions,
                                               VibeApp, _noop_narrator_manager,
                                               _noop_voice_manager,
                                               _run_app_with_cleanup)
+from ovat.tui.vibe.cli.textual_ui.widgets.chat_input import ChatInputContainer
+from ovat.tui.vibe.cli.textual_ui.widgets.chat_input.completion_popup import CompletionPopup
 from ovat.tui.vibe.cli.textual_ui.count_format import format_count_markdown
 from ovat.tui.vibe.cli.textual_ui.widgets.messages import (
     ErrorMessage, SlashCommandMessage, UserCommandMessage, WarningMessage)
@@ -143,6 +145,10 @@ class OvatAgentApp(VibeApp):
     BINDINGS = [
         Binding("shift+up", "scroll_chat_up", "Scroll Up", show=False),
         Binding("shift+down", "scroll_chat_down", "Scroll Down", show=False),
+        # Ctrl+O works in the app (test_ctrl_o_folds_and_opens_the_tool_calls)
+        # but some terminal apps swallow it over SSH, so the same action also
+        # lives on Ctrl+T, a key nothing here uses.
+        Binding("ctrl+t", "toggle_tool", "Toggle Tool", show=False),
     ]
 
     def __init__(self, session: AppServerSession, handle: OvatServerHandle, *,
@@ -162,7 +168,6 @@ class OvatAgentApp(VibeApp):
         self._handle = handle
         self._banner_factory = partial(AgentBanner, animate=animate,
                                        source=self._banner_source)
-        self._theme_name = OVAT_THEME.name
         self.register_theme(OVAT_THEME)
         self._hardware_choice = hardware
         self._hardware = None
@@ -204,6 +209,12 @@ class OvatAgentApp(VibeApp):
         if self._hardware is not None:
             self.set_interval(HARDWARE_EVERY_S, self._sample_hardware)
         self._update_bar()
+        agent_completion.offer_subagents(
+            self.query_one(ChatInputContainer), self._subagent_names)
+
+    def _subagent_names(self) -> list[tuple[str, str]]:
+        return [(x["name"], x.get("description") or "subagent")
+                for x in (self._agent.info or {}).get("subagents", [])]
 
     def on_unmount(self) -> None:
         if self._unsubscribe is not None:
@@ -248,6 +259,18 @@ class OvatAgentApp(VibeApp):
             self._refresh_banner()
         if name in ("Ready", "BuildFailed", "TurnDone", "Notice"):
             self._update_bar()
+
+    # ---- the mouse in the completion popup -----------------------------------
+
+    def on_completion_popup_scrolled(
+            self, message: CompletionPopup.Scrolled) -> None:
+        agent_completion.scroll(self.query_one(ChatInputContainer),
+                                message.delta)
+
+    def on_completion_popup_picked(
+            self, message: CompletionPopup.Picked) -> None:
+        agent_completion.pick(self.query_one(ChatInputContainer),
+                              message.delta)
 
     # ---- a typo in a command is not a question for the model ------------------
 
@@ -297,11 +320,19 @@ class OvatAgentApp(VibeApp):
 
     # ---- theme: OVAT's, for "auto" and as the default -------------------------
 
+    @property
+    def _theme_name(self) -> str:
+        """The theme the person chose with /theme (the server keeps it in the
+        UI preferences file and reports it as the config's theme), and OVAT's
+        own until they do."""
+        theme = self.config.theme
+        return OVAT_THEME.name if theme == AUTO_THEME else theme
+
     async def _apply_theme(self, theme: str) -> None:
-        """The server says "auto"; here that means the theme the person
-        chose with /theme, and OVAT's own until they do. (OVAT's theme is
-        not one of Textual's built-in names, which the copied code refuses.)
-        A name from the picker is only a preview until it is chosen."""
+        """The server says "auto" when nothing is saved; that means OVAT's own
+        theme. (OVAT's theme is not one of Textual's built-in names, which the
+        copied code refuses.) A name from the picker is only a preview until
+        it is chosen; choosing it writes it (the copied `_persist_theme`)."""
         if theme == AUTO_THEME:
             theme = self._theme_name
         if theme != OVAT_THEME.name:
@@ -314,11 +345,6 @@ class OvatAgentApp(VibeApp):
         after = (self.native_ansi_color, self.current_theme.dark)
         if after != before:
             self._restyle_diff_widgets(ansi=after[0], dark=after[1])
-
-    async def _persist_theme(self, theme: str) -> None:
-        """A theme chosen with /theme lasts for the session: writing the
-        settings back comes with the config screen, in a later phase."""
-        self._theme_name = theme
 
     async def _switch_to_theme_picker_app(self) -> None:
         if self._current_bottom_app == BottomApp.ThemePicker:
@@ -345,14 +371,17 @@ class OvatAgentApp(VibeApp):
     # code without it. Each does nothing here rather than end in "not
     # supported".
 
-    async def _steer_queued_now(self) -> bool:
-        """Ctrl+Enter, or Enter on an empty prompt, would push the waiting
-        prompts into the running turn. The agent takes a new instruction only
-        between turns: the queue runs them one after the other by itself."""
-        return False
-
     async def action_toggle_debug_console(self, **kwargs: Any) -> None:
         """Ctrl+Backslash: the console reads the server's log."""
+
+    async def _maybe_handle_mcp_subcommand(self, cmd_args: str) -> bool:
+        word = cmd_args.strip().split(" ", 1)[0]
+        if word in {"add", "login", "logout"}:
+            await self._note(
+                "Configure MCP stdio servers in workflow.yml under tools; "
+                "this panel changes which tools this session uses.", "info")
+            return True
+        return await super()._maybe_handle_mcp_subcommand(cmd_args)
 
     # ---- /status: the copied one prints a cost in dollars ---------------------
 
@@ -400,7 +429,12 @@ class OvatAgentApp(VibeApp):
                 + (f"This workflow has: {', '.join(known)}." if known
                    else "This workflow has no subagents."), "warn")
             return
-        # The server sends "@name task" straight to that subagent.
+        # The server sends "@name task" straight to that subagent, and shows
+        # that line as the person's message; the echo of /ask would be a
+        # second line for the same thing.
+        echo = kwargs.get("command_message")
+        if echo is not None:
+            await echo.remove()
         await self._handle_user_message(f"@{name} {task}")
 
     async def _cmd_serve(self, cmd_args: str = "", **kwargs: Any) -> None:

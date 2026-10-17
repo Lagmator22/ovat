@@ -20,8 +20,9 @@ keeps them.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
+
+from ovat.agentic import atomic
 
 SESSIONS_DIR = Path(".ovat") / "sessions"
 AGENT_SUBDIR = "agent"
@@ -54,20 +55,11 @@ class SessionStore:
     def save(self, record: dict) -> Path:
         """Write `record` (it carries its own "id"). Raises OSError when the
         disk says no: the caller decides how to tell the person."""
-        path = self.path(record["id"])
-        self.folder.mkdir(parents=True, exist_ok=True)
-        temp = path.with_suffix(".json.tmp")
-        try:
-            # Owner-only, like the A2A token: a conversation holds the
-            # person's documents and every tool's output.
-            fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with open(fd, "w", encoding="utf-8") as handle:
-                json.dump({**record, "format": FORMAT}, handle, indent=1)
-            os.replace(temp, path)
-        except BaseException:
-            temp.unlink(missing_ok=True)
-            raise
-        return path
+        # Owner-only, like the A2A token: a conversation holds the person's
+        # documents and every tool's output.
+        return atomic.write_text(
+            self.path(record["id"]),
+            json.dumps({**record, "format": FORMAT}, indent=1))
 
     def load(self, session_id: str) -> dict | None:
         """The record, or None when there is none (or it cannot be read)."""

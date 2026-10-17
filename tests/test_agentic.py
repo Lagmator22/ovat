@@ -142,6 +142,43 @@ def test_cancel_stops_the_turn_and_marks_it():
     assert done.cancelled and time.monotonic() - started < 3
 
 
+def test_steer_reaches_the_native_loop_and_is_refused_otherwise():
+    from ovat.agent.loop import AgentLoop
+    from tests.conftest import FakeLLMProvider, reply
+    release = threading.Event()
+
+    class Slow(FakeLLMProvider):
+        def chat(self, messages, tools=None):
+            if not self.calls:
+                release.wait(5)
+            return super().chat(messages, tools=tools)
+    llm = Slow([reply("stop", content="first"), reply("stop", content="done")])
+    session, sink, built = _session(
+        lambda: AgentLoop(llm, tools={}, events=EventBus()))
+    session.start()
+    sink.wait_for(s.Ready)
+    assert session.steer("early") is False          # no turn is running
+    session.ask("q")
+    time.sleep(0.1)
+    assert session.steer("be brief") is True
+    release.set()
+    done = sink.wait_for(s.TurnDone)
+    assert done.answer == "done"
+    steered = sink.wait_for(s.Steered)
+    assert steered.text == "be brief"
+    assert built[0][1].session.messages[steered.index]["content"] == "be brief"
+
+    # a framework engine has no step to slip it into
+    session2, sink2, _ = _session(lambda: Agent(delay=5.0))
+    session2.start()
+    sink2.wait_for(s.Ready)
+    session2.ask("long one")
+    time.sleep(0.1)
+    assert session2.steer("more") is False
+    session2.cancel()
+    sink2.wait_for(s.TurnDone)
+
+
 def test_a_failed_answer_is_marked_failed():
     session, sink, _ = _session(lambda: Agent("Error: no", failed=True))
     session.start()
@@ -262,6 +299,13 @@ def test_the_hardware_line_leaves_out_what_is_unknown():
     assert format_reading(reading) == "CPU 12%  ·  RAM 50%"
     monitor = HardwareMonitor([Src("npu", {"utilization": 41.0})])
     assert format_reading(monitor.sample()) == "NPU 41%"
+
+
+def test_a_small_but_busy_cpu_is_not_shown_as_zero():
+    from ovat.agentic.hardware import format_reading
+    assert format_reading({"cpu": 0.3}) == "CPU <1%"
+    assert format_reading({"cpu": 0.0}) == "CPU 0%"
+    assert format_reading({"cpu": 7.4}) == "CPU 7%"
 
 
 def test_a_local_model_folder_is_shown_by_its_name():

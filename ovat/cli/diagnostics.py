@@ -23,6 +23,13 @@ from ovat.config.workflow import load_workflow
 OK, WARN, FAIL = "ok", "warn", "fail"
 
 
+# Worst first. The order every view of the checks sorts into (the CLI table,
+# the doctor screen, /doctor, the app server's diagnostics list), because the
+# point of running doctor is to find what is broken, and a fail sitting below
+# nine oks is a fail you scroll past.
+SEVERITY = {FAIL: 0, WARN: 1, OK: 2}
+
+
 @dataclass
 class Check:
     """One diagnostic result: what I looked at, how it went, and the detail."""
@@ -337,6 +344,17 @@ def _can_import(module_name: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def worst_first(checks) -> list[Check]:
+    """The checks, worst first. Stable, so checks of equal severity keep the
+    order they ran in."""
+    return sorted(checks, key=lambda c: SEVERITY.get(c.status, 9))
+
+
+def problems(checks) -> list[Check]:
+    """The checks that are not ok, worst first: what a person has to read."""
+    return worst_first(c for c in checks if c.status != OK)
 
 
 def run_checks(config_path: str | None = None) -> list[Check]:

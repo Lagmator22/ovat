@@ -397,6 +397,29 @@ class ToolConfig(StrictModel):
     # host), allow for the rest, so existing workflows behave as before.
     permission: Literal["allow", "ask", "deny"] | None = None
 
+    # The builtin web_search tool: which search service answers. Not required
+    # here on purpose: a web_search with no provider loads, and the tool then
+    # tells the person how to set it up (a workflow shared without a key
+    # should still start). api_key_env is the NAME of the variable holding
+    # the key, never the key, like token_env above.
+    provider: Literal["searxng", "tavily", "serper", "brave"] | None = None
+    base_url: str | None = None     # searxng: the address of your instance
+    api_key_env: str | None = None
+
+    @model_validator(mode="after")
+    def _search_fields_belong_to_web_search(self):
+        used = [k for k, v in (("provider", self.provider),
+                               ("base_url", self.base_url),
+                               ("api_key_env", self.api_key_env))
+                if v is not None]
+        if used and not (self.type == "builtin"
+                         and self.name == "web_search"):
+            raise ValueError(f"{', '.join(used)} only apply to the builtin "
+                             f"web_search tool")
+        if self.api_key_env is not None:
+            _check_env_name(self.api_key_env, "api_key_env")
+        return self
+
     @model_validator(mode="after")
     def _env_needs_a_subprocess(self):
         """A builtin runs inside this process, where an env would do nothing."""
@@ -438,6 +461,10 @@ class AgentConfig(StrictModel):
     type: str = "native"
     max_iterations: int = 10            # the safety cap from my loop
     system_prompt: str | None = None    # optional persona for the agent
+    # Add the project folder's AGENTS.md (and OVAT.md) to the system prompt
+    # when the agent is built. Off by default: an existing workflow must not
+    # start reading files it never read before.
+    project_context: bool = False
 
 
 class EmbeddingsConfig(StrictModel):
