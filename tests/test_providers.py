@@ -660,3 +660,20 @@ def test_ovms_provider_does_not_stream_on_npu_so_usage_survives():
     assert npu_llm.stream is False
     assert gpu_llm.stream is True
 
+
+def test_the_whisper_pipeline_is_built_with_the_cpu_precision_rule(monkeypatch, tmp_path):
+    """On Apple Silicon the default f16 made Whisper answer 'Today!!!!!...'."""
+    import openvino_genai as ov_genai
+    from ovat.core import precision
+    from ovat.tools import transcribe
+    seen = {}
+
+    class FakePipeline:
+        def __init__(self, *args, **kwargs):
+            seen["args"], seen["kwargs"] = args, kwargs
+    monkeypatch.setattr(ov_genai, "WhisperPipeline", FakePipeline)
+    monkeypatch.setattr(precision, "precision_properties",
+                        lambda device, core=None: {"INFERENCE_PRECISION_HINT": "f32"})
+    monkeypatch.setattr(transcribe, "_pipelines", {})
+    transcribe._load_cached_pipeline((str(tmp_path), "CPU"))
+    assert seen["kwargs"] == {"INFERENCE_PRECISION_HINT": "f32"}

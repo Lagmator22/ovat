@@ -75,11 +75,12 @@ llamaindex = ["llama-index-core>=0.14", "llama-index-llms-openai-like>=0.5"]
 openai-agents = ["openai-agents>=0.1"]
 # Linux also needs the system PortAudio library (libportaudio2).
 voice = ["sounddevice>=0.5"]
-# tui: the launcher and the agent TUI (`ovat agent`). The agent TUI's widgets
-# are copied from Mistral Vibe and import these directly; most arrive through
-# other packages today, but nothing guarantees that, so they are named here.
-tui = ["textual", "pyfiglet", "anyio", "certifi", "httpx", "jsonpatch", "keyring",
-       "packaging", "pyperclip", "truststore", "sounddevice>=0.5",
+# tui: the launcher and the agent TUI (`ovat agent`), with local voice. The
+# agent TUI's copied widgets import anyio, jsonpatch and pyperclip directly;
+# they mostly arrive through other packages, but nothing guarantees that, so
+# they are named here.
+tui = ["textual", "pyfiglet", "anyio", "jsonpatch", "pyperclip",
+       "sounddevice>=0.5",
        # /config edits workflow.yml and must keep the user's comments; PyYAML
        # drops them. Not in the base install: only the settings screen writes.
        "ruamel.yaml",
@@ -138,4 +139,5 @@ ovat = ["assets/*.gif", "assets/*.png",
         "tui/vibe/cli/textual_ui/*.tcss",
         "tui/vibe/cli/textual_ui/screens/*.tcss",
         "tui/vibe/cli/textual_ui/screens/config/*.tcss",
-        "tui/vibe/setup/trusted_folders/*.tcss"]
+        # Its license travels with the copied client (NOTICE points here).
+        "tui/vibe/LICENSE"]

@@ -35,11 +35,7 @@ ALLOWED: dict[tuple[str, str], str] = {
 }
 # Strings that START with an allowed prefix: the origin notes the Apache
 # licence asks for, in docstrings (comments are not scanned at all).
-ALLOWED_PREFIX: dict[tuple[str, str], str] = {
-    ("ovat/tui/__init__.py", "The agent TUI (`ovat agent`)"):
-        "module docstring that credits Mistral Vibe as the design reference "
-        "and the source of the copied widgets, as Apache-2.0 requires.",
-}
+ALLOWED_PREFIX: dict[tuple[str, str], str] = {}
 
 
 def _literals(path: Path):

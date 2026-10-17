@@ -405,7 +405,7 @@ def test_two_tools_with_different_models_do_not_share_a_pipeline(tmp_path,
 
     class FakeGenAI:
         @staticmethod
-        def WhisperPipeline(model, device):
+        def WhisperPipeline(model, device, **properties):
             built.append((model, device))
             return object()
 

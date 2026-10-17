@@ -132,22 +132,6 @@ class CommandRegistry:
                 handler="_show_status",
                 side_channel=True,
             ),
-            "whoami": Command(
-                aliases=frozenset(["/whoami"]),
-                description="Display the signed-in user, workspace, and plan",
-                handler="_show_whoami",
-                side_channel=True,
-            ),
-            "teleport": Command(
-                aliases=frozenset(["/teleport"]),
-                description="Teleport session to OVAT remote",
-                handler="_teleport_command",
-            ),
-            "remote-project": Command(
-                aliases=frozenset(["/remote-project"]),
-                description="Select the OVAT remote project for this repository",
-                handler="_vibe_code_project_command",
-            ),
             "proxy-setup": Command(
                 aliases=frozenset(["/proxy-setup"]),
                 description="Configure proxy and SSL certificate settings",
@@ -174,18 +158,6 @@ class CommandRegistry:
                 ),
                 handler="_show_mcp",
             ),
-            "plugins": Command(
-                aliases=frozenset(["/plugins"]),
-                description="Display the plugins this session is running",
-                handler="_show_plugins",
-                is_available=lambda ctx: ctx.experimental_harness,
-            ),
-            "reload-plugins": Command(
-                aliases=frozenset(["/reload-plugins"]),
-                description="Re-pin this session's plugins and report what changed",
-                handler="_reload_plugins",
-                is_available=lambda ctx: ctx.experimental_harness,
-            ),
             "todo": Command(
                 aliases=frozenset(["/todo"]),
                 description="Show the current todo list",
@@ -196,16 +168,6 @@ class CommandRegistry:
                 aliases=frozenset(["/voice"]),
                 description="Configure voice settings",
                 handler="_show_voice_settings",
-            ),
-            "leanstall": Command(
-                aliases=frozenset(["/leanstall"]),
-                description="Install the Lean 4 agent",
-                handler="_install_lean",
-            ),
-            "unleanstall": Command(
-                aliases=frozenset(["/unleanstall"]),
-                description="Uninstall the Lean 4 agent",
-                handler="_uninstall_lean",
             ),
             "rewind": Command(
                 aliases=frozenset(["/rewind"]),
@@ -239,12 +201,6 @@ class CommandRegistry:
                 ),
                 handler="_loop_command",
                 forwards_to_model=self._context.experimental_harness,
-            ),
-            "data-retention": Command(
-                aliases=frozenset(["/data-retention"]),
-                description="Show data retention information",
-                handler="_show_data_retention",
-                side_channel=True,
             ),
             "theme": Command(
                 aliases=frozenset(["/theme"]),

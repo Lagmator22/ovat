@@ -113,6 +113,10 @@ class _Slot:
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
+class PoolFull(RuntimeError):
+    """Every conversation slot is in use, so a new one cannot be made."""
+
+
 class AgentPool:
     """One built agent per (caller, conversation), least recently used out.
 
@@ -138,7 +142,10 @@ class AgentPool:
         with self._lock:
             slot = self._slots.get(key)
             if slot is None:
-                self._evict_one_if_full()
+                if not self._make_room():
+                    raise PoolFull(
+                        f"all {self._size} conversations are busy "
+                        f"(a2a.server.max_contexts)")
                 slot = _Slot(self._build())
                 self._slots[key] = slot
             self._slots.move_to_end(key)
@@ -151,14 +158,17 @@ class AgentPool:
             if counted:
                 slot.turns += 1
 
-    def _evict_one_if_full(self) -> None:
+    def _make_room(self) -> bool:
+        """True when one more slot fits: there is space, or the oldest idle
+        conversation was dropped. False when all of them are in use."""
         if len(self._slots) < self._size:
-            return
+            return True
         for key, slot in self._slots.items():       # oldest first
             if not slot.users:
                 del self._slots[key]
                 self._close(slot.agent)
-                return
+                return True
+        return False
 
     def __len__(self) -> int:
         return len(self._slots)

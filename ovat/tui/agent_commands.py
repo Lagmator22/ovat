@@ -41,26 +41,19 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "compact": ("session/compact",),
     "exit": ("session/stop",),
     "status": ("stats/read",),
-    "whoami": ("capability:an account",),
-    "teleport": ("vibeCode/teleport/start",),
-    "remote-project": ("vibeCode/projects/open",),
     "proxy-setup": ("config/proxy/read", "config/proxy/write"),
     "resume": ("session/list", "session/read", "session/resume",
                "session/delete"),
     "rename": ("session/rename",),
     "mcp": ("mcp_catalog/read", "mcp_catalog/toggle", "mcp_catalog/refresh",
             "connector_catalog/read"),
-    "plugins": ("plugin_catalog/read",),
-    "reload-plugins": ("plugin/reload",),
-    "todo": ("capability:a todo tool",),
+    # Reads the plan from the todo tool's TODO cards, client side.
+    "todo": (),
     "voice": (),
-    "leanstall": ("agents/install",),
-    "unleanstall": ("agents/uninstall",),
     "rewind": ("session/rewind/read", "session/rewind"),
     "branch": ("session/fork",),
     "retry": ("capability:continuing a reply",),
     "loop": ("loops/list",),
-    "data-retention": ("capability:a cloud account",),
     "theme": (),
 }
 
@@ -68,6 +61,20 @@ CAPABILITY = "capability:"
 
 # OVAT command -> the Vibe command that is the same thing.
 SAME_AS_VIBE = {"help": "help", "new": "clear", "copy": "copy", "quit": "exit"}
+
+# Copied commands whose upstream text describes what they do in Vibe, not
+# here (Vibe's /voice opens a settings panel, its /reload reloads skills, its
+# /mcp signs in to hosted servers). The aliases OVAT has no use for go too.
+OWN_WORDS = {
+    "voice": "Turn local voice dictation on or off. Ctrl+R records; the "
+             "audio stays on this machine",
+    "reload": "Read the workflow file again and rebuild the agent if it "
+              "changed",
+    "mcp": "The workflow's MCP servers and their tools. Pass a name to list "
+           "its tools; switch one on or off for this session",
+    "log": "Show the folder where conversations are saved",
+}
+DROPPED_ALIASES = {"mcp": {"/connectors"}}
 
 # Read-only OVAT commands that may run while the agent works.
 SIDE_CHANNEL = frozenset({"tools", "agents", "trace", "yolo", "serve",
@@ -80,7 +87,7 @@ KEYS = """### Keys
 - `Esc` stops the answer or the command
 - `Esc Esc` on an empty prompt goes back to an earlier message (rewind)
 - `Ctrl+O` (or `Ctrl+T`) opens or folds the tool calls
-- `Ctrl+R` records local voice; pause or press `Ctrl+R` to finish, `Esc` cancels
+- `Ctrl+R` records local voice until you press it again or 10 seconds pass in quiet, `Esc` cancels
 - `Shift+Tab` switches between asking and auto-approve
 - `Ctrl+C` copies a selection, stops the answer, and quits when pressed twice
 """
@@ -108,6 +115,16 @@ class OvatCommandRegistry(CommandRegistry):
         commands = {name: command
                     for name, command in super()._build_commands().items()
                     if vibe_command_works(name, served)}
+        # Vibe offers /todo only with its experimental harness; OVAT's todo
+        # tool is a plain workflow tool, so /todo is always there.
+        if "todo" in commands:
+            commands["todo"].is_available = None
+        for name, words in OWN_WORDS.items():
+            if name in commands:
+                commands[name].description = words
+        for name, aliases in DROPPED_ALIASES.items():
+            if name in commands:
+                commands[name].aliases = commands[name].aliases - aliases
         for c in ovat_commands.COMMANDS:
             aliases = frozenset({f"/{c.name}", *(f"/{a}" for a in c.aliases
                                                  if a.isalnum())})

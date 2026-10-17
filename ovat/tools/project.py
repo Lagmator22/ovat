@@ -79,6 +79,18 @@ def resolve_inside(raw: str, root: Path) -> tuple[Path | None, str | None]:
     return resolved, None
 
 
+def save_text(path: Path, text: str, newline: str = "") -> None:
+    """Replace `path` whole or not at all: a failed or interrupted write
+    leaves the old file, never a truncated one. The file keeps its mode (a
+    new one gets 0644). Raises OSError."""
+    from ovat.agentic.atomic import write_text
+    try:
+        mode = path.stat().st_mode & 0o777
+    except OSError:
+        mode = 0o644
+    write_text(path, text, mode=mode, newline=newline)
+
+
 def shown_path(path: Path, root: Path) -> str:
     """The path as the person knows it: relative to the project if inside."""
     try:

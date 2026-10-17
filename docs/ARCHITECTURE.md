@@ -1172,12 +1172,78 @@ functions, so the factory wraps each one once (`ovat/agent/events.py`).
 The wrapper reports `tool_started` / `tool_ended` on the agent's event bus
 and checks a cancel flag. The server turns those events into A2A
 `WORKING` updates ("calling search_docs"); tool arguments are never sent.
-The TUI's live tool cards are planned on the same bus.
+The agent TUI draws its live tool cards from the same bus.
 
 **One model, many callers.** One OVMS on one iGPU is the bottleneck, so
 tasks take turns behind one lock, and a waiting caller is told how many
 are ahead. Each conversation (caller plus context id) gets its own agent,
 so callers never share memory.
+
+---
+
+## The agent TUI (`ovat agent`)
+
+Three layers, each talking to the next through a small interface:
+
+```
+terminal client (ovat/tui/vibe/)  --JSON-RPC-->  app server (ovat/tui/server/)
+                                                      |
+                                    AgentSession (ovat/agentic/session.py)
+                                                      |
+                                      the four engines and the tools
+```
+
+- **The client** (`ovat/tui/vibe/`) is a copied terminal client: widgets,
+  layout, keys, the slash-command menu. See `NOTICE`. It knows nothing about
+  OVAT's engines. It sends requests and draws what comes back.
+- **The app server** (`ovat/tui/server/`) is OVAT's own. It answers the
+  client's requests from OVAT's state: `projector.py` turns agent events
+  into what the client draws, `bridge.py` joins the two sides, `turns.py`
+  runs a question, `approvals.py` and `questions.py` carry a person's answer
+  back to a waiting tool, `settings.py` and `methods/` handle `/model`,
+  `/config`, `/mcp` and the rest. `ovat/tui/agent_app.py` starts the pair;
+  `ovat/tui/agent_commands.py` is the slash-command table.
+- **The session** (`ovat/agentic/`) has no UI code, and a test keeps it that
+  way. `session.py` owns the worker threads and cancel; `sessions.py` saves
+  conversations; `voice.py` is local dictation; `workflow_edit.py` writes
+  `/config` changes back to `workflow.yml` keeping the comments (`atomic.py`
+  makes the write all-or-nothing).
+
+**Coding tools.** `read_file`, `write_file`, `edit`, `grep`, `shell`,
+`todo`, `ask_user`, `web_fetch` and `web_search` live in `ovat/tools/`. The
+file tools resolve every path through `ovat/tools/project.py`, which rejects
+anything that ends up outside the project folder, symlinks included. `shell`
+starts in that folder but is not confined to it. Writes go to a temporary file
+that replaces the target, so a failure leaves the old file.
+
+**Permissions.** Each tool is `allow`, `ask` or `deny`
+(`ovat/agent/permissions.py`). The check runs inside the one tool wrapper, so
+it holds on all four engines. When a tool asks, the `ApprovalBroker` holds the
+worker until the person answers once, for the session, or always. With nobody
+to ask, `ask` means no.
+
+**The user folder.** "Always" answers and the A2A server token live in
+`~/.ovat/` (`ovat/userdata.py`), keyed by project, not in the project's own
+`.ovat/`. A repository could otherwise ship a file there that switches on
+"always allow" for `shell`, or hands its author a working token.
+
+**A2A approvals.** A remote caller that says it can approve may answer a
+tool's question on the serving machine. In `ovat/a2a/service.py`:
+
+1. The worker takes the conversation's slot lock first, then the model gate.
+   Slot lock before gate: the other order lets two messages in one
+   conversation deadlock.
+2. When a tool asks, the worker gives the model gate back while a person
+   decides, so other callers are not blocked, and takes it again afterwards.
+3. An approval nobody answers expires after `task_timeout_s`: the task
+   fails and its record is removed (`_settle`).
+4. Only an answer that matches the open question allows the tool. A late or
+   repeated answer is dropped, not run as a new question.
+
+**Voice.** `ovat/agentic/voice.py` records from the microphone and
+transcribes with the workflow's `transcribe` model on the same machine. While
+recording, every key is ignored except `Ctrl+R`, so typing cannot land in the
+prompt or send it.
 
 ---
 

@@ -136,6 +136,19 @@ def test_openvino_genai_has_a_floor_that_loads_the_small_model():
 
 
 
+def test_the_copied_clients_license_ships_in_the_wheel():
+    """NOTICE points at ovat/tui/vibe/LICENSE; package-data must include it,
+    or the wheel ships the copied code without its license file."""
+    root = Path(__file__).parents[1]
+    metadata = tomllib.loads((root / "pyproject.toml").read_text(
+        encoding="utf-8"))
+    assert "tui/vibe/LICENSE" in metadata["tool"]["setuptools"][
+        "package-data"]["ovat"]
+    assert (root / "ovat" / "tui" / "vibe" / "LICENSE").is_file()
+    assert "ovat/tui/vibe/LICENSE" in (root / "NOTICE").read_text(
+        encoding="utf-8")
+
+
 def test_pypi_links_to_the_site_the_source_the_issues_and_the_changelog():
     """PyPI's sidebar comes from [project.urls]. Without it, the project
     page linked nowhere: no docs site, no repo, no place to report a bug."""

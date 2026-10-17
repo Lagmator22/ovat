@@ -163,10 +163,8 @@ class OvatAgentApp(VibeApp):
         super().__init__(
             history_file=history_file, app_server=session,
             startup=startup or StartupOptions(autocopy_to_clipboard=False),
-            update_notifier=None, update_cache_repository=None,
             voice_manager=voice,
-            narrator_manager=_noop_narrator_manager(),
-            vscode_extension_promo=None, **kwargs)
+            narrator_manager=_noop_narrator_manager(), **kwargs)
         self._handle = handle
         self._banner_factory = partial(AgentBanner, animate=animate,
                                        source=self._banner_source)

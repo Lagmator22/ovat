@@ -140,12 +140,14 @@ Extras, so you install only what you need:
 | --- | --- |
 | *(none)* | the native engine, all built-in tools, MCP, RAG, telemetry |
 | `langchain`, `llamaindex`, `openai-agents` | the matching `agent.type` |
-| `tui` | the full-screen terminal app (`ovat` with no arguments) |
+| `tui` | the launcher (`ovat` with no arguments), the agent TUI (`ovat agent`) and local voice dictation. On Linux, voice needs the system library `libportaudio2` |
+| `a2a` | the Agent2Agent server and client (`ovat a2a ...`, `type: a2a`) |
 | `convert` | `optimum-cli`, to convert Hugging Face models to OpenVINO format |
-| `dev` | every framework above, plus pytest |
+| `all` | everything above except `convert` |
+| `dev` | `all`, plus pytest |
 
 ```bash
-pip install "ovat[langchain,llamaindex,openai-agents,tui]"
+pip install "ovat[all]"
 ```
 
 Then install the model server, once per machine:
@@ -313,7 +315,7 @@ stops, and Ctrl-C stops it early. `--max-tokens N` sets a cap.
 | `ovat bench <config> -i "..."` | One question through several engines, side by side. `--repeat N` |
 | `ovat telemetry` | Live CPU, memory and Intel hardware numbers. `--once` for one snapshot |
 | `ovat tui` | The full-screen terminal app, same as `ovat` with no arguments |
-| `ovat agent [config]` | The chat-first agent TUI: live tools, subagents, approvals, `!` shell |
+| `ovat agent [config]` | The agent TUI: a local coding and research agent with tools, approvals, subagents, saved sessions and voice. `--continue`, `--resume <id>` |
 | `ovat a2a serve\|card\|call\|token` | Offer a workflow to other agents over A2A, or ask one |
 
 `ovat <command> --help` lists every option.
@@ -329,6 +331,7 @@ stops, and Ctrl-C stops it early. `--max-tokens N` sets a cap.
 | **Audio + vision** | [`examples/audio-multimodal/`](examples/audio-multimodal/) | Transcribe a `.wav`, describe an image |
 | **OpenTelemetry** | [`examples/plano/`](examples/plano/) | Request traces through the plano AI gateway |
 | **Agent, subagents, A2A** | [`examples/agent/`](examples/agent/) | `ovat agent` with a local, an A2A and a cloud subagent |
+| **Coding agent** | [`examples/coding/`](examples/coding/) | `ovat agent` reading, editing and testing your own project |
 
 Each folder has its own README with the exact commands.
 
@@ -371,11 +374,33 @@ LangChain, LlamaIndex and the OpenAI Agents SDK, each pointed at your local
 OVMS. All four record the token counts OVMS sends back, so `ovat bench` and
 `ovat run --trace` show tokens for every engine.
 
-Three tools are built in:
+Twelve tools are built in. Name the ones you want under `tools:`.
 
-- **`search_docs`** searches your indexed documents and returns the source paths.
-- **`transcribe`** turns speech in an audio file into text.
-- **`describe_image`** describes an image or answers a question about it.
+| Tool | What it does | Default |
+| --- | --- | --- |
+| `search_docs` | Searches your indexed documents and returns the source paths | allow |
+| `transcribe` | Turns speech in an audio file into text | allow |
+| `describe_image` | Describes an image or answers a question about it | allow |
+| `read_file` | Reads a file in the project | allow |
+| `grep` | Searches the project's files | allow |
+| `todo` | Keeps the agent's task list | allow |
+| `ask_user` | Asks you a question and waits | allow |
+| `write_file` | Creates or replaces a file in the project | ask |
+| `edit` | Replaces text in a file | ask |
+| `shell` | Runs a command in the project folder | ask |
+| `web_fetch` | Fetches a web page | ask |
+| `web_search` | Searches the web | ask |
+
+`ask` means you are asked first (once, for the session, or always). With
+nobody to ask (`ovat run`, `ovat bench`, an A2A server) an `ask` tool does
+not run. The file tools stay inside the project folder; `shell` runs there
+but is not fenced in, so read each command before you allow it. "Always
+allow" is kept in `~/.ovat/permissions.json`, one entry per project, never in
+the project itself. Remote A2A callers are never offered the coding tools,
+the web tools or `ask_user`.
+
+Set `agent.project_context: true` and the project's `AGENTS.md` or `OVAT.md`
+is added to the prompt (capped in size).
 
 Models misspell file names. If a tool is asked for a file that does not exist,
 it looks nearby for a very similar name, uses that, and says so in its result,
@@ -435,14 +460,32 @@ One question, three tools. The workflow had no `rag:` block, so the chat
 switched itself to OVMS, and `search_docs` answered with a `[stub]` result
 (that is what it does without an index).
 
-**`ovat agent`** is the newer, chat-first TUI. The conversation is the whole
-screen: the Intel mark at the top, one line per answer that folds all its
-tool calls (and a subagent's progress) into a live summary, an approval
-panel when a tool wants to send data off the machine, `!` to run a shell
-command, `/` for commands, and a bar with the model, device and live CPU,
-NPU and RAM. Workflows can name **subagents**: another OVAT workflow, an
-agent reached over A2A, or a model behind any OpenAI-compatible API.
-[`examples/agent/`](examples/agent/) has the commands.
+**`ovat agent`** is the chat-first TUI and a local coding and research
+agent. The conversation is the whole screen: answers stream in, each tool
+call is a card (file changes show as diffs), and the bar shows the model,
+device and live CPU, GPU, NPU and RAM. Anything that writes, runs a command
+or leaves the machine asks first: once, for the session, or always.
+
+Workflows can name **subagents**: another OVAT workflow, an agent reached
+over A2A, or a model behind any OpenAI-compatible API. A remote A2A agent
+can ask for approval on the machine that serves it. Voice dictation is
+local: the audio never leaves the machine. [`examples/agent/`](examples/agent/)
+and [`examples/coding/`](examples/coding/) have the commands.
+
+- Sessions are saved. `ovat agent --continue` or `--resume <id>` (or
+  `/resume`) brings one back, `Esc Esc` rewinds, `/branch` forks, `/compact`
+  summarizes.
+- `Shift+Tab` approves every tool for the session, `!cmd` runs a shell
+  command, `/` lists the commands.
+- `/model`, `/thinking` and `/config` change the workflow and save it to
+  `workflow.yml` with your comments kept; `/theme` and `/mcp` switch the
+  look and the MCP servers.
+- `/todo` shows the task list. `/agents` is a live table of subagents and
+  peers: press `x` to cancel one child while the parent carries on.
+- `/voice` turns dictation on, `Ctrl+R` records and a level bar shows what
+  the microphone hears. It keeps listening until you press `Ctrl+R` again or
+  10 seconds pass without speech; `Esc` cancels. The model comes from the
+  workflow's `transcribe` tool or `OVAT_WHISPER_MODEL`.
 
 The CLI never needs it. `textual` and `pyfiglet` come only with the `[tui]`
 extra, and a test makes sure a plain install imports neither of them, nor
@@ -508,6 +551,8 @@ Rosetta, which is fine for small test models and slow for real ones.
 | `search_docs` returns `[stub]` | No `rag:` section, or no `--config` on the MCP command |
 | A warning that indexed documents changed | Run `ovat index` on that folder again |
 | `serve` looks stuck | The first run downloads the model. Watch `ovms.log` |
+| Voice says there is no model | Set the `transcribe` tool's model, or `OVAT_WHISPER_MODEL` |
+| Voice fails on Linux | Install the system library `libportaudio2` |
 
 `ovat doctor <config>` diagnoses most other problems.
 
@@ -522,7 +567,7 @@ Rosetta, which is fine for small test models and slow for real ones.
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Why: each design decision, the alternatives, and the measurement behind it |
 | [`docs/workflow_yaml_reference.md`](docs/workflow_yaml_reference.md) | Every `workflow.yml` field. Generated from the code |
 | [`docs/BLOG.md`](docs/BLOG.md) | A walkthrough: what OVAT is and how to use it |
-| [`examples/`](examples/) | Four runnable use cases |
+| [`examples/`](examples/) | Six runnable use cases |
 | [`AGENTS.md`](AGENTS.md) | Contributor notes: hard rules and known traps |
 
 ---
@@ -533,7 +578,7 @@ Rosetta, which is fine for small test models and slow for real ones.
 git clone https://github.com/Lagmator22/ovat.git && cd ovat
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate.bat
 pip install -e ".[dev]"
-pytest -q                    # about 800 tests, no server needed
+pytest -q                    # about 1500 tests, no server needed
 pytest -m live               # against a running OVMS (AI PC only)
 ```
 

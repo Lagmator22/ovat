@@ -224,10 +224,12 @@ def test_the_banner_shows_only_the_workflow_file_name():
 
 def test_nothing_that_phones_home_or_nags_is_on():
     """No update check, no telemetry, no feedback prompt, no editor promo,
-    no what's-new from the app this was copied from, no notifications."""
+    no what's-new from the app this was copied from, no notifications. The
+    update check, the promo and the what's-new are not switched off but
+    gone from the copied app."""
     from ovat.tui.vibe.cli.textual_ui.widgets.feedback_bar import FeedbackBar
     from ovat.tui.vibe.cli.textual_ui.widgets.messages import (
-        GreetingMessage, VscodeExtensionPromoMessage, WhatsNewMessage)
+        GreetingMessage, WhatsNewMessage)
 
     async def go():
         async with running() as (app, pilot, fake, handle):
@@ -237,11 +239,10 @@ def test_nothing_that_phones_home_or_nags_is_on():
             assert not config.enable_telemetry
             assert not config.enable_notifications
             assert not config.show_greeting
-            assert app._update_notifier is None
-            assert app._vscode_extension_promo is None
-            assert not app._show_vscode_extension_promo
+            for gone in ("_check_update", "_check_and_show_whats_new",
+                         "_maybe_show_vscode_extension_promo"):
+                assert not hasattr(app, gone), gone
             assert not app.query(WhatsNewMessage)
-            assert not app.query(VscodeExtensionPromoMessage)
             assert not app.query(GreetingMessage)
             assert not app.query_one(FeedbackBar).display
             assert (await app.app_server.resources.feedback.should_show(
@@ -493,6 +494,12 @@ def test_help_lists_the_commands_and_keys_and_nothing_that_cannot_work():
                 assert f"/{name}" in text, name
             for gone in ("/teleport", "/retry"):
                 assert gone not in text, gone
+            # copied commands say what they do HERE: /voice is a local
+            # dictation switch, /reload has no skills, /mcp no hosted login
+            assert "local voice dictation" in text
+            for vibe_words in ("Configure voice settings", "skills",
+                               "/connectors", "login <alias>"):
+                assert vibe_words not in text, vibe_words
             assert "Ctrl+O" in text and "Shift+Tab" in text
             # /branch's own text has `ovat agent --resume <id>` in a code
             # span, where an escape would be shown as is
@@ -579,6 +586,29 @@ def test_at_offers_the_subagents_before_any_file():
     run(go())
 
 
+def test_todo_opens_the_plan_the_todo_tool_wrote():
+    """/todo stayed hidden as "OVAT has no todo tool" after the todo tool
+    arrived. It needs no server method: it reads the plan from the TODO
+    cards the bridge already makes."""
+    from ovat.tui.vibe.cli.textual_ui.screens.todo_overlay import \
+        TodoOverlayScreen
+    todos = [{"id": "1", "content": "read the docs", "status": "in_progress",
+              "priority": "high"}]
+    tool = {"name": "todo", "arguments": {"action": "write", "todos": todos},
+            "display": {"kind": "todo", "action": "write", "todos": todos}}
+
+    async def go():
+        async with running(extra_tools=[tool]) as (app, pilot, fake, handle):
+            await say(pilot, "plan it")
+            await until(pilot, lambda: app.query(AssistantMessage)
+                        and not app._is_busy())
+            await say(pilot, "/todo")
+            await until(pilot, lambda: isinstance(app.screen,
+                                                  TodoOverlayScreen))
+            await until(pilot, lambda: "read the docs" in screen_text(app))
+    run(go())
+
+
 def test_an_unknown_command_suggests_a_near_one_and_is_not_sent_to_the_model():
     async def go():
         async with running() as (app, pilot, fake, handle):
@@ -607,7 +637,10 @@ def test_new_clears_the_conversation_and_clear_does_too():
             await say(pilot, "/new")
             await until(pilot, lambda: fake.cleared == 1)
             await until(pilot, lambda: not app.query(AssistantMessage))
-            assert "New conversation started" in screen_text(app)
+            # The notice is drawn a moment after the old messages go; a single
+            # read of the screen failed on the slower Windows runner.
+            await until(pilot, lambda: "New conversation started"
+                        in screen_text(app))
             await say(pilot, "/clear")
             await until(pilot, lambda: fake.cleared == 2)
     run(go())
@@ -756,7 +789,7 @@ def test_trace_says_what_the_last_answer_did():
                                            "duration_s": 0.4}]}]}
             await say(pilot, "/trace")
             await until(pilot, lambda: "search_docs" in screen_text(app))
-            assert "2 turns" in screen_text(app)
+            await until(pilot, lambda: "2 turns" in screen_text(app))
     run(go())
 
 
@@ -1058,7 +1091,7 @@ def test_ctrl_c_twice_quits_when_idle():
         async with running() as (app, pilot, fake, handle):
             await pilot.press("ctrl+c")
             assert app.is_running
-            assert "again to quit" in screen_text(app)
+            await until(pilot, lambda: "again to quit" in screen_text(app))
             await pilot.press("ctrl+c")
             await until(pilot, lambda: not app.is_running)
     run(go())
@@ -1115,7 +1148,7 @@ def test_ctrl_enter_steers_a_waiting_prompt_into_the_running_turn():
             await until(pilot, lambda: not fake.busy)
             # it joined the first turn; it was not asked as a turn of its own
             assert fake.asked == ["first"]
-            assert "second" in screen_text(app)
+            await until(pilot, lambda: "second" in screen_text(app))
     run(go())
 
 
@@ -1480,7 +1513,7 @@ def test_the_registry_keeps_a_vibe_command_only_when_the_server_serves_it():
     assert set(registry.commands) & vibe == {
         "help", "clear", "copy", "exit", "status", "theme", "resume",
         "rewind", "rename", "branch", "log", "compact", "model", "thinking",
-        "reload", "config", "mcp", "voice"}
+        "reload", "config", "mcp", "voice", "todo"}
 
 
 def test_a_removed_command_would_only_have_ended_in_not_supported():
@@ -1612,15 +1645,14 @@ def test_the_copied_app_builds_its_banner_through_a_hook_and_ovat_swaps_it():
     run(go())
 
 
-def test_reporting_an_error_without_sentry_installed_does_nothing(monkeypatch):
-    """The copied app reports errors to a service OVAT does not ship. Without
-    the package the call returns, instead of raising its own ImportError over
-    the error it was asked to report."""
-    import sys
-
-    from ovat.tui.vibe.observability.sentry import capture_sentry_exception
-    monkeypatch.setitem(sys.modules, "sentry_sdk", None)
-    assert capture_sentry_exception(RuntimeError("x"), fatal=True) is None
+def test_the_copied_app_reports_errors_to_no_service():
+    """Vibe sends crashes to Sentry. OVAT reports nowhere, so the reporting
+    code is gone, not only switched off; this keeps it from coming back."""
+    from pathlib import Path
+    vibe = Path(__file__).parents[1] / "ovat" / "tui" / "vibe"
+    offenders = [str(f.relative_to(vibe)) for f in vibe.rglob("*.py")
+                 if "sentry" in f.read_text(encoding="utf-8").lower()]
+    assert offenders == []
 
 
 def test_streamed_reasoning_and_answer_deltas_grow_in_the_transcript():
