@@ -41,20 +41,20 @@ class Admission:
         # caller -> times of their recent messages, oldest first
         self._recent: dict[str, deque] = defaultdict(deque)
 
-    def _rate_exceeded(self, caller: str) -> bool:
-        """True when `caller` already sent rate_limit_per_min messages in
-        the last minute. Forgets anything older as it goes."""
+    def _take_rate_slot(self, caller: str) -> bool:
+        """Count one message from `caller` and return True, unless they
+        already sent rate_limit_per_min in the last minute (then False and
+        nothing is counted). Check and count are ONE step under the lock, so
+        two threads cannot both slip through the last free slot."""
         now = self._clock()
         with self._lock:
             times = self._recent[caller]
             while times and now - times[0] >= _WINDOW_S:
                 times.popleft()
-            return len(times) >= self.s.rate_limit_per_min
-
-    def _record(self, caller: str) -> None:
-        """Count one message from `caller` against the rate limit."""
-        with self._lock:
-            self._recent[caller].append(self._clock())
+            if len(times) >= self.s.rate_limit_per_min:
+                return False
+            times.append(now)
+            return True
 
     def check(self, ask: Ask) -> str | None:
         """None to accept, or the sentence that explains the refusal.
@@ -63,12 +63,12 @@ class Admission:
           empty text                     nothing to answer
           len(ask.text) > max_message_chars
           ask.queued >= max_queue        the model is busy enough already
-          rate                           self._rate_exceeded(ask.caller)
+          rate                           self._take_rate_slot(ask.caller)
           ask.hops >= max_hops           too deep a chain of agents
           self.server_id in ask.chain    a cycle: this server already
                                          handled this request upstream
           ask.turns >= max_turns_per_context
-        and self._record(ask.caller) counts a message against the rate.
+        and an accepted message is counted against the rate in that same step.
 
         Order: loop protection first, so a runaway chain of agents is always
         named for what it is; then what the message itself is; then whether
@@ -95,8 +95,7 @@ class Admission:
         if ask.queued >= s.max_queue:
             return (f"{ask.queued} tasks are already waiting for the model "
                     f"(a2a.server.max_queue); try again shortly")
-        if self._rate_exceeded(ask.caller):
+        if not self._take_rate_slot(ask.caller):
             return (f"more than {s.rate_limit_per_min} messages in a minute "
                     f"(a2a.server.rate_limit_per_min)")
-        self._record(ask.caller)
         return None
