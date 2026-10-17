@@ -12,9 +12,13 @@ provider as a STRING (genai vs ovms, sqlite-vec vs a future backend) and the
 factory maps that string to the matching concrete class. Swapping a backend is
 a one-line YAML edit, not a code change.
 """
+import copy
+import logging
 import os
 
+from ovat.agent.events import EventBus, observed
 from ovat.agent.loop import AgentLoop
+from ovat.agent.permissions import default_permission
 from ovat.config.workflow import WorkflowConfig
 from ovat.providers.backend import LLMBackend
 from ovat.providers.base import (EmbeddingsProvider, LLMProvider,
@@ -23,6 +27,9 @@ from ovat.providers.llm_ovms import OVMSLLMProvider
 from ovat.tools import describe_image as describe_image_tool
 from ovat.tools import search_docs as search_docs_tool
 from ovat.tools import transcribe as transcribe_tool
+
+
+log = logging.getLogger(__name__)
 
 
 # The schema (the menu the model reads) for each built-in tool. I keep the
@@ -215,10 +222,54 @@ def _make_mcp_caller(server, tool_name: str):
     )
 
 
+def _make_a2a_tool(tool_cfg, servers: list | None, events: EventBus | None):
+    """A remote A2A agent as one {schema, function} tool.
+
+    The SDK is imported here and only here on the build path, so a workflow
+    without `type: a2a` never needs the [a2a] extra. One unreachable peer
+    must not stop the run from starting (unlike a broken MCP command, it is
+    another machine that may come back): its card is read with a short
+    budget, a miss is logged, and the first call tries again.
+    """
+    from ovat.a2a.protocol import PeerError
+    from ovat.a2a.sdk import require_sdk
+    from ovat.tools import a2a_call
+    require_sdk()
+    from ovat.a2a.sdk.client import SDKPeer
+
+    token = os.environ.get(tool_cfg.token_env, "").strip() \
+        if tool_cfg.token_env else ""
+    peer = SDKPeer(tool_cfg.url, token=token or None,
+                   timeout=tool_cfg.timeout or 900.0)
+    if servers is not None:
+        servers.append(peer)           # close_agent() closes it
+    card = None
+    try:
+        card = peer.card()
+    except PeerError as exc:
+        log.warning("remote agent %s at %s: %s (%s); will retry on first "
+                    "use", tool_cfg.name, tool_cfg.url, exc.kind, exc.detail)
+    schema = copy.deepcopy(a2a_call.SCHEMA)
+    schema["function"]["name"] = tool_cfg.name
+    schema["function"]["description"] = (
+        tool_cfg.description
+        or a2a_call.describe(tool_cfg.name, tool_cfg.url, card))
+    missing = bool(tool_cfg.token_env) and not token
+    return {
+        "schema": schema,
+        "function": lambda message, _p=peer, _c=tool_cfg, _m=missing: (
+            a2a_call.a2a_call_impl(message, _p, _c.name, _c.url, events,
+                                   _c.token_env, _m)),
+        "kind": "a2a",
+    }
+
+
 def close_agent(agent) -> None:
     """Shut down anything the agent spawned. Safe to call twice, or never.
 
-    Only mcp_stdio tools own a real OS resource: each launches a subprocess
+    `mcp_servers` holds everything with a close(): MCP servers and A2A
+    peers (each owns a thread and a connection). Of the MCP side, only
+    mcp_stdio tools own a real OS resource: each launches a subprocess
     with its own event-loop thread. Nothing used to own them for shutdown, so
     they lived until the interpreter exited via MCPStdioServer's atexit hook.
     For `ovat run` that is fine. For the TUI, where every `/engine` switch
@@ -239,7 +290,8 @@ def close_agent(agent) -> None:
 
 def build_tools(config: WorkflowConfig,
                 retriever: RetrieverProvider | None = None,
-                servers: list | None = None) -> dict:
+                servers: list | None = None,
+                events: EventBus | None = None) -> dict:
     """I turn the list of tool configs into the dict my loop expects.
 
     Two tool types:
@@ -248,7 +300,9 @@ def build_tools(config: WorkflowConfig,
       EVERY tool it advertises. This is what makes workflow.yml an open
       socket: any third-party MCP server plugs in with two YAML lines.
     The loop consumes the same {schema, function} dict either way; it never
-    learns which side of the wire a tool lives on.
+    learns which side of the wire a tool lives on. Each entry also records
+    its `kind` (the config type it came from), which the engines ignore and
+    the A2A server reads to decide what a remote caller may trigger.
     """
     # Each builder takes the tool's OWN config, so `model:` and `device:` in
     # workflow.yml reach the tool that declared them. search_docs ignores it;
@@ -269,6 +323,8 @@ def build_tools(config: WorkflowConfig,
             tools[tool_cfg.name] = {
                 "schema": BUILTIN_TOOL_SCHEMAS[tool_cfg.name],
                 "function": builders[tool_cfg.name](tool_cfg),
+                "kind": "builtin",
+                "_entry": tool_cfg,
             }
         elif tool_cfg.type == "mcp_stdio":
             if not tool_cfg.command:
@@ -286,13 +342,49 @@ def build_tools(config: WorkflowConfig,
                 tools[remote.name] = {
                     "schema": openai_schema_from_mcp_tool(remote),
                     "function": _make_mcp_caller(server, remote.name),
+                    "kind": "mcp_stdio",
+                    "_entry": tool_cfg,
                 }
+        elif tool_cfg.type == "a2a":
+            tools[tool_cfg.name] = {**_make_a2a_tool(tool_cfg, servers, events),
+                                    "_entry": tool_cfg}
         else:
             raise ValueError(
                 f"Unsupported tool type '{tool_cfg.type}' for '{tool_cfg.name}'. "
-                f"Supported: builtin, mcp_stdio."
+                f"Supported: builtin, mcp_stdio, a2a."
             )
+    # Every tool from THIS config entry gets its permission: an mcp_stdio
+    # entry's applies to each tool its server advertises.
+    for tool_cfg in config.tools:
+        default = default_permission(tool_cfg.type, tool_cfg.url)
+        for spec in tools.values():
+            if spec.get("_entry") is tool_cfg:
+                spec["permission"] = tool_cfg.permission or default
+    for spec in tools.values():
+        spec.pop("_entry", None)
+        spec.setdefault("permission", "allow")
+    if config.subagents:
+        from ovat.agent.subagents import make_delegate_tool
+        if "delegate" in tools:
+            raise ValueError("a tool named 'delegate' clashes with the tool "
+                             "subagents: adds; rename it.")
+        tools["delegate"] = make_delegate_tool(
+            config.subagents, events if events is not None else EventBus())
     return tools
+
+
+def observe_tools(tools: dict, bus: EventBus) -> dict:
+    """The same tools, each function wrapped to report to `bus`.
+
+    Kept apart from build_tools on purpose: build_tools decides WHAT the
+    tools are, this decides how they are watched. All four engines call
+    tools[name]["function"], so this one step gives every engine tool events
+    and a cancel check (see ovat/agent/events.py).
+    """
+    return {name: {**spec, "function": observed(
+                name, spec["function"], bus,
+                spec.get("permission", "allow"))}
+            for name, spec in tools.items()}
 
 
 # Every engine the factory can build. Named here so the error message, the
@@ -300,7 +392,8 @@ def build_tools(config: WorkflowConfig,
 AGENT_TYPES = ("native", "react", "llamaindex", "openai-agents")
 
 
-def build_agent(config: WorkflowConfig, skip_rag: bool = False):
+def build_agent(config: WorkflowConfig, skip_rag: bool = False,
+                select_tools=None):
     """I assemble the full agent from a config: the one call the CLI makes.
 
     Dispatch on agent.type so the same YAML can pick my native loop or the
@@ -311,6 +404,11 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False):
     model off disk, which is a heavy backend in the same category as the OVMS
     server. Dry-run proves the wiring on any machine, so it skips that load and
     search_docs stays in stub mode for the preview.
+
+    select_tools, when given, takes the built tools dict and returns the
+    subset this agent may use. `ovat a2a serve` passes one, so a tool that
+    is not exposed is not merely left off the Agent Card: the model is
+    never shown it at all, and cannot be talked into calling it.
     """
     # Build RAG first so the in-process search_docs has its retriever.
     #
@@ -340,12 +438,20 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False):
     # Collected so close_agent() can shut the subprocesses down. Without an
     # owner they survive until the interpreter exits.
     mcp_servers: list = []
-    tools = build_tools(config, retriever=retriever, servers=mcp_servers)
+    # One bus per agent: the TUI and the A2A server subscribe to it, and its
+    # `stop` flag is how either of them cancels a run.
+    events = EventBus()
+    tools = build_tools(config, retriever=retriever, servers=mcp_servers,
+                        events=events)
+    if select_tools is not None:
+        tools = select_tools(tools)
+    tools = observe_tools(tools, events)
 
     agent_type = config.agent.type
     def _own(agent):
-        """Hand the agent its subprocesses so close_agent() can find them."""
+        """Hand the agent its subprocesses and its event bus."""
         agent.mcp_servers = mcp_servers
+        agent.events = events
         return agent
 
     if agent_type == "native":
@@ -355,6 +461,7 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False):
             system_prompt=config.agent.system_prompt,
             max_iterations=config.agent.max_iterations,
             engine_name=agent_type,
+            stop=events.stop,
         ))
     # Each framework is imported INSIDE its branch so the native path never
     # pays the import cost of a framework it does not use, and so a machine

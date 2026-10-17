@@ -1942,5 +1942,12 @@ def bench(
         rprint(f"[dim]report written to[/dim] {esc(out)}")
 
 
+# `ovat a2a ...`. The sub-app module imports no SDK at module level, so this
+# costs nothing on a base install; each command checks for the extra itself.
+from ovat.cli.a2a_cmd import a2a_app  # noqa: E402
+
+app.add_typer(a2a_app, name="a2a")
+
+
 if __name__ == "__main__":
     app()

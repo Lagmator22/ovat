@@ -15,7 +15,7 @@ by name rather than silently leaving a default in charge.
 
 ## `(top level)`
 
-The four sections, plus one setting.
+The six sections, plus one setting.
 
 | Field | Type | Default | Constraints | Purpose |
 | --- | --- | --- | --- | --- |
@@ -24,6 +24,8 @@ The four sections, plus one setting.
 | `agent` | section | defaults | - | How the loop behaves. |
 | `rag` | section \| null | `null` | - | Vector search for `search_docs`. Omit and the tool answers in a documented stub mode. |
 | `model_search_paths` | list[string] | empty | - | Extra folders to scan for local model exports. Searched first, ahead of `OVAT_MODELS`, `./models` and `~/models`, so a workflow that says where its models live wins over the shell. |
+| `a2a` | section \| null | `null` | - | How `ovat a2a serve` offers this workflow to other agents. Omit to serve with safe defaults. |
+| `subagents` | list[section] | empty | - | Specialists the agent may hand a whole task to, through one `delegate` tool. Used by `ovat agent`. |
 
 ## `model`
 
@@ -64,11 +66,16 @@ One entry per tool. `tools:` is a LIST.
 | Field | Type | Default | Constraints | Purpose |
 | --- | --- | --- | --- | --- |
 | `name` | string | **required** | - | `search_docs`, `transcribe`, `describe_image`, or any tool an MCP server advertises. |
-| `type` | string | `builtin` | - | `builtin` runs in-process; `mcp_stdio` launches an external MCP server. |
+| `type` | string | `builtin` | - | `builtin` runs in-process; `mcp_stdio` launches an external MCP server; `a2a` asks another agent over A2A (needs `pip install 'ovat[a2a]'`). |
 | `command` | list[string] \| null | `null` | - | Argv that launches the MCP server. Required when `type: mcp_stdio`. |
 | `env` | map of string to string \| null | `null` | - | Extra environment for an `mcp_stdio` server, which otherwise sees only HOME, PATH and a few more. `${VAR}` is expanded from your shell. |
 | `model` | string \| null | `null` | - | Where this tool's own weights live. `transcribe` and `describe_image` only. |
 | `device` | string \| null | `null` | - | Device for this tool's model, separate from the agent's. Omit to let the device router choose. |
+| `url` | string \| null | `null` | - | Base URL of the other agent. Its Agent Card is read from there. Required when `type: a2a`. |
+| `token_env` | string \| null | `null` | - | NAME of the environment variable holding the bearer token for that agent. Never the token itself. |
+| `timeout` | float \| null | `null` | > 0 | Seconds to wait for the other agent's answer. Unset: 900. |
+| `description` | string \| null | `null` | - | What the model is told this agent does. Unset: built from the agent's card. |
+| `permission` | allow \| ask \| deny \| null | `null` | - | `allow`, `ask` (a person says yes first; with nobody to ask, as in `ovat run`, it does not run) or `deny`. Unset: `ask` for an `a2a` tool on another machine, `allow` otherwise. |
 
 ## `agent`
 
@@ -108,6 +115,87 @@ How a document is sliced before embedding.
 | --- | --- | --- | --- | --- |
 | `size` | integer | `512` | - | Characters per chunk before embedding. |
 | `overlap` | integer | `64` | - | Characters shared with the next chunk, so meaning is not cut in half at a boundary. |
+
+## `subagents`
+
+One specialist per entry. `subagents:` is a LIST.
+
+| Field | Type | Default | Constraints | Purpose |
+| --- | --- | --- | --- | --- |
+| `name` | string | **required** | - | Short id: lowercase letters, digits, `-`, `_`. |
+| `description` | string | **required** | - | What it is good at. The main model reads this to choose it. |
+| `workflow` | string \| null | `null` | - | Another OVAT workflow file, run in-process with a fresh conversation per task. |
+| `api` | section \| null | `null` | - | A model behind an OpenAI-compatible API, such as a cloud provider. Its data leaves this machine. |
+| `a2a` | section \| null | `null` | - | Another agent reached over A2A. |
+| `system_prompt` | string \| null | `null` | - | Instructions for an `api` subagent. |
+| `permission` | allow \| ask \| deny \| null | `null` | - | `allow`, `ask` or `deny`. Unset: `ask` for `api` and for `a2a` off this machine, `allow` otherwise. |
+
+## `subagents.api`
+
+A subagent behind an OpenAI-compatible API.
+
+| Field | Type | Default | Constraints | Purpose |
+| --- | --- | --- | --- | --- |
+| `base_url` | string | **required** | - | The API's base URL, e.g. `https://api.mistral.ai/v1`. |
+| `model` | string | **required** | - | Model name at that API. |
+| `api_key_env` | string \| null | `null` | - | NAME of the environment variable holding the API key. |
+| `max_tokens` | integer | `2048` | > 0 | Longest answer it may write. |
+| `temperature` | float | `0.0` | >= 0 | Sampling temperature. |
+| `timeout` | float | `300.0` | > 0 | Seconds to wait for its answer. |
+
+## `subagents.a2a`
+
+A subagent reached over A2A.
+
+| Field | Type | Default | Constraints | Purpose |
+| --- | --- | --- | --- | --- |
+| `url` | string | **required** | - | The agent's base URL. |
+| `token_env` | string \| null | `null` | - | NAME of the environment variable holding its bearer token. |
+| `timeout` | float | `900.0` | > 0 | Seconds to wait for its answer. |
+
+## `a2a`
+
+Agent2Agent. Needs `pip install 'ovat[a2a]'`.
+
+| Field | Type | Default | Constraints | Purpose |
+| --- | --- | --- | --- | --- |
+| `server` | section | defaults | - | Settings for `ovat a2a serve`. |
+
+## `a2a.server`
+
+How `ovat a2a serve` offers this workflow. Safe by default.
+
+| Field | Type | Default | Constraints | Purpose |
+| --- | --- | --- | --- | --- |
+| `name` | string \| null | `null` | - | Name on the Agent Card. Unset: the workflow file's name. |
+| `description` | string \| null | `null` | - | Text on the Agent Card, which is public. Never taken from `system_prompt`. |
+| `skills` | list[section] \| null | `null` | - | Skills on the card. Unset: one per exposed tool, described by the tool itself. |
+| `host` | string | `127.0.0.1` | - | Address to listen on. The default is this machine only. |
+| `port` | integer | `9100` | > 0, < 65536 | Port to listen on. |
+| `public_url` | string \| null | `null` | - | URL the card advertises, when callers reach this server through a tunnel or proxy. |
+| `tokens` | map of string to string | empty | - | Caller name to the NAME of the environment variable holding that caller's token. Unset: one generated token in `.ovat/a2a/token`. |
+| `expose_tools` | list[string] \| null | `null` | - | Tools a remote caller may trigger. Unset: every builtin that takes no file path; MCP tools only when listed. |
+| `expose_sources` | names \| full \| none | `names` | - | Citations sent back: file `names`, `full` paths, or `none`. |
+| `max_message_chars` | integer | `8000` | > 0 | Longest message accepted. |
+| `max_queue` | integer | `4` | >= 0 | Tasks allowed to wait for the model before new ones are declined. |
+| `rate_limit_per_min` | integer | `30` | > 0 | Messages per caller per minute. |
+| `task_timeout_s` | float | `900.0` | > 0 | Seconds one task may run before it fails. |
+| `max_contexts` | integer | `16` | > 0 | Conversations kept in memory at once; the oldest is dropped first. |
+| `max_turns_per_context` | integer | `20` | > 0 | Messages in one conversation before the caller must start a new one. |
+| `max_hops` | integer | `3` | >= 1 | How many agents deep a request may travel, so two agents cannot call each other forever. |
+| `audit_log` | string \| null | `.ovat/a2a/audit.jsonl` | - | JSON Lines file recording every answer that left. `null` turns it off. |
+
+## `a2a.server.skills`
+
+One skill on the Agent Card. `skills:` is a LIST.
+
+| Field | Type | Default | Constraints | Purpose |
+| --- | --- | --- | --- | --- |
+| `id` | string | **required** | - | Stable id of the skill. |
+| `name` | string | **required** | - | Short name shown to people. |
+| `description` | string | **required** | - | What the skill does. |
+| `tags` | list[string] | `['ovat']` | - | Keywords. The spec requires at least one. |
+| `examples` | list[string] | empty | - | Example requests. |
 
 ---
 

@@ -18,8 +18,10 @@ has decoded a tool call, so the label is a description and the payload is the
 fact. A max_iterations guard makes sure I can never spin forever.
 """
 import json
+import threading
 import time
 
+from ovat.agent.events import CANCELLED_TEXT
 from ovat.agent.session import Session
 from ovat.agent.usage import sum_known
 from ovat.text import (looks_like_undecoded_tool_call, says_nothing,
@@ -73,12 +75,18 @@ class AgentLoop:
 
     def __init__(self, llm: LLMProvider, tools: dict,
                  system_prompt: str | None = None, max_iterations: int = 10,
-                 engine_name: str = "native"):
+                 engine_name: str = "native",
+                 stop: threading.Event | None = None):
         # llm is any provider that honors the chat() contract (OVMS or a fake).
         self.llm = llm
         self.tools = tools
         self.max_iterations = max_iterations
         self.engine_name = engine_name
+        # Set from another thread to cancel the run in progress (the TUI's
+        # Esc, an A2A CancelTask). Checked before every model call; the
+        # request already in flight still finishes, because a cancelled OVMS
+        # request keeps generating anyway. None: cannot be cancelled.
+        self.stop = stop
         # Each agent owns one conversation memory.
         self.session = Session(system_prompt=system_prompt)
         # Layer 7 (telemetry): after every run() this holds what happened:
@@ -196,6 +204,12 @@ class AgentLoop:
             return answer
 
         for _ in range(self.max_iterations):
+            if self.stop is not None and self.stop.is_set():
+                # Recorded as the assistant's turn so the history still
+                # alternates: it can end on a tool result here, and the next
+                # question would otherwise follow it directly.
+                self.session.add_assistant(content=CANCELLED_TEXT)
+                return _finish(CANCELLED_TEXT)
             # BEAT 1, ASK: timed, and the token usage OVMS reports per
             # response is kept instead of dropped.
             ask_started = time.monotonic()

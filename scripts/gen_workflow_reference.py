@@ -103,7 +103,8 @@ PURPOSE = {
     ("tools", "name"): "`search_docs`, `transcribe`, `describe_image`, or any "
                        "tool an MCP server advertises.",
     ("tools", "type"): "`builtin` runs in-process; `mcp_stdio` launches an "
-                       "external MCP server.",
+                       "external MCP server; `a2a` asks another agent over "
+                       "A2A (needs `pip install 'ovat[a2a]'`).",
     ("tools", "command"): "Argv that launches the MCP server. Required when "
                           "`type: mcp_stdio`.",
     ("tools", "env"): "Extra environment for an `mcp_stdio` server, which "
@@ -113,6 +114,19 @@ PURPOSE = {
                         "`describe_image` only.",
     ("tools", "device"): "Device for this tool's model, separate from the "
                          "agent's. Omit to let the device router choose.",
+    ("tools", "url"): "Base URL of the other agent. Its Agent Card is read "
+                      "from there. Required when `type: a2a`.",
+    ("tools", "token_env"): "NAME of the environment variable holding the "
+                            "bearer token for that agent. Never the token "
+                            "itself.",
+    ("tools", "timeout"): "Seconds to wait for the other agent's answer. "
+                          "Unset: 900.",
+    ("tools", "description"): "What the model is told this agent does. "
+                              "Unset: built from the agent's card.",
+    ("tools", "permission"): "`allow`, `ask` (a person says yes first; "
+                             "with nobody to ask, as in `ovat run`, it does "
+                             "not run) or `deny`. Unset: `ask` for an `a2a` "
+                             "tool on another machine, `allow` otherwise.",
 
     ("agent", "type"): "Which engine runs the tool loop: `native` (built in), "
                        "`react` (LangChain), `llamaindex`, or "
@@ -147,6 +161,85 @@ PURPOSE = {
     ("(top level)", "agent"): "How the loop behaves.",
     ("(top level)", "rag"): "Vector search for `search_docs`. Omit and the "
                             "tool answers in a documented stub mode.",
+    ("(top level)", "a2a"): "How `ovat a2a serve` offers this workflow to "
+                            "other agents. Omit to serve with safe defaults.",
+    ("a2a", "server"): "Settings for `ovat a2a serve`.",
+
+    ("a2a.server", "name"): "Name on the Agent Card. Unset: the workflow "
+                            "file's name.",
+    ("a2a.server", "description"): "Text on the Agent Card, which is "
+                                   "public. Never taken from "
+                                   "`system_prompt`.",
+    ("a2a.server", "skills"): "Skills on the card. Unset: one per exposed "
+                              "tool, described by the tool itself.",
+    ("a2a.server", "host"): "Address to listen on. The default is this "
+                            "machine only.",
+    ("a2a.server", "port"): "Port to listen on.",
+    ("a2a.server", "public_url"): "URL the card advertises, when callers "
+                                  "reach this server through a tunnel or "
+                                  "proxy.",
+    ("a2a.server", "tokens"): "Caller name to the NAME of the environment "
+                              "variable holding that caller's token. "
+                              "Unset: one generated token in "
+                              "`.ovat/a2a/token`.",
+    ("a2a.server", "expose_tools"): "Tools a remote caller may trigger. "
+                                    "Unset: every builtin that takes no "
+                                    "file path; MCP tools only when listed.",
+    ("a2a.server", "expose_sources"): "Citations sent back: file `names`, "
+                                      "`full` paths, or `none`.",
+    ("a2a.server", "max_message_chars"): "Longest message accepted.",
+    ("a2a.server", "max_queue"): "Tasks allowed to wait for the model "
+                                 "before new ones are declined.",
+    ("a2a.server", "rate_limit_per_min"): "Messages per caller per minute.",
+    ("a2a.server", "task_timeout_s"): "Seconds one task may run before it "
+                                      "fails.",
+    ("a2a.server", "max_contexts"): "Conversations kept in memory at once; "
+                                    "the oldest is dropped first.",
+    ("a2a.server", "max_turns_per_context"): "Messages in one conversation "
+                                             "before the caller must start "
+                                             "a new one.",
+    ("a2a.server", "max_hops"): "How many agents deep a request may "
+                                "travel, so two agents cannot call each "
+                                "other forever.",
+    ("a2a.server", "audit_log"): "JSON Lines file recording every answer "
+                                 "that left. `null` turns it off.",
+
+    ("a2a.server.skills", "id"): "Stable id of the skill.",
+    ("a2a.server.skills", "name"): "Short name shown to people.",
+    ("a2a.server.skills", "description"): "What the skill does.",
+    ("a2a.server.skills", "tags"): "Keywords. The spec requires at least "
+                                   "one.",
+    ("a2a.server.skills", "examples"): "Example requests.",
+
+    ("(top level)", "subagents"): "Specialists the agent may hand a whole "
+                                  "task to, through one `delegate` tool. "
+                                  "Used by `ovat agent`.",
+    ("subagents", "name"): "Short id: lowercase letters, digits, `-`, `_`.",
+    ("subagents", "description"): "What it is good at. The main model "
+                                  "reads this to choose it.",
+    ("subagents", "workflow"): "Another OVAT workflow file, run "
+                               "in-process with a fresh conversation per "
+                               "task.",
+    ("subagents", "api"): "A model behind an OpenAI-compatible API, such as "
+                          "a cloud provider. Its data leaves this machine.",
+    ("subagents", "a2a"): "Another agent reached over A2A.",
+    ("subagents", "system_prompt"): "Instructions for an `api` subagent.",
+    ("subagents", "permission"): "`allow`, `ask` or `deny`. Unset: `ask` "
+                                 "for `api` and for `a2a` off this machine, "
+                                 "`allow` otherwise.",
+    ("subagents.api", "base_url"): "The API's base URL, e.g. "
+                                   "`https://api.mistral.ai/v1`.",
+    ("subagents.api", "model"): "Model name at that API.",
+    ("subagents.api", "api_key_env"): "NAME of the environment variable "
+                                      "holding the API key.",
+    ("subagents.api", "max_tokens"): "Longest answer it may write.",
+    ("subagents.api", "temperature"): "Sampling temperature.",
+    ("subagents.api", "timeout"): "Seconds to wait for its answer.",
+    ("subagents.a2a", "url"): "The agent's base URL.",
+    ("subagents.a2a", "token_env"): "NAME of the environment variable "
+                                    "holding its bearer token.",
+    ("subagents.a2a", "timeout"): "Seconds to wait for its answer.",
+
     ("(top level)", "model_search_paths"): "Extra folders to scan for local "
                                            "model exports. Searched first, "
                                            "ahead of `OVAT_MODELS`, "
@@ -156,13 +249,23 @@ PURPOSE = {
 }
 
 SECTIONS = [
-    ("(top level)", w.WorkflowConfig, "The four sections, plus one setting."),
+    ("(top level)", w.WorkflowConfig, "The six sections, plus one setting."),
     ("model", w.ModelConfig, "Which model to run, where, and how to reach it."),
     ("tools", w.ToolConfig, "One entry per tool. `tools:` is a LIST."),
     ("agent", w.AgentConfig, "Which engine drives the tool loop."),
     ("rag.embeddings", w.EmbeddingsConfig, "Turning text into vectors."),
     ("rag.retriever", w.RetrieverConfig, "Where those vectors are kept."),
     ("rag.chunk", w.ChunkConfig, "How a document is sliced before embedding."),
+    ("subagents", w.SubagentConfig,
+     "One specialist per entry. `subagents:` is a LIST."),
+    ("subagents.api", w.SubagentAPIConfig,
+     "A subagent behind an OpenAI-compatible API."),
+    ("subagents.a2a", w.SubagentA2AConfig, "A subagent reached over A2A."),
+    ("a2a", w.A2AConfig, "Agent2Agent. Needs `pip install 'ovat[a2a]'`."),
+    ("a2a.server", w.A2AServerConfig,
+     "How `ovat a2a serve` offers this workflow. Safe by default."),
+    ("a2a.server.skills", w.A2ASkillConfig,
+     "One skill on the Agent Card. `skills:` is a LIST."),
 ]
 
 
