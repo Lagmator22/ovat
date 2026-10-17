@@ -605,7 +605,7 @@ def test_todo_opens_the_plan_the_todo_tool_wrote():
             await say(pilot, "/todo")
             await until(pilot, lambda: isinstance(app.screen,
                                                   TodoOverlayScreen))
-            assert "read the docs" in screen_text(app)
+            await until(pilot, lambda: "read the docs" in screen_text(app))
     run(go())
 
 
@@ -637,7 +637,10 @@ def test_new_clears_the_conversation_and_clear_does_too():
             await say(pilot, "/new")
             await until(pilot, lambda: fake.cleared == 1)
             await until(pilot, lambda: not app.query(AssistantMessage))
-            assert "New conversation started" in screen_text(app)
+            # The notice is drawn a moment after the old messages go; a single
+            # read of the screen failed on the slower Windows runner.
+            await until(pilot, lambda: "New conversation started"
+                        in screen_text(app))
             await say(pilot, "/clear")
             await until(pilot, lambda: fake.cleared == 2)
     run(go())
@@ -786,7 +789,7 @@ def test_trace_says_what_the_last_answer_did():
                                            "duration_s": 0.4}]}]}
             await say(pilot, "/trace")
             await until(pilot, lambda: "search_docs" in screen_text(app))
-            assert "2 turns" in screen_text(app)
+            await until(pilot, lambda: "2 turns" in screen_text(app))
     run(go())
 
 
@@ -1088,7 +1091,7 @@ def test_ctrl_c_twice_quits_when_idle():
         async with running() as (app, pilot, fake, handle):
             await pilot.press("ctrl+c")
             assert app.is_running
-            assert "again to quit" in screen_text(app)
+            await until(pilot, lambda: "again to quit" in screen_text(app))
             await pilot.press("ctrl+c")
             await until(pilot, lambda: not app.is_running)
     run(go())
@@ -1145,7 +1148,7 @@ def test_ctrl_enter_steers_a_waiting_prompt_into_the_running_turn():
             await until(pilot, lambda: not fake.busy)
             # it joined the first turn; it was not asked as a turn of its own
             assert fake.asked == ["first"]
-            assert "second" in screen_text(app)
+            await until(pilot, lambda: "second" in screen_text(app))
     run(go())
 
 
