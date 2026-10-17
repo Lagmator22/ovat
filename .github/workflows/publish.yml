@@ -1,24 +1,34 @@
 name: Publish to PyPI
 
+# What gets published, and when:
+# - only a TAG, and only one that matches the version in pyproject.toml;
+# - only after tests.yml has passed on that exact commit, every job of it;
+# - every third-party action is pinned to a full commit SHA, so a moved
+#   tag upstream cannot change what runs here.
+# Trusted Publishing (OIDC) is unchanged, and only the publish job can
+# request the token.
 on:
     release:
         types: [published] # fires when a GitHub Release is published
     # Manual trigger, because the release event is not always enough on its own.
     # v0.9.11 and v0.9.12 were both published correctly -- non-draft,
     # non-prerelease, workflow active -- and neither produced a run, so PyPI sat
-    # two versions behind main and anyone following the README's `pip install
-    # ovat` got the older one. Without this there is no way to publish except by
-    # deleting and recreating the release.
+    # two versions behind main. To publish by hand: Actions, "Publish to PyPI",
+    # Run workflow, and under "Use workflow from" pick the TAG (e.g. v1.2.0).
+    # Run from a branch it refuses, because a branch is not a release.
     workflow_dispatch:
-        inputs:
-            ref:
-                description: "Tag or branch to build and publish (e.g. v0.9.12)"
-                required: true
-                default: main
+
+permissions:
+    contents: read
 
 jobs:
+    tests:
+        name: tests on the commit being released
+        uses: ./.github/workflows/tests.yml
+
     build-and-publish:
         name: Build and publish to PyPI
+        needs: tests
         runs-on: ubuntu-latest
         environment:
             name: pypi
@@ -29,16 +39,32 @@ jobs:
 
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
-              with:
-                  # On a release event this resolves to the tag; on a manual run
-                  # it is whatever ref was asked for.
-                  ref: ${{ github.event.inputs.ref || github.ref }}
+              # github.ref is the tag on both triggers, the same commit the
+              # tests job just ran on.
+              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
             - name: Set up Python
-              uses: actions/setup-python@v5
+              uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
               with:
-                  python-version: "3.10"
+                  # 3.11+ for tomllib below. The wheel is pure Python
+                  # (py3-none-any), so this does not change what users get.
+                  python-version: "3.12"
+
+            - name: The tag must match the version in pyproject.toml
+              shell: python
+              run: |
+                  import os, sys, tomllib
+                  ref_type = os.environ["GITHUB_REF_TYPE"]
+                  tag = os.environ["GITHUB_REF_NAME"]
+                  if ref_type != "tag":
+                      sys.exit(f"::error::refusing to publish {ref_type} {tag!r}: "
+                               f"run this from a release tag, e.g. v1.2.0")
+                  with open("pyproject.toml", "rb") as f:
+                      version = tomllib.load(f)["project"]["version"]
+                  if tag.removeprefix("v") != version:
+                      sys.exit(f"::error::tag {tag} does not match version "
+                               f"{version} in pyproject.toml")
+                  print(f"publishing {version} from tag {tag}")
 
             - name: Install build tools
               run: python -m pip install build twine
@@ -47,7 +73,6 @@ jobs:
               run: python -m build
 
             - name: Publish to PyPI
-              uses: pypa/gh-action-pypi-publish@release/v1
+              uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
               with:
                   skip-existing: true
-

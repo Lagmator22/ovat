@@ -20,14 +20,21 @@ Sync-over-async design note: the mcp SDK is async (anyio). OVAT's loop is
 synchronous. Each server gets ONE background thread running ONE event loop,
 and (the subtle part) one long-lived "manager" coroutine that connects,
 waits, and disconnects. anyio cancel scopes must be entered and exited by the
-SAME task, so close() cannot unwind the connection from outside; it just sets
-an event and the manager unwinds itself.
+SAME task, so close() cannot unwind the connection from outside; it asks the
+manager to stop (an event once connected, its own cancel scope while still
+connecting) and WAITS for it to unwind before stopping the loop.
 """
 import asyncio
 import atexit
 import os
 import threading
 from contextlib import AsyncExitStack
+
+# How long close() waits for the manager to unwind. The SDK's own shutdown
+# is bounded at about 6.5 s (mcp/client/stdio.py: 0.5 s to flush, 2 s for
+# the server to exit after stdin closes, 2 s after killing its process
+# tree, 2 s to reap it), so this covers its worst case.
+_UNWIND_TIMEOUT = 10.0
 
 
 class MCPStdioServer:
@@ -48,6 +55,8 @@ class MCPStdioServer:
         self._session = None
         self._error: BaseException | None = None
         self._shutdown: asyncio.Event | None = None
+        self._scope = None               # the manager's anyio cancel scope
+        self._abort = False              # close() came before the manager ran
 
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever,
@@ -55,7 +64,8 @@ class MCPStdioServer:
         self._thread.start()
 
         ready = threading.Event()
-        asyncio.run_coroutine_threadsafe(self._manager(ready), self._loop)
+        self._manager_done = asyncio.run_coroutine_threadsafe(
+            self._manager(ready), self._loop)
         if not ready.wait(timeout=connect_timeout):
             self.close()
             raise TimeoutError(f"MCP server {command} did not come up within "
@@ -70,23 +80,40 @@ class MCPStdioServer:
         atexit.register(self.close)
 
     async def _manager(self, ready: threading.Event) -> None:
-        """Connect, serve until told to stop, then unwind: all in ONE task."""
+        """Connect, serve until told to stop, then unwind: all in ONE task.
+
+        Everything sits inside one anyio cancel scope, so close() can also
+        stop a server that never finishes its handshake. It used to stop the
+        event loop instead, which abandoned this task mid-await: the SDK's
+        cleanup (close stdin, then kill the server's process tree) never
+        ran, and a server that did not answer stayed alive after OVAT gave
+        up on it. Cancelling the SCOPE, not the task, matters: the SDK's
+        shielded shutdown survives an anyio cancellation, and its own
+        comment says a native task.cancel() can defeat it.
+        """
+        import anyio
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
 
         try:
-            async with AsyncExitStack() as stack:
-                params = StdioServerParameters(command=self.command[0],
-                                               args=self.command[1:],
-                                               env=self.env)
-                read, write = await stack.enter_async_context(stdio_client(params))
-                session = await stack.enter_async_context(ClientSession(read, write))
-                await session.initialize()
-                self.tools = (await session.list_tools()).tools
-                self._session = session
-                self._shutdown = asyncio.Event()
-                ready.set()
-                await self._shutdown.wait()     # serve until close() fires this
+            with anyio.CancelScope() as scope:
+                self._scope = scope
+                if self._abort:
+                    scope.cancel()
+                async with AsyncExitStack() as stack:
+                    params = StdioServerParameters(command=self.command[0],
+                                                   args=self.command[1:],
+                                                   env=self.env)
+                    read, write = await stack.enter_async_context(
+                        stdio_client(params))
+                    session = await stack.enter_async_context(
+                        ClientSession(read, write))
+                    await session.initialize()
+                    self.tools = (await session.list_tools()).tools
+                    self._session = session
+                    self._shutdown = asyncio.Event()
+                    ready.set()
+                    await self._shutdown.wait()   # serve until close() fires it
         except BaseException as exc:            # noqa: broad on purpose:
             self._error = exc                   # whatever went wrong, report it
             ready.set()
@@ -113,14 +140,29 @@ class MCPStdioServer:
                  if getattr(block, "text", None) is not None]
         return "\n".join(parts) if parts else str(result.content)
 
+    def _stop_manager(self) -> None:
+        """On the loop thread: ask the manager to unwind, however far it got."""
+        if self._shutdown is not None:
+            self._shutdown.set()        # connected: the normal way out
+        elif self._scope is not None:
+            self._scope.cancel()        # still connecting: give up on it
+        else:
+            self._abort = True          # not started yet: stop at once
+
     def close(self) -> None:
-        """Stop the server connection and the loop thread. Safe to call twice."""
-        if self._shutdown is not None and not self._shutdown.is_set():
-            self._loop.call_soon_threadsafe(self._shutdown.set)
-        # Give the manager a moment to unwind its exit stack cleanly.
-        deadline = threading.Event()
-        deadline.wait(0.1)
+        """Stop the server, then the loop thread. Safe to call twice.
+
+        Waits for the manager to finish unwinding, which is when the SDK has
+        closed the server's stdin and, if it did not exit, killed its whole
+        process tree. Stopping the loop before that (it used to wait a fixed
+        0.1 s) can leave the server running.
+        """
         if self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._stop_manager)
+            try:
+                self._manager_done.result(timeout=_UNWIND_TIMEOUT)
+            except Exception:
+                pass                    # timed out or failed: stop anyway
             self._loop.call_soon_threadsafe(self._loop.stop)
         if self._thread.is_alive():
             self._thread.join(timeout=5)
