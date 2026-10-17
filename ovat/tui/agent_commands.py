@@ -53,9 +53,7 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "plugins": ("plugin_catalog/read",),
     "reload-plugins": ("plugin/reload",),
     "todo": ("capability:a todo tool",),
-    # The voice panel writes voice_mode_enabled, also refused (voice comes
-    # with its own step).
-    "voice": ("capability:voice input",),
+    "voice": (),
     "leanstall": ("agents/install",),
     "unleanstall": ("agents/uninstall",),
     "rewind": ("session/rewind/read", "session/rewind"),
@@ -82,6 +80,7 @@ KEYS = """### Keys
 - `Esc` stops the answer or the command
 - `Esc Esc` on an empty prompt goes back to an earlier message (rewind)
 - `Ctrl+O` (or `Ctrl+T`) opens or folds the tool calls
+- `Ctrl+R` records local voice; pause or press `Ctrl+R` to finish, `Esc` cancels
 - `Shift+Tab` switches between asking and auto-approve
 - `Ctrl+C` copies a selection, stops the answer, and quits when pressed twice
 """

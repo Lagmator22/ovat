@@ -489,7 +489,7 @@ def test_help_lists_the_commands_and_keys_and_nothing_that_cannot_work():
                          if c.name not in ("quit", "new")] + [
                              "clear", "exit", "status", "theme", "resume",
                              "rewind", "rename", "branch", "log", "compact",
-                             "model", "thinking", "reload", "config", "mcp"]:
+                             "model", "thinking", "reload", "config", "mcp", "voice"]:
                 assert f"/{name}" in text, name
             for gone in ("/teleport", "/retry"):
                 assert gone not in text, gone
@@ -562,6 +562,13 @@ def test_at_offers_the_subagents_before_any_file():
             await type_text(pilot, "@resear")
             popup = app.query_one("#completion-popup")
             await until(pilot, lambda: popup.styles.display == "block")
+            # The copied controller ignores Tab while a lookup is still
+            # running. Each typed letter starts one, and on a busy runner the
+            # popup can show an earlier letter's list before the last one
+            # finishes, so the Tab below did nothing (seen on macOS CI).
+            manager = app.query_one(ChatInputContainer)._completion_manager
+            await until(pilot, lambda: manager._active_controller is not None
+                        and manager._active_controller._pending_future is None)
             first = popup.query("_CompletionRow").first()
             assert "researcher" in str(
                 first.query_one(".completion-command").render())
@@ -1473,7 +1480,7 @@ def test_the_registry_keeps_a_vibe_command_only_when_the_server_serves_it():
     assert set(registry.commands) & vibe == {
         "help", "clear", "copy", "exit", "status", "theme", "resume",
         "rewind", "rename", "branch", "log", "compact", "model", "thinking",
-        "reload", "config", "mcp"}
+        "reload", "config", "mcp", "voice"}
 
 
 def test_a_removed_command_would_only_have_ended_in_not_supported():

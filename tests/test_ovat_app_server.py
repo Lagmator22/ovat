@@ -3432,3 +3432,28 @@ def test_saving_the_engine_uses_the_new_workflow_engine_and_keeps_memory(tmp_pat
             assert handle._ctx.info["engine"] == "react"
             assert _remembered_questions(fake) == ["one"]
     run(go())
+
+
+def test_subagent_done_updates_session_token_usage_when_initially_none(tmp_path):
+    from ovat.agent.events import Event, SUBAGENT_STARTED, SUBAGENT_DONE
+
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            proj = handle._ctx.projector
+            assert proj.session.token_usage is None
+            proj.agent_event(Event(SUBAGENT_STARTED, {
+                "call_id": "c123", "agent": "researcher", "kind": "workflow"
+            }), {})
+            proj.agent_event(Event(SUBAGENT_DONE, {
+                "call_id": "c123", "status": "ok",
+                "totals": {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70}
+            }), {})
+            assert proj.session.token_usage is not None
+            assert proj.session.token_usage.input_tokens == 50
+            assert proj.session.token_usage.output_tokens == 20
+            assert proj.session.token_usage.total_tokens == 70
+            child = proj.child_sessions["child-c123"]
+            assert child.context_usage is not None
+            assert child.context_usage.total_tokens == 70
+    run(go())

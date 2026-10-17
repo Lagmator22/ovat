@@ -180,6 +180,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._redirect("http://localhost:%d/page" % self.server.server_port)
         elif path == "/ftp":
             self._redirect("ftp://example.com/x")
+        elif path == "/image":                  # a PNG sent as a "page"
+            self._send(200, b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" * 50,
+                       "text/html")
+        elif path == "/pdf":
+            self._send(200, b"%PDF-1.7\n\x00\x01\x02 stream", "application/pdf")
         elif path == "/slow":
             threading.Event().wait(3)
             self._send(200, b"late", "text/plain")
@@ -236,6 +241,16 @@ def test_web_fetch_refuses_what_it_should_with_one_sentence(site):
     assert "scheme" in web_fetch_impl("ftp://example.com/x")
     assert _is_error(web_fetch_impl("  "))
     assert "positive" in web_fetch_impl(site + "/text", timeout=-1)
+
+
+def test_web_fetch_refuses_a_binary_file_instead_of_reading_it_as_text(site):
+    """A PDF or an image was decoded as text and up to 120 kB of noise was
+    handed to the model. Checked on the bytes, like read_file, because
+    servers mislabel files (the PNG here says text/html)."""
+    for path in ("/image", "/pdf"):
+        out = web_fetch_impl(site + path)
+        assert _is_error(out) and "binary" in out, out
+        assert len(out) < 300
 
 
 def test_web_fetch_times_out(site):

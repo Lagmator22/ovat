@@ -255,6 +255,12 @@ def web_fetch_impl(url: str, timeout: int | None = None) -> str:
         return fail("web_fetch", f"too many redirects (more than "
                                  f"{MAX_REDIRECTS}).")
 
+    # A NUL byte early on is the usual tell for "not text" (as in
+    # read_file): checked on the bytes, since servers mislabel files.
+    if b"\0" in body[:8192]:
+        kind = content_type.split(";")[0].strip() or "unknown type"
+        return fail("web_fetch", f"{final} is a binary file ({kind}), not a "
+                                 f"page. web_fetch reads text only.")
     text = _decode(body[:MAX_DOWNLOAD_BYTES], content_type)
     if "html" in content_type.lower():
         text = html_to_text(text, final)

@@ -14,7 +14,9 @@ reply as protocol.RemoteReply, so nothing else learns the SDK's types.
 import asyncio
 import atexit
 import concurrent.futures
+import json
 import threading
+import time
 import uuid
 
 import httpx
@@ -28,6 +30,7 @@ from google.protobuf.json_format import MessageToDict
 
 from ovat.a2a.protocol import (PeerError, RemoteCard, RemoteReply,
                                RemoteSkill, TaskState)
+from ovat.a2a.tokens import same_origin
 
 # The SDK's enum names to OVAT's. Anything unknown is UNKNOWN, never a crash.
 _STATES = {
@@ -111,15 +114,27 @@ class SDKPeer:
         return self._call(self._fetch_card(), timeout)
 
     def send(self, text: str, metadata: dict | None = None,
-             on_status=None) -> RemoteReply:
+             on_status=None, stop=None) -> RemoteReply:
         """Send one message and wait for the final state. Raises PeerError.
 
         on_status(text) is called for each progress line the remote sends,
-        on this object's own thread.
+        on this object's own thread. When `stop` (a threading.Event) is
+        set, the wait ends at once and the remote is asked to cancel.
         """
         self._ensure_open()
         return self._call(self._send(text, metadata or {}, on_status),
-                          self._timeout)
+                          self._timeout, stop)
+
+    def send_input(self, data: dict, task_id: str | None = None,
+                   metadata: dict | None = None,
+                   on_status=None, stop=None) -> RemoteReply:
+        """Answer a task waiting for input (a tool-call confirmation)."""
+        self._ensure_open()
+        text = json.dumps(data)
+        return self._call(
+            self._send(text, metadata or {}, on_status, task_id=task_id,
+                       data_payload=data),
+            self._timeout, stop)
 
     def reset(self) -> None:
         """Forget the conversation: the next message starts a new one."""
@@ -144,21 +159,40 @@ class SDKPeer:
         if self._closed:
             raise PeerError("protocol", "this connection was closed")
 
-    def _call(self, coro, timeout: float):
+    def _call(self, coro, timeout: float, stop=None):
+        """Run `coro` on this peer's loop and wait for it, at most `timeout`
+        seconds, or until `stop` is set. Cancelling the coroutine makes
+        _send ask the remote to cancel its task."""
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        deadline = time.monotonic() + timeout
         try:
-            return future.result(timeout)
+            while True:
+                left = deadline - time.monotonic()
+                try:
+                    return future.result(left if stop is None
+                                         else max(0.0, min(left, 0.1)))
+                except concurrent.futures.TimeoutError:
+                    if stop is not None and stop.is_set():
+                        raise PeerError("cancelled", "stopped by the caller")
+                    if time.monotonic() >= deadline:
+                        raise
         except BaseException as exc:
             future.cancel()
             raise _peer_error(exc) from exc
 
+    async def _add_token(self, request: httpx.Request) -> None:
+        """Per request, not on the client: the SDK sends messages to the URL
+        on the remote's card, and a card naming another host must not
+        receive the token meant for this one."""
+        if self._token and same_origin(str(request.url), self.url):
+            request.headers["Authorization"] = f"Bearer {self._token}"
+
     async def _connect(self):
         if self._client is not None:
             return self._client
-        headers = ({"Authorization": f"Bearer {self._token}"}
-                   if self._token else {})
         self._http = httpx.AsyncClient(
-            headers=headers, timeout=httpx.Timeout(self._timeout, connect=10))
+            event_hooks={"request": [self._add_token]},
+            timeout=httpx.Timeout(self._timeout, connect=10))
         sdk_card = await A2ACardResolver(self._http, self.url).get_agent_card()
         self._card = _remote_card(sdk_card, self.url)
         self._client = await create_client(sdk_card, ClientConfig(
@@ -170,10 +204,22 @@ class SDKPeer:
         await self._connect()
         return self._card
 
-    async def _send(self, text, metadata, on_status) -> RemoteReply:
+    async def _send(self, text, metadata, on_status, task_id=None,
+                    data_payload=None) -> RemoteReply:
         client = await self._connect()
+        part = Part(text=text)
+        if data_payload is not None:
+            try:
+                from google.protobuf.struct_pb2 import Value
+                from google.protobuf.json_format import ParseDict
+                val = Value()
+                ParseDict(data_payload, val)
+                part = Part(text=text, data=val)
+            except Exception:
+                part = Part(text=text)
         message = Message(role=Role.ROLE_USER, message_id=uuid.uuid4().hex,
-                          parts=[Part(text=text)],
+                          parts=[part],
+                          task_id=task_id or "",
                           context_id=self.context_id or "")
         request = SendMessageRequest(message=message, metadata=metadata)
         state, status_text, answer = TaskState.UNKNOWN, "", []
@@ -188,17 +234,27 @@ class SDKPeer:
                     state = _state(task.status.state)
                     status_text = get_message_text(task.status.message)
                     answer = [get_artifact_text(a) for a in task.artifacts]
+                    meta = MessageToDict(task.metadata) if task.metadata else {}
+                    if meta:
+                        extra.update(meta)
+                        if isinstance(meta.get("ovat"), dict):
+                            extra.update(meta["ovat"])
                 elif kind == "status_update":
                     update = response.status_update
                     task_id = update.task_id or task_id
                     context_id = update.context_id or context_id
                     state = _state(update.status.state)
                     status_text = get_message_text(update.status.message)
-                    ovat = MessageToDict(update.metadata).get("ovat")
-                    if isinstance(ovat, dict):
-                        extra = ovat
+                    meta = MessageToDict(update.metadata) if update.metadata else {}
+                    if meta:
+                        extra.update(meta)
+                        if isinstance(meta.get("ovat"), dict):
+                            extra.update(meta["ovat"])
                     if state is TaskState.WORKING and status_text and on_status:
-                        on_status(status_text)
+                        try:
+                            on_status(status_text, meta)
+                        except TypeError:
+                            on_status(status_text)
                 elif kind == "artifact_update":
                     answer.append(get_artifact_text(
                         response.artifact_update.artifact))

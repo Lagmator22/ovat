@@ -93,16 +93,28 @@ class _UpdaterReporter:
         except RuntimeError:
             pass
 
-    async def completed(self, trace: dict) -> None:
+    async def completed(self, totals: dict) -> None:
         await self._status(TaskState.TASK_STATE_COMPLETED, None,
-                           {"trace": trace, "sources": self._sources})
+                           {"totals": totals, "sources": self._sources})
 
-    async def failed(self, text: str, trace: dict | None = None) -> None:
+    async def failed(self, text: str, totals: dict | None = None) -> None:
         await self._status(TaskState.TASK_STATE_FAILED, text,
-                           {"trace": trace} if trace else None)
+                           {"totals": totals} if totals else None)
 
     async def rejected(self, text: str) -> None:
         await self._status(TaskState.TASK_STATE_REJECTED, text)
+
+    async def input_required(self, call_id: str, tool: str, args: dict) -> None:
+        await self._status(
+            TaskState.TASK_STATE_INPUT_REQUIRED,
+            f"Approval required to run tool '{tool}'",
+            ovat={
+                "kind": "tool-call-confirmation",
+                "callId": call_id,
+                "tool": tool,
+                "args": args,
+            },
+        )
 
 
 def _hops_and_chain(metadata: dict) -> tuple[int, list[str]]:
@@ -120,6 +132,34 @@ def _hops_and_chain(metadata: dict) -> tuple[int, list[str]]:
     return hops, chain
 
 
+def _approval_capable(metadata: dict) -> bool:
+    ovat = metadata.get("ovat") if isinstance(metadata, dict) else None
+    if isinstance(ovat, dict):
+        return bool(ovat.get("approval_capable", False))
+    return bool(metadata.get("approval_capable", False)) if isinstance(metadata, dict) else False
+
+
+def _extract_data(message) -> dict | None:
+    if message is None:
+        return None
+    for part in getattr(message, "parts", []):
+        if hasattr(part, "data") and part.HasField("data"):
+            try:
+                from google.protobuf.json_format import MessageToDict
+                return MessageToDict(part.data)
+            except Exception:
+                pass
+        text = getattr(part, "text", None)
+        if text:
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict) and ("callId" in parsed or "outcome" in parsed):
+                    return parsed
+            except Exception:
+                pass
+    return None
+
+
 class OVATExecutor(AgentExecutor):
     """The SDK's hook: one call per incoming message."""
 
@@ -135,9 +175,12 @@ class OVATExecutor(AgentExecutor):
         user = getattr(context.call_context, "user", None)
         caller = getattr(user, "user_name", "") or "unknown"
         hops, chain = _hops_and_chain(context.metadata)
+        data = _extract_data(context.message)
+        approval_capable = _approval_capable(context.metadata)
         task = Task(task_id=context.task_id, context_id=context.context_id,
                     caller=caller, text=context.get_user_input(),
-                    hops=hops, chain=chain)
+                    hops=hops, chain=chain, data=data,
+                    approval_capable=approval_capable)
         updater = TaskUpdater(event_queue, context.task_id, context.context_id)
         await self.service.run(task, _UpdaterReporter(updater))
 

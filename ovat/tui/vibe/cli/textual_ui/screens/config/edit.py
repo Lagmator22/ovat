@@ -157,14 +157,15 @@ class ValueEditScreen(_TargetedEditScreen):
                             self._view.description, classes="config-edit-description"
                         )
                     if self._multiline:
-                        yield NoMarkupStatic(
-                            (
-                                "One item per line."
-                                if self._view.kind is ConfigFieldKind.LIST
-                                else "Edit as JSON."
-                            ),
-                            classes="config-edit-description",
-                        )
+                        if self._view.kind in {ConfigFieldKind.LIST, ConfigFieldKind.COMPLEX}:
+                            yield NoMarkupStatic(
+                                (
+                                    "One item per line."
+                                    if self._view.kind is ConfigFieldKind.LIST
+                                    else "Edit as JSON."
+                                ),
+                                classes="config-edit-description",
+                            )
                         yield TextArea(self._initial, id="config-edit-textarea")
                     else:
                         yield VscodeCompatInput(
@@ -213,7 +214,11 @@ async def prompt_field_value(
         value, target = result
         return value == "True", target
 
-    multiline = view.kind in {ConfigFieldKind.LIST, ConfigFieldKind.COMPLEX}
+    multiline = (
+        view.kind in {ConfigFieldKind.LIST, ConfigFieldKind.COMPLEX}
+        or view.name == "system_prompt"
+        or "\n" in str(view.value or "")
+    )
     if view.kind is ConfigFieldKind.LIST and isinstance(view.value, list):
         initial = "\n".join(str(item) for item in view.value)
     elif view.kind is ConfigFieldKind.COMPLEX:

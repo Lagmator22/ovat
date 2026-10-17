@@ -5,7 +5,6 @@ Imports nothing from the SDK at module level: main.py registers this
 sub-app on every run, and `ovat --help` must work without the [a2a] extra.
 Each command checks for the SDK first and says how to install it.
 """
-import os
 from typing import Optional
 
 import typer
@@ -109,8 +108,9 @@ def serve(
     rprint(f"Card:   {esc(prepared.url.rstrip('/'))}"
            f"/.well-known/agent-card.json")
     if not s.tokens:
-        rprint("Token:  .ovat/a2a/token (callers send it as "
-               "\"Authorization: Bearer ...\"; 'ovat a2a token' prints it)")
+        rprint("Token:  generated for this project and kept in your own "
+               "folder (callers send it as \"Authorization: Bearer ...\"; "
+               "'ovat a2a token' prints it)")
     else:
         rprint(f"Callers: {esc(', '.join(s.tokens))}")
     rprint(f"Engine: {esc(cfg.agent.type)} | model {esc(cfg.model.name)} "
@@ -152,13 +152,12 @@ def call(
     _need_sdk()
     from ovat.a2a.protocol import PeerError, TaskState
     from ovat.a2a.sdk.client import SDKPeer
-    token = None
-    if token_env:
-        token = os.environ.get(token_env, "").strip()
-        if not token:
-            rprint(f"[red]{esc(token_env)} is not set.[/red]")
-            raise typer.Exit(code=1)
-    peer = SDKPeer(url, token=token, timeout=timeout)
+    from ovat.a2a.tokens import peer_token
+    token = peer_token(url, token_env)
+    if token_env and not token:
+        rprint(f"[red]{esc(token_env)} is not set.[/red]")
+        raise typer.Exit(code=1)
+    peer = SDKPeer(url, token=token or None, timeout=timeout)
     try:
         remote = peer.card()
         reply = peer.send(message, on_status=lambda text: rprint(
@@ -173,11 +172,12 @@ def call(
         rprint(f"[red]{esc(reply.state.value)}:[/red] {esc(reply.text)}")
         raise typer.Exit(code=1)
     rprint(esc(reply.text))
-    trace = reply.metadata.get("trace") or {}
-    if trace:
-        rprint(f"[dim]{trace.get('turns', '?')} turns, "
-               f"{trace.get('tool_calls', '?')} tool calls, "
-               f"{trace.get('latency_s', '?')} s[/dim]")
+    from ovat.tools.a2a_call import remote_totals
+    totals = remote_totals(reply.metadata)
+    if totals:
+        rprint(f"[dim]{totals.get('turns', '?')} turns, "
+               f"{totals.get('tool_calls', '?')} tool calls, "
+               f"{totals.get('latency_s', '?')} s[/dim]")
 
 
 @a2a_app.command()

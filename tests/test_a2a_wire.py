@@ -175,7 +175,7 @@ def test_a_question_comes_back_with_progress_trace_and_file_names(server_url):
     assert result.text == "answer to: How many leave days?"
     assert "calling search_docs" in lines
     assert result.metadata["sources"] == ["leave.md"]   # a name, not a path
-    assert result.metadata["trace"]["tool_calls"] == 1
+    assert result.metadata["totals"]["tool_calls"] == 1
 
 
 def test_a_follow_up_continues_the_same_conversation(server_url):
@@ -228,6 +228,50 @@ def test_a_refused_token_is_one_plain_sentence_without_a_docs_link():
     assert error.detail == "the agent refused the token"
 
 
+def test_the_token_goes_only_to_the_address_it_was_configured_for():
+    """The SDK sends messages to the URL on the remote's Agent Card. The
+    token used to sit on the whole HTTP client, so a card naming another
+    host would have received it. It is now added per request, only for
+    the configured origin (two loopback names count as one)."""
+    import asyncio
+    peer = SDKPeer("http://localhost:9100/", token="secret", timeout=5)
+
+    def sent(url):
+        request = httpx.Request("POST", url)
+        asyncio.run(peer._add_token(request))
+        return request.headers.get("Authorization")
+    try:
+        assert sent("http://localhost:9100/") == "Bearer secret"
+        assert sent("http://127.0.0.1:9100/a2a/jsonrpc") == "Bearer secret"
+        for elsewhere in ("http://evil.example:9100/",
+                          "http://localhost:9101/",
+                          "https://localhost:9100/"):
+            assert sent(elsewhere) is None, elsewhere
+    finally:
+        peer.close()
+
+
+def test_a_waiting_call_stops_when_its_stop_flag_is_set():
+    """Esc (or cancelling one subagent) used to leave a remote call waiting
+    for its reply, up to the 900 s timeout."""
+    peer = SDKPeer("http://127.0.0.1:9", token=None, timeout=30)
+    stop = threading.Event()
+    threading.Timer(0.2, stop.set).start()
+    started = time.monotonic()
+    try:
+        with pytest.raises(PeerError) as caught:
+            peer._call(asyncio_sleep(30), 30, stop)
+    finally:
+        peer.close()
+    assert caught.value.kind == "cancelled"
+    assert time.monotonic() - started < 2
+
+
+def asyncio_sleep(seconds):
+    import asyncio
+    return asyncio.sleep(seconds)
+
+
 def test_nothing_listening_is_unreachable():
     peer = SDKPeer(f"http://127.0.0.1:{_free_port()}", token="t", timeout=5)
     try:
@@ -277,3 +321,86 @@ def test_a_workflow_tool_asks_the_server_and_reads_the_framed_reply(
         close_agent(agent)
     assert result.startswith('[Reply from remote agent "team_docs"')
     assert result.endswith("answer to: How many leave days?")
+
+
+class DeployLLM(FakeLLMProvider):
+    def __init__(self):
+        super().__init__([])
+
+    def chat(self, messages, tools=None):
+        self.calls.append(messages)
+        if messages[-1]["role"] == "user":
+            return reply("tool_calls", tool_calls=[
+                make_tool_call("c1", "deploy", {"target": "production"})])
+        return reply("stop", content=f"result: {messages[-1]['content']}")
+
+
+def test_a2a_wire_approval_round_trips():
+    port = _free_port()
+    url = f"http://127.0.0.1:{port}/"
+    settings = A2AServerConfig(port=port, audit_log=None)
+
+    def make_agent():
+        bus = EventBus()
+        tools = observe_tools({"deploy": {
+            "schema": {"type": "function", "function": {
+                "name": "deploy", "description": "Deploy to target.",
+                "parameters": {"type": "object", "properties": {
+                    "target": {"type": "string"}}, "required": ["target"]}}},
+            "function": lambda target: f"deployed to {target}",
+            "kind": "builtin",
+            "permission": "ask"}}, bus)
+        ag = AgentLoop(DeployLLM(), tools, system_prompt="Deploy agent", stop=bus.stop)
+        ag.events = bus
+        ag.mcp_servers = []
+        return ag
+
+    service = A2AService(make_agent, settings, admission=AllowAll())
+    cfg = WorkflowConfig(model={"name": "m"}, agent={"system_prompt": "Deploy agent"})
+    card = card_dict(cfg, settings, make_agent().tools, url, "deploy-agent", "1.2.0")
+    app = build_app(service, card, {TOKEN_A: "planner"}, ["127.0.0.1", "localhost"])
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    while not server.started:
+        time.sleep(0.05)
+
+    peer = SDKPeer(url, token=TOKEN_A, timeout=10)
+    try:
+        from ovat.tools.a2a_call import a2a_call_impl
+
+        # Case A: Client with approver allowing execution
+        client_bus = EventBus()
+        approvals = []
+        client_bus.approver = lambda tool, args, reason: approvals.append((tool, args)) or True
+        reply_ok = a2a_call_impl(
+            name="remote_deploy", url=url, token_env="", token_missing=False,
+            message="deploy now", peer=peer, bus=client_bus
+        )
+        assert len(approvals) == 1
+        assert "deploy" in approvals[0][0]
+        assert "deployed to production" in reply_ok
+
+        # Case B: Client with approver denying execution
+        peer.reset()
+        approvals.clear()
+        client_bus.approver = lambda tool, args, reason: False
+        reply_denied = a2a_call_impl(
+            name="remote_deploy", url=url, token_env="", token_missing=False,
+            message="deploy again", peer=peer, bus=client_bus
+        )
+        assert "did not allow" in reply_denied
+
+        # Case C: Headless client (no approver)
+        peer.reset()
+        headless_bus = EventBus()
+        reply_headless = a2a_call_impl(
+            name="remote_deploy", url=url, token_env="", token_missing=False,
+            message="deploy headless", peer=peer, bus=headless_bus
+        )
+        assert "needs a person's approval" in reply_headless
+
+    finally:
+        server.should_exit = True
+        thread.join(5)
+        peer.close()

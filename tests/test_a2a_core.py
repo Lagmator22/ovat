@@ -240,6 +240,31 @@ def test_two_callers_with_one_token_are_refused(tmp_path):
                        environ={"X": "same", "Y": "same"})
 
 
+def test_a_local_peer_gets_this_folders_server_token_and_no_one_else_does(
+        tmp_path):
+    """A caller with no token_env, talking to `ovat a2a serve` on this
+    machine, sends the token that server generated. The check used to be
+    `"localhost" in url`, which also matched http://localhost.evil.example
+    and would have sent the token there."""
+    token_file = tmp_path / "token"
+    token_file.write_text("secret\n")
+    def peer(url, env=None, environ={}):
+        return tokens.peer_token(url, env, token_file, environ)
+    assert peer("http://127.0.0.1:9100") == "secret"
+    assert peer("http://localhost:9100/a2a") == "secret"
+    assert peer("http://[::1]:9100") == "secret"
+    for elsewhere in ("http://localhost.evil.example",
+                      "http://evil.example/?u=127.0.0.1",
+                      "http://127.0.0.1.evil.example:9100",
+                      "http://user:localhost@evil.example"):
+        assert peer(elsewhere) == "", elsewhere
+    # a named variable always wins, and is never replaced by the file
+    assert peer("http://127.0.0.1:9100", "T", {"T": "mine"}) == "mine"
+    assert peer("http://127.0.0.1:9100", "T", {}) == ""
+    token_file.unlink()
+    assert peer("http://127.0.0.1:9100") == ""
+
+
 def test_the_audit_log_appends_and_reads_back(tmp_path):
     log = AuditLog(tmp_path / "sub" / "audit.jsonl")
     log.write({"caller": "a", "answer": "x"})
@@ -378,6 +403,121 @@ def test_one_model_at_a_time_and_the_second_is_told_it_waits():
     assert len(waits) == 1 and "1 ahead" in waits[0][1]
 
 
+class ApprovalRecorder(Recorder):
+    async def input_required(self, call_id, tool, args):
+        self.calls.append(("input_required", call_id, tool, args))
+
+
+class AsksFirst(FakeAgent):
+    """Asks the caller before it answers a question that says "deploy"."""
+
+    def run(self, text):
+        if "deploy" in text and self.events.approver is not None:
+            allowed = self.events.approver("deploy", {"target": "prod"}, "")
+            self.last_trace = {"turns": [], "totals": {"turns": 1}}
+            return "deployed" if allowed else "not deployed"
+        return super().run(text)
+
+
+def test_a_task_waiting_for_a_person_does_not_hold_the_model():
+    """The worker held the one-model lock while it waited for the caller's
+    approval, so every other caller waited too, up to task_timeout_s."""
+    svc, built = _service(AsksFirst, task_timeout_s=5)
+
+    async def scenario():
+        waiting = ApprovalRecorder()
+        await svc.run(_task("deploy it", context="a", task_id="t1",
+                            approval_capable=True), waiting)
+        assert waiting.kinds()[-1] == "input_required"
+        started = time.monotonic()
+        other = Recorder()
+        await svc.run(_task("q", context="b", task_id="t2"), other)
+        assert "completed" in other.kinds()
+        assert time.monotonic() - started < 2
+        svc.cancel("t1")
+    asyncio.run(scenario())
+
+
+def test_the_same_conversation_waits_while_its_run_is_paused():
+    """Giving the model gate away during an approval must not let a second
+    message in the SAME conversation run on the same agent meanwhile: one
+    agent, one memory, one run at a time."""
+    svc, built = _service(AsksFirst, task_timeout_s=5)
+
+    async def scenario():
+        paused = ApprovalRecorder()
+        await svc.run(_task("deploy it", task_id="t1",
+                            approval_capable=True), paused)
+        follow_up = Recorder()
+        job = asyncio.ensure_future(svc.run(_task("q", task_id="t2"),
+                                            follow_up))
+        await asyncio.sleep(0.3)
+        assert built[0].questions == []          # still waiting its turn
+        done = Recorder()
+        await svc.run(_task("", task_id="t1", data={
+            "callId": paused.calls[-1][1], "outcome": "proceed_once"}), done)
+        await job
+        assert ("answer", "deployed", []) in done.calls
+        assert "completed" in follow_up.kinds()
+        assert built[0].questions == ["q"]
+    asyncio.run(scenario())
+
+
+def test_an_approval_nobody_answers_ends_the_task_and_is_forgotten():
+    """With no answer the tool is refused and the run goes on, but nothing
+    awaited it any more: the task stayed in the running table for good and
+    status() counted it as active forever."""
+    svc, built = _service(AsksFirst, task_timeout_s=0.3)
+
+    async def scenario():
+        rec = ApprovalRecorder()
+        await svc.run(_task("deploy it", task_id="t1",
+                            approval_capable=True), rec)
+        assert rec.kinds()[-1] == "input_required"
+        for _ in range(200):
+            if "t1" not in svc._running:
+                break
+            await asyncio.sleep(0.01)
+    asyncio.run(scenario())
+    assert "t1" not in svc._running
+    assert svc.status()["active"] == 0
+    assert svc.stats["failed"] == 1
+
+
+def test_only_a_matching_proceed_allows_and_a_closed_request_is_refused():
+    svc, built = _service(AsksFirst, task_timeout_s=5)
+
+    async def ask_and_answer(task_id, answer):
+        first = ApprovalRecorder()
+        await svc.run(_task("deploy it", task_id=task_id,
+                            approval_capable=True), first)
+        call_id = first.calls[-1][1]
+        second = Recorder()
+        await svc.run(_task("", task_id=task_id, data=answer(call_id)),
+                      second)
+        return second
+
+    async def scenario():
+        yes = await ask_and_answer(
+            "t1", lambda c: {"callId": c, "outcome": "proceed_once"})
+        assert ("answer", "deployed", []) in yes.calls
+        wrong_id = await ask_and_answer(
+            "t2", lambda c: {"callId": "other", "outcome": "proceed_once"})
+        assert ("answer", "not deployed", []) in wrong_id.calls
+        odd = await ask_and_answer(
+            "t3", lambda c: {"callId": c, "outcome": "yes please"})
+        assert ("answer", "not deployed", []) in odd.calls
+        # an answer for a task that is not waiting is refused, never run
+        late = Recorder()
+        await svc.run(_task("", task_id="t1",
+                            data={"callId": "x", "outcome": "proceed_once"}),
+                      late)
+        assert late.kinds() == ["rejected"]
+    asyncio.run(scenario())
+    assert svc._running == {}
+    assert [len(a.questions) for a in built] == [0]
+
+
 # ---- serving: the rules checked before a port opens ------------------------
 
 def test_loopback_needs_nothing_extra():
@@ -441,8 +581,9 @@ class ScriptedPeer:
         self.reply, self.error, self.statuses = reply, error, statuses
         self.sent = []
 
-    def send(self, text, metadata=None, on_status=None):
+    def send(self, text, metadata=None, on_status=None, stop=None):
         self.sent.append((text, metadata))
+        self.stop = stop
         for line in self.statuses:
             on_status(line)
         if self.error:
@@ -453,6 +594,14 @@ class ScriptedPeer:
 def _call(peer, bus=None, **kw):
     return a2a_call.a2a_call_impl("How many leave days?", peer, "team_docs",
                                   "http://127.0.0.1:9100", bus, **kw)
+
+
+def test_a_stopped_call_says_so_and_uses_the_buses_stop_flag():
+    bus = EventBus()
+    peer = ScriptedPeer(error=PeerError("cancelled", "stopped"))
+    out = _call(peer, bus)
+    assert out == 'Error: the request to remote agent "team_docs" was stopped.'
+    assert peer.stop is bus.stop
 
 
 def test_a_completed_reply_is_framed_as_information():
@@ -529,3 +678,87 @@ def test_subagents_are_not_offered_to_remote_callers_by_default():
     exp = exposure.decide(_tools(search_docs="builtin", delegate="subagent"),
                           None)
     assert exp.exposed == ["search_docs"] and "delegate" in exp.hidden
+
+
+def test_a2a_call_returns_the_remote_totals_checked():
+    """Another OVAT's totals arrive under metadata.ovat.totals (the client
+    flattens metadata.ovat), as floats, from a machine this one does not
+    control: only finite, non-negative numbers are kept, as ints."""
+    sent = {"prompt_tokens": 123.0, "completion_tokens": 45.0, "turns": 2.0,
+            "latency_s": 1.5, "tool_calls": -3, "total_tokens": float("inf"),
+            "failed": True, "extra": "x"}
+    reply = RemoteReply(TaskState.COMPLETED, "ok", metadata={"totals": sent})
+    ans, totals = a2a_call.a2a_call_impl("hi", ScriptedPeer(reply), "p",
+                                         "http://x", return_totals=True)
+    assert totals == {"prompt_tokens": 123, "completion_tokens": 45,
+                      "turns": 2, "latency_s": 1.5}
+    assert all(type(v) is int for k, v in totals.items() if k != "latency_s")
+    assert a2a_call.remote_totals({"totals": "lots"}) == {}
+
+
+class ConfirmingPeer(ScriptedPeer):
+    """Asks to confirm `rounds` tools, one per reply, then answers."""
+
+    def __init__(self, rounds):
+        super().__init__()
+        self.rounds, self.answers = rounds, []
+
+    def _next(self):
+        if len(self.answers) < self.rounds:
+            n = len(self.answers) + 1
+            return RemoteReply(TaskState.INPUT_REQUIRED, "approve?",
+                               task_id="t", metadata={
+                                   "kind": "tool-call-confirmation",
+                                   "callId": f"c{n}", "tool": f"tool{n}",
+                                   "args": {"n": n}})
+        return RemoteReply(TaskState.COMPLETED, "all done")
+
+    def send(self, text, metadata=None, on_status=None, stop=None):
+        self.sent.append((text, metadata))
+        return self._next()
+
+    def send_input(self, data, task_id=None, on_status=None, stop=None):
+        self.answers.append(data)
+        return self._next()
+
+
+def test_a2a_call_answers_every_confirmation_the_remote_asks_for():
+    """Only the first one was answered: a second tool that needed approval
+    ended the call with "needs more input from a person"."""
+    bus = EventBus()
+    asked = []
+    bus.approver = lambda tool, args, reason: asked.append(tool) or True
+    peer = ConfirmingPeer(rounds=2)
+    out = a2a_call.a2a_call_impl("go", peer, "p", "http://x", bus)
+    assert out.endswith("all done")
+    assert asked == ["p:tool1", "p:tool2"]
+    assert peer.answers == [{"callId": "c1", "outcome": "proceed_once"},
+                            {"callId": "c2", "outcome": "proceed_once"}]
+    # without a person to ask nothing is answered for them
+    headless = ConfirmingPeer(rounds=1)
+    out = a2a_call.a2a_call_impl("go", headless, "p", "http://x", EventBus())
+    assert "needs more input from a person" in out and headless.answers == []
+    # and a remote that never stops asking is not answered forever
+    endless = ConfirmingPeer(rounds=10_000)
+    a2a_call.a2a_call_impl("go", endless, "p", "http://x", bus)
+    assert len(endless.answers) == a2a_call.MAX_APPROVALS
+
+
+
+
+def test_a_token_file_that_came_with_the_project_is_never_used(
+        tmp_path, monkeypatch):
+    """The generated token was read from the project's .ovat/a2a/token. A
+    repository could ship one, and its author would then hold a working
+    token for anyone who served that project. The token now lives in the
+    user's own folder, one per project."""
+    project = tmp_path / "cloned"
+    (project / ".ovat" / "a2a").mkdir(parents=True)
+    (project / ".ovat" / "a2a" / "token").write_text("known-to-the-author\n")
+    monkeypatch.chdir(project)
+    served = tokens.load_or_create()
+    assert served != "known-to-the-author"
+    assert tokens.token_file() != project / ".ovat" / "a2a" / "token"
+    assert tokens.peer_token("http://127.0.0.1:9100", None) == served
+    monkeypatch.chdir(tmp_path)                       # another project
+    assert tokens.load_or_create() != served

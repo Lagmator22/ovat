@@ -329,9 +329,9 @@ def _make_a2a_tool(tool_cfg, servers: list | None, events: EventBus | None):
     from ovat.tools import a2a_call
     require_sdk()
     from ovat.a2a.sdk.client import SDKPeer
+    from ovat.a2a.tokens import peer_token
 
-    token = os.environ.get(tool_cfg.token_env, "").strip() \
-        if tool_cfg.token_env else ""
+    token = peer_token(tool_cfg.url, tool_cfg.token_env)
     peer = SDKPeer(tool_cfg.url, token=token or None,
                    timeout=tool_cfg.timeout or 900.0)
     if servers is not None:
@@ -354,6 +354,7 @@ def _make_a2a_tool(tool_cfg, servers: list | None, events: EventBus | None):
             a2a_call.a2a_call_impl(message, _p, _c.name, _c.url, events,
                                    _c.token_env, _m)),
         "kind": "a2a",
+        "card": card,                  # None when it could not be read yet
     }
 
 
@@ -504,7 +505,7 @@ AGENT_TYPES = ("native", "react", "llamaindex", "openai-agents")
 
 
 def build_agent(config: WorkflowConfig, skip_rag: bool = False,
-                select_tools=None):
+                select_tools=None, events: EventBus | None = None):
     """I assemble the full agent from a config: the one call the CLI makes.
 
     Dispatch on agent.type so the same YAML can pick my native loop or the
@@ -557,18 +558,22 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False,
     mcp_servers: list = []
     # One bus per agent: the TUI and the A2A server subscribe to it, and its
     # `stop` flag is how either of them cancels a run.
-    events = EventBus()
+    if events is None:
+        events = EventBus()
     tools = build_tools(config, retriever=retriever, servers=mcp_servers,
                         events=events)
     if select_tools is not None:
         tools = select_tools(tools)
     tools = observe_tools(tools, events)
 
+    subagent_runner = tools.get("delegate", {}).get("runner")
     agent_type = config.agent.type
     def _own(agent):
         """Hand the agent its subprocesses and its event bus."""
         agent.mcp_servers = mcp_servers
         agent.events = events
+        if subagent_runner is not None:
+            agent.subagent_runner = subagent_runner
         return agent
 
     if agent_type == "native":

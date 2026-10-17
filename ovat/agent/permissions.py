@@ -41,8 +41,9 @@ REFUSE = "deny"            # not this time
 
 
 def is_loopback(url: str) -> bool:
-    """True for a URL on this machine (localhost, 127.x, ::1)."""
-    host = (urlparse(url).hostname or "").lower()
+    """True for a URL on this machine (localhost, 127.x, ::1). The parsed
+    host, never a substring: "localhost" is also in localhost.example.com."""
+    host = (urlparse(url).hostname or "").rstrip(".").lower()
     if host == "localhost":
         return True
     try:
@@ -104,6 +105,8 @@ class ApprovalRequest:
     arguments: dict
     reason: str = ""
     decision: str | None = None
+    agent: str = ""            # the subagent asking, "" for the main agent
+    agent_call: str = ""       # its delegate call's id
     _done: threading.Event = field(default_factory=threading.Event,
                                    repr=False)
 
@@ -124,7 +127,8 @@ class ApprovalBroker:
         self.timeout = timeout
         self.auto_approve = False            # /yolo: every ask is a yes
         # Tools a person said "always allow" to, in this project: loaded from
-        # .ovat/permissions.json by whoever builds an INTERACTIVE session
+        # ~/.ovat/permissions.json (ovat/agentic/rules.py, never the project
+        # folder) by whoever builds an INTERACTIVE session
         # (ovat/agentic/session.py), and saved through `on_always` when one
         # more is added. Only a broker has this, so a run with no person to
         # ask never sees it: gate() still says no there.
@@ -142,8 +146,10 @@ class ApprovalBroker:
             return True
         if self.on_request is None:
             return False
+        from ovat.agent.events import CURRENT_SUBAGENT
+        agent, agent_call = CURRENT_SUBAGENT.get()
         request = ApprovalRequest(next(self._ids), tool, dict(arguments),
-                                  reason)
+                                  reason, agent=agent, agent_call=agent_call)
         with self._lock:
             self._open[request.id] = request
         try:
