@@ -23,6 +23,13 @@ agent is offered to others. Type `/` to open the command menu.
 <img src="assets/screens/agent-tui/hero-agent-start.png" width="860px" alt="The OVAT agent TUI right after start: the banner says OVAT v1.2.0, Qwen3.5-4B-int4-ov on GPU, native engine, 1 tool and 4 subagents. The slash menu is open, and the bar shows live CPU, GPU, NPU and RAM.">
 </div>
 
+Behind the screen are three layers, and every tool call passes one wrapper:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/agent-tui-dark.svg">
+  <img src="assets/diagrams/agent-tui-light.svg" alt="You type in the terminal client. It sends a JSON-RPC request to OVAT's app server, which starts a turn on AgentSession. AgentSession runs the chosen engine on a worker thread; the engine asks the model on OVMS, and every tool call goes through one wrapper that reports events. The events travel back up the same layers and the client draws them.">
+</picture>
+
 `/help` lists every key and every command:
 
 <div align="center">
@@ -37,6 +44,11 @@ with `/ask <name> <task>` or `@name`. A subagent is one of three kinds:
 another OVAT workflow (here `researcher`), an agent reached over A2A (here
 `team_docs`), or a model behind an OpenAI-compatible API (`cloud`,
 `local_api`).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/subagents-dark.svg">
+  <img src="assets/diagrams/subagents-light.svg" alt="The main agent gets one tool, delegate(agent, task). A subagent is another OVAT workflow in this process, a model behind an OpenAI-compatible API, or an agent reached over A2A. Answers come back framed as information. Progress is reported as events and shown in the /agents table.">
+</picture>
 
 <div align="center">
 <img src="assets/screens/agent-tui/agent-subagent-answers.png" width="860px" alt="Two answers in the agent TUI. The team_docs subagent, reached over A2A, answers that OVAT targets a peak resident set of under 8 GB. The researcher subagent, a workflow, gives the same answer with its source file ovat-facts.md. The list under the prompt shows each subagent and its token count.">
@@ -66,6 +78,11 @@ exposed: a remote caller cannot make your agent hand its work on to a third
 one. The token is generated for the project and kept in your own folder, not
 in the project. The model server must already be running.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/a2a-flow-dark.svg">
+  <img src="assets/diagrams/a2a-flow-light.svg" alt="A caller sends a message. The server checks the host, the body size and the bearer token, then admission limits, then gives each caller and conversation its own agent. A run takes the conversation lock and then the one-model gate, runs only the exposed tools, and the answer comes back as a task update.">
+</picture>
+
 <div align="center">
 <img src="assets/screens/agent-tui/hero-agent-serve-and-a2a-answer.png" width="860px" alt="After /serve the A2A server listens on 127.0.0.1 port 9100, the TUI asks it a question through the team_docs subagent and gets a cited answer, and the bar shows a2a serving.">
 </div>
@@ -79,7 +96,14 @@ The same server can run on its own from a second terminal:
 ## Approvals
 
 Anything that leaves the agent, writes a file or runs a command asks first.
-The panel says what would happen and where the data would go:
+The panel says what would happen and where the data would go. Every tool call
+takes the same path:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/approval-flow-dark.svg">
+  <img src="assets/diagrams/approval-flow-light.svg" alt="The model asks for a tool. One wrapper, events.observed, checks the permission of that tool or subagent. Allow runs it. Ask opens an approval panel with once, session, always and deny when someone is there to answer, and counts as no when nobody is. Deny sends the model a plain sentence.">
+</picture>
+
 
 <div align="center">
 <img src="assets/screens/agent-tui/agent-approval-local-api.png" width="800px" alt="The approval panel for the local_api subagent: it sends the task to http://localhost:8000/v3 and offers Allow once, Allow for the remainder of the session, Always allow this tool in this project, and Deny.">
