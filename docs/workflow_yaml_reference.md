@@ -54,6 +54,8 @@ Which model to run, where, and how to reach it.
 | `ovms_cache_size_gb` | integer \| null | `null` | > 0 | KV cache size in GB. Setting it also makes the cache **static** rather than dynamic. Whole numbers only. |
 | `ovms_max_prompt_len` | integer \| null | `null` | > 0 | Longest prompt OVMS accepts. On `NPU` an unset value becomes **4096**, because OVMS's own NPU cap of 1024 is smaller than one agent turn; set it to go lower. Left to OVMS on CPU and GPU. |
 | `ovms_tool_guided_generation` | boolean | `false` | - | Make OVMS hold each tool call to the tool's schema while generating. Read by `ovat serve`. |
+| `ovms_bind_address` | string | `127.0.0.1` | - | Address `ovat serve` makes OVMS listen on. The default keeps it on this machine; `0.0.0.0` opens it to the network. `ovat serve --host` overrides it. |
+| `ovms_api_key_env` | string \| null | `null` | - | Name of an environment variable holding an API key (not the key itself). `ovat serve` makes OVMS require it, and OVAT sends it. |
 
 ## `tools`
 

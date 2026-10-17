@@ -717,3 +717,21 @@ def test_the_thinking_switch_reaches_every_ovms_engine():
 
 def test_thinking_left_unset_sends_no_template_kwargs():
     assert "extra_body" not in _native_request(WorkflowConfig(model={"name": "m"}))
+
+
+def test_ovms_listens_on_loopback_unless_told_otherwise():
+    assert ModelConfig(name="m").ovms_bind_address == "127.0.0.1"
+    assert ModelConfig(name="m", ovms_bind_address="0.0.0.0"
+                       ).ovms_bind_address == "0.0.0.0"
+
+
+@pytest.mark.parametrize("name", ["OVAT_OVMS_KEY", "_key", "K2"])
+def test_ovms_api_key_env_takes_a_variable_name(name):
+    assert ModelConfig(name="m", ovms_api_key_env=name).ovms_api_key_env == name
+
+
+@pytest.mark.parametrize("value", ["sk-abc123", "2KEY", "MY KEY", "$KEY", ""])
+def test_ovms_api_key_env_refuses_what_is_not_a_variable_name(value):
+    """Pasting the key itself here would leave it in the YAML in plain text."""
+    with pytest.raises(ValidationError, match="NAME of an environment"):
+        ModelConfig(name="m", ovms_api_key_env=value)

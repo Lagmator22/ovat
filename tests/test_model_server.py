@@ -795,3 +795,68 @@ def test_tool_guided_generation_reaches_the_command_line(monkeypatch, tmp_path):
         log_path=str(tmp_path / "b.log"), pid_path=str(tmp_path / "b.pid"))
     cmd = captured["cmd"]
     assert cmd[cmd.index("--enable_tool_guided_generation") + 1] == "true"
+
+
+# --- who can reach the server ----------------------------------------------
+#
+# OVMS's parameter table: rest_bind_address "Default: all interfaces:
+# 0.0.0.0", and without api_key_file or API_KEY "requests will not require
+# authorization". serve passed neither, so the model was open to the network.
+
+
+def _captured_cmd(monkeypatch, tmp_path, **kwargs):
+    captured = {}
+
+    def fake_popen(cmd, **popen_kwargs):
+        captured["cmd"] = cmd
+        return FakePopen()
+
+    monkeypatch.setattr("ovat.core.model_server.subprocess.Popen", fake_popen)
+    server = ModelServer(model_name="m", **kwargs)
+    server.start(log_path=str(tmp_path / "k.log"),
+                 pid_path=str(tmp_path / "k.pid"))
+    return server, captured["cmd"]
+
+
+def test_ovms_listens_on_this_machine_only_by_default(monkeypatch, tmp_path):
+    _server, cmd = _captured_cmd(monkeypatch, tmp_path)
+    assert cmd[cmd.index("--rest_bind_address") + 1] == "127.0.0.1"
+    assert "--api_key_file" not in cmd
+
+
+def test_a_wider_bind_address_reaches_the_command_line(monkeypatch, tmp_path):
+    _server, cmd = _captured_cmd(monkeypatch, tmp_path,
+                                 bind_address="0.0.0.0")
+    assert cmd[cmd.index("--rest_bind_address") + 1] == "0.0.0.0"
+
+
+def test_an_api_key_goes_to_ovms_in_a_private_file(monkeypatch, tmp_path):
+    server, cmd = _captured_cmd(monkeypatch, tmp_path, api_key="s3cret")
+    key_file = cmd[cmd.index("--api_key_file") + 1]
+    # In a file, never on the command line, where `ps` shows it to everyone.
+    assert "s3cret" not in cmd
+    with open(key_file, encoding="utf-8") as f:
+        assert f.readline().strip() == "s3cret"   # OVMS reads the first line
+    if os.name != "nt":
+        assert os.stat(key_file).st_mode & 0o777 == 0o600
+
+    server.forget_api_key_file()
+    assert not os.path.exists(key_file)
+    server.forget_api_key_file()                    # twice is fine
+
+
+def test_stop_deletes_the_api_key_file(monkeypatch, tmp_path):
+    server, cmd = _captured_cmd(monkeypatch, tmp_path, api_key="s3cret")
+    key_file = cmd[cmd.index("--api_key_file") + 1]
+    server.stop()
+    assert not os.path.exists(key_file)
+
+
+@pytest.mark.parametrize("address, expected", [
+    ("127.0.0.1", True), ("127.0.0.2", True), ("::1", True), ("[::1]", True),
+    ("localhost", True), ("127.0.0.1,::1", True),
+    ("0.0.0.0", False), ("::", False), ("192.168.1.20", False),
+    ("127.0.0.1,0.0.0.0", False), ("my-ai-pc", False),
+])
+def test_is_loopback(address, expected):
+    assert model_server.is_loopback(address) is expected

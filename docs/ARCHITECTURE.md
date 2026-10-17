@@ -869,6 +869,14 @@ model, and that can take any amount of time. The clock resets whenever the log
 file or the model folder grows, so a download that keeps moving is never
 interrupted, while a stuck server still fails after five minutes.
 
+**OVMS listens on this machine only.** Left to itself OVMS listens on every
+network interface and asks for no password, so `serve` passes
+`--rest_bind_address 127.0.0.1` (`model.ovms_bind_address`, or `--host`).
+`model.ovms_api_key_env` names an environment variable holding a key; `serve`
+gives it to OVMS in a file only the user can read, deletes the file once OVMS
+has started, and every engine sends the key. OVMS checks it on its generation
+endpoints (chat, embeddings); the health check and `/v3/models` stay open.
+
 **Logs go to a file, never a pipe.** A pipe that nobody reads blocks OVMS once
 the OS buffer (about 64 KB) is full.
 
