@@ -13,7 +13,9 @@ Build a tool-calling AI agent on an Intel AI PC from one YAML file and one comma
 [![Python](https://img.shields.io/pypi/pyversions/ovat)](https://pypi.org/project/ovat/)
 [![License](https://img.shields.io/pypi/l/ovat)](LICENSE)
 
-<a href="https://lagmator22.github.io/ovat-navigate/#demo"><img src="docs/assets/screens/demo-preview.jpg" width="720px" alt="Play the 6 minute OVAT demo video on the docs site. The still shows the OVAT terminal UI launcher with a play button."></a>
+<video src="https://github.com/Lagmator22/ovat/raw/main/docs/assets/video/demo-agent-tui-a2a.mp4" width="720" controls muted playsinline></video>
+<br><sub>The agent TUI on an Intel AI PC: subagents, approvals and an A2A server (1 minute). <a href="https://github.com/Lagmator22/ovat/raw/main/docs/assets/video/demo-agent-tui-a2a.mp4">Open the video</a>.</sub>
+
 
 </div>
 
@@ -100,6 +102,11 @@ error, not something silently ignored.
 
 `agent.type` picks the engine. Nothing else in the file changes: not the tools,
 not the prompt, not a line of Python.
+
+<div align="center">
+<video src="https://github.com/Lagmator22/ovat/raw/main/docs/assets/video/demo-engines-trace-bench.mp4" width="860" controls muted playsinline></video>
+<br><sub>One question answered through all four engines, then a run trace and `ovat bench` (3 minutes). <a href="https://github.com/Lagmator22/ovat/raw/main/docs/assets/video/demo-engines-trace-bench.mp4">Open the video</a>.</sub>
+</div>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/diagrams/engines-dark.svg">
@@ -544,6 +551,11 @@ You choose once, for the session, for this project, or deny:
   the microphone hears. It keeps listening until you press `Ctrl+R` again or
   10 seconds pass without speech; `Esc` cancels. The model comes from the
   workflow's `transcribe` tool or `OVAT_WHISPER_MODEL`.
+
+<div align="center">
+<video src="https://github.com/Lagmator22/ovat/raw/main/docs/assets/video/demo-voice.mp4" width="860" controls muted playsinline></video>
+<br><sub>Voice dictation: `Ctrl+R` records, local Whisper turns it into text (1 minute). <a href="https://github.com/Lagmator22/ovat/raw/main/docs/assets/video/demo-voice.mp4">Open the video</a>.</sub>
+</div>
 
 You can see what the agent did. `/trace` lists the turns of the last answer,
 which tool ran in each, how long it took and how many tokens went in and out
