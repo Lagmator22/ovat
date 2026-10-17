@@ -120,3 +120,15 @@ def test_openvino_genai_has_a_floor_that_loads_the_small_model():
         "openvino-genai")]
     assert genai == ["openvino-genai>=2026.4"], genai
 
+
+
+def test_pypi_links_to_the_site_the_source_the_issues_and_the_changelog():
+    """PyPI's sidebar comes from [project.urls]. Without it, the project
+    page linked nowhere: no docs site, no repo, no place to report a bug."""
+    pyproject = Path(__file__).parents[1] / "pyproject.toml"
+    urls = tomllib.loads(pyproject.read_text(encoding="utf-8"))[
+        "project"].get("urls", {})
+    assert urls.get("Homepage") == "https://lagmator22.github.io/ovat-navigate/"
+    assert urls.get("Source") == "https://github.com/Lagmator22/ovat"
+    assert urls.get("Issues") == "https://github.com/Lagmator22/ovat/issues"
+    assert urls.get("Changelog") == "https://github.com/Lagmator22/ovat/releases"
