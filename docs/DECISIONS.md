@@ -649,3 +649,59 @@ order as ARCHITECTURE.md.
 - **Why:** a test that passes against broken code gives false confidence.
 - **Alternatives considered:** none recorded.
 - **Evidence:** it has happened in this project more than once.
+
+## The agent TUI and A2A approvals
+
+### D52. "Always allow" and the A2A token live in `~/.ovat`, not in the project
+
+- **Decision:** saved permission grants and the generated A2A token are kept
+  in the user's own folder, one entry per project path (`ovat/userdata.py`).
+- **Why:** a cloned repository can contain any file in its own `.ovat/`. One
+  that pre-set "always allow" for `shell` would run commands unasked, and one
+  that shipped a token file would give its author a working token.
+- **Alternatives considered:** keeping them in the project's `.ovat/` and
+  trusting what is there. Rejected: the project is not trusted input.
+- **Evidence:** found in review; both moves have tests that fail without them.
+
+### D53. The bearer token goes only to the origin it was configured for
+
+- **Decision:** the A2A client adds the token to a request only when the
+  request's host is the configured one (`SDKPeer._add_token`). Loopback is
+  decided by parsing the host (`permissions.is_loopback`), never by looking for
+  "localhost" in the text of the URL.
+- **Why:** the SDK sends messages to the URL named on the remote agent's card.
+  A card can name any host, and `localhost.evil.example` contains "localhost".
+- **Alternatives considered:** sending the token on every call. Rejected: it
+  hands the token to whoever writes a card.
+
+### D54. The model gate is released while a person decides
+
+- **Decision:** a paused approval gives the one-model lock back and takes it
+  again after the answer. The conversation's slot lock is taken before the
+  gate. An unanswered approval expires and is cleaned up.
+- **Why:** the first version held the gate for up to 900 s on a person who
+  never answered, so every other caller waited, and the task was never
+  removed.
+- **Alternatives considered:** a shorter timeout while holding the gate.
+  Rejected: it still blocks others for no benefit.
+
+### D55. Copy the terminal client, keep OVAT's own server and core
+
+- **Decision:** the terminal client is copied into `ovat/tui/vibe/` under
+  Apache-2.0 (`NOTICE`, `ovat/tui/vibe/LICENSE`). The app server, the engines,
+  permissions, tools and A2A are OVAT's own.
+- **Why:** a full-featured terminal client is a large amount of work that is
+  not what OVAT is about. The part OVAT is about, the agent, stays ours.
+- **Alternatives considered:** extending OVAT's first TUI. Kept as
+  `OVAT_AGENT_UI=classic` until the AI PC test passes, then to be removed.
+
+### D56. Trim cloud code that nothing can reach, keep what `/mcp` still uses
+
+- **Decision:** the copied client lost its crash reporting, account,
+  teleport, plugin, update-notifier and cloud-voice code (about 6,800 lines).
+  The connector code stays: OVAT returns no connectors, but the panel `/mcp`
+  uses is still wired to it.
+- **Why:** unreachable code is a cost with no use. Removing code the `/mcp`
+  panel calls would break that panel, and a careful edit is better made later.
+- **Alternatives considered:** deleting everything unused in one pass.
+  Rejected for the connector code until the panel is edited by hand.
