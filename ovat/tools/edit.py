@@ -9,7 +9,7 @@ Left out: its checkpoints, atomic_replace and file locks.
 import os
 from pathlib import Path
 
-from ovat.tools.project import Shown, fail, resolve_inside, shown_path
+from ovat.tools.project import Shown, fail, resolve_inside, save_text, shown_path
 
 
 def line_contexts(content: str, snippet: str) -> list[tuple[int, str, str]]:
@@ -97,8 +97,7 @@ def edit_impl(file_path: str, old_string: str, new_string: str, root: Path,
     modified = original.replace(old_string, new_string,
                                 -1 if replace_all else 1)
     try:
-        with open(path, "w", encoding="utf-8", newline=newline) as f:
-            f.write(modified)
+        save_text(path, modified, newline)
     except OSError as exc:
         return fail("edit", f"cannot write {file_path}: {exc}")
     shown = shown_path(path, root)

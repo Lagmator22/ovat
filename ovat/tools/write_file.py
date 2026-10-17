@@ -9,7 +9,7 @@ overwriting is allowed and the TUI diffs it against the old text.
 """
 from pathlib import Path
 
-from ovat.tools.project import Shown, fail, resolve_inside, shown_path
+from ovat.tools.project import Shown, fail, resolve_inside, save_text, shown_path
 
 MAX_WRITE_BYTES = 64_000         # Vibe's max_write_bytes
 
@@ -35,8 +35,7 @@ def write_file_impl(file_path: str, content: str, root: Path) -> str:
                 previous = None           # binary or unreadable: no diff
         path.parent.mkdir(parents=True, exist_ok=True)
         # newline="" keeps the text byte for byte: no CRLF surprise on Windows.
-        with open(path, "w", encoding="utf-8", newline="") as f:
-            f.write(content)
+        save_text(path, content)
     except PermissionError:
         return fail("write_file", f"permission denied: {file_path}")
     except OSError as exc:
