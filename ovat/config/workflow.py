@@ -546,6 +546,10 @@ class SubagentAPIConfig(StrictModel):
     max_tokens: int = Field(default=2048, gt=0)
     temperature: float = Field(default=0.0, ge=0)
     timeout: float = Field(default=300.0, gt=0)
+    # Qwen3 and Qwen3.5 behind OVMS, vLLM and similar think by default. False
+    # sends chat_template_kwargs {enable_thinking: false}. Unset sends nothing,
+    # which is right for a provider that does not know the field.
+    enable_thinking: bool | None = None
 
     @model_validator(mode="after")
     def _key_is_a_variable_name(self):

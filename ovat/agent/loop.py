@@ -442,12 +442,26 @@ class AgentLoop:
                 # treated as evidence.
                 if says_nothing(content):
                     empty[0] = True
+                    if reply["finish_reason"] == "length":
+                        # Cut at the token ceiling: the model was still
+                        # reasoning. A tool_parser has nothing to do with it
+                        # (measured: a Qwen3.5 API subagent at temperature 0
+                        # spent all 2048 tokens thinking about "Say PONG").
+                        return _finish(
+                            "Error: the model used all of its max_tokens "
+                            "thinking and never wrote an answer. Turn "
+                            "thinking off (model.enable_thinking: false, or "
+                            "enable_thinking: false on an api subagent) or "
+                            "raise max_tokens. This is NOT a tool_parser "
+                            "problem.")
+                    hint = (" This is usually a tool_parser that does not "
+                            "match the model (Qwen3.5 needs qwen3coder, "
+                            "Qwen3 needs hermes3), which can swallow the "
+                            "reply rather than pass it on." if self.tools
+                            else "")
                     return _finish(
                         "Error: the model returned no answer. Its reply "
-                        "contained only reasoning, or nothing at all. This is "
-                        "usually a tool_parser that does not match the model "
-                        "(Qwen3.5 needs qwen3coder, Qwen3 needs hermes3), "
-                        "which can swallow the reply rather than pass it on.")
+                        "contained only reasoning, or nothing at all." + hint)
                 return _finish(content)
 
             # The model wants one or more tools.

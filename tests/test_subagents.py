@@ -773,3 +773,23 @@ def test_an_approval_blocks_the_child_that_asked_not_its_namesake():
                       BlockedSessionStatus)
     assert isinstance(projector.child_sessions["child-c1"].status,
                       RunningSessionStatus)
+
+
+def test_an_api_subagent_can_turn_thinking_off(monkeypatch):
+    """Qwen3.5 behind OVMS thinks by default and, at temperature 0, spent
+    every token on it. enable_thinking: false reaches the request."""
+    monkeypatch.setenv("CLOUD_KEY", "k")
+    runner, sent = _api_runner(monkeypatch, api_key_env="CLOUD_KEY",
+                               enable_thinking=False)
+    runner._bus.approver = lambda name, args, reason: True
+    runner.run("cloud", "say PONG")
+    assert sent[0]["extra_body"] == {
+        "chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_an_api_subagent_sends_no_thinking_field_unless_asked(monkeypatch):
+    monkeypatch.setenv("CLOUD_KEY", "k")
+    runner, sent = _api_runner(monkeypatch, api_key_env="CLOUD_KEY")
+    runner._bus.approver = lambda name, args, reason: True
+    runner.run("cloud", "say PONG")
+    assert sent[0]["extra_body"] is None

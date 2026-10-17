@@ -618,3 +618,35 @@ def test_steering_after_the_answer_is_final_is_refused_not_dropped(
     agent = AgentLoop(llm, tools={})
     assert agent.run("hi") == "Done."
     assert answers == [False] and len(llm.calls) == 1
+
+
+def _empty_reply_llm(finish_reason):
+    class LLM:
+        def chat(self, messages, tools=None):
+            return {"finish_reason": finish_reason, "content": "",
+                    "tool_calls": None, "usage": None, "raw": None}
+    return LLM()
+
+
+def test_an_empty_reply_cut_at_max_tokens_blames_thinking_not_the_parser():
+    """A Qwen3.5 API subagent at temperature 0 spent all 2048 tokens
+    reasoning about 'Say PONG' and the error pointed at tool_parser."""
+    from ovat.agent.loop import AgentLoop
+    out = AgentLoop(_empty_reply_llm("length"), tools={},
+                    max_iterations=1).run("Say PONG")
+    assert "max_tokens" in out and "thinking" in out
+    assert "enable_thinking" in out
+    assert "tool_parser that does not match" not in out
+
+
+def test_the_tool_parser_hint_is_only_given_when_there_are_tools():
+    from ovat.agent.loop import AgentLoop
+    bare = AgentLoop(_empty_reply_llm("stop"), tools={}, max_iterations=1).run("q")
+    assert bare.startswith("Error: the model returned no answer")
+    assert "tool_parser" not in bare
+    with_tool = AgentLoop(_empty_reply_llm("stop"),
+                          tools={"t": {"schema": {"type": "function",
+                                                  "function": {"name": "t"}},
+                                       "fn": lambda **k: "x"}},
+                          max_iterations=1).run("q")
+    assert "tool_parser" in with_tool

@@ -147,6 +147,7 @@ A subagent behind an OpenAI-compatible API.
 | `max_tokens` | integer | `2048` | > 0 | Longest answer it may write. |
 | `temperature` | float | `0.0` | >= 0 | Sampling temperature. |
 | `timeout` | float | `300.0` | > 0 | Seconds to wait for its answer. |
+| `enable_thinking` | boolean \| null | `null` | - | `false` turns thinking off for a model that thinks by default (Qwen3, Qwen3.5 on OVMS or vLLM): it sends `chat_template_kwargs`. Unset sends nothing, which is right for a provider that does not know it. |
 
 ## `subagents.a2a`
 

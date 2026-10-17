@@ -199,6 +199,10 @@ class SubagentRunner:
                                    timeout=api.timeout,
                                    max_tokens=api.max_tokens,
                                    temperature=api.temperature,
+                                   extra_body=({"chat_template_kwargs": {
+                                       "enable_thinking": api.enable_thinking}}
+                                       if api.enable_thinking is not None
+                                       else None),
                                    api_key=key or "not-needed")
         loop = AgentLoop(provider, {}, system_prompt=cfg.system_prompt,
                          max_iterations=1, engine_name=f"api:{api.model}",
