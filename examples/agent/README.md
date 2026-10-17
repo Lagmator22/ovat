@@ -24,8 +24,10 @@ ovat index ./examples/rag/docs examples/rag/workflow.yml
 ovat a2a serve examples/rag/workflow.yml --port 9100
 ```
 
-Third terminal, the agent TUI. `team_docs` needs the token the A2A server
-made, and `cloud` needs an API key (skip it and that subagent just says so):
+Third terminal, the agent TUI. `cloud` needs an API key (skip it and that
+subagent just says so). `team_docs` needs a token only when the A2A server runs
+from a different folder than the TUI: started from the same project folder, the
+TUI finds the server's token by itself. Otherwise copy it:
 
 ```powershell
 $env:OVAT_A2A_TOKEN = (ovat a2a token)
@@ -42,7 +44,8 @@ Things to try:
 | `/ask team_docs What is OVAT's memory budget?` | the question goes over A2A to the second terminal |
 | `/ask cloud Explain KV cache in two lines` | an approval panel appears first: 1 once, 2 session, 3 no |
 | `!dir` | runs in the shell; Esc stops a long one |
-| `/agents`, `/tools`, `/trace` | what the agent has, and what the last answer did |
+| `/agents` | a live table of subagents, peers and the local A2A server. Press `x` to cancel one child; the parent carries on |
+| `/tools`, `/trace` | what the agent can use, and what the last answer did |
 | `/serve` | offers this workflow over A2A from inside the TUI |
 
 ## On a Mac (no OVMS)
