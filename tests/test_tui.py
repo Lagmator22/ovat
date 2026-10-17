@@ -1021,9 +1021,13 @@ def test_a_running_but_silent_source_says_so_on_the_live_tab(monkeypatch):
                                 Silent)
             screen = telemetry_screen.TelemetryScreen()
             app.push_screen(screen)
-            await pilot.pause(0.7)
-            line = str(screen.query_one("#tel-sources", Static).content)
-            assert "intel silent (running, no reading parsed yet)" in line
+            # A bounded poll, not one pause (AGENTS.md rule 12): the line is
+            # filled on a timer, and the Windows runner is slow.
+            # (query, not query_one: the widget is not mounted yet at first)
+            await _until(pilot, lambda: any(
+                "intel silent (running, no reading parsed yet)"
+                in str(w.content) for w in screen.query("#tel-sources")),
+                "the sources line never said intel is silent")
             screen.collector.stop()
     _run(scenario())
 
