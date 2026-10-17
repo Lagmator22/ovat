@@ -203,6 +203,9 @@ def _serve(monkeypatch, tmp_path, log_text, state="missing", platform="linux"):
         def stop(self):
             pass
 
+        def forget_api_key_file(self):
+            pass
+
     monkeypatch.setattr(model_server, "ModelServer", FakeModelServer)
     monkeypatch.setattr(model_scout, "identify_model", lambda *a: "llm")
     monkeypatch.setattr(ovms_locator, "find_ovms",
