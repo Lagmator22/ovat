@@ -27,6 +27,7 @@ order as ARCHITECTURE.md.
 - [Models and devices](#models-and-devices)
 - [Telemetry](#telemetry)
 - [Packaging and testing](#packaging-and-testing)
+- [The agent TUI and A2A](#the-agent-tui-and-a2a-approvals)
 
 ---
 
@@ -705,3 +706,35 @@ order as ARCHITECTURE.md.
   panel calls would break that panel, and a careful edit is better made later.
 - **Alternatives considered:** deleting everything unused in one pass.
   Rejected for the connector code until the panel is edited by hand.
+
+### D57. Only `ovat/a2a/sdk/` imports the A2A SDK
+
+- **Decision:** OVAT's own A2A logic (`protocol.py`, `exposure.py`, `card.py`,
+  `policy.py`, `tokens.py`, `audit.py`, `service.py`, `serving.py`) never
+  imports the SDK. It talks to it through two small interfaces,
+  `service.Reporter` on the server side and `protocol.RemoteReply` and
+  `PeerError` on the client side. A test scans the source to keep it so.
+- **Why:** the SDK released four versions in the two weeks this was designed,
+  and its 1.0 moved every type to protobuf. An upgrade is now a change to one
+  folder.
+- **Alternatives considered:** using the SDK types throughout. Rejected: every
+  SDK release would have touched the whole feature.
+
+### D58. One wrapper around every tool, for events, permissions and cancel
+
+- **Decision:** `agent/events.py` wraps each tool once, in the factory. The
+  wrapper reports `tool_started` and `tool_ended`, checks the cancel flag and
+  asks the permission check. The four engines are not changed.
+- **Why:** the engines already call the same tool functions, so this is the one
+  place that holds for all of them.
+- **Alternatives considered:** a hook in each engine. Rejected: four copies
+  that drift.
+
+### D59. With nobody to ask, `ask` means no
+
+- **Decision:** when no approver is connected to the agent, a tool set to
+  `ask` is refused.
+- **Why:** `ovat run`, a bench worker and an A2A server have no person to
+  answer. Allowing the call would send data out unasked.
+- **Alternatives considered:** treating `ask` as `allow` when unattended.
+  Rejected for the same reason.

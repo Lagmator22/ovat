@@ -120,7 +120,7 @@ ovat run workflow.yml -i "what did the Q3 review conclude?"
 ```
 
 That is the whole thing. The loop, the schemas, the history, the retries and the
-error messages are the toolkit's job. Twelve commands cover the rest:
+error messages are the toolkit's job. Twelve commands and one command group cover the rest:
 
 | Command | Does |
 | --- | --- |
@@ -571,7 +571,10 @@ gateway produces them. It runs in front of OVMS, outside OVAT. See
 
 ## 11. Extending OVAT with your own tools
 
-The three built-ins are a starting point, not the limit. OVAT speaks
+The built-in tools are a starting point, not the limit. There are three for
+documents, audio and images, and nine for working on a project (read, write
+and edit files, grep, shell, a todo list, asking you a question, fetching a
+page and searching the web). OVAT speaks
 [MCP](https://modelcontextprotocol.io) as a **client**, so any MCP server becomes
 a tool:
 
@@ -614,8 +617,10 @@ Worth being straight about, so you know whether this fits:
   home.
 - **Not a chat UI**, though it ships a terminal one. It is a toolkit for
   *building* things.
-- **Not for serving other people's traffic.** It is a local developer tool. There
-  is no auth layer, because nothing in it is meant to be reachable from off-box.
+- **Not a public service.** It is a local developer tool with no user accounts.
+  The optional A2A server, which lets other agents ask yours a question,
+  listens on 127.0.0.1 only, wants a bearer token even there, and exposes only
+  the tools you list. It is off until you start it.
 
 ---
 
@@ -632,7 +637,7 @@ If `doctor` is green, you are four commands from a working local agent.
 - **Repository**, <https://github.com/Lagmator22/ovat>
 - **Architecture**, [`docs/ARCHITECTURE.md`](ARCHITECTURE.md), how the parts fit together
 - **Design decisions**, [`docs/DECISIONS.md`](DECISIONS.md), why each part works the way it does
-- **Examples**, [`examples/`](../examples/), four runnable use cases
+- **Examples**, [`examples/`](../examples/), runnable configs from a minimal one to RAG, audio and vision, the agent TUI with subagents and A2A, and a coding agent
 - **OpenVINO Model Server**, <https://docs.openvino.ai/2026/model-server/ovms_what_is_openvino_model_server.html>
 
 OVAT is Apache-2.0 and built as
