@@ -9,7 +9,10 @@ process, so the tool answers in stub mode; perfect: a deterministic reply
 that proves the round trip without any model on disk.
 """
 import sys
+import time
+import uuid
 
+import psutil
 import pytest
 
 from ovat.agent.factory import build_agent, build_tools
@@ -86,6 +89,80 @@ def test_agent_loop_calls_a_tool_over_mcp_end_to_end():
     assert agent.run("ask the docs") == "answered from the docs"
     tool_msg = next(m for m in agent.session.messages if m["role"] == "tool")
     assert "[stub]" in tool_msg["content"] and "via mcp" in tool_msg["content"]
+
+
+def _processes_with(marker: str) -> list:
+    """Every live process whose command line carries `marker`."""
+    found = []
+    for proc in psutil.process_iter(["cmdline"]):
+        if marker in (proc.info["cmdline"] or []):
+            found.append(proc)
+    return found
+
+
+def test_a_server_that_never_connects_leaves_no_process_behind():
+    # A "server" that starts and then never says a word of MCP. The unique
+    # marker is an extra argv entry, so this run can find its own child and
+    # nothing else. It is an argv list, not py_command(): the client takes a
+    # list and passes it to the SDK unchanged, no shell in between.
+    marker = f"ovat-mcp-orphan-{uuid.uuid4().hex}"
+    command = [sys.executable, "-c", "import time; time.sleep(60)", marker]
+    try:
+        with pytest.raises(TimeoutError):
+            MCPStdioServer(command, connect_timeout=1)
+        deadline = time.monotonic() + 3
+        while _processes_with(marker) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        survivors = _processes_with(marker)
+        assert survivors == [], (
+            f"the server outlived its failed start: pids "
+            f"{[proc.pid for proc in survivors]}")
+    finally:
+        for proc in _processes_with(marker):    # never leak it, pass or fail
+            try:
+                proc.kill()
+            except psutil.Error:
+                pass
+
+
+_HANGS_ON_SHUTDOWN = """
+import atexit, time
+from fastmcp import FastMCP
+
+mcp = FastMCP("hangs")
+
+
+@mcp.tool
+def ping() -> str:
+    return "pong"
+
+
+atexit.register(time.sleep, 60)    # ignores the end of its stdin
+mcp.run()
+"""
+
+
+def test_closing_a_server_that_hangs_on_shutdown_leaves_no_process(tmp_path):
+    # close() used to wait a fixed 0.1 s and then stop the event loop, which
+    # cut off the SDK's own shutdown before its kill step: a server that did
+    # not exit when its stdin closed was left running.
+    marker = f"ovat-mcp-hang-{uuid.uuid4().hex}"
+    script = tmp_path / "hangs.py"
+    script.write_text(_HANGS_ON_SHUTDOWN, encoding="utf-8")
+    try:
+        server = MCPStdioServer([sys.executable, str(script), marker])
+        assert server.call_tool("ping", {}) == "pong"
+        server.close()
+        deadline = time.monotonic() + 1
+        while _processes_with(marker) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert _processes_with(marker) == [], "the server outlived close()"
+    finally:
+        for proc in _processes_with(marker):
+            try:
+                proc.kill()
+            except psutil.Error:
+                pass
 
 
 def test_mcp_stdio_without_a_command_is_rejected():
