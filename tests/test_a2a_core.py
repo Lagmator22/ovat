@@ -507,3 +507,9 @@ def test_a2a_tools_without_the_extra_are_a_sentence(monkeypatch):
         {"name": "peer", "type": "a2a", "url": "http://127.0.0.1:1"}])
     with pytest.raises(RuntimeError, match=r'pip install "ovat\[a2a\]"'):
         build_tools(cfg)
+
+
+def test_subagents_are_not_offered_to_remote_callers_by_default():
+    exp = exposure.decide(_tools(search_docs="builtin", delegate="subagent"),
+                          None)
+    assert exp.exposed == ["search_docs"] and "delegate" in exp.hidden

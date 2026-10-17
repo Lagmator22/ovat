@@ -1,0 +1,8 @@
+# The subagent behind `helper` in local-mac.yml.
+model:
+  name: models/OpenVINO/Qwen3.5-0.8B-int4-ov
+  provider: genai
+  device: CPU
+agent:
+  type: native
+  system_prompt: Answer with just the answer, no explanation.

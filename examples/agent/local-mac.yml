@@ -1,0 +1,15 @@
+# The agent TUI on a Mac or any machine without OVMS:
+#   ovat agent examples/agent/local-mac.yml
+# A local OpenVINO model runs in-process (no server, no tools), and a second
+# copy answers as a subagent: try `/ask helper What is 7 times 6?`.
+model:
+  name: models/OpenVINO/Qwen3.5-0.8B-int4-ov
+  provider: genai
+  device: CPU
+agent:
+  type: native
+  system_prompt: You are a concise assistant. Answer in one or two sentences.
+subagents:
+  - name: helper
+    description: A second local model that answers one short question.
+    workflow: examples/agent/helper.yml

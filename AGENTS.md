@@ -180,6 +180,29 @@ as always `"stop"`.
 - `ovat/cli/a2a_cmd.py`: `ovat a2a serve | card | call | token`. No SDK
   import at module level.
 
+### Agentic layer and the agent TUI (`ovat agent`)
+- `ovat/agent/permissions.py`: allow | ask | deny per tool and subagent;
+  `gate()` (with no approver on the bus, `ask` means NO, so `ovat run`, a
+  bench worker and an A2A server never send data out unasked);
+  `ApprovalBroker` (request id, blocks the worker, resolved once, cancel
+  denies all). Enforced inside `events.observed`, so on all four engines.
+- `ovat/agent/subagents.py` + `ovat/tools/delegate.py`: `subagents:` in
+  the YAML become ONE `delegate(agent, task)` tool (an enum of names).
+  Kinds: workflow (in-process, fresh context, its own `delegate` removed:
+  one level deep), api (any OpenAI-compatible API through
+  `OVMSLLMProvider(api_key=...)`), a2a. Shares the parent's stop flag and
+  approver; progress as `subagent_status` events.
+- `ovat/agentic/`: textual-free. `session.py` (`AgentSession`: worker
+  threads, one `sink(event)` callback with small dataclasses, cancel,
+  `!` shell via `cli/shell.py`, `/serve` as a subprocess), `commands.py`
+  (THE slash-command table), `hardware.py` (CPU/NPU/RAM from the
+  telemetry sources).
+- `ovat/tui/`: `app.py` (`OvatAgentApp`: draws session events; posts them
+  across threads with `post_message`), `widgets/` (banner with the Intel
+  mark from `cli/tui._StartupIntelAnimation`, loading line, messages,
+  folding tool group, input with history + `/` completion + `!` mode,
+  approval panel). The launcher (`ovat tui`, bare `ovat`) is untouched.
+
 ### CLI and TUI
 - `ovat/cli/main.py`: all 11 typer commands plus the `a2a` group: run,
   chat, index, init, models, setup, serve, doctor, tui, telemetry, bench. All printing via the ONE
@@ -245,7 +268,9 @@ as always `"stop"`.
    `textual`/`pyfiglet` live in the `[tui]` extra only. Module-level
    `import textual` is allowed ONLY in: `tui.py`, `chat_screen.py`,
    `doctor_screen.py`, `telemetry_screen.py`, `widgets.py`, `theme.py`,
-   `commands.py`. `tests/test_tui_isolation.py` enforces this. The same
+   `commands.py`, and everything under `ovat/tui/` (the agent TUI).
+   `ovat/agentic/` must NEVER import textual (a test scans it).
+   `tests/test_tui_isolation.py` enforces this. The same
    applies to the framework engines and the A2A SDK: importing the CLI must
    pull in none of langchain, llama_index, agents, textual, pyfiglet, a2a,
    google.protobuf. Only `ovat/a2a/sdk/` may import `a2a`.
@@ -559,6 +584,18 @@ Do not "improve" any of these without reading the reason first.
 - A cancelled framework engine cannot be stopped mid-model-call; it stops
   at its next tool call (the wrapper checks `stop`). The native loop also
   stops before its next model call.
+
+### Agent TUI
+- **Never name a widget attribute after a Textual private one.**
+  `self._running` on the tool group shadowed the message pump's own flag:
+  Textual set it back to True when the widget's loop started, so finished
+  answers kept saying "Searching docs". `self._animate` shadowed a Widget
+  method. `test_no_widget_reuses_a_textual_private_name` scans for this.
+- **Widgets that receive events right after mount keep their children as
+  attributes**, made in `__init__`. Mounting is async; a `query_one` in a
+  handler that ran before compose finished raised NoMatches.
+- **A hint with square brackets is Rich markup.** `pip install
+  "ovat[tui]"` printed as `pip install "ovat"`; wrap it in `esc()`.
 
 ### Model discovery
 - **`find_models` walks TWO levels.** `ovms --pull` lays models out by org

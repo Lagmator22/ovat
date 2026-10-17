@@ -12,8 +12,8 @@ Default rules, safest first:
   hidden: "transcribe C:\\Users\\me\\board-call.wav" would read any file.
 - mcp_stdio tools are hidden: OVAT cannot know what a third-party server's
   tools touch.
-- a2a tools are hidden: a remote caller could otherwise make this machine
-  send messages to a third agent.
+- a2a tools and `delegate` (subagents) are hidden: a remote caller could
+  otherwise make this machine send work on to a third agent or a cloud API.
 - everything else (today: search_docs) is exposed.
 `expose_tools` overrides all of this with an explicit list, which is a
 line the owner wrote on purpose.
@@ -26,6 +26,8 @@ PATH_TOOLS = frozenset({"transcribe", "describe_image"})
 _HIDDEN_BY_KIND = {
     "mcp_stdio": "an MCP tool; list it in a2a.server.expose_tools to offer it",
     "a2a": "it would let a caller send messages on to another agent",
+    "subagent": "it would let a caller hand tasks on to this workflow's "
+                "subagents",
 }
 
 

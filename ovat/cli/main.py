@@ -1620,6 +1620,28 @@ def tui():
 
 
 @app.command()
+def agent(
+    config: str = typer.Argument(
+        None, help="The workflow to chat with. Default: ./workflow.yml."),
+):
+    """Chat with an agent: live tools, subagents, A2A, !shell (new TUI)."""
+    if os.environ.get("OVAT_TUI") == "1":
+        rprint("[yellow]Already inside the OVAT TUI.[/yellow] Run "
+               "[bold]ovat agent[/bold] from a normal terminal.")
+        raise typer.Exit(code=1)
+    try:
+        from ovat.tui.app import run as run_agent_tui
+    except ImportError:
+        rprint("[yellow]The agent TUI needs the TUI extra:[/yellow] "
+               + esc('pip install "ovat[tui]"'))
+        raise typer.Exit(code=1)
+    if config and not os.path.isfile(config):
+        rprint(f"[red]No such workflow file:[/red] {esc(config)}")
+        raise typer.Exit(code=1)
+    run_agent_tui(config)
+
+
+@app.command()
 def telemetry(
     seconds: float = typer.Option(10.0, "--seconds", "-s",
                                   help="How long to sample for. 0 runs until "
