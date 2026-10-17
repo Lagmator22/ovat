@@ -3,9 +3,9 @@
 
 A front end for ovat/agentic/session.AgentSession and nothing more: every
 rule (permissions, subagents, cancel, shell) lives in the session, and this
-package only draws what the session reports. Needs the [tui] extra. The
-older launcher (`ovat tui`) is untouched and still the default for bare
-`ovat`.
+package only draws what the session reports. Needs the [tui] extra. Bare
+`ovat` and `ovat tui` open it too. The older launcher (ovat/cli/tui.py) runs
+only with OVAT_LAUNCHER=classic, until it is removed.
 
 Two apps draw it. The default (agent_app.py) is the copied terminal client
 in vibe/ (see NOTICE) running on OVAT's own app server (server/), which

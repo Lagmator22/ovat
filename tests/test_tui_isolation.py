@@ -21,12 +21,14 @@ runner = CliRunner()
 def _no_tui(monkeypatch):
     """Make `import ovat.cli.tui` fail, as it would without the [tui] extra."""
     monkeypatch.setitem(sys.modules, "ovat.cli.tui", None)
+    monkeypatch.setitem(sys.modules, "ovat.tui.agent_app", None)
 
 
 def test_bare_ovat_without_tui_prints_the_install_hint(monkeypatch):
     _no_tui(monkeypatch)
     result = runner.invoke(app, [])
-    assert result.exit_code == 0                  # a hint, not a crash
+    assert result.exit_code == 1                  # a hint, not a traceback
+    assert isinstance(result.exception, SystemExit)
     assert "ovat[tui]" in result.output           # tells the user the extra
 
 

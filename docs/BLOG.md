@@ -412,8 +412,9 @@ Full walkthrough: [`examples/audio-multimodal/`](../examples/audio-multimodal/).
 ## 8. A terminal UI, if you want one
 
 Everything above is the CLI, and the CLI is the product. But there is also a
-full-screen terminal app: `pip install "ovat[tui]"`, then run `ovat` with no
-arguments.
+full-screen terminal app: `pip install "ovat[tui]"`, then run `ovat`. That opens
+the agent TUI, described further down. The first app, the launcher, is shown
+first here and runs with `OVAT_LAUNCHER=classic ovat`.
 
 <div align="center">
 <img src="assets/screens/tui-chat-tools.png" width="820px" alt="The OVAT terminal UI chat answering one question with three tools: transcribe, describe_image and search_docs, after switching itself to OVMS">
@@ -424,7 +425,7 @@ Up/Down history, sessions saved to `.ovat/sessions/`, an in-app `doctor` and
 indexing progress, and `/engine` to swap between the local `openvino_genai`
 model and OVMS-with-tools without leaving the conversation.
 
-There is a second app in the same extra: `ovat agent`. It is a chat-first
+The app that bare `ovat` opens is `ovat agent`. It is a chat-first
 terminal agent. You point it at a workflow,
 and it streams the answer, shows every tool call as a card, and asks before
 it does anything that writes a file, runs a command or sends data off the
