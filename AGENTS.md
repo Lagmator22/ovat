@@ -462,6 +462,12 @@ Do not "improve" any of these without reading the reason first.
   output because it only checked for "dog". Qwen TEXT models at f16 on ARM
   through `GenAILLMProvider` are NOT verified (Llama-3.2-3B and TinyLlama
   were fine at f16).
+  WHISPER has the same bug: on this Mac 14 s of speech came back as
+  "Today!!!!!!..." until the pipeline was built with f32 (3.2 s of "!!!!" vs
+  0.87 s of the right sentence, whisper-base); a 2.5 s clip was fine, which
+  hid it. The rule lives in `ovat/core/precision.py` and is used by the
+  vision model, voice dictation and the transcribe tool: any new local
+  OpenVINO pipeline on the CPU should take it too.
 
 ### NPU
 - **OVMS compiles an LLM for NPU only from a channel-wise symmetric INT4
