@@ -346,7 +346,7 @@ What you need depends on what you run. The Python extras come from
 | Part | Install | What it adds |
 | --- | --- | --- |
 | Core | `pip install ovat` | Every command (`run`, `chat`, `index`, `init`, `doctor`, `setup`, `serve`, `models`, `bench`, `telemetry`), the `native` engine, the three built-in tools, the MCP client, RAG with sqlite-vec, and local models through `openvino` and `openvino-genai` |
-| `[tui]` | `pip install "ovat[tui]"` | `textual` and `pyfiglet`: the full-screen terminal UI (`ovat` with no arguments, or `ovat tui`) |
+| `[tui]` | `pip install "ovat[tui]"` | `textual` and `pyfiglet`: the full-screen terminal UIs (`ovat`, `ovat tui` or `ovat agent`) |
 | `[langchain]` | `pip install "ovat[langchain]"` | `langchain`, `langchain-openai`, `langgraph`: `agent.type: react` |
 | `[llamaindex]` | `pip install "ovat[llamaindex]"` | `llama-index-core`, `llama-index-llms-openai-like`: `agent.type: llamaindex` |
 | `[openai-agents]` | `pip install "ovat[openai-agents]"` | `openai-agents`: `agent.type: openai-agents` |
@@ -374,7 +374,7 @@ What you need depends on what you run. The Python extras come from
 Typer turns each function into a subcommand from its type hints. Twelve
 commands: `run`, `chat`, `index`, `init`, `doctor`, `setup`, `serve`,
 `models`, `bench`, `telemetry`, `tui` and `agent`, plus the `ovat a2a` group
-(`serve`, `card`, `call`, `token`). A bare `ovat` opens the launcher TUI.
+(`serve`, `card`, `call`, `token`). A bare `ovat` and `ovat tui` open the agent TUI, the same as `ovat agent`; the older launcher runs only with `OVAT_LAUNCHER=classic`.
 
 **Configuration is strict.** `WorkflowConfig` derives from a `StrictModel` base
 with `extra="forbid"`, so an unknown key is an *error*, not a silent default.

@@ -216,7 +216,9 @@ as always `"stop"`.
   (`projector`, `bridge`, `turns`, `approvals`, `questions`, `settings`,
   `methods/`), which drives `AgentSession`. `app.py` is the classic app
   (`OVAT_AGENT_UI=classic`), to be removed after the AI PC test. The
-  launcher (`ovat tui`, bare `ovat`) is untouched.
+  bare `ovat` and `ovat tui` open this agent TUI too (since 2026-10-17);
+  the old launcher (`cli/tui.py`) runs only with `OVAT_LAUNCHER=classic`, to
+  be removed in a later release along with the classic app.
 
 ### CLI and TUI
 - `ovat/cli/main.py`: all 12 typer commands plus the `a2a` group: run,
@@ -667,6 +669,7 @@ roots, pathsep-separated) · `OVAT_VLM_MODEL` / `OVAT_WHISPER_MODEL` (tool
 model dirs) · `OVAT_VLM_DEVICE` / `OVAT_WHISPER_DEVICE` (override the
 routing table) · `OVAT_UT` (Intel UT folder or binary) · `OVAT_TUI=1` (set
 by the TUI in children; bare `ovat` prints a hint instead of recursing).
+`OVAT_LAUNCHER=classic` (old launcher for bare `ovat` / `ovat tui`) · `OVAT_AGENT_UI=classic` (old agent app).
 
 Tests: `OVAT_TEST_MODELS_DIR` / `OVAT_TEST_IMAGE` (integration) ·
 `OVAT_OVMS_URL` / `OVAT_OVMS_MODEL` (`test_ovms_live.py` target).

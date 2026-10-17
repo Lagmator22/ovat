@@ -147,7 +147,7 @@ Extras, so you install only what you need:
 | --- | --- |
 | *(none)* | the native engine, all built-in tools, MCP, RAG, telemetry |
 | `langchain`, `llamaindex`, `openai-agents` | the matching `agent.type` |
-| `tui` | the launcher (`ovat` with no arguments), the agent TUI (`ovat agent`) and local voice dictation. On Linux, voice needs the system library `libportaudio2` |
+| `tui` | the agent TUI (`ovat`, `ovat tui` or `ovat agent`), the older launcher (`OVAT_LAUNCHER=classic ovat`) and local voice dictation. On Linux, voice needs the system library `libportaudio2` |
 | `a2a` | the Agent2Agent server and client (`ovat a2a ...`, `type: a2a`) |
 | `convert` | `optimum-cli`, to convert Hugging Face models to OpenVINO format |
 | `all` | everything above except `convert` |
@@ -321,7 +321,7 @@ stops, and Ctrl-C stops it early. `--max-tokens N` sets a cap.
 | `ovat models [list\|pull]` | List or download OVMS models |
 | `ovat bench <config> -i "..."` | One question through several engines, side by side. `--repeat N` |
 | `ovat telemetry` | Live CPU, memory and Intel hardware numbers. `--once` for one snapshot |
-| `ovat tui` | The full-screen terminal app, same as `ovat` with no arguments |
+| `ovat tui` | The agent TUI, same as `ovat agent` and as `ovat` with no arguments |
 | `ovat agent [config]` | The agent TUI: a local coding and research agent with tools, approvals, subagents, saved sessions and voice. `--continue`, `--resume <id>` |
 | `ovat a2a serve\|card\|call\|token` | Offer a workflow to other agents over A2A, or ask one |
 
@@ -454,20 +454,8 @@ The details are in
 
 ## The terminal UI
 
-`pip install "ovat[tui]"`, then run `ovat` with no arguments. Answers stream
-in, reasoning folds away, conversations are saved to disk, and `/engine`
-switches between the local model and OVMS-with-tools in the middle of a
-conversation:
-
-<div align="center">
-<img src="docs/assets/screens/tui-chat-tools.png" width="800px" alt="The OVAT terminal UI chat. The local model cannot start because the workflow has no rag: section, so the chat switches to OVMS. One question then uses three tools: transcribe, describe_image and search_docs.">
-</div>
-
-One question, three tools. The workflow had no `rag:` block, so the chat
-switched itself to OVMS, and `search_docs` answered with a `[stub]` result
-(that is what it does without an index).
-
-**`ovat agent`** is the chat-first TUI and a local coding and research
+`pip install "ovat[tui]"`, then run `ovat`, `ovat tui` or `ovat agent`: all
+three open the same app, a chat-first TUI and a local coding and research
 agent. The conversation is the whole screen: answers stream in, each tool
 call is a card (file changes show as diffs), and the bar shows the model,
 device and live CPU, GPU, NPU and RAM. Anything that writes, runs a command
@@ -482,6 +470,23 @@ over A2A, or a model behind any OpenAI-compatible API. A remote A2A agent
 can ask for approval on the machine that serves it. Voice dictation is
 local: the audio never leaves the machine. [`examples/agent/`](examples/agent/)
 and [`examples/coding/`](examples/coding/) have the commands.
+
+### The older launcher
+
+Before `ovat agent` there was a first terminal app, the launcher. It is still
+there for now: run `OVAT_LAUNCHER=classic ovat`. It is to be removed in a later
+release. Answers stream
+in, reasoning folds away, conversations are saved to disk, and `/engine`
+switches between the local model and OVMS-with-tools in the middle of a
+conversation:
+
+<div align="center">
+<img src="docs/assets/screens/tui-chat-tools.png" width="800px" alt="The OVAT terminal UI chat. The local model cannot start because the workflow has no rag: section, so the chat switches to OVMS. One question then uses three tools: transcribe, describe_image and search_docs.">
+</div>
+
+One question, three tools. The workflow had no `rag:` block, so the chat
+switched itself to OVMS, and `search_docs` answered with a `[stub]` result
+(that is what it does without an index).
 
 The TUI is three layers: the terminal client, OVAT's own app server, and
 `AgentSession`, which runs the engine. Every tool call passes one wrapper, and
