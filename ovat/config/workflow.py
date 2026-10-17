@@ -238,6 +238,11 @@ class ModelConfig(StrictModel):
     # times in 5 on a fresh server, the drift Ollama #18563 also records.
     # Whether this prevents that is NOT yet measured, so it is off.
     ovms_tool_guided_generation: bool = False
+    # Total context window of the model in tokens (used by the TUI context
+    # indicator). When unset, OVAT reads max_position_embeddings from a local
+    # model folder's config.json (or ovms_max_prompt_len on NPU), or 0 when
+    # the window is unknown.
+    context_window: int | None = Field(default=None, gt=0)
 
     # Which network address `ovat serve` tells OVMS to listen on
     # (--rest_bind_address). OVMS's own default is every interface, 0.0.0.0,

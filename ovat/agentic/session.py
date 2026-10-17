@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from ovat.agent.events import Event
+from ovat.agent.events import ANSWER_DELTA, REASONING_DELTA, Event
 from ovat.agent.permissions import ApprovalBroker, ApprovalRequest
 from ovat.text import split_thinking
 
@@ -48,6 +48,16 @@ class TurnStarted:
 class AgentActivity:
     """A tool, remote-agent or subagent event from the running agent."""
     event: Event
+
+
+@dataclass(frozen=True)
+class ReasoningDelta:
+    text: str
+
+
+@dataclass(frozen=True)
+class AnswerDelta:
+    text: str
 
 
 @dataclass(frozen=True)
@@ -104,6 +114,24 @@ def _brief(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {first}"[:400] if first else type(exc).__name__
 
 
+def _context_window(config) -> int:
+    from ovat.core.model_scout import read_context_window
+    m = config.model
+    if m.context_window:
+        return int(m.context_window)
+    if (m.device or "").upper() == "NPU":
+        return int(m.ovms_max_prompt_len or 4096)
+    roots = ([m.model_repository_path] if m.model_repository_path else []) + (
+        list(getattr(config, "model_search_paths", None) or []))
+    # `ovms --pull` lays a model out by its source (models/OpenVINO/<name>),
+    # so that path is tried before the bare name.
+    for name in filter(None, (m.source_model, m.name)):
+        window = read_context_window(name, roots)
+        if window:
+            return window
+    return 0
+
+
 def describe_agent(config, agent, workflow: str) -> dict:
     """What the banner and the bottom bar show. Plain values only."""
     tools = getattr(agent, "tools", None) or {}
@@ -116,6 +144,7 @@ def describe_agent(config, agent, workflow: str) -> dict:
         "device": config.model.device,
         "provider": config.model.provider,
         "engine": config.agent.type,
+        "context_window": _context_window(config),
         "tools": [{"name": n, "kind": spec.get("kind", "builtin"),
                    "permission": spec.get("permission", "allow")}
                   for n, spec in tools.items()],
@@ -124,6 +153,22 @@ def describe_agent(config, agent, workflow: str) -> dict:
                                  "api" if s.api else "a2a")}
                       for s in config.subagents],
     }
+
+
+# How ovat/agent/subagents.py and ovat/tools/a2a_call.py open a reply.
+_FRAMES = ("[Answer from subagent", "[Reply from ")
+
+
+def _chat_message(m) -> bool:
+    """A user, assistant or tool message as the native loop writes them."""
+    if not isinstance(m, dict) or m.get("role") not in (
+            "user", "assistant", "tool"):
+        return False
+    if not isinstance(m.get("content"), (str, type(None))):
+        return False
+    if m["role"] == "tool" and not isinstance(m.get("tool_call_id"), str):
+        return False
+    return isinstance(m.get("tool_calls", []), list)
 
 
 class AgentSession:
@@ -178,8 +223,16 @@ class AgentSession:
         self._drop_agent()
         self.config, self.agent = config, agent
         agent.events.approver = self.broker
-        self._unsubscribe = agent.events.subscribe(
-            lambda e: self._emit(AgentActivity(e)))
+
+        def _on_bus(e: Event) -> None:
+            if e.type == ANSWER_DELTA:
+                self._emit(AnswerDelta(e.data.get("text") or ""))
+            elif e.type == REASONING_DELTA:
+                self._emit(ReasoningDelta(e.data.get("text") or ""))
+            else:
+                self._emit(AgentActivity(e))
+
+        self._unsubscribe = agent.events.subscribe(_on_bus)
         self.info = describe_agent(config, agent, self.workflow)
         self._emit(Ready(self.info))
 
@@ -202,6 +255,50 @@ class AgentSession:
             return None
         engine = self.config.agent.type if self.config else None
         return self.start(engine)
+
+    # ---- the model's memory (native engine only) ---------------------------
+    # Saved sessions, rewind and fork read and replace what the model
+    # remembers. Only the native loop keeps that as a plain list of messages;
+    # a framework engine keeps its own, out of reach, so these answer None or
+    # False there and the caller says so.
+
+    def _memory(self):
+        from ovat.agent.loop import AgentLoop
+        return (self.agent.session if isinstance(self.agent, AgentLoop)
+                else None)
+
+    def memory(self) -> list[dict] | None:
+        """A copy of what the model remembers; None on a framework engine."""
+        session = self._memory()
+        return None if session is None else session.snapshot()
+
+    def restore_memory(self, messages: list[dict]) -> bool:
+        """Make the model remember `messages` (a resumed conversation).
+
+        The saved system prompt is replaced by this workflow's own: a resumed
+        conversation continues with the agent running now, not the one that
+        happened to be running when it was saved. A file on disk is not
+        trusted to say what the agent IS, so no saved message may be a
+        system message, and anything not shaped like a chat message is left
+        out."""
+        session = self._memory()
+        if session is None:
+            return False
+        from ovat.agent.session import Session
+        prompt = self.config.agent.system_prompt if self.config else None
+        fresh = Session(system_prompt=prompt)
+        fresh.messages.extend(dict(m) for m in messages if _chat_message(m))
+        self.agent.session = fresh
+        return True
+
+    def truncate_memory(self, length: int) -> bool:
+        """Forget from message `length` on (rewind). False on a framework
+        engine; ValueError when `length` is not a user-message boundary."""
+        session = self._memory()
+        if session is None:
+            return False
+        session.truncate(length)
+        return True
 
     def close(self) -> None:
         self.cancel()
@@ -247,9 +344,10 @@ class AgentSession:
 
         def run():
             answer = tools["delegate"]["function"](agent=name, task=task)
-            # The "[Answer from subagent ...]" line frames the reply for a
-            # MODEL; a person who asked directly just wants the reply.
-            if answer.startswith("[Answer from subagent") and "\n" in answer:
+            # The "[Answer from subagent ...]" and "[Reply from remote agent
+            # ...]" lines frame the reply for a MODEL; a person who asked
+            # directly just wants the reply.
+            if answer.startswith(_FRAMES) and "\n" in answer:
                 return answer.split("\n", 1)[1]
             return answer
         return self._spawn(self._turn, f"/ask {name} {task}", run)

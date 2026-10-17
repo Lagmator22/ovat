@@ -76,13 +76,33 @@ class Session:
                 "content": content,
             })
 
+    def snapshot(self) -> list[dict]:
+        """A copy of the history, taken while no one is appending to it."""
+        with self._lock:
+            return list(self.messages)
+
+    def truncate(self, length: int) -> None:
+        """Forget everything from message `length` on (a rewind).
+
+        Note to myself: the cut must land right before a user message, or at
+        the very end. Anywhere else can split an assistant's tool_calls from
+        the tool results that answer them, and OVMS refuses a history like
+        that on the next request.
+        """
+        with self._lock:
+            if not 0 <= length <= len(self.messages):
+                raise ValueError(f"No message {length} to rewind to")
+            if (length < len(self.messages)
+                    and self.messages[length].get("role") != "user"):
+                raise ValueError(f"Message {length} is not a user message")
+            del self.messages[length:]
+
     def save(self, path: str) -> None:
         """I dump the whole history to a JSON file so I can resume later."""
-        with self._lock:
-            # A copy inside the lock, dumped outside it: json.dump does file
-            # I/O, and holding the lock across that would block the answer
-            # stream for as long as the write takes.
-            snapshot = list(self.messages)
+        # A copy inside the lock, dumped outside it: json.dump does file I/O,
+        # and holding the lock across that would block the answer stream for
+        # as long as the write takes.
+        snapshot = self.snapshot()
         with open(path, "w", encoding="utf-8") as f:
             json.dump(snapshot, f, indent=2)
 

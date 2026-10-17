@@ -719,6 +719,39 @@ def test_thinking_left_unset_sends_no_template_kwargs():
     assert "extra_body" not in _native_request(WorkflowConfig(model={"name": "m"}))
 
 
+def test_context_window_is_read_from_config_or_local_model_folder(tmp_path):
+    import json
+
+    from ovat.agentic.session import describe_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    explicit = WorkflowConfig(model={"name": "m", "context_window": 32768})
+    assert describe_agent(explicit, object(), "w.yml")["context_window"] == 32768
+
+    npu = WorkflowConfig(model={"name": "m", "device": "NPU"})
+    assert describe_agent(npu, object(), "w.yml")["context_window"] == 4096
+
+    model_dir = tmp_path / "Qwen3.5-4B"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text(
+        json.dumps({"text_config": {"max_position_embeddings": 65536}}),
+        encoding="utf-8")
+    local = WorkflowConfig(model={"name": str(model_dir)})
+    assert describe_agent(local, object(), "w.yml")["context_window"] == 65536
+
+    # `ovms --pull` keeps it under the repository by its source (seen on the
+    # AI PC: models/OpenVINO/Qwen3-8B-int4-ov, the meter showed no %)
+    pulled = tmp_path / "repo" / "OpenVINO" / "Qwen3-8B-int4-ov"
+    pulled.mkdir(parents=True)
+    (pulled / "config.json").write_text(
+        json.dumps({"max_position_embeddings": 40960}), encoding="utf-8")
+    served = WorkflowConfig(model={
+        "name": "Qwen3-8B-int4-ov",
+        "source_model": "OpenVINO/Qwen3-8B-int4-ov",
+        "model_repository_path": str(tmp_path / "repo")})
+    assert describe_agent(served, object(), "w.yml")["context_window"] == 40960
+
+
 def test_ovms_listens_on_loopback_unless_told_otherwise():
     assert ModelConfig(name="m").ovms_bind_address == "127.0.0.1"
     assert ModelConfig(name="m", ovms_bind_address="0.0.0.0"

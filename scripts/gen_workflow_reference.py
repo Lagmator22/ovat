@@ -90,6 +90,12 @@ PURPOSE = {
                                       "because OVMS's own NPU cap of 1024 is "
                                       "smaller than one agent turn; set it to "
                                       "go lower. Left to OVMS on CPU and GPU.",
+    ("model", "context_window"): "Model context window in tokens, shown by "
+                                 "the TUI context meter. Unset reads "
+                                 "`max_position_embeddings` from a local "
+                                 "model folder (or `ovms_max_prompt_len` on "
+                                 "`NPU`).",
+
     ("model", "ovms_bind_address"): "Address `ovat serve` makes OVMS listen "
                                     "on. The default keeps it on this "
                                     "machine; `0.0.0.0` opens it to the "

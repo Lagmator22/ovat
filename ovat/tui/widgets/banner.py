@@ -12,6 +12,7 @@
 Three lines and a small animated mark: the screen is for the conversation.
 """
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 from rich.text import Text
 from textual.containers import Horizontal, Vertical, VerticalGroup
@@ -64,7 +65,7 @@ def counts_line(info: dict) -> Text:
     subs = info.get("subagents", [])
     parts = [_plural(len(tools), "tool"), _plural(len(subs), "subagent")]
     if info.get("workflow"):
-        parts.append(info["workflow"])
+        parts.append(Path(info["workflow"]).name)
     return Text(" · ".join(parts))
 
 
@@ -90,6 +91,7 @@ class Banner(Static):
         self._counts = Static("", classes="banner-meta")
         self._step = 0
         self._timer = None
+        self._loading = True
 
     def compose(self):
         with Horizontal(id="banner-container"):
@@ -108,18 +110,37 @@ class Banner(Static):
                                  classes="banner-meta")
 
     def on_mount(self) -> None:
-        self._timer = self.set_interval(0.1, self._wave)
+        # A subclass that calls super().on_mount() gets this run twice
+        # (Textual also dispatches it); a second timer would lose the first,
+        # which then kept writing "loading" over the model line.
+        if self._loading and self._timer is None:
+            self._timer = self.set_interval(0.1, self._wave)
 
     def _wave(self) -> None:
+        if not self._loading:
+            return
         self._step += 1
         self._model.update(wave_text("loading the agent…", self._step))
 
     def show_session(self, info: dict) -> None:
+        self._loading = False
         self._stop_wave()
         self._model.update(model_line(info))
         self._counts.update(counts_line(info))
 
+    def show_loading(self) -> None:
+        """The agent is being built again (/engine, /workflow)."""
+        self._loading = True
+        self._counts.update("")
+        self._model.update(wave_text("loading the agent…", self._step))
+        if self._timer is None:
+            self._timer = self.set_interval(0.1, self._wave)
+
+    def freeze_mark(self) -> None:
+        self.mark.freeze()
+
     def show_problem(self, text: str) -> None:
+        self._loading = False
         self._stop_wave()
         self._model.update(Text("no agent loaded", style=f"bold {ui.YELLOW}"))
         self._counts.update(Text(text, style=ui.DIM))

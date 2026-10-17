@@ -17,7 +17,6 @@ import threading
 import time
 from pathlib import Path
 
-from rich.text import Text
 from textual.app import App
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalGroup
@@ -29,9 +28,10 @@ from ovat.agent.events import (REMOTE_STATUS, SUBAGENT_STATUS, TOOL_ENDED,
 from ovat.agent.permissions import ONCE, REFUSE, SESSION
 from ovat.agentic import commands as ovat_commands
 from ovat.agentic import session as s
-from ovat.cli import ui
 from ovat.cli.theme import OVAT_THEME
+from ovat.tui import agent_text
 from ovat.tui.bridge import Bridge
+from ovat.tui.server.safe import approval_safe
 from ovat.tui.vibe.agents import AgentSafety
 from ovat.tui.vibe.app_server._effect_models import GenericEffectDetail
 from ovat.tui.vibe.cli.commands import Command, CommandRegistry
@@ -53,7 +53,7 @@ from ovat.tui.widgets.banner import Banner
 TCSS = Path(__file__).parent / "vibe" / "cli" / "textual_ui" / "app.tcss"
 HISTORY_FILE = Path.home() / ".ovat" / "agent_history"
 QUIT_CONFIRM_S = 2.0
-ENGINES = ("native", "react", "llamaindex", "openai-agents")
+ENGINES = agent_text.ENGINES
 WHATS_NEW = (
     "**What's new in the OVAT agent**\n\n"
     "- **Subagents**: hand a task to another workflow, an A2A agent or a "
@@ -86,38 +86,6 @@ class HardwareReading(Message):
     def __init__(self, reading: dict) -> None:
         super().__init__()
         self.reading = reading
-
-
-_APPROVAL_ARG_MAX = 600
-
-
-def approval_safe(value):
-    """A model-written argument as shown in the approval panel.
-
-    The person deciding must see what will be sent, but the text must not
-    be able to dress up as part of the panel: a "task" containing
-    "\n1. Allow once" would otherwise print lines that look like the
-    panel's own options, or push the real ones out of view. So control
-    characters go, every newline shows as a visible mark on ONE line, and
-    long text is cut (with the length said)."""
-    if isinstance(value, dict):
-        return {str(k): approval_safe(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [approval_safe(v) for v in value]
-    if not isinstance(value, str):
-        return value
-    text = "".join(ch if ch.isprintable() or ch == "\n" else "?"
-                   for ch in value)
-    text = text.replace("\r\n", "\n").replace("\n", " \u21b5 ")
-    if len(text) > _APPROVAL_ARG_MAX:
-        text = (text[:_APPROVAL_ARG_MAX]
-                + f" ... [{len(value)} characters in all]")
-    return text
-
-
-def _short_path(path: str) -> str:
-    home = str(Path.home())
-    return "~" + path[len(home):] if path.startswith(home) else path
 
 
 class OvatAgentApp(App):
@@ -277,23 +245,10 @@ class OvatAgentApp(App):
             self._update_bar()
 
     def _update_bar(self) -> None:
-        info = self.session.info if self.session else {}
-        facts = Text(no_wrap=True, overflow="ellipsis")
-        if info.get("model"):
-            facts.append(info["device"], style=f"bold {ui.CYAN}")
-            facts.append(f" {info['model']} · {info.get('engine')}")
-        totals = self.session.totals if self.session else {}
-        used = totals.get("prompt_tokens", 0) + totals.get(
-            "completion_tokens", 0)
-        if used:
-            facts.append(f" · {used:,} tokens")
-        if self.session and self.session.serving:
-            facts.append(" · ")
-            facts.append("a2a serving", style=ui.GREEN)
-        if self._reading:
-            from ovat.agentic.hardware import format_reading
-            facts.append(" · " + format_reading(self._reading).replace(
-                "  ·  ", " · "))
+        facts = agent_text.facts_text(
+            self.session.info if self.session else {},
+            self.session.totals if self.session else {},
+            bool(self.session and self.session.serving), self._reading)
         self._chat_screen.query_one("#agent-facts", Static).update(facts)
 
     def _from_session(self, event) -> None:
@@ -465,10 +420,7 @@ class OvatAgentApp(App):
     # ---- slash commands (names match ovat.agentic.commands.COMMANDS) --------
 
     async def _cmd_help(self, rest: str) -> None:
-        lines = ["### Commands", ""]
-        for c in ovat_commands.COMMANDS:
-            usage = f" {c.usage}" if c.usage else ""
-            lines.append(f"- `/{c.name}{usage}`: {c.help}")
+        lines = ["### Commands", "", *agent_text.commands_markdown()]
         lines += ["", "### Keys", "",
                   "- `Enter` send, `Ctrl+J` new line, `Up/Down` history",
                   "- `!cmd` runs a shell command here",
@@ -482,30 +434,11 @@ class OvatAgentApp(App):
         self.session.new_conversation()
 
     async def _cmd_tools(self, rest: str) -> None:
-        tools = self.session.info.get("tools", [])
-        if not tools:
-            await self.note("This agent has no tools.")
-            return
-        lines = ["| tool | kind | permission |", "| --- | --- | --- |"]
-        lines += [f"| `{t['name']}` | {t['kind']} | {t['permission']} |"
-                  for t in tools]
-        await self.note("\n".join(lines))
+        await self.note(agent_text.tools_markdown(self.session.info))
 
     async def _cmd_agents(self, rest: str) -> None:
-        info = self.session.info
-        lines = ["### Subagents", ""]
-        subs = info.get("subagents", [])
-        lines += ([f"- `{x['name']}` ({x['where']}): {x['description']}"
-                   for x in subs] or ["- none (add `subagents:` to the "
-                                      "workflow)"])
-        peers = [t for t in info.get("tools", []) if t["kind"] == "a2a"]
-        lines += ["", "### A2A agents used as tools", ""]
-        lines += ([f"- `{p['name']}` ({p['permission']})" for p in peers]
-                  or ["- none"])
-        lines += ["", "### This workflow over A2A", "",
-                  "- serving (`/serve stop` ends it)" if self.session.serving
-                  else "- not serving (`/serve` starts it)"]
-        await self.note("\n".join(lines))
+        await self.note(agent_text.agents_markdown(
+            self.session.info, self.session.serving))
 
     async def _cmd_ask(self, rest: str) -> None:
         name, _, task = rest.partition(" ")
@@ -531,36 +464,14 @@ class OvatAgentApp(App):
         self.session.start(engine)
 
     async def _cmd_trace(self, rest: str) -> None:
-        trace = self.session.last_trace
-        if not trace:
-            await self.note("Nothing yet: ask something first.")
-            return
-        totals = trace.get("totals", {})
-        flags = [k for k in ("failed", "truncated", "undecoded_tool_call",
-                             "empty_answer") if totals.get(k)]
-        lines = [f"**{trace.get('engine')}**: {totals.get('turns')} turns, "
-                 f"{totals.get('tool_calls')} tool calls, "
-                 f"{totals.get('latency_s')} s"
-                 + (f", **{', '.join(flags)}**" if flags else ""), ""]
-        for i, turn in enumerate(trace.get("turns", []) or [], 1):
-            lines.append(f"- turn {i}: {turn.get('latency_s')} s, "
-                         f"{turn.get('prompt_tokens')} → "
-                         f"{turn.get('completion_tokens')} tokens, "
-                         f"{turn.get('finish_reason')}")
-            for call in turn.get("tool_calls", []):
-                lines.append(f"  - `{call.get('name')}` "
-                             f"{call.get('duration_s')} s")
-        await self.note("\n".join(lines))
+        await self.note(agent_text.trace_markdown(self.session.last_trace))
 
     async def _cmd_yolo(self, rest: str) -> None:
         broker = self.session.broker
         broker.auto_approve = not broker.auto_approve
         self._input.set_safety(AgentSafety.YOLO if broker.auto_approve
                                else AgentSafety.NEUTRAL)
-        await self.note("Every tool is approved for this session. `/yolo` "
-                        "again turns it off." if broker.auto_approve
-                        else "Tools ask again.",
-                        "warn" if broker.auto_approve else "info")
+        await self.note(*agent_text.yolo_text(broker.auto_approve))
 
     async def _cmd_workflow(self, rest: str) -> None:
         path = rest.strip()
@@ -569,35 +480,13 @@ class OvatAgentApp(App):
             return
         self.session.switch_workflow(path)
 
-    def _sessions_dir(self) -> Path:
-        return Path(self._cwd) / ".ovat" / "sessions"
-
     async def _cmd_save(self, rest: str) -> None:
-        memory = getattr(self.session.agent, "session", None)
-        if memory is None:
-            await self.note("Saving works on the native engine.", "warn")
-            return
-        name = rest.strip() or time.strftime("agent-%Y%m%d-%H%M%S")
-        path = self._sessions_dir() / f"{name}.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        memory.save(str(path))
-        await self.note(f"Saved to `{_short_path(str(path))}`")
+        await self.note(*agent_text.save_conversation(
+            self.session.agent, self._cwd, rest))
 
     async def _cmd_load(self, rest: str) -> None:
-        from ovat.agent.session import Session
-        name = rest.strip()
-        path = self._sessions_dir() / f"{name}.json"
-        if not name or not path.is_file():
-            saved = sorted(p.stem for p in self._sessions_dir().glob("*.json"))
-            await self.note("Usage: `/load <name>`. Saved: "
-                            + (", ".join(saved[-8:]) or "none"), "warn")
-            return
-        if getattr(self.session.agent, "session", None) is None:
-            await self.note("Loading works on the native engine.", "warn")
-            return
-        self.session.agent.session = Session.load(str(path))
-        await self.note(f"Loaded `{name}`. The model remembers it; the "
-                        f"transcript above is not redrawn.")
+        await self.note(*agent_text.load_conversation(
+            self.session, self._cwd, rest))
 
     async def _cmd_copy(self, rest: str) -> None:
         if not self.session.last_answer:

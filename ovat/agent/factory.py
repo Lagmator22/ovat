@@ -78,6 +78,7 @@ def build_llm(config: WorkflowConfig) -> LLMProvider:
                            max_tokens=backend.max_tokens,
                            sampling=backend.openai_kwargs(),
                            extra_body=backend.extra_body(),
+                           stream=(m.device.upper() != "NPU"),
                            api_key=backend.api_key)
 
 
@@ -467,6 +468,7 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False,
             max_iterations=config.agent.max_iterations,
             engine_name=agent_type,
             stop=events.stop,
+            events=events,
         ))
     # Each framework is imported INSIDE its branch so the native path never
     # pays the import cost of a framework it does not use, and so a machine

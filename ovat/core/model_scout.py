@@ -291,3 +291,30 @@ def pick_chat_llm(extra_roots: list[str] | None = None) -> tuple[dict | None, li
         if "instruct" in model["name"].lower() or "chat" in model["name"].lower():
             return model, llms
     return llms[0], llms
+
+
+def read_context_window(name_or_path: str,
+                        extra_roots: list[str] | None = None) -> int:
+    """Read max_position_embeddings from a local model folder's config.json,
+    or return 0 when no local config is found."""
+    candidates = [name_or_path]
+    for root in (extra_roots or []):
+        candidates.append(os.path.join(root, name_or_path))
+    for folder in candidates:
+        if not folder or not os.path.isdir(folder):
+            continue
+        config_path = os.path.join(folder, "config.json")
+        if not os.path.isfile(config_path):
+            continue
+        try:
+            with open(config_path, encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        val = (data.get("max_position_embeddings")
+               or (data.get("text_config") or {}).get(
+                   "max_position_embeddings"))
+        if isinstance(val, int) and val > 0:
+            return val
+    return 0
+
