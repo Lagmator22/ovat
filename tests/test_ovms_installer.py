@@ -399,3 +399,161 @@ def test_an_unreadable_binary_has_no_version(monkeypatch):
     monkeypatch.setattr(subprocess, "run", boom)
     assert ovms_installer.binary_version("/x/ovms") is None
 
+
+
+# --------------------------------------------------------------------------
+# Link members: where they POINT, not just what they are called
+# --------------------------------------------------------------------------
+#
+# _is_safe_member checks member names only. A symlink or hardlink whose
+# target leaves the staging folder was extracted as is: Python's `tar`
+# filter does not check link targets, and 3.10/3.11 have no filter at all.
+
+
+def _tar(path, entries):
+    """Build a .tar.gz from (kind, name, extra) tuples, in order.
+
+    kind is "dir", "file" (extra = text), "sym" or "hard" (extra = target).
+    """
+    with tarfile.open(path, "w:gz") as tf:
+        for kind, name, extra in entries:
+            info = tarfile.TarInfo(name)
+            data = None
+            if kind == "dir":
+                info.type, info.mode = tarfile.DIRTYPE, 0o755
+            elif kind == "file":
+                data = extra.encode()
+                info.size, info.mode = len(data), 0o644
+            elif kind == "sym":
+                info.type, info.linkname = tarfile.SYMTYPE, extra
+            else:
+                info.type, info.linkname = tarfile.LNKTYPE, extra
+            tf.addfile(info, io.BytesIO(data) if data is not None else None)
+    return str(path)
+
+
+def _staging_under(tmp_path, monkeypatch):
+    """Put _extract's staging folder somewhere the test can see around."""
+    parent = tmp_path / "around"
+    parent.mkdir()
+    real_mkdtemp = installer.tempfile.mkdtemp
+    monkeypatch.setattr(installer.tempfile, "mkdtemp",
+                        lambda **kw: real_mkdtemp(dir=str(parent), **kw))
+    return parent
+
+
+_OVMS = [("dir", "ovms", None), ("dir", "ovms/bin", None),
+         ("file", "ovms/bin/ovms", "binary")]
+
+
+def test_a_symlink_out_of_the_archive_is_refused(tmp_path, monkeypatch):
+    _staging_under(tmp_path, monkeypatch)
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("sym", "ovms/escape", "../../outside"),
+    ])
+    into = tmp_path / "root"
+
+    with pytest.raises(RuntimeError, match="outside the install folder"):
+        installer._extract(archive, str(into))
+    assert not os.path.lexists(into / "escape")
+    assert not into.exists() or not os.listdir(into)       # nothing installed
+
+
+def test_nothing_is_written_through_a_link_out_of_the_archive(tmp_path,
+                                                             monkeypatch):
+    """The link, then a file "inside" it. On 3.10/3.11 there is no filter to
+    stop the file landing outside; on 3.12+ the `tar` filter stops the file
+    but not the link."""
+    around = _staging_under(tmp_path, monkeypatch)
+    (around / "outside").mkdir()
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("sym", "ovms/escape", "../../outside"),
+        ("file", "ovms/escape/pwned.txt", "written outside"),
+    ])
+
+    with pytest.raises(RuntimeError):
+        installer._extract(archive, str(tmp_path / "root"))
+    assert not (around / "outside" / "pwned.txt").exists()
+
+
+def test_a_hardlink_out_of_the_archive_is_refused(tmp_path, monkeypatch):
+    around = _staging_under(tmp_path, monkeypatch)
+    secret = around / "outside.txt"
+    secret.write_text("not yours", encoding="utf-8")
+    secret.chmod(0o400)
+    # Read back, not assumed: Windows keeps only a read-only flag and
+    # reports 0o444 here.
+    mode = secret.stat().st_mode
+    # A hardlink target is named from the ARCHIVE root: this is
+    # <staging>/../outside.txt, a file next to the staging folder.
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("hard", "ovms/bin/evil", "../outside.txt"),
+    ])
+    into = tmp_path / "root"
+
+    with pytest.raises(RuntimeError, match="outside the install folder"):
+        installer._extract(archive, str(into))
+    assert not (into / "bin" / "evil").exists()
+    assert secret.stat().st_mode == mode               # not made writable
+
+
+def test_a_chain_of_links_that_each_look_inside_is_refused(tmp_path,
+                                                           monkeypatch):
+    """ovms/l2 -> "." makes "l2/.." one level shallower than it reads, so
+    ../l2/../.. from ovms/sub reads as the archive root and is really the
+    folder above it."""
+    _staging_under(tmp_path, monkeypatch)
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("sym", "ovms/l2", "."),
+        ("dir", "ovms/sub", None),
+        ("sym", "ovms/sub/l3", "../l2/../.."),
+    ])
+    with pytest.raises(RuntimeError, match="outside the install folder"):
+        installer._extract(archive, str(tmp_path / "root"))
+
+
+def test_internal_library_links_are_kept(tmp_path, monkeypatch):
+    """What every real Linux archive holds: libfoo.so -> libfoo.so.414."""
+    _staging_under(tmp_path, monkeypatch)
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("dir", "ovms/lib", None),
+        ("file", "ovms/lib/libfoo.so.414", "lib"),
+        ("sym", "ovms/lib/libfoo.so", "libfoo.so.414"),
+    ])
+    into = tmp_path / "root"
+    installer._extract(archive, str(into))
+    link = into / "lib" / "libfoo.so"
+    assert link.is_symlink()
+    assert os.readlink(link) == "libfoo.so.414"
+    assert link.read_text(encoding="utf-8") == "lib"
+
+
+def test_the_docker_path_link_in_the_ubuntu_archives_is_dropped(tmp_path,
+                                                               monkeypatch):
+    """ubuntu22/24 2026.4.1 ship one absolute symlink to /ovms/lib/...,
+    the path inside OVMS's Docker image. Refusing it would break `ovat
+    setup` on Ubuntu; it points at nothing here, so it is left out."""
+    _staging_under(tmp_path, monkeypatch)
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("dir", "ovms/lib", None),
+        ("file", "ovms/lib/libopenvino_tokenizers.so", "lib"),
+        ("dir", "ovms/lib/python", None),
+        ("sym", "ovms/lib/python/libopenvino_tokenizers.so",
+         "/ovms/lib/libopenvino_tokenizers.so"),
+    ])
+    into = tmp_path / "root"
+    installer._extract(archive, str(into))
+    assert (into / "bin" / "ovms").is_file()
+    assert not os.path.lexists(into / "lib" / "python"
+                               / "libopenvino_tokenizers.so")
+
+
+def test_an_absolute_hardlink_is_refused(tmp_path, monkeypatch):
+    _staging_under(tmp_path, monkeypatch)
+    target = tmp_path / "abs-target.txt"
+    target.write_text("x", encoding="utf-8")
+    archive = _tar(tmp_path / "a.tar.gz", _OVMS + [
+        ("hard", "ovms/bin/evil", str(target)),
+    ])
+    with pytest.raises(RuntimeError, match="outside the install folder"):
+        installer._extract(archive, str(tmp_path / "root"))
