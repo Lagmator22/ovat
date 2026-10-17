@@ -393,3 +393,34 @@ def test_two_tools_with_different_models_do_not_share_a_pipeline(tmp_path,
     assert first is not second, "two models shared one pipeline"
     assert again is first, "the same model rebuilt instead of being reused"
     assert built == [(str(a), "CPU"), (str(b), "CPU")]
+
+
+# --- the OVMS API key -------------------------------------------------------
+
+
+def test_no_api_key_configured_sends_the_placeholder_as_before():
+    from ovat.providers.backend import LLMBackend
+    config = _cfg()
+    assert LLMBackend.from_config(config).api_key == "not-needed"
+    assert build_llm(config).client.api_key == "not-needed"
+
+
+def test_the_api_key_reaches_every_ovms_client(monkeypatch):
+    """OVMS started with a key answers 401 to a client that sends another."""
+    from ovat.agent.factory import build_embedder
+    from ovat.providers.backend import LLMBackend
+
+    monkeypatch.setenv("OVAT_TEST_OVMS_KEY", "s3cret")
+    config = _cfg(model={"name": "m", "ovms_api_key_env": "OVAT_TEST_OVMS_KEY"},
+                  rag={"embeddings": {"provider": "ovms", "model": "bge"}})
+    # LLMBackend is what the react, llamaindex and openai-agents engines read.
+    assert LLMBackend.from_config(config).api_key == "s3cret"
+    assert build_llm(config).client.api_key == "s3cret"
+    assert build_embedder(config).client.api_key == "s3cret"
+
+
+def test_a_named_but_unset_api_key_variable_is_a_sentence(monkeypatch):
+    monkeypatch.delenv("OVAT_TEST_OVMS_KEY", raising=False)
+    config = _cfg(model={"name": "m", "ovms_api_key_env": "OVAT_TEST_OVMS_KEY"})
+    with pytest.raises(ValueError, match="OVAT_TEST_OVMS_KEY"):
+        build_llm(config)
