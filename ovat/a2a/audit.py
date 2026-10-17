@@ -11,6 +11,7 @@ of the server running for hours and recording nothing.
 """
 import json
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -21,10 +22,13 @@ log = logging.getLogger(__name__)
 class AuditLog:
     def __init__(self, path: str | Path):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        # Append mode creates the file and proves it is writable now.
-        with open(self.path, "a", encoding="utf-8"):
-            pass
+        # The log holds every question and answer: owner-only. A folder that
+        # already exists is the owner's choice and is not touched.
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # Creating it proves it is writable now. 0600 applies only to a NEW
+        # file; one that already exists keeps its mode.
+        os.close(os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                         0o600))
         self._lock = threading.Lock()
 
     def write(self, record: dict) -> None:
