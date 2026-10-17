@@ -466,11 +466,39 @@ call is a card (file changes show as diffs), and the bar shows the model,
 device and live CPU, GPU, NPU and RAM. Anything that writes, runs a command
 or leaves the machine asks first: once, for the session, or always.
 
+<div align="center">
+<img src="docs/assets/screens/agent-tui/hero-agent-start.png" width="860px" alt="The OVAT agent TUI right after start on an Intel AI PC: the banner says OVAT v1.2.0, Qwen3.5-4B-int4-ov on GPU, native engine, 1 tool and 4 subagents. The slash menu is open, and the bar shows live CPU, GPU, NPU and RAM.">
+</div>
+
 Workflows can name **subagents**: another OVAT workflow, an agent reached
 over A2A, or a model behind any OpenAI-compatible API. A remote A2A agent
 can ask for approval on the machine that serves it. Voice dictation is
 local: the audio never leaves the machine. [`examples/agent/`](examples/agent/)
 and [`examples/coding/`](examples/coding/) have the commands.
+
+Here `/serve` offers the open workflow to other agents over A2A, and the same
+TUI then asks it a question through the `team_docs` subagent. The answer
+comes back over A2A, and the bar says `a2a serving`:
+
+<div align="center">
+<img src="docs/assets/screens/agent-tui/hero-agent-serve-and-a2a-answer.png" width="860px" alt="The agent TUI after /serve: the A2A server listens on 127.0.0.1 port 9100 and prints its card address, the exposed tool search_docs, and that delegate is not exposed. A question to the team_docs subagent returns a cited answer over A2A, and the bar shows a2a serving.">
+</div>
+
+`/agents` is the live table of every subagent call, with its kind, status,
+time and tokens. Press `x` on a row to cancel that one child while the parent
+carries on:
+
+<div align="center">
+<img src="docs/assets/screens/agent-tui/hero-agent-agents-table.png" width="860px" alt="The /agents screen: the A2A server is serving, four configured subagents (researcher as a workflow, team_docs over A2A, cloud and local_api as API subagents), and a table with the team_docs call finished ok in 12.51 seconds with 1663 tokens.">
+</div>
+
+Anything that leaves the agent asks first. A subagent that is a model behind
+an API shows where the task would be sent, and you choose once, for the
+session, for this project, or deny:
+
+<div align="center">
+<img src="docs/assets/screens/agent-tui/agent-approval-local-api.png" width="800px" alt="The approval panel for the local_api subagent: it warns that the task is sent to http://localhost:8000/v3 and offers Allow once, Allow for the remainder of the session, Always allow this tool in this project, and Deny.">
+</div>
 
 - Sessions are saved. `ovat agent --continue` or `--resume <id>` (or
   `/resume`) brings one back, `Esc Esc` rewinds, `/branch` forks, `/compact`
@@ -486,6 +514,23 @@ and [`examples/coding/`](examples/coding/) have the commands.
   the microphone hears. It keeps listening until you press `Ctrl+R` again or
   10 seconds pass without speech; `Esc` cancels. The model comes from the
   workflow's `transcribe` tool or `OVAT_WHISPER_MODEL`.
+
+You can see what the agent did. `/trace` lists the turns of the last answer,
+which tool ran in each, how long it took and how many tokens went in and out
+(here the model called `search_docs` twice, then handed the question to a
+subagent for 53 seconds). `/status` and `/tools` show the totals and the
+permission of every tool:
+
+<div align="center">
+<img src="docs/assets/screens/agent-tui/agent-trace-and-model-picker.png" width="800px" alt="The /tools table with search_docs and delegate, the /status token totals, and the /trace of the last answer: three turns with the tool calls search_docs and delegate and their times and token counts. The /model picker is open at the bottom.">
+</div>
+
+`/config` shows every setting and where it comes from, and saves a change
+into `workflow.yml` with your comments kept:
+
+<div align="center">
+<img src="docs/assets/screens/agent-tui/hero-agent-config-settings.png" width="860px" alt="The /config settings screen: active model, device, engine, enable_thinking and theme, then temperature, max_tokens, request_timeout, max_iterations, the system prompt and the permission of each tool and subagent.">
+</div>
 
 The CLI never needs it. `textual` and `pyfiglet` come only with the `[tui]`
 extra, and a test makes sure a plain install imports neither of them, nor
@@ -516,6 +561,16 @@ Unified Telemetry does not run on macOS", not a row of zeros. Note that
 `--trace` measures the *OVAT* process. With OVMS serving, the model lives in
 the OVMS process, so measure that one instead.
 [How telemetry works](docs/ARCHITECTURE.md#telemetry).
+
+
+Inside `ovat agent`, `/telemetry` opens the same live numbers. Here a local
+model is answering: Intel package power reads 23.5 W, the GPU clock reads
+1,950 MHz, the KV cache reads 66.7% of its current allocation, and the NPU is
+idle because the model runs on the GPU:
+
+<div align="center">
+<img src="docs/assets/screens/agent-tui/hero-agent-telemetry-load.png" width="860px" alt="The /telemetry screen inside the agent TUI while a model answers: cards for NPU 0 percent, KV cache 66.7 percent, power 23.5 W, system CPU 25.9 percent and RAM 39.7 percent, and a table of live numbers with the Intel package and GPU power rows and the per-core CPU load.">
+</div>
 
 ---
 
@@ -566,6 +621,7 @@ Rosetta, which is fine for small test models and slow for real ones.
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How OVAT is built: the parts, four engines, both ways to run a model, and the design principles |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Why: each design decision, the alternatives, and the measurement behind it |
 | [`docs/workflow_yaml_reference.md`](docs/workflow_yaml_reference.md) | Every `workflow.yml` field. Generated from the code |
+| [`docs/AGENT_TUI.md`](docs/AGENT_TUI.md) | The agent TUI, screen by screen, with screenshots from an AI PC |
 | [`docs/BLOG.md`](docs/BLOG.md) | A walkthrough: what OVAT is and how to use it |
 | [`examples/`](examples/) | Six runnable use cases |
 | [`AGENTS.md`](AGENTS.md) | Contributor notes: hard rules and known traps |

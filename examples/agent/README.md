@@ -35,6 +35,16 @@ $env:MISTRAL_API_KEY = "your key"
 ovat agent examples/agent/workflow.yml
 ```
 
+You can also start the A2A server from inside the TUI instead of the second
+terminal: type `/serve`. It offers the workflow you have open (not
+`examples/rag/workflow.yml`) over A2A on port 9100, from the same project
+folder, so the TUI finds its token by itself. `/serve stop` ends it. The model
+server from the first terminal must be running either way.
+
+<div align="center">
+<img src="../../docs/assets/screens/agent-tui/hero-agent-serve-and-a2a-answer.png" width="820px" alt="The agent TUI after /serve: the A2A server listens on 127.0.0.1 port 9100, then a question to the team_docs subagent returns a cited answer over A2A and the bar shows a2a serving.">
+</div>
+
 Things to try:
 
 | Type | What happens |
