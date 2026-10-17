@@ -263,6 +263,13 @@ PURPOSE = {
                                       "holding the API key.",
     ("subagents.api", "max_tokens"): "Longest answer it may write.",
     ("subagents.api", "temperature"): "Sampling temperature.",
+    ("subagents.api", "enable_thinking"): "`false` turns thinking off for a "
+                                          "model that thinks by default "
+                                          "(Qwen3, Qwen3.5 on OVMS or vLLM): "
+                                          "it sends "
+                                          "`chat_template_kwargs`. Unset "
+                                          "sends nothing, which is right for "
+                                          "a provider that does not know it.",
     ("subagents.api", "timeout"): "Seconds to wait for its answer.",
     ("subagents.a2a", "url"): "The agent's base URL.",
     ("subagents.a2a", "token_env"): "NAME of the environment variable "
