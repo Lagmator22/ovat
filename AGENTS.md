@@ -351,6 +351,10 @@ as always `"stop"`.
     that read "not failing yet" as green merged two PRs with a red Windows
     job (a TUI test that waited one pause; the Windows runner is slower).
     TUI tests poll for widgets in a bounded loop instead of one pause.
+    Never use `gh pr merge --auto` here: the repo has no branch protection
+    and auto-merge is off, so `--auto` merges AT ONCE (PR #97, 2026-10-17,
+    with a Windows job still pending). To "merge when green" later, run a
+    small detached script that merges only if `gh pr checks N` exits 0.
 13. **Leave the code simpler than you found it.** After every meaningful
     change, review the touched area for what it made obsolete: dead code,
     duplicate logic, unused UI, needless abstraction, legacy leftovers,
@@ -687,6 +691,24 @@ Heavy seams for mocking: `chat_screen._build_components`,
 `diagnostics.run_checks`, `model_server.subprocess.Popen`,
 `bench.benchmark_engine`. Use `monkeypatch`, never a bare attribute
 assignment: one leaked into other tests once.
+
+Before committing a change to a call into a library or to a shared helper,
+grep `tests/` for fakes of it and run those files too: a fake that took
+only `(model, device)` failed PR #97 on the ARM macOS runner once Whisper
+was built with extra properties. A fake of a real API takes the real
+signature. On the owner's 16 GB Mac run ONE pytest process at a time, at
+most `-n 2`, and do not rerun real-model tests there (the machine crashed).
+
+TUI and voice tests poll, never read once: use `until`, and `query` (not
+`query_one`) while a widget may not be mounted yet. The slow runner is
+Windows; five such waits failed there in one afternoon. For anything backed
+by a model, also run the REAL model once (`models/whisper-base` is on the Mac)
+and measure with a strict number: fakes passed while Whisper printed
+"!!!!" and rewrote the sentence.
+
+The Bash tool on the Mac is zsh: `for f in $LIST` does not split words,
+`sed -i` needs `''`, and a failed command in an `&&` chain skips the rest.
+Use `bash -c` for loops and a python3 edit for files.
 
 Tests that scan the disk (`model_scout`, `fuzzy`) must isolate with
 `monkeypatch.chdir` (and a fake HOME), or they describe the developer's
