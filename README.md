@@ -457,8 +457,9 @@ and [`examples/coding/`](examples/coding/) have the commands.
   look and the MCP servers.
 - `/todo` shows the task list. `/agents` is a live table of subagents and
   peers: press `x` to cancel one child while the parent carries on.
-- `/voice` turns dictation on, `Ctrl+R` records, a pause of about 2
-  seconds or `Ctrl+R` again finishes, `Esc` cancels. The model comes from the
+- `/voice` turns dictation on, `Ctrl+R` records and a level bar shows what
+  the microphone hears. It keeps listening until you press `Ctrl+R` again or
+  10 seconds pass without speech; `Esc` cancels. The model comes from the
   workflow's `transcribe` tool or `OVAT_WHISPER_MODEL`.
 
 The CLI never needs it. `textual` and `pyfiglet` come only with the `[tui]`

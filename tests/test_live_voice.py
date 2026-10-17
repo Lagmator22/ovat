@@ -75,7 +75,7 @@ def test_live_partials_are_revised_before_stop_and_finalised_on_silence():
         assert manager.transcribe_state == TranscribeState.RECORDING
         recorder.send()
         await until(lambda: listener.partials[-1] == "hello world")
-        recorder.send(0, 2.5)
+        recorder.send(0, 10.5)
         await until(lambda: manager.transcribe_state == TranscribeState.IDLE)
         assert listener.final == ["hello world"]
         assert recorder.closed
@@ -106,21 +106,126 @@ def test_stop_flushes_and_cancel_drops_late_inference():
     asyncio.run(go())
 
 
-def test_capture_is_bounded_to_thirty_seconds():
+def test_a_long_monologue_is_cut_into_segments_under_whispers_limit():
     async def go():
         recorder, listener = Recorder(), Listener()
         lengths = []
         manager = VoiceManager(lambda: ("m", None), recorder=recorder,
                                pipeline=lambda *a: SimpleNamespace(generate=
-                                   lambda audio, **k: lengths.append(len(audio)) or "cap"),
+                                   lambda audio, **k: lengths.append(len(audio))
+                                   or f"w{len(lengths)}"),
                                interval=0.01)
         manager.add_listener(listener)
         manager.start_recording()
-        for _ in range(400):
-            recorder.send()
-        await until(lambda: manager.transcribe_state == TranscribeState.IDLE)
-        assert lengths == [16000 * 30 - 1]
+        for _ in range(26):                     # 65 s of speech, no pause
+            recorder.send(0.2, 2.5)
+            await asyncio.sleep(0.15)
+        assert manager.transcribe_state == TranscribeState.RECORDING
+        assert max(lengths) < 16000 * 30
+        await manager.stop_recording()
         assert recorder.closed
+        assert len(listener.final) == 1 and len(listener.final[0].split()) >= 3
+        await manager.close()
+    asyncio.run(go())
+
+
+def test_it_keeps_listening_through_a_long_quiet_and_stops_after_ten_seconds():
+    async def go():
+        recorder, listener = Recorder(), Listener()
+        manager = VoiceManager(
+            lambda: ("m", None), recorder=recorder, interval=0.01,
+            pipeline=lambda *a: SimpleNamespace(generate=lambda audio, **k: "hi"))
+        manager.add_listener(listener)
+        manager.start_recording()
+        recorder.send(0.2, 0.5)                          # speech
+        await until(lambda: listener.partials == ["hi"])
+        recorder.send(0, 9.0)                            # 9 s of quiet
+        await asyncio.sleep(0.2)
+        assert manager.transcribe_state == TranscribeState.RECORDING
+        recorder.send(0, 1.5)                            # past 10 s
+        await until(lambda: manager.transcribe_state == TranscribeState.IDLE)
+        assert listener.final == ["hi"]
+        await manager.close()
+    asyncio.run(go())
+
+
+def _by_loud_samples(audio, **kwargs):
+    """A fake Whisper keyed on how much speech the audio holds: 0.5 s is the
+    first sentence, 0.75 s the second."""
+    loud = int((np.abs(audio) > 0.1).sum())
+    return SimpleNamespace(texts={8000: ["hello there"],
+                                  12000: ["general kenobi"]}.get(loud, [""]))
+
+
+def test_speech_after_a_pause_adds_to_the_text_not_replaces_it():
+    async def go():
+        recorder, listener = Recorder(), Listener()
+        manager = VoiceManager(
+            lambda: ("m", None), recorder=recorder, interval=0.01,
+            pipeline=lambda *a: SimpleNamespace(generate=_by_loud_samples))
+        manager.add_listener(listener)
+        manager.start_recording()
+        recorder.send(0.2, 0.5)
+        await until(lambda: listener.partials[-1:] == ["hello there"])
+        recorder.send(0, 2.0)                            # a pause, segment ends
+        await asyncio.sleep(0.3)
+        recorder.send(0.2, 0.75)                         # then more speech
+        await until(lambda: listener.partials[-1:] ==
+                    ["hello there general kenobi"])
+        await manager.stop_recording()
+        assert listener.final == ["hello there general kenobi"]
+        await manager.close()
+    asyncio.run(go())
+
+
+def test_a_sentence_said_while_whisper_is_busy_is_shown_without_stopping():
+    """Decoding takes seconds on a CPU. Speech that arrived meanwhile was kept
+    but marked as 'no speech heard', so it only appeared when the recording
+    ended: the bar kept moving and no text came."""
+    async def go():
+        recorder, listener = Recorder(), Listener()
+        busy, release = threading.Event(), threading.Event()
+        calls = []
+
+        def generate(audio, **kwargs):
+            calls.append(audio.size)
+            if len(calls) == 2:            # the decode that sees the pause
+                busy.set()
+                release.wait(5)
+            return _by_loud_samples(audio)
+        manager = VoiceManager(
+            lambda: ("m", None), recorder=recorder, interval=0.01,
+            pipeline=lambda *a: SimpleNamespace(generate=generate))
+        manager.add_listener(listener)
+        manager.start_recording()
+        recorder.send(0.2, 0.5)                          # first sentence
+        await until(lambda: listener.partials[-1:] == ["hello there"])
+        recorder.send(0, 2.0)                            # the pause
+        await until(busy.is_set)                         # Whisper is busy
+        recorder.send(0.2, 0.75)                         # second sentence
+        recorder.send(0, 2.0)                            # and quiet after it
+        release.set()
+        await until(lambda: listener.partials[-1:] ==
+                    ["hello there general kenobi"])
+        assert manager.transcribe_state == TranscribeState.RECORDING
+        await manager.close()
+    asyncio.run(go())
+
+
+def test_the_level_bar_moves_for_ordinary_speech():
+    async def go():
+        recorder = Recorder()
+        manager = VoiceManager(lambda: ("m", None), recorder=recorder,
+                               pipeline=lambda *a: SimpleNamespace(
+                                   generate=lambda *a, **k: ""), interval=0.01)
+        manager.start_recording()
+        recorder.send(0.003, 0.1)
+        quiet = manager.peak
+        recorder.send(0.05, 0.1)                         # ordinary speech
+        assert quiet < 0.2 < manager.peak <= 1.0
+        recorder.send(0.9, 0.1)
+        assert manager.peak == 1.0
+        manager.cancel_recording()
         await manager.close()
     asyncio.run(go())
 
@@ -263,7 +368,7 @@ def test_voice_key_shows_live_words_then_finishes_without_duplication(monkeypatc
             recorder.send()
             await ui_until(pilot, lambda: app.query_one("#input").text == "hello world")
             assert manager.transcribe_state == TranscribeState.RECORDING
-            recorder.send(0, 2.5)
+            recorder.send(0, 10.5)
             await ui_until(pilot, lambda: manager.transcribe_state == TranscribeState.IDLE)
             assert app.query_one("#input").text == "hello world"
             app.query_one("#input").load_text("")
@@ -415,7 +520,7 @@ def test_room_noise_and_clicks_after_speech_do_not_keep_it_recording():
         manager.start_recording()
         recorder.send(0.2, 0.5)                            # speech
         await until(lambda: listener.partials == ["hello"])
-        recorder.callback(_noise_with_clicks(3.0), 0, None, None)  # then quiet
+        recorder.callback(_noise_with_clicks(10.5), 0, None, None)  # then quiet
         await until(lambda: manager.transcribe_state == TranscribeState.IDLE)
         assert listener.final == ["hello"]
         assert recorder.closed
@@ -434,7 +539,7 @@ def test_steady_background_hum_is_not_taken_for_speech_or_endless_speech():
         manager.start_recording()
         recorder.send(0.2, 0.5)                            # speech
         await until(lambda: listener.partials == ["hello"])
-        recorder.send(0.012, 3.0)                          # steady hum, rms 0.012
+        recorder.send(0.012, 10.5)                         # steady hum, rms 0.012
         await until(lambda: manager.transcribe_state == TranscribeState.IDLE)
         assert listener.final == ["hello"]
         await manager.close()
