@@ -557,6 +557,8 @@ You choose once, for the session, for this project, or deny:
   10 seconds pass without speech; `Esc` cancels. The model comes from the
   workflow's `transcribe` tool or `OVAT_WHISPER_MODEL`.
 
+<a id="voice-demo"></a>
+
 https://github.com/user-attachments/assets/c6e91413-3d9b-4a5f-ac4c-acdb3fb3d204
 
 <sub>Voice dictation: `Ctrl+R` records, local Whisper turns it into text (1 minute).</sub>
