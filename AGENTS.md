@@ -219,8 +219,8 @@ as always `"stop"`.
   launcher (`ovat tui`, bare `ovat`) is untouched.
 
 ### CLI and TUI
-- `ovat/cli/main.py`: all 11 typer commands plus the `a2a` group: run,
-  chat, index, init, models, setup, serve, doctor, tui, telemetry, bench. All printing via the ONE
+- `ovat/cli/main.py`: all 12 typer commands plus the `a2a` group: run,
+  chat, index, init, models, setup, serve, doctor, tui, agent, telemetry, bench. All printing via the ONE
   themed console (`rprint`). `_load_config()` is the ONLY place allowed to
   call `load_workflow`. `_brief_error()` keeps the actionable fragment of a
   failure for the bench table. "Error talking to OVMS" is printed only for
@@ -642,6 +642,17 @@ Do not "improve" any of these without reading the reason first.
 - **A hint with square brackets is Rich markup.** `pip install
   "ovat[tui]"` printed as `pip install "ovat"`; wrap it in `esc()`.
 
+### Docs and media
+- **A README video plays only if GitHub hosts it.** An mp4 committed to the
+  repo, in a `<video>` tag or a link, downloads instead of playing. Upload it
+  through GitHub's own editor (a new-issue box works, do not submit) and put
+  the resulting `github.com/user-attachments/assets/...` URL on a line of its
+  own. The files stay on GitHub's side, so keep the originals elsewhere.
+- **The site's video is separate**: `assets/media/ovat-tour.mp4` in the
+  ovat-navigate repo, H.264. An HEVC `.mov` does not play in many browsers.
+- The site's codebase map (`assets/js/modules.js`) and its charts are written
+  by hand from the code; recount them when modules or tests change a lot.
+
 ### Model discovery
 - **`find_models` walks TWO levels.** `ovms --pull` lays models out by org
   (`models/OpenVINO/Qwen3-8B-int4-ov`).
@@ -718,6 +729,10 @@ Tests that scan the disk (`model_scout`, `fuzzy`) must isolate with
 machine instead of the code.
 
 ## Open work (2026-10-17)
+
+Docs rule (owner, 2026-10-17): a docs-only change (README, docs/, the site
+repo) may go straight to `main`; CI adds nothing there. Code still goes by
+PR and green CI.
 
 On the AI PC:
 - llamaindex on V3 (describe an image AND transcribe audio in one
@@ -844,3 +859,9 @@ earned their place on the telemetry page.
   command's status line moves (spinner, seconds, newest output). README,
   ARCHITECTURE and the example READMEs were rewritten in plain language
   with the animated diagrams, and the ovat-navigate site went live.
+- **Agent layer lands on main (2026-10-17, PRs #101-#105)**: `ovat agent`,
+  subagents, permissions, A2A, the coding tools and the copied Vibe client
+  merged. Same day: the site (ovat-navigate PR #1) was brought to 1.2.0 (a
+  real A2A section, the agent TUI, 124 modules on the codebase map, charts
+  recounted, one demo video made from three recordings) and the README got
+  three inline demo videos.

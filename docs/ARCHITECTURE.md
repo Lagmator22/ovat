@@ -11,7 +11,7 @@ describes what the system is; that one records how it got that way.
 > **Prefer a guided tour?** The [OVAT docs site](https://lagmator22.github.io/ovat-navigate/)
 > walks through the same parts and the code behind them, one step at a time.
 
-Written for OVAT 1.1.1, OVMS 2026.4.1 and openvino-genai 2026.4 or newer.
+Written for OVAT 1.2.0, OVMS 2026.4.1 and openvino-genai 2026.4 or newer.
 
 ---
 
@@ -371,9 +371,10 @@ What you need depends on what you run. The Python extras come from
 
 **Files:** `ovat/cli/main.py`, `ovat/config/workflow.py`, `ovat/cli/ui.py`
 
-Typer turns each function into a subcommand from its type hints. Eleven
+Typer turns each function into a subcommand from its type hints. Twelve
 commands: `run`, `chat`, `index`, `init`, `doctor`, `setup`, `serve`,
-`models`, `bench`, `telemetry` and `tui`, and a bare `ovat` also opens the TUI.
+`models`, `bench`, `telemetry`, `tui` and `agent`, plus the `ovat a2a` group
+(`serve`, `card`, `call`, `token`). A bare `ovat` opens the launcher TUI.
 
 **Configuration is strict.** `WorkflowConfig` derives from a `StrictModel` base
 with `extra="forbid"`, so an unknown key is an *error*, not a silent default.
@@ -1113,7 +1114,7 @@ Why these choices: [DECISIONS.md, telemetry](DECISIONS.md#telemetry).
 
 ## Agent2Agent (A2A)
 
-**Status: server, client tool and CLI built; the TUI part is next.** Needs
+**Status: server, client tool, CLI and the TUI use are built.** Needs
 `pip install "ovat[a2a]"`. The A2A spec is v1.0; the SDK is `a2a-sdk` 1.2.
 
 A2A lets agents ask each other questions over HTTP. Each agent publishes a
@@ -1481,7 +1482,7 @@ replaces the other.
 
 ## Testing strategy
 
-About 800 tests, no server required. `pytest -q` must end green.
+About 1,500 test functions, no server required. `pytest -q` must end green.
 
 | Convention | Reason |
 | --- | --- |
@@ -1508,14 +1509,15 @@ installs and runs.
 
 | Part | Status | Notes |
 | --- | --- | --- |
-| Commands and configuration | ✅ complete | 11 commands, strict validation |
+| Commands and configuration | ✅ complete | 12 commands and the `a2a` group, strict validation |
 | Agent engines | ✅ complete | all four engines verified live on an AI PC; native loop with session and three failure checks |
 | Providers | ✅ complete | LLM, embeddings and retrievers each have two implementations behind one interface; sqlite-vec persists, `memory` does not |
-| Tools and MCP | ✅ complete | three built-ins, MCP client (with `tools[].env`) and server, announced fuzzy paths |
+| Tools and MCP | ✅ complete | three built-ins for documents, audio and images, nine coding tools, MCP client (with `tools[].env`) and server, announced fuzzy paths |
 | Serving | ✅ complete | `ovat setup` pinned to OVMS 2026.4.1 and version-aware, locator, stall budget, pidfile, identity check |
 | Devices | ✅ complete | device routing; a tool-calling agent run on the NPU, and its 2129-token cap measured |
 | Telemetry | ✅ complete | sources, sinks, JSON Lines, CLI and TUI pages, run trace. NPU busy % reads on Windows (PDH) and Linux (sysfs). No OTLP exporter |
-| Agent2Agent (A2A) | 🟡 in progress | server, `type: a2a` tool and CLI built and tested over a real socket; TUI panel next; not yet run on the AI PC |
+| Agent2Agent (A2A) | ✅ complete | server, `type: a2a` tool, CLI and TUI use built, tested over a real socket and run on an AI PC. Open: a server opt-in for remote approvals |
+| Agent TUI, subagents, permissions | ✅ built | `ovat agent`, `delegate`, allow/ask/deny; shown on an AI PC. Open: the full hands-on checklist, real workspace trust |
 
 **Planned or open:**
 

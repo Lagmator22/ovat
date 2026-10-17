@@ -120,7 +120,7 @@ ovat run workflow.yml -i "what did the Q3 review conclude?"
 ```
 
 That is the whole thing. The loop, the schemas, the history, the retries and the
-error messages are the toolkit's job. Eleven commands cover the rest:
+error messages are the toolkit's job. Twelve commands cover the rest:
 
 | Command | Does |
 | --- | --- |
@@ -135,6 +135,8 @@ error messages are the toolkit's job. Eleven commands cover the rest:
 | `ovat models` | list and pull models |
 | `ovat telemetry` | live CPU / RAM / Intel hardware numbers |
 | `ovat` | a full-screen terminal UI |
+| `ovat agent` | the agent TUI: tools, approvals, subagents, voice |
+| `ovat a2a serve` | offer a workflow to other agents over A2A |
 
 ---
 
