@@ -391,3 +391,51 @@ def test_stopping_does_not_decode_the_same_audio_twice():
         await manager.stop_recording()
         assert calls == [8000]
     asyncio.run(go())
+
+
+def _noise_with_clicks(seconds, level=0.004, click=0.06):
+    """Quiet room noise (rms about `level`) with a short click every 0.5 s,
+    like a keyboard tap or a laptop mic pop. The clicks have a high PEAK
+    but almost no energy."""
+    n = int(seconds * 16000)
+    rng = np.random.default_rng(0)
+    data = (rng.standard_normal(n) * level).astype(np.float32)
+    data[::8000] = click
+    return data.reshape(-1, 1)
+
+
+def test_room_noise_and_clicks_after_speech_do_not_keep_it_recording():
+    async def go():
+        recorder, listener = Recorder(), Listener()
+        manager = VoiceManager(
+            lambda: ("model", "CPU"), recorder=recorder, interval=0.01,
+            pipeline=lambda *a: SimpleNamespace(generate=lambda audio, **k:
+                                                SimpleNamespace(texts=["hello"])))
+        manager.add_listener(listener)
+        manager.start_recording()
+        recorder.send(0.2, 0.5)                            # speech
+        await until(lambda: listener.partials == ["hello"])
+        recorder.callback(_noise_with_clicks(3.0), 0, None, None)  # then quiet
+        await until(lambda: manager.transcribe_state == TranscribeState.IDLE)
+        assert listener.final == ["hello"]
+        assert recorder.closed
+        await manager.close()
+    asyncio.run(go())
+
+
+def test_steady_background_hum_is_not_taken_for_speech_or_endless_speech():
+    async def go():
+        recorder, listener = Recorder(), Listener()
+        manager = VoiceManager(
+            lambda: ("model", "CPU"), recorder=recorder, interval=0.01,
+            pipeline=lambda *a: SimpleNamespace(generate=lambda audio, **k:
+                                                SimpleNamespace(texts=["hello"])))
+        manager.add_listener(listener)
+        manager.start_recording()
+        recorder.send(0.2, 0.5)                            # speech
+        await until(lambda: listener.partials == ["hello"])
+        recorder.send(0.012, 3.0)                          # steady hum, rms 0.012
+        await until(lambda: manager.transcribe_state == TranscribeState.IDLE)
+        assert listener.final == ["hello"]
+        await manager.close()
+    asyncio.run(go())

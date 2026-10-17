@@ -24,8 +24,16 @@ RATE = 16000
 BLOCK = 1600
 MAX_SECONDS = 30
 SILENCE_SECONDS = 2.0
-SPEECH_PEAK = 0.035
 SILENCE_PEAK = 0.015
+# End of speech is judged on a block's ENERGY (rms), not its peak: a click or
+# a keyboard tap has a high peak and almost no energy, and with the peak the
+# "2 seconds of quiet" counter reset on every one of them, so a recording in
+# an ordinary room ran to the 30 s cap. A block counts as speech when its rms
+# is 3x the room's quiet level (the quietest block of the last 3 s), kept
+# between SPEECH_RMS_MIN and SPEECH_RMS_MAX so a loud room cannot hide speech.
+SPEECH_RMS_MIN = 0.01
+SPEECH_RMS_MAX = 0.04
+NOISE_WINDOW = 30            # blocks of 0.1 s
 
 WHISPER_HALLUCINATIONS = {
     "you", "thank you", "thanks for watching", "bye", "bye-bye",
@@ -120,6 +128,7 @@ class VoiceManager:
         self._silent = 0
         self._has_signal = False
         self._peak = 0.0
+        self._quiet = deque(maxlen=NOISE_WINDOW)
 
     @property
     def is_enabled(self):
@@ -174,7 +183,11 @@ class VoiceManager:
             self._blocks.append(block)
             self._samples += block.size
             self._peak = peak
-            if peak >= SPEECH_PEAK:
+            rms = float(np.sqrt(np.mean(np.square(block)))) if block.size else 0.0
+            self._quiet.append(rms)
+            threshold = min(max(3 * min(self._quiet), SPEECH_RMS_MIN),
+                            SPEECH_RMS_MAX)
+            if rms >= threshold:
                 self._has_signal = True
                 self._silent = 0
             elif self._has_signal:
@@ -195,6 +208,7 @@ class VoiceManager:
         self._samples = self._silent = 0
         self._has_signal = False
         self._peak = 0.0
+        self._quiet.clear()
         self._stream = self._recorder(self._audio)
         self._set_state(TranscribeState.RECORDING)
         self._task = asyncio.create_task(self._run(model, device))
