@@ -175,6 +175,26 @@ yet repeated on Linux.
 > ```
 > Ubuntu 26.04 is not supported yet, because there is no OVMS build for it.
 > `ovat setup` warns before downloading.
+>
+> **OVMS on Linux also needs Jinja2 in the system Python.** The Linux OVMS
+> uses your system Python, and its archive does not include Jinja2. OVMS's own
+> [bare-metal guide](https://github.com/openvinotoolkit/model_server/blob/v2026.4.1/docs/deploying_server_baremetal.md)
+> says to run this (on RHEL 9 use `pip3.12`):
+> ```bash
+> pip3 install "Jinja2==3.1.6" "MarkupSafe==3.0.2"
+> ```
+> Without it, `ovat serve` says OVMS is ready, and then every chat request
+> fails with a 400 "Chat template not loaded correctly". `ovat setup` prints
+> this step, `ovat doctor` checks it, and `ovat serve` warns if `ovms.log`
+> shows the problem. On Ubuntu 24.04 pip can refuse with
+> "externally-managed-environment". Then install into a folder and point
+> `PYTHONPATH` at it before `ovat serve`:
+> ```bash
+> python3 -m pip install --target "$HOME/.ovat/pylibs" "Jinja2==3.1.6" "MarkupSafe==3.0.2"
+> export PYTHONPATH="$HOME/.ovat/pylibs"
+> ```
+> Windows needs nothing: the Windows OVMS zip carries its own Python with
+> Jinja2 inside. Other Linux distros: not verified.
 
 > **Using a GPU or NPU?** Update the driver first. An old driver usually shows
 > up as the device simply missing from `ovat doctor`, not as an error.
@@ -468,6 +488,7 @@ Rosetta, which is fine for small test models and slow for real ones.
 | Symptom | Likely cause |
 | --- | --- |
 | The agent answers fluently but **never calls a tool** | Wrong `tool_parser`. Leave it out and OVAT picks it from the model name (`qwen3coder` for Qwen3.5, `hermes3` for Qwen3) |
+| `serve` says ready, but every chat request fails with a 400 "Chat template not loaded correctly" (Linux) | The system Python has no Jinja2. See [Install](#install), or run `ovat doctor` |
 | `OVMS exited without becoming ready`, empty log | The `python_off` build of OVMS, or a missing Visual C++ Redistributable |
 | `ovat doctor` finds no OVMS | Run `ovat setup`, or set `OVAT_OVMS` to the folder you unpacked |
 | `doctor` says your OVMS is older than 2026.4.1 | `ovat setup --force` |

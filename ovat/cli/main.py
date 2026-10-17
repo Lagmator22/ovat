@@ -1197,6 +1197,18 @@ def _ovms_not_found(how: str) -> None:
     rprint("  4. classic      →  add the OVMS folder to PATH")
 
 
+def _say_jinja_missing(python: str) -> None:
+    """Tell the user how to give OVMS's Python its Jinja2 (Linux, python_on).
+
+    Printed by `setup` right after an install and by `serve` when ovms.log says
+    the chat template did not load. Never installs anything for the user.
+    """
+    from ovat.core.model_server import jinja_fix_lines
+    command, around_pip = jinja_fix_lines(python)
+    rprint(f"  [bold]{esc(command)}[/bold]")
+    rprint(f"  [dim]{esc(around_pip)}[/dim]")
+
+
 @app.command()
 def setup(
     yes: bool = typer.Option(False, "--yes", "-y",
@@ -1314,7 +1326,48 @@ def setup(
         rprint(f"  workflow.yml →  [bold]model.ovms_binary: {esc(binary)}"
                f"[/bold]")
         rprint(f"  env var      →  [bold]{setter} OVAT_OVMS={esc(binary)}[/bold]")
+    # Linux only: OVMS's Python needs Jinja2 from the system, and the archive
+    # does not carry it. Without it OVMS says ready and then fails every chat.
+    from ovat.core.model_server import jinja_status
+    state, python = jinja_status(binary)
+    if state == "missing":
+        rprint(f"[yellow]One more step on Linux:[/yellow] OVMS uses the system "
+               f"{esc(python)}, which cannot import Jinja2 or MarkupSafe. Without "
+               f"them `ovat serve` starts but every chat request fails. Run "
+               f"(from OVMS's own docs):")
+        _say_jinja_missing(python)
     rprint("[dim]Check it with[/dim] [bold]ovat doctor[/bold]")
+
+
+def _warn_if_chat_template_failed(server, binary: str, config: str) -> None:
+    """After "ready": say so if OVMS logged that it cannot apply chat templates.
+
+    OVMS reports ready and then answers every chat request with a 400, so the
+    log line is the only early sign. On Linux the usual cause is a missing
+    Jinja2 in the system Python (OVMS's docs); the cause on other systems is
+    not verified, so there the warning only points at the log.
+    """
+    from ovat.core.model_server import chat_template_failed
+    if not chat_template_failed(server.log_path):
+        return
+    rprint("[yellow]Warning: OVMS could not load the chat template.[/yellow] "
+           "It says ready, but every chat request will fail with a 400 "
+           "(\"Chat template not loaded correctly\").")
+    state, python = "n/a", ""
+    if sys.platform == "linux":
+        from ovat.core.model_server import jinja_status
+        state, python = jinja_status(binary)
+    if state in ("missing", "unknown"):
+        why = ("that Python has no Jinja2" if state == "missing" else
+               "Jinja2 is likely missing there (not verified)")
+        rprint(f"On Linux OVMS uses the system {esc(python)}; {why}. Install "
+               f"it (from OVMS's own docs):")
+        _say_jinja_missing(python)
+        rprint(f"Then restart OVMS so it loads the template: ovat serve "
+               f"{esc(config)} --stop, then ovat serve {esc(config)}")
+    else:
+        rprint(f"[dim]See the \"Chat template\" line in "
+               f"{esc(server.log_path)} for the reason.[/dim]")
 
 
 @app.command()
@@ -1467,6 +1520,7 @@ def serve(
                f"logs in {esc(server.log_path)})[/dim]")
         rprint(f"[dim]It keeps running in the background. Stop it with:[/dim] "
                f"ovat serve {esc(config)} --stop")
+        _warn_if_chat_template_failed(server, binary, config)
     elif server.process is not None and server.process.poll() is None:
         # Still ALIVE, just not ready yet: almost always a download still in
         # flight. Saying only "did not become ready" left the user with a

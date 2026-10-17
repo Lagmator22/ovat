@@ -13,6 +13,8 @@ dependency. Needs the `ovms` binary to actually start (Linux/Windows/Docker).
 import ipaddress
 import json
 import os
+import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -98,6 +100,130 @@ def ovms_env(binary: str, base: dict | None = None) -> dict:
                 env["PYTHONPATH"] = os.pathsep.join(
                     p for p in (lib_python, env.get("PYTHONPATH", "")) if p)
     return env
+
+
+# What OVMS's own bare-metal guide (docs/deploying_server_baremetal.md, tag
+# v2026.4.1) tells every Linux python_on user to run. The embedded Python runs
+# against the SYSTEM python3 (Ubuntu) or python3.12 (RHEL 9.6), and the Linux
+# archives ship neither Jinja2 nor MarkupSafe (checked in the archive listing).
+# Without them OVMS loads fine, says "ready", then answers every chat request
+# with a 400.
+JINJA_PIP = 'pip3 install "Jinja2==3.1.6" "MarkupSafe==3.0.2"'
+JINJA_PIP_RHEL = JINJA_PIP.replace("pip3 ", "pip3.12 ", 1)
+
+# The line OVMS writes to its log at load time when it cannot apply the chat
+# template. `ovat serve` looks for it, so the user hears about it at startup.
+CHAT_TEMPLATE_LOG_LINE = "Chat template has not been loaded properly"
+
+
+def chat_template_failed(log_path: str) -> bool:
+    """Did OVMS log that it could not load the chat template?
+
+    When it did, the server still reports ready but answers every
+    /chat/completions request with a 400 ("Chat template not loaded
+    correctly"), so serve checks this once the server is up. False when the
+    log cannot be read.
+    """
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as handle:
+            return any(CHAT_TEMPLATE_LOG_LINE in line for line in handle)
+    except OSError:
+        return False
+
+
+def _linked_python_minor(binary: str) -> str | None:
+    """Which libpython the ovms binary was linked against, e.g. "3.12".
+
+    Read from the binary's own bytes (the NEEDED name sits in its dynamic
+    string table), so nothing is run. Measured on the 2026.4.1 archives:
+    ubuntu24 and redhat name libpython3.12.so.1.0, ubuntu22 names
+    libpython3.10.so.1.0. None when the file cannot be read or names none.
+    """
+    pattern = re.compile(rb"libpython(3\.\d+)\.so")
+    try:
+        with open(binary, "rb") as handle:
+            tail = b""
+            while True:
+                chunk = handle.read(1 << 20)
+                if not chunk:
+                    return None
+                found = pattern.search(tail + chunk)
+                if found:
+                    return found.group(1).decode("ascii")
+                tail = chunk[-32:]
+    except OSError:
+        return None
+
+
+def _find_system_python(name: str) -> str | None:
+    """The system interpreter called `name`, or None.
+
+    /usr/bin first: a virtualenv earlier on PATH is not the Python OVMS uses.
+    """
+    for candidate in (os.path.join("/usr/bin", name), shutil.which(name)):
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def jinja_status(binary: str) -> tuple[str, str]:
+    """Can the system Python that OVMS embeds import Jinja2 and MarkupSafe?
+
+    Returns (state, python) where state is:
+      "n/a"      not Linux, or not a python_on layout (no <root>/lib/python)
+      "ok"       that Python imported both
+      "missing"  that Python ran and could not import one of them
+      "unknown"  could not tell (no such Python found, it timed out, ...)
+    `python` is the interpreter name, for the message ("python3.12").
+
+    What this checks and what it does not. It starts the same-version system
+    Python under ovms_env() (so a PYTHONPATH folder holding Jinja2 counts) and
+    imports both modules. Not verified: that this is byte for byte the
+    interpreter OVMS embeds; it is the one OVMS's libpython comes from, and
+    ovms.log of a broken run printed sys.path entries under /usr/lib/python3.12.
+    Windows is "n/a" on purpose: its python_on zip ships its own python folder
+    with jinja2 3.1.6 and MarkupSafe 3.0.2 inside (checked in the listing).
+    """
+    if sys.platform != "linux":
+        return "n/a", ""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(binary)))
+    if not os.path.isdir(os.path.join(root, "lib", "python")):
+        return "n/a", ""
+    minor = _linked_python_minor(binary)
+    name = f"python{minor}" if minor else "python3"
+    exe = _find_system_python(name)
+    if exe is None:
+        return "unknown", name
+    try:
+        done = subprocess.run([exe, "-c", "import jinja2, markupsafe"],
+                              capture_output=True, text=True, timeout=30,
+                              env=ovms_env(binary))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return "unknown", name
+    if done.returncode == 0:
+        return "ok", name
+    if "No module named" in done.stderr:
+        return "missing", name
+    return "unknown", name
+
+
+def jinja_fix_lines(python: str = "python3") -> list[str]:
+    """The fix, as plain lines: OVMS's own command, then a way around pip's refusal.
+
+    The first line is OVMS's documented command. On Ubuntu 24.04 it fails with
+    "externally-managed-environment" (PEP 668; measured with pip 24.0 on
+    24.04.5), so the second form installs into a folder and points PYTHONPATH
+    at it, which `ovat serve` passes on to OVMS (ovms_env keeps it).
+    """
+    from ovat.core.ovms_installer import _linux_flavour
+    pip = JINJA_PIP_RHEL if _linux_flavour() == "redhat" else JINJA_PIP
+    return [
+        pip,
+        f'If pip refuses ("externally-managed-environment"): {python} -m pip '
+        f'install --target "$HOME/.ovat/pylibs" "Jinja2==3.1.6" '
+        f'"MarkupSafe==3.0.2" and then export PYTHONPATH="$HOME/.ovat/pylibs" '
+        f'before ovat serve',
+    ]
 
 
 class ModelServer:

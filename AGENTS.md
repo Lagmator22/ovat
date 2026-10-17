@@ -99,7 +99,9 @@ as always `"stop"`.
 ### core
 - `ovat/core/model_server.py`: OVMS lifecycle: build args, start (logs to
   file, pidfile, `ovms_env()` for PATH / LD_LIBRARY_PATH), wait_until_ready
-  (a STALL budget, see Landmines), stop, `stop_from_pidfile`.
+  (a STALL budget, see Landmines), stop, `stop_from_pidfile`. Also
+  `jinja_status()` (Linux: can the system Python OVMS embeds import Jinja2?
+  doctor, setup and serve all use it) and `chat_template_failed()`.
 - `ovat/core/ovms_locator.py`: find the ovms binary: config `ovms_binary` ->
   `OVAT_OVMS` -> PATH -> known unzip folders. Windows installs are NEVER on
   PATH; this is why serve works anyway.

@@ -876,6 +876,21 @@ shared objects at `<root>/lib`, so the root is the directory *above* the
 binary. It is a module-level function so it can be tested without launching a
 server.
 
+**On Linux, OVMS needs Jinja2 in the system Python.** The `python_on` build
+embeds the system `python3` (`python3.12` on RHEL 9.6), and the Linux archives
+carry neither Jinja2 nor MarkupSafe. OVMS's bare-metal guide
+([v2026.4.1](https://github.com/openvinotoolkit/model_server/blob/v2026.4.1/docs/deploying_server_baremetal.md))
+says to run `pip3 install "Jinja2==3.1.6" "MarkupSafe==3.0.2"` (`pip3.12` on
+RHEL). Without them OVMS still loads and reports ready, but logs "Chat template
+has not been loaded properly" and answers every chat request with a 400. So
+`model_server.jinja_status()` starts the same-version system Python under
+`ovms_env()` and imports both modules. `ovat doctor` reports the result, `ovat
+setup` prints the command after an install, and `ovat serve` prints it when
+`ovms.log` has that line. OVAT never installs it for you. The Windows zip ships
+its own `python` folder with Jinja2 3.1.6 inside, so nothing is checked there.
+Not verified: other Linux distros, and that the probe interpreter is byte for
+byte the one OVMS embeds.
+
 **Readiness is a stall budget, not a deadline.** A first run downloads the
 model, and that can take any amount of time. The clock resets whenever the log
 file or the model folder grows, so a download that keeps moving is never
