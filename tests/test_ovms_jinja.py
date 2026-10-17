@@ -10,6 +10,7 @@ the user is now told: `ovat doctor`, `ovat serve` and `ovat setup`.
 
 No network and no real OVMS: the Python probe and the log are faked.
 """
+import os
 import subprocess
 
 from typer.testing import CliRunner
@@ -86,7 +87,7 @@ def test_the_probe_runs_under_the_env_ovms_gets_so_a_pythonpath_folder_counts(
     _probe(monkeypatch, returncode=0, seen=seen)
     monkeypatch.setenv("PYTHONPATH", "/home/u/pylibs")
     model_server.jinja_status(_fake_install(tmp_path))
-    assert "/home/u/pylibs" in seen["env"]["PYTHONPATH"].split(":")
+    assert "/home/u/pylibs" in seen["env"]["PYTHONPATH"].split(os.pathsep)
 
 
 def test_a_python_that_cannot_be_run_is_unknown_not_missing(tmp_path,
