@@ -11,7 +11,7 @@ describes what the system is; that one records how it got that way.
 > **Prefer a guided tour?** The [OVAT docs site](https://lagmator22.github.io/ovat-navigate/)
 > walks through the same parts and the code behind them, one step at a time.
 
-Written for OVAT 1.2.0, OVMS 2026.4.1 and openvino-genai 2026.4 or newer.
+Written for OVAT 1.3.0, OVMS 2026.4.1 and openvino-genai 2026.4 or newer.
 
 ---
 
