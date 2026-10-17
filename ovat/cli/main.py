@@ -56,6 +56,26 @@ def _version_callback(value: bool) -> None:
     raise typer.Exit()
 
 
+def _open_tui(config=None, continue_session=False, resume_session=None):
+    """What bare `ovat` and `ovat tui` do: open the agent TUI.
+
+    The first TUI, the launcher (ovat/cli/tui.py), is still here for now;
+    OVAT_LAUNCHER=classic opens it instead. It is to be removed in a later
+    release, like OVAT_AGENT_UI=classic.
+    """
+    if os.environ.get("OVAT_LAUNCHER", "").strip().lower() == "classic":
+        try:
+            from ovat.cli.tui import run_tui
+        except ImportError:
+            rprint("[yellow]The TUI needs Textual.[/yellow] Install it with "
+                   "[bold]pip install 'ovat\\[tui]'[/bold], or use a subcommand "
+                   "like [bold]ovat doctor[/bold]. See [bold]ovat --help[/bold].")
+            raise typer.Exit()
+        run_tui()
+        return
+    agent(config, continue_session, resume_session)
+
+
 @app.callback()
 def _entry(
     ctx: typer.Context,
@@ -66,7 +86,8 @@ def _entry(
     """Open the TUI when `ovat` is run with no subcommand.
 
     typer runs this before any command. If the user typed a subcommand I get out
-    of the way; if they typed just `ovat`, I launch the full-screen launcher.
+    of the way; if they typed just `ovat`, I open the agent TUI (the same one
+    as `ovat agent`).
     """
     if ctx.invoked_subcommand is not None:
         return
@@ -81,16 +102,7 @@ def _entry(
                "Type a subcommand instead (e.g. [bold]ovat doctor[/bold]), "
                "or /exit to leave.")
         raise typer.Exit()
-    try:
-        from ovat.cli.tui import run_tui
-    except ImportError:
-        # Textual is optional. If it is missing, fall back to the help text
-        # instead of crashing, and point the user at the install.
-        rprint("[yellow]The TUI needs Textual.[/yellow] Install it with "
-               "[bold]pip install 'ovat\\[tui]'[/bold], or use a subcommand "
-               "like [bold]ovat doctor[/bold]. See [bold]ovat --help[/bold].")
-        raise typer.Exit()
-    run_tui()
+    _open_tui()
 
 
 # The starter workflow written by `ovat init` (and by the TUI's /init shortcut,
@@ -1613,10 +1625,18 @@ def doctor(
 
 
 @app.command()
-def tui():
-    """Open the full-screen OVAT launcher (same as running `ovat` with no args)."""
-    from ovat.cli.tui import run_tui
-    run_tui()
+def tui(
+    config: str = typer.Argument(
+        None, help="The workflow to chat with. Default: ./workflow.yml."),
+    continue_session: bool = typer.Option(
+        False, "--continue", "-c",
+        help="Continue the latest conversation saved in this folder."),
+    resume_session: str = typer.Option(
+        None, "--resume", "-r",
+        help="Resume a saved conversation by its id (the start is enough)."),
+):
+    """Open the TUI: the same as `ovat agent`, and as `ovat` with no args."""
+    _open_tui(config, continue_session, resume_session)
 
 
 @app.command()
