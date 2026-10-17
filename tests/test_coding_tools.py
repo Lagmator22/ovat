@@ -516,3 +516,38 @@ def test_grep_does_not_read_a_symlinked_file_that_leaves_the_project(
     (project / "notes.txt").write_text("nothing here")
     (project / "key").symlink_to(other / "id_rsa")
     assert "PRIVATE KEY" not in grep_impl("hush", project)
+
+
+# ---- review finding: a failed write must not destroy the old file --------
+
+def test_write_file_keeps_the_old_file_when_the_write_fails(root, monkeypatch):
+    target = root / "a.txt"
+    target.write_text("old text", encoding="utf-8")
+
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr("ovat.agentic.atomic.os.replace", boom)
+    out = write_file_impl("a.txt", "new text", root)
+    assert _is_error(out)
+    assert target.read_text(encoding="utf-8") == "old text"
+    assert [p.name for p in root.iterdir()] == ["a.txt"]      # no temp left
+
+
+def test_edit_keeps_the_old_file_when_the_write_fails(root, monkeypatch):
+    target = root / "a.txt"
+    target.write_text("one\ntwo\n", encoding="utf-8")
+
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr("ovat.agentic.atomic.os.replace", boom)
+    assert _is_error(edit_impl("a.txt", "two", "three", root=root))
+    assert target.read_text(encoding="utf-8") == "one\ntwo\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_an_edited_file_keeps_its_mode(root):
+    target = root / "run.sh"
+    target.write_text("echo a\n", encoding="utf-8")
+    target.chmod(0o755)
+    edit_impl("run.sh", "a", "b", root=root)
+    assert target.stat().st_mode & 0o777 == 0o755

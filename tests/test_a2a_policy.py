@@ -64,3 +64,18 @@ def test_the_rate_limit_is_per_caller_and_per_minute():
     assert admission.check(Ask(caller="b", text="hi")) is None  # others fine
     clock.now += 61
     assert admission.check(Ask(caller="a", text="hi")) is None  # a new minute
+
+
+def test_threads_cannot_both_take_the_last_rate_slot():
+    import threading
+    admission, _ = _admission(rate_limit_per_min=5)
+    results, barrier = [], threading.Barrier(20)
+
+    def send():
+        barrier.wait()
+        results.append(admission.check(Ask(caller="a", text="hi")))
+
+    threads = [threading.Thread(target=send) for _ in range(20)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert results.count(None) == 5

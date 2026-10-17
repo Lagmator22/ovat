@@ -762,3 +762,51 @@ def test_a_token_file_that_came_with_the_project_is_never_used(
     assert tokens.peer_token("http://127.0.0.1:9100", None) == served
     monkeypatch.chdir(tmp_path)                       # another project
     assert tokens.load_or_create() != served
+
+
+# ---- review findings: audit privacy, pool cap, public card ---------------
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_a_new_audit_log_and_its_folder_are_owner_only(tmp_path):
+    old = os.umask(0o022)
+    try:
+        log = AuditLog(tmp_path / "a2a" / "audit.jsonl")
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(log.path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(log.path.parent.stat().st_mode) == 0o700
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_an_existing_audit_log_keeps_its_mode(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    path.write_text("")
+    path.chmod(0o640)
+    AuditLog(path)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+
+def test_the_pool_never_holds_more_conversations_than_its_size():
+    from ovat.a2a.service import AgentPool, PoolFull
+    pool = AgentPool(build=lambda: object(), size=1, close=lambda agent: None)
+    busy = pool.acquire(("a", "1"))
+    with pytest.raises(PoolFull):
+        pool.acquire(("b", "2"))
+    assert len(pool) == 1
+    pool.release(busy, counted=True)
+    pool.acquire(("b", "2"))            # idle one is dropped for it
+    assert len(pool) == 1
+
+
+@pytest.mark.parametrize("model", [
+    "/home/private-user/models/Qwen3-8B-int4-ov",
+    "C:\\Users\\private-user\\models\\Qwen3-8B-int4-ov",
+    "C:\\Users\\private-user\\models\\Qwen3-8B-int4-ov\\",
+])
+def test_the_public_card_shows_no_folder_of_a_local_model(model):
+    cfg = WorkflowConfig(model={"name": model})
+    for tools in (_tools(search_docs="builtin"), {}):
+        card = str(card_dict(cfg, A2AServerConfig(), tools,
+                             "http://127.0.0.1:9100/", "docs", "1.2.0"))
+        assert "private-user" not in card
+        assert "Qwen3-8B-int4-ov" in card
