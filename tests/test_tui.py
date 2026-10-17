@@ -893,10 +893,15 @@ def test_ctrl_c_with_no_selection_still_arms_the_quit():
         app = OvatTUI()
         async with app.run_test() as pilot:
             await pilot.press("ctrl+c")
-            await pilot.pause()
+            # A bounded poll, not one pause (AGENTS.md rule 12): under load
+            # the notice lands after a single pause, and this failed 6 runs
+            # in 8 with the CPU busy.
+            deadline = time.monotonic() + 5
+            while not any("again to quit" in str(n.message)
+                          for n in app._notifications):
+                assert time.monotonic() < deadline, "no quit notice"
+                await pilot.pause(0.05)
             assert app.is_running is True
-            assert any("again to quit" in str(n.message)
-                       for n in app._notifications)
     _run(scenario())
 
 

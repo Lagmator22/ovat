@@ -186,9 +186,11 @@ as always `"stop"`.
   (local folder ~/ovat_navigate, GitHub Pages:
   https://lagmator22.github.io/ovat-navigate/). Never add its files here;
   this repo only links to it. Static, strict CSP, nothing third-party.
-- `.github/workflows/tests.yml` (CI matrix, see History) and `publish.yml`
-  (PyPI; fires on a published GitHub Release, or by hand via
-  `workflow_dispatch` when a release does not trigger it).
+- `.github/workflows/tests.yml` (CI matrix, see History; also weekly, and
+  called by publish) and `publish.yml` (PyPI; fires on a published GitHub
+  Release, or by hand via `workflow_dispatch` run from the TAG. Publishes
+  only a tag equal to pyproject's version, after tests.yml passes on that
+  commit. Actions are pinned to commit SHAs).
 
 ## HARD RULES: breaking these is how you nuke the codebase
 

@@ -272,6 +272,11 @@ it is on an Intel AI PC, all green:
 progress at all*, so a slow connection is fine. If you skipped step 1,
 `ovat serve` offers to install OVMS for you.
 
+OVMS listens on this machine only (`127.0.0.1`). To reach it from another
+machine, run `ovat serve workflow.yml --host 0.0.0.0`, and set
+`model.ovms_api_key_env` so it asks for a key: without one, anyone on the
+network can use the model.
+
 On **macOS** there is no OVMS. Use the local path instead. `ovat chat` answers
 from your indexed documents and needs no server:
 
@@ -300,7 +305,7 @@ stops, and Ctrl-C stops it early. `--max-tokens N` sets a cap.
 | `ovat setup` | Install OVMS for this machine. Once, no `PATH` edits |
 | `ovat init [path]` | Write a starter `workflow.yml`, with the device detected on this machine |
 | `ovat doctor [config]` | Check Python, dependencies, devices, OVMS and a config |
-| `ovat serve <config>` | Start OVMS in the background. `--stop` shuts it down |
+| `ovat serve <config>` | Start OVMS in the background, on this machine only. `--host 0.0.0.0` opens it to the network, `--stop` shuts it down |
 | `ovat run <config> -i "..."` | Ask the agent a question. `--trace`, `--telemetry`, `--dry-run`, engine flags |
 | `ovat chat <config> -i "..."` | Answer from your documents with a local model. No server, no tools |
 | `ovat index <folder> <config>` | Read a folder of `.md` and `.txt` files into the search index |
