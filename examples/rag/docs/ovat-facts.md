@@ -1,5 +1,14 @@
 # OVAT engineering notes
 
+## What OVAT is
+
+OVAT is the OpenVINO Agentic Toolkit. It turns the code that makes a language
+model call tools into one YAML file and one command:
+`ovat run workflow.yml --input "..."`. The model runs on your own machine,
+through OpenVINO Model Server (OVMS) on an Intel AI PC, or in-process on a
+development machine. OVAT is not a monitoring system: it builds and runs
+agents, and it measures them.
+
 ## Memory budget
 
 OVAT targets a peak resident set of under 8 GB for a full agent run on the
