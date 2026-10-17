@@ -378,8 +378,8 @@ class OvatAgentApp(VibeApp):
         manager = self._voice_manager
         manager.apply_enabled(not manager.is_enabled)
         await self._note(
-            "Local voice on. Ctrl+R records; pause or press Ctrl+R to finish. "
-            "Esc cancels. Audio stays on this machine."
+            "Local voice on. Ctrl+R records until you press it again or 10 "
+            "seconds pass in quiet. Esc cancels. Audio stays on this machine."
             if manager.is_enabled else "Local voice off. `/voice` turns it on.")
 
     async def _maybe_handle_mcp_subcommand(self, cmd_args: str) -> bool:

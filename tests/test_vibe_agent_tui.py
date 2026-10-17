@@ -1771,3 +1771,18 @@ def test_the_app_starts_with_the_saved_theme(tmp_path):
         async with running(cwd=str(tmp_path)) as (app, pilot, fake, handle):
             await until(pilot, lambda: app.theme == "nord")
     run(go())
+
+
+def test_the_voice_notice_describes_how_recording_really_ends():
+    """It said 'pause or press Ctrl+R' after recording became 'Ctrl+R again or
+    10 seconds of quiet'."""
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            await say(pilot, "/voice")                    # on by default: off
+            await until(pilot, lambda: "Local voice off" in screen_text(app))
+            await say(pilot, "/voice")                    # and on again
+            await until(pilot, lambda: "Local voice on" in screen_text(app))
+            text = screen_text(app)
+            assert "10" in text and "seconds" in text
+            assert "pause or press" not in text
+    run(go())

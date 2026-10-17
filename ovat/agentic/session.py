@@ -646,6 +646,11 @@ class AgentSession:
             for text in iter_display_lines(proc.stdout):
                 self._emit(Notice("info", f"a2a: {text}"))
             code = proc.wait()
+            if getattr(proc, "ovat_stop_requested", False):
+                # Stopped on purpose: terminate() leaves a non-zero code (1 on
+                # Windows), which is not a failure to report.
+                self._emit(Notice("info", "a2a server stopped."))
+                return
             self._emit(Notice("warn" if code else "info",
                               f"a2a server stopped (exit {code})"))
         self._spawn(pump)
@@ -653,6 +658,7 @@ class AgentSession:
     def stop_server(self) -> None:
         if self.serving:
             from ovat.cli.shell import terminate
+            self._server.ovat_stop_requested = True
             try:
                 terminate(self._server)
             except Exception:

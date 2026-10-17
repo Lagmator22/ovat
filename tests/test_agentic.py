@@ -401,3 +401,35 @@ def test_session_forwards_reasoning_and_answer_deltas_from_the_bus():
     assert reasoning == ["plan "]
     assert answers == ["hi ", "there"]
 
+
+
+def _serve_notices(monkeypatch, stop):
+    """Run the local A2A server as a real child and collect what the TUI says."""
+    from ovat.cli import shell
+    real_spawn = shell.spawn
+    monkeypatch.setattr(
+        shell, "spawn",
+        lambda line, cwd, env=None: real_spawn(
+            py_command("import time; print(chr(117)+chr(112), flush=True); "
+                       "time.sleep(60)"), cwd, env))
+    session, sink, _ = _session()
+    session.start_server()
+    sink.wait_for(s.Notice, 1)               # "a2a: up"
+    assert session.serving
+    if stop:
+        session.stop_server()
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline and not any(
+            "stopped" in getattr(e, "text", "") for e in sink.events):
+        time.sleep(0.05)
+    session.stop_server()
+    return [e for e in sink.events if isinstance(e, s.Notice)
+            and "stopped" in e.text]
+
+
+def test_stopping_the_a2a_server_on_purpose_is_not_reported_as_a_failure(
+        monkeypatch):
+    """/serve stop printed an orange 'a2a server stopped (exit 1)'."""
+    notices = _serve_notices(monkeypatch, stop=True)
+    assert [n.level for n in notices] == ["info"]
+    assert "exit" not in notices[0].text
