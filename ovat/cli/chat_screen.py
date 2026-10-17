@@ -88,35 +88,11 @@ REPLAY_RICH_TURNS = 6
 PREFS_FILE = "chat_prefs.json"
 SESSIONS_DIR = "sessions"
 
-# strip_thinking lives in ui.py, not here: the plain CLI needs it too and
-# this module imports textual. One copy, per the single-source-of-truth
-# rule -- two would drift the moment a new tag spelling turned up.
-from ovat.cli.ui import strip_thinking, _THINK_BLOCK, _THINK_CLOSE, _THINK_OPEN
-
-
-def split_thinking(text: str) -> tuple:
-    """(reasoning, answer). Reasoning is "" when the model did not narrate.
-
-    The two halves want different rendering. An answer is markdown and should
-    be rendered as such; reasoning is wrapped in <think> tags, which markdown
-    reads as HTML and silently swallows, so showing it verbatim is the only
-    way /thinking on actually shows anything.
-    """
-    reasoning = [match.group(0) for match in _THINK_BLOCK.finditer(text)]
-    remainder = _THINK_BLOCK.sub("", text)
-    unclosed = _THINK_OPEN.search(remainder)
-    if unclosed:
-        reasoning.append(remainder[unclosed.start():])
-    else:
-        # A DANGLING </think>: Qwen3/3.5's chat template opens the block in
-        # the PROMPT, so the reply is "reasoning </think> answer" with no
-        # opening tag. strip_thinking already drops that reasoning from the
-        # answer; it was dropped from here too, so /thinking on showed
-        # nothing for a model that had just reasoned at length.
-        closing = _THINK_CLOSE.search(remainder)
-        if closing and remainder[:closing.start()].strip():
-            reasoning.append(remainder[:closing.start()])
-    return "\n".join(reasoning).strip(), strip_thinking(text)
+# strip_thinking and split_thinking live in ovat/text.py: the plain CLI and the
+# agent session need them too, and this module imports textual. One copy, per
+# the single-source-of-truth rule -- two would drift the moment a new tag
+# spelling turned up.
+from ovat.text import split_thinking, strip_thinking
 
 
 def _ovat_dir(cwd: str) -> str:

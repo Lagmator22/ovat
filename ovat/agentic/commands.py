@@ -35,7 +35,8 @@ COMMANDS: tuple[Command, ...] = (
     Command("save", "Save the conversation", usage="[name]"),
     Command("load", "Load a saved conversation", usage="<name>"),
     Command("copy", "Copy the last answer to the clipboard"),
-    Command("doctor", "Check this machine, OVMS and the workflow"),
+    Command("doctor", "Check this machine, OVMS and the workflow",
+            usage="[copy]"),
     Command("telemetry", "Live CPU, GPU, NPU and power"),
     Command("quit", "Leave", aliases=("exit", "q")),
 )

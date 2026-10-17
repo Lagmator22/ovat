@@ -73,7 +73,13 @@ convert = ["optimum-intel[openvino]>=2.0"]
 langchain = ["langchain>=1", "langchain-openai>=1", "langgraph>=1"]
 llamaindex = ["llama-index-core>=0.14", "llama-index-llms-openai-like>=0.5"]
 openai-agents = ["openai-agents>=0.1"]
-tui = ["textual", "pyfiglet"]
+# tui: the launcher and the agent TUI (`ovat agent`). The agent TUI's widgets
+# are copied from Mistral Vibe and import these directly; most arrive through
+# other packages today, but nothing guarantees that, so they are named here.
+tui = ["textual", "pyfiglet", "anyio", "certifi", "httpx", "jsonpatch", "keyring",
+       "packaging", "pyperclip", "truststore",
+       # tomllib is stdlib from 3.11; the copied cache store needs it on 3.10.
+       "tomli; python_version < '3.11'"]
 # a2a: Agent2Agent, `ovat a2a ...` and `type: a2a` tools. The ceiling is
 # deliberate: 1.x moved every type from pydantic to protobuf, and a 2.0
 # could move again. All SDK use is in ovat/a2a/sdk/, so an upgrade is a
@@ -122,4 +128,9 @@ build-backend = "setuptools.build_meta"
 include = ["ovat*"]
 
 [tool.setuptools.package-data]
-ovat = ["assets/*.gif", "assets/*.png"]
+ovat = ["assets/*.gif", "assets/*.png",
+        # The agent TUI's Textual stylesheets (CSS_PATH resolves next to the code).
+        "tui/vibe/cli/textual_ui/*.tcss",
+        "tui/vibe/cli/textual_ui/screens/*.tcss",
+        "tui/vibe/cli/textual_ui/screens/config/*.tcss",
+        "tui/vibe/setup/trusted_folders/*.tcss"]

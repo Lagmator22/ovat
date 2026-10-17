@@ -873,18 +873,29 @@ def test_ctrl_c_copies_a_selection_instead_of_arming_a_quit():
             await pilot.pause()
 
             await pilot.press("ctrl+c")
-            await pilot.pause()
-            assert app.clipboard, "ctrl+c did not copy the selection"
+            await _until(pilot, lambda: app.clipboard,
+                         "ctrl+c did not copy the selection")
             assert app.is_running is True, "it quit instead of copying"
             # Cleared, so the NEXT ctrl+c means cancel-or-quit again and the
             # user is not stuck copying the same stale selection forever.
             assert not app.screen.get_selected_text()
 
             await pilot.press("ctrl+c")
-            await pilot.pause()
-            assert any("again to quit" in str(n.message)
-                       for n in app._notifications)
+            await _until(pilot, lambda: any(
+                "again to quit" in str(n.message)
+                for n in app._notifications), "no quit notice")
     _run(scenario())
+
+
+async def _until(pilot, check, message, timeout=5.0):
+    """A bounded poll, not one pause (AGENTS.md rule 12). Under load a
+    notice or a clipboard write lands after a single pause: these ctrl+c
+    tests failed most full parallel runs, and 6 runs in 8 with the CPU
+    busy."""
+    deadline = time.monotonic() + timeout
+    while not check():
+        assert time.monotonic() < deadline, message
+        await pilot.pause(0.05)
 
 
 def test_ctrl_c_with_no_selection_still_arms_the_quit():
@@ -893,14 +904,9 @@ def test_ctrl_c_with_no_selection_still_arms_the_quit():
         app = OvatTUI()
         async with app.run_test() as pilot:
             await pilot.press("ctrl+c")
-            # A bounded poll, not one pause (AGENTS.md rule 12): under load
-            # the notice lands after a single pause, and this failed 6 runs
-            # in 8 with the CPU busy.
-            deadline = time.monotonic() + 5
-            while not any("again to quit" in str(n.message)
-                          for n in app._notifications):
-                assert time.monotonic() < deadline, "no quit notice"
-                await pilot.pause(0.05)
+            await _until(pilot, lambda: any(
+                "again to quit" in str(n.message)
+                for n in app._notifications), "no quit notice")
             assert app.is_running is True
     _run(scenario())
 
