@@ -726,7 +726,11 @@ installer, the docs and the tests cannot disagree. It is **2026.4.1**, chosen
 by measurement (see [DECISIONS.md, D26](DECISIONS.md#serving-ovms)). `ovat
 setup` and `ovat doctor` both ask the installed binary for its version
 (`ovms --version`, run under `ovms_env()`) and say when it differs from the
-pin. `ovat setup --force` replaces it.
+pin. `ovat setup --force` replaces it, and names the folder before it deletes
+anything. It only deletes a folder holding the `.ovat-ovms` file that every
+install writes (or an empty one, or `~/.ovat/ovms` from before that file
+existed), and never the filesystem root, your home folder, the current folder
+or a git repository.
 
 ### Getting OVMS onto the machine: `ovat setup`
 
