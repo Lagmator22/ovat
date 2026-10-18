@@ -57,10 +57,12 @@ class SubagentRunner:
         self._bus = bus
         self._child_stops: dict[str, threading.Event] = {}
         self._runs: dict[str, dict] = {}
+        self._lock = threading.Lock()
 
     def get_runs(self) -> list[dict]:
         """All recorded child runs in this session."""
-        return list(self._runs.values())
+        with self._lock:
+            return [dict(r) for r in self._runs.values()]
 
     def permission(self, cfg) -> str:
         url = cfg.a2a.url if cfg.a2a else None
@@ -68,9 +70,14 @@ class SubagentRunner:
 
     def cancel_child(self, call_id: str) -> bool:
         """Cancel a running child agent by call_id without stopping the parent."""
-        stop = self._child_stops.get(call_id)
+        with self._lock:
+            stop = self._child_stops.get(call_id)
         if stop is not None:
             stop.set()
+            for broker in (self._bus.approver, self._bus.asker):
+                cancel_fn = getattr(broker, "cancel_for_call", None)
+                if callable(cancel_fn):
+                    cancel_fn(call_id)
             return True
         return False
 
@@ -92,7 +99,8 @@ class SubagentRunner:
 
         call_id = CURRENT_CALL_ID.get("") or uuid.uuid4().hex[:8]
         child_stop = CombinedStopEvent(self._bus.stop)
-        self._child_stops[call_id] = child_stop
+        with self._lock:
+            self._child_stops[call_id] = child_stop
 
         model = (cfg.api.model if cfg.api
                  else (cfg.workflow if cfg.workflow else ""))
@@ -104,16 +112,17 @@ class SubagentRunner:
 
         token_agent = CURRENT_SUBAGENT.set((agent, call_id))
         started = time.monotonic()
-        self._runs[call_id] = {
-            "call_id": call_id,
-            "agent": agent,
-            "kind": kind,
-            "task": task,
-            "status": "running",
-            "started_at": started,
-            "duration": None,
-            "tokens": None,
-        }
+        with self._lock:
+            self._runs[call_id] = {
+                "call_id": call_id,
+                "agent": agent,
+                "kind": kind,
+                "task": task,
+                "status": "running",
+                "started_at": started,
+                "duration": None,
+                "tokens": None,
+            }
         totals = {}
         status = "ok"
         try:
@@ -129,7 +138,8 @@ class SubagentRunner:
             status = "failed"
         finally:
             CURRENT_SUBAGENT.reset(token_agent)
-            self._child_stops.pop(call_id, None)
+            with self._lock:
+                self._child_stops.pop(call_id, None)
 
         duration = round(time.monotonic() - started, 3)
         toks = totals.get("total_tokens")
@@ -138,10 +148,11 @@ class SubagentRunner:
             c = totals.get("completion_tokens")
             if p is not None and c is not None:
                 toks = p + c
-        if call_id in self._runs:
-            self._runs[call_id]["status"] = status
-            self._runs[call_id]["duration"] = duration
-            self._runs[call_id]["tokens"] = toks
+        with self._lock:
+            if call_id in self._runs:
+                self._runs[call_id]["status"] = status
+                self._runs[call_id]["duration"] = duration
+                self._runs[call_id]["tokens"] = toks
 
         self._status(agent, f"finished in {duration:.1f} s", call_id=call_id)
         self._bus.emit(SUBAGENT_DONE, call_id=call_id, agent=agent,
@@ -168,6 +179,7 @@ class SubagentRunner:
         child_bus.stop = stop
         child_bus.approver = self._bus.approver
         child_bus.asker = self._bus.asker
+        child_bus.context = dict(self._bus.context)
         child = build_agent(child_cfg, select_tools=_without_delegate,
                             events=child_bus)
         child.events.stop = stop
