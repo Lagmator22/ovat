@@ -85,6 +85,13 @@ class OVMSLLMProvider(LLMProvider):
         # NPU servables. Setting stream=False on NPU keeps token usage intact.
         self.stream = stream
 
+    def close(self) -> None:
+        """Close the underlying OpenAI HTTP client pool."""
+        try:
+            self.client.close()
+        except Exception:
+            pass
+
     def chat(self, messages: list[dict], tools: list[dict] | None = None,
              on_token=None) -> dict:
         extra = {} if self.max_tokens is None else {"max_tokens": self.max_tokens}

@@ -589,3 +589,99 @@ def test_run_warns_when_answers_would_come_from_old_text(monkeypatch, tmp_path):
     flat = " ".join(result.output.split())
     assert "changed since `ovat index` ran" in flat and "docs/a.md" in flat
 
+
+def test_sqlitevec_enables_wal_locks_reads_and_closes_embedder(tmp_path):
+    """File-backed SQLite indexes must use WAL mode and busy_timeout for
+    concurrent readers, lock connection access during retrieve(), and close
+    the embedder on close()."""
+    db_file = str(tmp_path / "wal.db")
+    closed = []
+
+    class ClosableEmbedder(FakeEmbedder):
+        def close(self):
+            closed.append(True)
+
+    retriever = SQLiteVecRetrieverProvider(
+        ClosableEmbedder(), dim=384, db_path=db_file)
+    mode = retriever.db.execute("PRAGMA journal_mode").fetchone()[0]
+    timeout = retriever.db.execute("PRAGMA busy_timeout").fetchone()[0]
+    assert mode.lower() == "wal"
+    assert timeout >= 5000
+
+    retriever.add(["hello wal"], sources=["a.md"])
+
+    acquired = []
+    real_lock = retriever._write_lock
+
+    class TrackingLock:
+        def __enter__(self):
+            acquired.append("enter")
+            return real_lock.__enter__()
+
+        def __exit__(self, *exc):
+            acquired.append("exit")
+            return real_lock.__exit__(*exc)
+
+    retriever._write_lock = TrackingLock()
+    hits = retriever.retrieve("hello wal", top_k=1)
+    assert hits and hits[0]["text"] == "hello wal"
+    assert "enter" in acquired, "retrieve() did not acquire _write_lock"
+
+    retriever.close()
+    assert closed == [True], "close() did not close the embedder"
+
+
+def test_memory_retriever_locks_reads_and_closes_embedder():
+    """InMemoryRetrieverProvider must acquire _write_lock in retrieve() so
+    concurrent add() calls cannotleave _texts and _vectors out of step."""
+    closed = []
+
+    class ClosableEmbedder(FakeEmbedder):
+        def close(self):
+            closed.append(True)
+
+    store = _memory()
+    store.embedder = ClosableEmbedder()
+    store.add(["alpha"], sources=["a.md"])
+
+    acquired = []
+    real_lock = store._write_lock
+
+    class TrackingLock:
+        def __enter__(self):
+            acquired.append("enter")
+            return real_lock.__enter__()
+
+        def __exit__(self, *exc):
+            acquired.append("exit")
+            return real_lock.__exit__(*exc)
+
+    store._write_lock = TrackingLock()
+    hits = store.retrieve("alpha", top_k=1)
+    assert hits and hits[0]["text"] == "alpha"
+    assert "enter" in acquired, "InMemoryRetrieverProvider.retrieve() did not acquire _write_lock"
+
+    store.close()
+    assert closed == [True]
+
+
+def test_record_index_writes_manifest_atomically(tmp_path, monkeypatch):
+    """record_index must write .sources.json via atomic.write_text so an
+    interrupted index run never leaves a truncated JSON manifest."""
+    from ovat.agentic import atomic
+    from ovat.rag import indexer
+
+    calls = []
+    real_write = atomic.write_text
+
+    def spy_write(path, data):
+        calls.append(str(path))
+        return real_write(path, data)
+
+    monkeypatch.setattr(indexer, "write_text", spy_write, raising=False)
+    doc = tmp_path / "a.md"
+    doc.write_text("hello", encoding="utf-8")
+    db = str(tmp_path / "idx.db")
+    indexer.record_index(db, {"a.md": {"path": str(doc), "mtime": 1.0}})
+    assert calls == [db + indexer.MANIFEST_SUFFIX]
+

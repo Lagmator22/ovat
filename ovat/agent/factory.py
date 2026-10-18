@@ -381,6 +381,13 @@ def close_agent(agent) -> None:
             # Shutting down must not raise: one wedged server should not stop
             # the others being closed, nor take down the caller.
             pass
+    llm = getattr(agent, "llm", None)
+    close_llm = getattr(llm, "close", None)
+    if callable(close_llm):
+        try:
+            close_llm()
+        except Exception:
+            pass
 
 
 def build_tools(config: WorkflowConfig,
@@ -590,6 +597,8 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False,
         """Hand the agent its subprocesses and its event bus."""
         agent.mcp_servers = mcp_servers
         agent.events = events
+        if not hasattr(agent, "llm"):
+            agent.llm = llm
         if subagent_runner is not None:
             agent.subagent_runner = subagent_runner
         return agent

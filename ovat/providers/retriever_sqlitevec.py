@@ -73,6 +73,9 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         self.db.enable_load_extension(True)
         sqlite_vec.load(self.db)
         self.db.enable_load_extension(False)
+        if db_path != ":memory:" and not str(db_path).startswith("file:"):
+            self.db.execute("PRAGMA journal_mode=WAL")
+            self.db.execute("PRAGMA busy_timeout=5000")
         # A virtual table that stores the vectors and can search them by distance.
         self.db.execute(
             f"CREATE VIRTUAL TABLE IF NOT EXISTS docs USING vec0(embedding float[{self.dim}])"
@@ -93,9 +96,16 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         the way C++ does. Safe to call twice: closing an already-closed
         connection is a no-op here because I null the handle after the first.
         """
-        if self.db is not None:
-            self.db.close()
-            self.db = None
+        with self._write_lock:
+            if self.db is not None:
+                self.db.close()
+                self.db = None
+        close_embedder = getattr(self.embedder, "close", None)
+        if callable(close_embedder):
+            try:
+                close_embedder()
+            except Exception:
+                pass
 
     # `with SQLiteVecRetrieverProvider(...) as r:` is Python's RAII. __exit__
     # runs on ANY exit from the block, exception or not, like a destructor.
@@ -151,7 +161,8 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         With no sources there is no key to replace ON, so those chunks are
         appended. That is a deliberate limit of the contract, not an oversight.
         """
-        self._check_open()
+        with self._write_lock:
+            self._check_open()
         if not texts:
             # Matches InMemoryRetrieverProvider, which already returns here.
             # Harmless either way -- an empty commit is a no-op -- but the two
@@ -165,6 +176,7 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
     def _add_locked(self, texts: list[str], vectors: list,
                     sources: list[str] | None) -> None:
         """The write half of add(), serialised by the caller's lock."""
+        self._check_open()
         if sources:
             # dict.fromkeys keeps first-seen order and drops repeats; the
             # indexer passes one file's source repeated per chunk, but the
@@ -187,7 +199,8 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         self.db.commit()
 
     def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
-        self._check_open()
+        with self._write_lock:
+            self._check_open()
         qvec = self.embedder.embed([query])[0]         # embed the question
         # Step 1: nearest-neighbour search on the vector table.
         # `k = ?`, not `LIMIT ?`. Both express "give me the nearest top_k", but
@@ -207,18 +220,20 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         #
         # `k = ?` is sqlite-vec's own KNN form and needs no push-down, so it
         # behaves identically on both sides of 3.38.
-        rows = self.db.execute(
-            "SELECT rowid, distance FROM docs "
-            "WHERE embedding MATCH ? AND k = ? ORDER BY distance",
-            (sqlite_vec.serialize_float32(qvec), top_k),
-        ).fetchall()
-        # Step 2: pull the matching text + source from the chunks table by rowid.
-        # Smaller distance = closer in meaning = better match.
-        results = []
-        for rowid, distance in rows:
-            chunk = self.db.execute(
-                "SELECT text, source FROM chunks WHERE rowid = ?", (rowid,)
-            ).fetchone()
-            if chunk is not None:
-                results.append({"text": chunk[0], "source": chunk[1], "distance": distance})
-        return results
+        with self._write_lock:
+            self._check_open()
+            rows = self.db.execute(
+                "SELECT rowid, distance FROM docs "
+                "WHERE embedding MATCH ? AND k = ? ORDER BY distance",
+                (sqlite_vec.serialize_float32(qvec), top_k),
+            ).fetchall()
+            # Step 2: pull the matching text + source from the chunks table by rowid.
+            # Smaller distance = closer in meaning = better match.
+            results = []
+            for rowid, distance in rows:
+                chunk = self.db.execute(
+                    "SELECT text, source FROM chunks WHERE rowid = ?", (rowid,)
+                ).fetchone()
+                if chunk is not None:
+                    results.append({"text": chunk[0], "source": chunk[1], "distance": distance})
+            return results

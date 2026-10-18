@@ -677,3 +677,25 @@ def test_the_whisper_pipeline_is_built_with_the_cpu_precision_rule(monkeypatch, 
     monkeypatch.setattr(transcribe, "_pipelines", {})
     transcribe._load_cached_pipeline((str(tmp_path), "CPU"))
     assert seen["kwargs"] == {"INFERENCE_PRECISION_HINT": "f32"}
+
+
+def test_ovms_providers_and_close_agent_close_http_clients():
+    """OVMSLLMProvider and OVMSEmbeddingsProvider own httpx connection pools via
+    OpenAI() and must close them when close() or close_agent() runs."""
+    from ovat.agent.factory import build_agent, close_agent
+    from ovat.config.workflow import WorkflowConfig
+
+    llm = OVMSLLMProvider(base_url="http://localhost:8000/v3", model="x")
+    emb = OVMSEmbeddingsProvider(base_url="http://localhost:8000/v3", model="y")
+    closed = []
+    llm.client.close = lambda: closed.append("llm")
+    emb.client.close = lambda: closed.append("emb")
+    llm.close()
+    emb.close()
+    assert closed == ["llm", "emb"]
+
+    agent = build_agent(WorkflowConfig(model={"name": "m"}), skip_rag=True)
+    agent_closed = []
+    agent.llm.client.close = lambda: agent_closed.append("agent_llm")
+    close_agent(agent)
+    assert agent_closed == ["agent_llm"]
