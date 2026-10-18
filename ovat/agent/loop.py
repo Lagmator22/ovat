@@ -361,6 +361,9 @@ class AgentLoop:
             # and I am done. `or ""` because a server can send content=None;
             # the CLI would print literal "None".
             if not tool_calls:
+                if self.stop is not None and self.stop.is_set():
+                    self.session.add_assistant(content=CANCELLED_TEXT)
+                    return _finish(CANCELLED_TEXT)
                 self.session.add_assistant(content=reply["content"])
                 # Guidance that arrived while the model was writing its
                 # answer is not dropped: ask again, now with it. Checked and
@@ -511,5 +514,7 @@ class AgentLoop:
                 self.session.add_tool_result(call.id, result)
 
         # If I fall out of the loop I hit my safety cap without a final answer.
-        return _finish(f"Error: I reached my max of {self.max_iterations} "
-                       f"steps without a final answer.")
+        msg = (f"Error: I reached my max of {self.max_iterations} "
+               f"steps without a final answer.")
+        self.session.add_assistant(content=msg)
+        return _finish(msg)

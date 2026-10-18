@@ -650,3 +650,51 @@ def test_the_tool_parser_hint_is_only_given_when_there_are_tools():
                                        "fn": lambda **k: "x"}},
                           max_iterations=1).run("q")
     assert "tool_parser" in with_tool
+
+
+def test_max_iterations_ends_session_with_assistant_turn():
+    """When a run hits max_iterations after a tool result, the session must
+    still end on an assistant message so the next turn does not send two
+    consecutive non-assistant turns or break session.truncate()."""
+    endless = [reply("tool_calls",
+                     tool_calls=[make_tool_call(f"tc_{i}", "get_weather", {"city": "X"})])
+               for i in range(10)]
+    agent = AgentLoop(FakeLLMProvider(endless), tools=_weather_tool(), max_iterations=2)
+    out = agent.run("loop forever")
+    assert "max of 2 steps" in out
+    assert agent.session.messages[-1] == {"role": "assistant", "content": out}
+
+
+def test_stop_during_streaming_returns_cancelled_text_not_partial_or_empty_error():
+    """Setting stop while on_token is streaming must return CANCELLED_TEXT,
+    not misdiagnose a half-streamed <think> block as an empty answer or
+    return a half-sentence as a completed reply."""
+    from ovat.agent.events import CANCELLED_TEXT, EventBus
+
+    for first_chunk in ("<think>still thinking", "Half of a sentence"):
+        bus = EventBus()
+
+        class MidStreamCancelLLM:
+            def chat(self, messages, tools=None, on_token=None):
+                parts = []
+                for idx, piece in enumerate([first_chunk, " more text"]):
+                    if idx == 1:
+                        bus.stop.set()
+                    parts.append(piece)
+                    if on_token is not None and on_token(piece):
+                        break
+                return {
+                    "finish_reason": "stop",
+                    "content": "".join(parts),
+                    "tool_calls": None,
+                    "usage": None,
+                }
+
+        loop = AgentLoop(MidStreamCancelLLM(), tools={}, events=bus)
+        out = loop.run("question")
+        assert out == CANCELLED_TEXT
+        assert loop.session.messages[-1] == {
+            "role": "assistant", "content": CANCELLED_TEXT}
+        assert loop.last_trace["totals"]["empty_answer"] is False
+        assert loop.last_trace["totals"]["failed"] is True
+
