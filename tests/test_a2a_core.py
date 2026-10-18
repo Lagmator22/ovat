@@ -810,3 +810,83 @@ def test_the_public_card_shows_no_folder_of_a_local_model(model):
                              "http://127.0.0.1:9100/", "docs", "1.2.0"))
         assert "private-user" not in card
         assert "Qwen3-8B-int4-ov" in card
+
+
+def test_a2a_call_resets_context_and_retries_when_turn_limit_reached():
+    class TurnLimitPeer:
+        def __init__(self):
+            self.resets = 0
+            self.calls = 0
+
+        def reset(self):
+            self.resets += 1
+
+        def send(self, text, metadata=None, on_status=None, stop=None):
+            self.calls += 1
+            if self.calls == 1:
+                return RemoteReply(
+                    TaskState.REJECTED,
+                    "this conversation reached 20 messages "
+                    "(a2a.server.max_turns_per_context); start a new one",
+                )
+            return RemoteReply(TaskState.COMPLETED, "fresh answer")
+
+    peer = TurnLimitPeer()
+    out = _call(peer)
+    assert peer.resets == 1
+    assert peer.calls == 2
+    assert out.endswith("fresh answer")
+
+
+def test_pool_full_is_reported_as_rejected_not_internal_failure():
+    svc, built = _service(lambda: FakeAgent(delay=0.3), max_contexts=1)
+
+    async def scenario():
+        first, second = Recorder(), Recorder()
+        t1 = asyncio.create_task(
+            svc.run(_task(context="c1", caller="a", task_id="1"), first)
+        )
+        while not built:
+            await asyncio.sleep(0.01)
+        await svc.run(_task(context="c2", caller="b", task_id="2"), second)
+        await t1
+        return first, second
+
+    first, second = asyncio.run(scenario())
+    assert second.kinds() == ["rejected"]
+    assert "max_contexts" in second.calls[-1][1]
+    assert svc.stats["rejected"] == 1
+    assert svc.stats["failed"] == 0
+
+
+def test_allow_remote_approvals_false_refuses_remote_approver():
+    svc, built = _service(AsksFirst, allow_remote_approvals=False)
+    rec = ApprovalRecorder()
+    asyncio.run(
+        svc.run(_task("deploy it", task_id="t1", approval_capable=True), rec)
+    )
+    assert "input_required" not in rec.kinds()
+
+
+def test_audit_log_caps_oversized_rejected_question_and_tails_from_end(
+        tmp_path):
+    from ovat.a2a.policy import Admission
+
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    settings = A2AServerConfig(max_message_chars=50)
+    svc = A2AService(
+        FakeAgent,
+        settings,
+        admission=Admission(settings, "srv"),
+        audit=audit,
+    )
+    _run(svc, _task(text="x" * 5000))
+    rec = audit.tail(1)[0]
+    assert rec["state"] == "rejected"
+    assert len(rec["question"]) <= 50
+
+    for i in range(25):
+        audit.write({"caller": f"c{i}", "answer": "ok" * 200})
+    last_two = audit.tail(2)
+    assert [r["caller"] for r in last_two] == ["c23", "c24"]
+

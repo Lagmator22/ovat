@@ -438,3 +438,33 @@ def test_a_card_pointing_to_another_origin_is_refused(server_url):
         server.should_exit = True
         thread.join(5)
 
+
+def test_sdk_peer_unregisters_atexit_and_guard_reloads_rotated_token(
+        tmp_path, monkeypatch):
+    import atexit
+    from ovat.a2a import tokens as tokens_mod
+    from ovat.a2a.sdk.server import _Guard
+
+    unregistered = []
+    orig = atexit.unregister
+    monkeypatch.setattr(
+        atexit, "unregister", lambda fn: (unregistered.append(fn), orig(fn))
+    )
+    peer = SDKPeer("http://127.0.0.1:9/", token="t", timeout=5)
+    peer.close()
+    assert peer.close in unregistered
+
+    token_path = tmp_path / "token"
+    t1 = tokens_mod.load_or_create(token_path)
+    guard = _Guard(
+        lambda scope, receive, send: None,
+        {t1: "local"},
+        token_file=token_path,
+    )
+    assert guard._caller(f"Bearer {t1}".encode()) == "local"
+    t2 = tokens_mod.rotate(token_path)
+    assert t2 != t1
+    assert guard._caller(f"Bearer {t2}".encode()) == "local"
+    assert guard._caller(f"Bearer {t1}".encode()) is None
+
+

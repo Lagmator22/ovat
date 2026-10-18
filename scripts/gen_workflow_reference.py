@@ -237,6 +237,10 @@ PURPOSE = {
     ("a2a.server", "max_hops"): "How many agents deep a request may "
                                 "travel, so two agents cannot call each "
                                 "other forever.",
+    ("a2a.server", "allow_remote_approvals"):
+        "Whether a remote caller that supports confirmations may approve "
+        "`permission: ask` tools on this server. Set `false` to refuse all "
+        "`ask` tools on remote requests.",
     ("a2a.server", "audit_log"): "JSON Lines file recording every answer "
                                  "that left. `null` turns it off.",
 

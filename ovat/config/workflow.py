@@ -663,6 +663,7 @@ class A2AServerConfig(StrictModel):
     max_contexts: int = Field(default=16, gt=0)
     max_turns_per_context: int = Field(default=20, gt=0)
     max_hops: int = Field(default=3, ge=1)
+    allow_remote_approvals: bool = True
     audit_log: str | None = ".ovat/a2a/audit.jsonl"   # None: no log
 
     @model_validator(mode="after")

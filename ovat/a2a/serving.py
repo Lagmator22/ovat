@@ -64,6 +64,7 @@ class Prepared:
     url: str
     allowed_hosts: list[str] = field(default_factory=list)
     audit_path: str | None = None
+    token_file: Path | None = None
 
 
 def prepare(config: WorkflowConfig, settings: A2AServerConfig,
@@ -92,7 +93,10 @@ def prepare(config: WorkflowConfig, settings: A2AServerConfig,
 
     first = build(config, skip_rag=skip_rag, select_tools=select)
     exp = decided["exposure"]
+    local_token_file: Path | None = None
     try:
+        if not dry_run and not settings.tokens:
+            local_token_file = token_file or tokens_mod.token_file()
         callers = ({} if dry_run
                    else tokens_mod.callers(settings.tokens, token_file))
         audit = (AuditLog(settings.audit_log)
@@ -123,4 +127,5 @@ def prepare(config: WorkflowConfig, settings: A2AServerConfig,
     return Prepared(service=service, card=card, callers=callers,
                     exposure=exp, url=url,
                     allowed_hosts=list(dict.fromkeys(hosts)),
-                    audit_path=settings.audit_log)
+                    audit_path=settings.audit_log,
+                    token_file=local_token_file)

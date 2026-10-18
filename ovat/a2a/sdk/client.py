@@ -145,6 +145,7 @@ class SDKPeer:
         if self._closed:
             return
         self._closed = True
+        atexit.unregister(self.close)
         try:
             asyncio.run_coroutine_threadsafe(
                 self._aclose(), self._loop).result(timeout=5)

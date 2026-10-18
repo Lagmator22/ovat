@@ -190,6 +190,7 @@ How `ovat a2a serve` offers this workflow. Safe by default.
 | `max_contexts` | integer | `16` | > 0 | Conversations kept in memory at once; the oldest is dropped first. |
 | `max_turns_per_context` | integer | `20` | > 0 | Messages in one conversation before the caller must start a new one. |
 | `max_hops` | integer | `3` | >= 1 | How many agents deep a request may travel, so two agents cannot call each other forever. |
+| `allow_remote_approvals` | boolean | `true` | - | Whether a remote caller that supports confirmations may approve `permission: ask` tools on this server. Set `false` to refuse all `ask` tools on remote requests. |
 | `audit_log` | string \| null | `.ovat/a2a/audit.jsonl` | - | JSON Lines file recording every answer that left. `null` turns it off. |
 
 ## `a2a.server.skills`

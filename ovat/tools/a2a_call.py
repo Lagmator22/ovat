@@ -148,6 +148,11 @@ def a2a_call_impl(message: str, peer, name: str, url: str, bus=None,
 
     try:
         reply = peer.send(message, metadata, on_status, stop=stop)
+        if (reply.state is TaskState.REJECTED
+                and "max_turns_per_context" in (reply.text or "")
+                and hasattr(peer, "reset")):
+            peer.reset()
+            reply = peer.send(message, metadata, on_status, stop=stop)
         # The remote asks before each tool that needs a person; the person
         # here answers through the same approval as a local tool.
         for _ in range(MAX_APPROVALS):
