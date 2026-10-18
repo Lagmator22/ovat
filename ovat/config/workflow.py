@@ -361,6 +361,9 @@ class ToolConfig(StrictModel):
     # and friends. Listing a variable here passes it on; ${VAR} in a value is
     # expanded from the parent, so a secret can stay out of the YAML.
     env: dict[str, str] | None = None
+    # Extra HTTP headers for an mcp_http or mcp_sse server. ${VAR} in a value
+    # is expanded from the parent environment, just like env above.
+    headers: dict[str, str] | None = None
 
     # Where this tool's own weights live, and what runs them. Only the tools
     # that load a model read these: `transcribe` and `describe_image`.
@@ -381,14 +384,14 @@ class ToolConfig(StrictModel):
     model: str | None = None
     device: str | None = None       # CPU, GPU or NPU; unset asks DeviceManager
 
-    # type: a2a, another agent reached over A2A and used as ONE tool. The
-    # model sends it a message and reads its reply. One tool per remote
-    # agent, not per skill: an A2A request has no field that picks a skill.
-    url: str | None = None          # its base URL; the Agent Card is read there
+    # type: a2a, mcp_http or mcp_sse. For a2a, another agent reached over A2A
+    # and used as ONE tool; for mcp_http and mcp_sse, a remote MCP server
+    # whose advertised tools are imported just like mcp_stdio.
+    url: str | None = None          # base URL of the remote agent or MCP server
     # The NAME of the environment variable holding the bearer token, never
     # the token itself: a workflow is a file people share and commit.
     token_env: str | None = None
-    timeout: float | None = Field(default=None, gt=0)   # unset: 900 s
+    timeout: float | None = Field(default=None, gt=0)   # unset: 900 s (a2a) / 30 s (mcp)
     description: str | None = None  # replaces the card's text in the menu
 
     # Whether the tool may run: allow, ask (a person says yes first; with
@@ -426,22 +429,28 @@ class ToolConfig(StrictModel):
         if self.env and self.type != "mcp_stdio":
             raise ValueError("env only applies to type: mcp_stdio tools, "
                              "which run as their own process")
+        if self.headers and self.type not in ("mcp_http", "mcp_sse"):
+            raise ValueError("headers only apply to type: mcp_http and "
+                             "type: mcp_sse tools")
         return self
 
     @model_validator(mode="after")
     def _a2a_fields_belong_to_a2a(self):
         """url and friends mean nothing to a builtin, so say so by name."""
-        a2a_only = {"url": self.url, "token_env": self.token_env,
-                    "timeout": self.timeout, "description": self.description}
-        if self.type != "a2a":
-            used = [k for k, v in a2a_only.items() if v is not None]
+        if self.description is not None and self.type != "a2a":
+            raise ValueError("description only applies to type: a2a tools")
+        remote_only = {"url": self.url, "token_env": self.token_env,
+                       "timeout": self.timeout}
+        if self.type not in ("a2a", "mcp_http", "mcp_sse"):
+            used = [k for k, v in remote_only.items() if v is not None]
             if used:
                 raise ValueError(f"{', '.join(used)} only apply to "
-                                 f"type: a2a tools")
+                                 f"type: a2a, mcp_http or mcp_sse tools")
             return self
         if not self.url or not self.url.startswith(("http://", "https://")):
-            raise ValueError("a type: a2a tool needs url: http(s)://host:port, "
-                             "the address of the other agent")
+            raise ValueError(
+                f"a type: {self.type} tool needs url: http(s)://host:port, "
+                f"the address of the remote server or agent")
         if self.token_env is not None:
             _check_env_name(self.token_env, "token_env")
         return self

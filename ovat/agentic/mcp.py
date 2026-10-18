@@ -1,6 +1,9 @@
 """Session-only MCP selections and public connection pictures."""
 
 
+_MCP_TYPES = ("mcp_stdio", "mcp_http", "mcp_sse")
+
+
 class MCPSelection:
     def __init__(self):
         self.disabled = set()
@@ -10,18 +13,20 @@ class MCPSelection:
     def config_for_build(self, config):
         return config.model_copy(update={"tools": [
             tool for tool in config.tools
-            if tool.type != "mcp_stdio" or tool.name not in self.disabled]})
+            if tool.type not in _MCP_TYPES or tool.name not in self.disabled]})
 
     def select_tools(self, tools):
         return {name: spec for name, spec in tools.items()
-                if (spec.get("mcp_source"), name) not in self.disabled_tools}
+                if (spec.get("mcp_source"), name) not in self.disabled_tools
+                and (spec.get("mcp_source"),
+                     spec.get("mcp_tool_name", name)) not in self.disabled_tools}
 
     def catalog(self, config, agent):
         servers = {getattr(server, "mcp_name", None): server
                    for server in getattr(agent, "mcp_servers", ())}
         sources = []
         for tool in config.tools:
-            if tool.type != "mcp_stdio":
+            if tool.type not in _MCP_TYPES:
                 continue
             server = servers.get(tool.name)
             status = server.status() if server is not None else {}

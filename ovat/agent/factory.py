@@ -435,25 +435,40 @@ def build_tools(config: WorkflowConfig,
                 "kind": "builtin",
                 "_entry": tool_cfg,
             }
-        elif tool_cfg.type == "mcp_stdio":
-            if not tool_cfg.command:
-                raise ValueError(
-                    f"Tool '{tool_cfg.name}' has type mcp_stdio but no "
-                    f"command to launch the server with."
-                )
-            from ovat.tools.mcp_client import (MCPStdioServer,
+        elif tool_cfg.type in ("mcp_stdio", "mcp_http", "mcp_sse"):
+            from ovat.tools.mcp_client import (MCPHttpServer, MCPStdioServer,
                                                openai_schema_from_mcp_tool)
-            server = MCPStdioServer(tool_cfg.command, env=tool_cfg.env)
+            if tool_cfg.type == "mcp_stdio":
+                if not tool_cfg.command:
+                    raise ValueError(
+                        f"Tool '{tool_cfg.name}' has type mcp_stdio but no "
+                        f"command to launch the server with."
+                    )
+                server = MCPStdioServer(tool_cfg.command, env=tool_cfg.env)
+            else:
+                transport = "sse" if tool_cfg.type == "mcp_sse" else "http"
+                server = MCPHttpServer(
+                    tool_cfg.url,
+                    transport=transport,
+                    connect_timeout=tool_cfg.timeout or 30.0,
+                    headers=tool_cfg.headers,
+                    token_env=tool_cfg.token_env,
+                )
             server.mcp_name = tool_cfg.name
             if servers is not None:
-                # Handed back so somebody owns the subprocess's lifetime.
+                # Handed back so somebody owns the server's lifetime.
                 servers.append(server)
             for remote in server.tools:
-                tools[remote.name] = {
-                    "schema": openai_schema_from_mcp_tool(remote),
+                tool_key = (f"{tool_cfg.name}__{remote.name}"
+                            if remote.name in tools else remote.name)
+                schema = openai_schema_from_mcp_tool(remote)
+                schema["function"]["name"] = tool_key
+                tools[tool_key] = {
+                    "schema": schema,
                     "function": _make_mcp_caller(server, remote.name),
-                    "kind": "mcp_stdio",
+                    "kind": tool_cfg.type,
                     "mcp_source": tool_cfg.name,
+                    "mcp_tool_name": remote.name,
                     "_entry": tool_cfg,
                 }
         elif tool_cfg.type == "a2a":
@@ -462,7 +477,7 @@ def build_tools(config: WorkflowConfig,
         else:
             raise ValueError(
                 f"Unsupported tool type '{tool_cfg.type}' for '{tool_cfg.name}'. "
-                f"Supported: builtin, mcp_stdio, a2a."
+                f"Supported: builtin, mcp_stdio, mcp_http, mcp_sse, a2a."
             )
     # Every tool from THIS config entry gets its permission: an mcp_stdio
     # entry's applies to each tool its server advertises.

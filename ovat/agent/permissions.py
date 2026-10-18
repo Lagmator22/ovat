@@ -66,7 +66,7 @@ def default_permission(kind: str, url: str | None = None,
         return ASK
     if kind == "api":
         return ASK
-    if kind == "a2a":
+    if kind in ("a2a", "mcp_http", "mcp_sse"):
         return ALLOW if url and is_loopback(url) else ASK
     return ALLOW
 
