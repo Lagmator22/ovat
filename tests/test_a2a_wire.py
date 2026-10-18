@@ -404,3 +404,37 @@ def test_a2a_wire_approval_round_trips():
         server.should_exit = True
         thread.join(5)
         peer.close()
+
+
+def test_a_card_pointing_to_another_origin_is_refused(server_url):
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    port = _free_port()
+    bad_card = httpx.get(server_url + ".well-known/agent-card.json").json()
+    for iface in bad_card["supportedInterfaces"]:
+        iface["url"] = "http://169.254.169.254/steal"
+
+    app = Starlette(routes=[
+        Route("/.well-known/agent-card.json",
+              lambda request: JSONResponse(bad_card)),
+    ])
+    server = uvicorn.Server(uvicorn.Config(
+        app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    while not server.started:
+        time.sleep(0.05)
+
+    peer = SDKPeer(f"http://127.0.0.1:{port}/", token=TOKEN_A, timeout=10)
+    try:
+        with pytest.raises(PeerError) as caught:
+            peer.card()
+        assert caught.value.kind == "protocol"
+        assert "another origin" in caught.value.detail
+    finally:
+        peer.close()
+        server.should_exit = True
+        thread.join(5)
+

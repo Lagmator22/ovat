@@ -15,7 +15,9 @@ this; urllib and html.parser from the standard library are enough for
 Permission is `ask` by default (permissions.py): the URL and the request
 leave the machine.
 """
+import ipaddress
 import re
+import socket
 import urllib.error
 import urllib.request
 from html.parser import HTMLParser
@@ -28,6 +30,8 @@ MAX_TIMEOUT = 120
 MAX_CONTENT_BYTES = 120_000      # Vibe's max_content_bytes
 MAX_REDIRECTS = 20
 _VOID_SKIP = {"embed"}
+_AWS_V6_METADATA = ipaddress.ip_network("fd00:ec2::/32")
+_LITERAL_LOOPBACK = {"localhost", "127.0.0.1", "::1"}
 # Read a little more than we keep: HTML shrinks a lot when turned to text.
 MAX_DOWNLOAD_BYTES = 4_000_000
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -178,6 +182,53 @@ def _decode(data: bytes, content_type: str) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def _check_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+              host: str, allow_private_lan: bool) -> str | None:
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    if ip.is_loopback:
+        if host not in _LITERAL_LOOPBACK:
+            return "refusing to fetch a loopback address reached through DNS."
+        return None
+    if ip.is_link_local or (isinstance(ip, ipaddress.IPv6Address)
+                            and ip in _AWS_V6_METADATA):
+        return "refusing to fetch a link-local or cloud metadata address."
+    if ip.is_unspecified or ip.is_multicast:
+        return "refusing to fetch a reserved or unspecified address."
+    if ip.is_private and not allow_private_lan:
+        return "refusing to fetch a private network address."
+    if ip.is_reserved and not ip.is_private:
+        return "refusing to fetch a reserved or unspecified address."
+    return None
+
+
+def check_safe_url(url: str, *, allow_private_lan: bool = False) -> str | None:
+    """Return a refusal sentence if `url` resolves to a forbidden address."""
+    host = (urlparse(url).hostname or "").strip().lower()
+    if not host:
+        return "the URL is invalid; use an http or https address."
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        return _check_ip(ip, host, allow_private_lan)
+    try:
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except OSError:
+        return None
+    for _, _, _, _, sockaddr in infos:
+        raw_ip = str(sockaddr[0]).split("%")[0]
+        try:
+            ip = ipaddress.ip_address(raw_ip)
+        except ValueError:
+            continue
+        reason = _check_ip(ip, host, allow_private_lan)
+        if reason:
+            return reason
+    return None
+
+
 def web_fetch_impl(url: str, timeout: int | None = None) -> str:
     raw = (url or "").strip()
     if not raw:
@@ -206,6 +257,9 @@ def web_fetch_impl(url: str, timeout: int | None = None) -> str:
         return fail("web_fetch", "the URL is invalid; use an http or https address.")
     opener = urllib.request.build_opener(_NoRedirect)
     for _ in range(MAX_REDIRECTS + 1):
+        blocked = check_safe_url(current)
+        if blocked:
+            return fail("web_fetch", blocked)
         request = urllib.request.Request(current, headers={
             "User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9",
             "Accept": "text/html,application/xhtml+xml,application/xml;"

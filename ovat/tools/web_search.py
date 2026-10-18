@@ -97,6 +97,11 @@ def _setup_error(provider: str | None, base_url: str | None,
         if not valid:
             return None, (f"web_search base_url '{base_url}' must start with "
                           f"http:// or https://.")
+        from ovat.tools.web_fetch import check_safe_url
+        blocked = check_safe_url(base_url, allow_private_lan=True)
+        if blocked:
+            return None, (f"web_search base_url '{base_url}' is not allowed: "
+                          f"{blocked}")
         return "", None            # an instance of your own needs no key
     if not api_key_env:
         return None, (f"web_search uses {provider}, which needs an API key. "
