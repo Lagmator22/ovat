@@ -433,3 +433,61 @@ def test_stopping_the_a2a_server_on_purpose_is_not_reported_as_a_failure(
     notices = _serve_notices(monkeypatch, stop=True)
     assert [n.level for n in notices] == ["info"]
     assert "exit" not in notices[0].text
+
+
+def test_cancel_shell_stops_only_the_shell_command_not_a_running_turn(tmp_path):
+    """Interrupting a `!` shell command while an agent turn is running must
+    kill only the shell subprocess and leave the agent turn alive."""
+    session, sink, _ = _session(lambda: Agent(delay=5.0), cwd=str(tmp_path))
+    session.start()
+    sink.wait_for(s.Ready)
+    session.ask("long turn")
+    time.sleep(0.1)
+    session.run_shell(py_command("import time; time.sleep(30)"))
+    time.sleep(0.3)
+
+    assert hasattr(session, "cancel_shell"), "AgentSession has no cancel_shell()"
+    assert session.cancel_shell() is True
+    done_shell = sink.wait_for(s.ShellDone, timeout=10)
+    assert done_shell.code != 0
+    assert not session.agent.events.stop.is_set(), (
+        "cancel_shell() also cancelled the running agent turn")
+
+    session.cancel()
+    sink.wait_for(s.TurnDone)
+
+
+def test_concurrent_builds_serialize_and_close_replaced_agents():
+    """Overlapping start() and switch_model() calls must serialize via
+    _build_lock so neither built agent is leaked without being closed."""
+    enter_first = threading.Event()
+    release_first = threading.Event()
+    calls = {"n": 0}
+    built = []
+    sink = Collector()
+
+    def build(config):
+        calls["n"] += 1
+        idx = calls["n"]
+        agent = Agent()
+        built.append((config, agent))
+        if idx == 1:
+            enter_first.set()
+            release_first.wait(5)
+        return agent
+
+    session = s.AgentSession(
+        "w.yml", sink, load=lambda p: WorkflowConfig(model={"name": "m"}),
+        build=build, close=lambda a: setattr(a, "closed", True))
+    assert hasattr(session, "_build_lock"), "AgentSession has no _build_lock"
+
+    t1 = session.start()
+    assert enter_first.wait(5)
+    t2 = session.switch_model(model="m2")
+    release_first.set()
+    t1.join(5)
+    t2.join(5)
+
+    assert len(built) == 2
+    assert sum(not a.closed for _, a in built) == 1
+    assert session.agent is built[-1][1]

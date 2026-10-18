@@ -1869,3 +1869,24 @@ def test_reasoning_before_a_lone_closing_tag_goes_in_the_fold():
 def test_an_answer_with_no_tags_has_no_reasoning():
     assert chat_screen.split_thinking("Just the answer.") == ("", "Just the answer.")
 
+
+def test_submitting_while_busy_preserves_the_typed_draft(monkeypatch, tmp_path):
+    """If the user hits Enter while the model is still answering (or still
+    loading), ChatScreen must warn without wiping out what they typed."""
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            inp = screen.query_one("#chat-input", ChatInput)
+            screen._busy = True
+            inp.value = "follow-up question I do not want to lose"
+            await pilot.press("enter")
+            await pilot.pause()
+
+            assert "Still answering" in _log_text(screen)
+            assert inp.value == "follow-up question I do not want to lose", (
+                f"busy submit wiped the user's draft: {inp.value!r}")
+    _run(scenario())
+

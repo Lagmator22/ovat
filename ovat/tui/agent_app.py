@@ -171,6 +171,7 @@ class OvatAgentApp(VibeApp):
         self.register_theme(OVAT_THEME)
         self._hardware_choice = hardware
         self._hardware = None
+        self._hw_sampling = False
         self._reading: dict = {}
         self._unsubscribe = None
 
@@ -226,12 +227,17 @@ class OvatAgentApp(VibeApp):
 
     def _sample_hardware(self) -> None:
         monitor = self._hardware
+        if monitor is None or getattr(self, "_hw_sampling", False):
+            return
+        self._hw_sampling = True
 
         def take():
             try:
                 self.post_message(HardwareReading(monitor.sample()))
             except Exception:
                 pass
+            finally:
+                self._hw_sampling = False
         threading.Thread(target=take, daemon=True, name="ovat-hw").start()
 
     def on_hardware_reading(self, message: HardwareReading) -> None:

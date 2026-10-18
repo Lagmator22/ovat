@@ -933,13 +933,14 @@ class ChatScreen(Screen):
     async def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         line = event.value.strip()
         inp = self.query_one("#chat-input", ChatInput)
-        inp.value = ""
         self.query_one("#chat-palette", OptionList).display = False
         if not line:
+            inp.value = ""
             return
-        self._history.add(line)
 
         if line.startswith("/"):
+            inp.value = ""
+            self._history.add(line)
             await self._slash(line)
             return
 
@@ -949,6 +950,9 @@ class ChatScreen(Screen):
         if self._busy:
             self._note("Still answering; Esc stops it.", "warn")
             return
+
+        inp.value = ""
+        self._history.add(line)
 
         self._busy = True
         self._set_placeholder("thinking…  Esc stops the answer")
