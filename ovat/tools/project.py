@@ -97,3 +97,25 @@ def shown_path(path: Path, root: Path) -> str:
         return path.relative_to(root).as_posix()
     except ValueError:
         return path.as_posix()
+
+
+def is_sensitive_path(raw: str | None, *, for_read: bool = False) -> bool:
+    """True when `raw` names `.env*`, `.git/**`, `.ovat/**`, or `workflow.yml`."""
+    text = (raw or "").strip().replace("\\", "/")
+    if not text:
+        return False
+    parts = [p.lower() for p in Path(text).parts if p not in ("", ".", "/")]
+    if not parts:
+        return False
+    if ".git" in parts or ".ovat" in parts:
+        return True
+    name = parts[-1]
+    if name == ".env" or (name.startswith(".env.")
+                          and name != ".env.example"):
+        return True
+    if name in (".envrc", ".envrc.local"):
+        return True
+    if not for_read and name in ("workflow.yml", "workflow.yaml"):
+        return True
+    return False
+

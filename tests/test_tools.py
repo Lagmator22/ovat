@@ -522,3 +522,72 @@ def test_a_miss_does_not_crawl_the_working_directory(tmp_path, monkeypatch):
     # A bare name walks, but only two levels: depth five stays out of reach.
     path, note = resolve_path("meeting_note.wav")
     assert note is None, f"walked past the depth bound: {path}"
+
+
+def test_describe_image_and_transcribe_refuse_paths_outside_root(tmp_path):
+    from ovat.tools.describe_image import describe_image_impl
+    from ovat.tools.fuzzy import resolve_path
+
+    project = (tmp_path / "proj").resolve()
+    project.mkdir()
+    outside = (tmp_path / "outside").resolve()
+    outside.mkdir()
+    secret_wav = outside / "secret-notes.wav"
+    _write_wav(secret_wav, channels=1, rate=16000)
+    secret_img = outside / "secret-photo.png"
+    secret_img.write_bytes(b"png")
+
+    # Fuzzy matcher must not suggest a file outside root
+    cand, note = resolve_path(str(outside / "secret_note.wav"), root=project)
+    assert note is None
+
+    out_wav = transcribe_impl(
+        str(secret_wav), pipeline=object(), root=project
+    )
+    assert out_wav.startswith("Error:") and "outside the project folder" in out_wav
+
+    out_img = describe_image_impl(
+        str(secret_img), provider=object(), root=project
+    )
+    assert out_img.startswith("Error:") and "outside the project folder" in out_img
+
+
+def test_describe_image_serializes_concurrent_provider_calls(tmp_path):
+    import threading
+    import time
+    from ovat.tools import describe_image
+
+    assert hasattr(describe_image, "VLM_LOCK")
+    image = tmp_path / "pic.png"
+    image.write_bytes(b"png")
+
+    active = 0
+    max_active = 0
+    guard = threading.Lock()
+
+    class SlowVLM:
+        def generate(self, prompt, images):
+            nonlocal active, max_active
+            with guard:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.05)
+            with guard:
+                active -= 1
+            return "ok"
+
+    vlm = SlowVLM()
+    threads = [
+        threading.Thread(
+            target=lambda: describe_image.describe_image_impl(
+                str(image), provider=vlm
+            )
+        )
+        for _ in range(4)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(5)
+    assert max_active == 1
+

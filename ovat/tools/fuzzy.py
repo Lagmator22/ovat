@@ -24,11 +24,12 @@ import os
 SIMILARITY = 0.70
 
 
-def _candidates(requested: str):
+def _candidates(requested: str, root=None):
     """Existing files worth comparing against `requested`, a path that is
     not there. Yield (or return a list of) file paths; resolve_path filters
     them by extension and scores them, so this only decides WHERE to look.
     """
+    base = str(root) if root is not None else "."
     folder = os.path.dirname(requested)
     if folder and (os.path.isdir(folder) or os.path.isabs(folder)):
         # The model named a folder that exists (or an absolute one): trust it
@@ -36,6 +37,8 @@ def _candidates(requested: str):
         # rescuing; reaching into some other tree is how a different
         # recording gets swapped in.
         return _list_files(folder)
+    if folder and root is not None and os.path.isdir(os.path.join(base, folder)):
+        return _list_files(os.path.join(base, folder))
     if folder:
         # A relative folder that is not there. Measured on the AI PC: asked
         # for examples/audio-multimodal/sample.wav, Qwen3.5 sent
@@ -44,22 +47,27 @@ def _candidates(requested: str):
         # folders whose path ENDS with the one named, within the same two
         # levels as a bare name: the named folder still decides where.
         tail = os.sep + os.path.normpath(folder)
-        return [path for root, files in _walk_two_levels()
-                if (os.sep + os.path.normpath(root)).endswith(tail)
+        return [path for dir_root, files in _walk_two_levels(base)
+                if (os.sep + os.path.normpath(dir_root)).endswith(tail)
                 for path in files]
     # A bare name ("sample.wav") says nothing about where, so look a fixed
     # two levels under the working directory: enough for
     # examples/audio-multimodal/sample.wav, nowhere near a whole home folder.
-    return [path for _root, files in _walk_two_levels() for path in files]
+    return [path for _root, files in _walk_two_levels(base) for path in files]
 
 
-def _walk_two_levels():
-    """(folder, [its file paths]) for the cwd and two levels below it."""
-    for root, dirs, files in os.walk("."):
-        depth = 0 if root == "." else root.count(os.sep)
+def _walk_two_levels(base: str = "."):
+    """(folder, [its file paths]) for `base` and two levels below it."""
+    base_norm = os.path.normpath(base)
+    for folder, dirs, files in os.walk(base):
+        if base == ".":
+            depth = 0 if folder == "." else folder.count(os.sep)
+        else:
+            rel = os.path.relpath(folder, base_norm)
+            depth = 0 if rel == "." else rel.count(os.sep) + 1
         dirs[:] = [d for d in dirs
                    if not d.startswith(".") and d not in _SKIP and depth < 2]
-        yield root, [os.path.join(root, name) for name in files]
+        yield folder, [os.path.join(folder, name) for name in files]
 
 
 #: Folders that hold thousands of files and never a user's input.
@@ -73,7 +81,7 @@ def _list_files(folder: str) -> list:
         return []
 
 
-def resolve_path(requested: str) -> tuple[str, str | None]:
+def resolve_path(requested: str, root=None) -> tuple[str, str | None]:
     """(path to use, note for the model or None).
 
     An existing path comes back untouched with no note. Otherwise the most
@@ -81,7 +89,19 @@ def resolve_path(requested: str) -> tuple[str, str | None]:
     note says so. No good match leaves the request as it was, so the tool
     reports its usual "could not find" error.
     """
-    if os.path.isfile(requested):
+    from pathlib import Path
+    from ovat.tools.project import resolve_inside
+
+    root_path = Path(root).resolve() if root is not None else None
+    if root_path is not None:
+        resolved_req, why = resolve_inside(requested, root_path)
+        if why is not None:
+            return requested, None
+        if os.path.isfile(requested):
+            return requested, None
+        if resolved_req is not None and resolved_req.is_file():
+            return str(resolved_req), None
+    elif os.path.isfile(requested):
         return requested, None
     basename = os.path.basename(requested).lower()
     ext = os.path.splitext(basename)[1]
@@ -90,10 +110,14 @@ def resolve_path(requested: str) -> tuple[str, str | None]:
 
     best, best_ratio = None, SIMILARITY
     # sorted: the same tree must always pick the same file.
-    for candidate in sorted(_candidates(requested)):
+    for candidate in sorted(_candidates(requested, root=root_path)):
         name = os.path.basename(candidate).lower()
         if not name.endswith(ext) or not os.path.isfile(candidate):
             continue
+        if root_path is not None:
+            _, why = resolve_inside(candidate, root_path)
+            if why is not None:
+                continue
         ratio = difflib.SequenceMatcher(None, basename, name).ratio()
         if ratio > best_ratio:
             best, best_ratio = candidate, ratio

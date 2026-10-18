@@ -92,8 +92,9 @@ def _walk(target: Path, root: Path, regex, glob, limit: int):
 
 
 def _ripgrep(rg: str, pattern: str, target: Path, root: Path, glob, limit):
-    cmd = [rg, "--line-number", "--no-heading", "--with-filename",
-           "--no-binary", "--max-columns", str(MAX_LINE_CHARS)]
+    cmd = [rg, "--no-config", "--no-follow", "--line-number", "--no-heading",
+           "--with-filename", "--no-binary", "--max-columns",
+           str(MAX_LINE_CHARS)]
     if _smart_case(pattern):
         cmd.append("--ignore-case")
     for name in sorted(SKIP_DIRS):

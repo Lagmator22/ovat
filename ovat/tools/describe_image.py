@@ -9,6 +9,8 @@ contract (the LangChain path derives its argument model from it), and a thin
 FastMCP wrapper so it can also serve any MCP-aware agent standalone.
 """
 import os
+import threading
+from pathlib import Path
 
 from fastmcp import FastMCP
 
@@ -17,6 +19,7 @@ from fastmcp import FastMCP
 # Cached BY (model, device), not in one slot -- see transcribe.py for why a
 # singleton stops being correct the moment workflow.yml can name the model.
 _providers: dict = {}
+VLM_LOCK = threading.Lock()
 
 #: Fallback when nothing is configured.
 DEFAULT_MODEL_DIR = "models/Qwen2-VL-2B-Instruct-INT4"
@@ -51,23 +54,25 @@ def _resolve_device(device: str | None = None) -> str:
 
 def _load_provider(model: str | None = None, device: str | None = None):
     key = (_configured_model(model), _resolve_device(device))
-    if key not in _providers:
-        if not os.path.isdir(key[0]):
-            # Same guard, and the same reason, as transcribe._load_pipeline:
-            # openvino_genai answers a missing folder with a C++ assertion
-            # naming openvino_language_model.xml, which buries the one
-            # sentence the caller already appends about setting `model:`.
-            raise FileNotFoundError("the folder does not exist")
-        # Imported here so the module loads on machines without the model.
-        from ovat.providers.vlm_genai import GenAIVLMProvider
-        _providers[key] = GenAIVLMProvider(*key)
-    return _providers[key]
+    with VLM_LOCK:
+        if key not in _providers:
+            if not os.path.isdir(key[0]):
+                # Same guard, and the same reason, as transcribe._load_pipeline:
+                # openvino_genai answers a missing folder with a C++ assertion
+                # naming openvino_language_model.xml, which buries the one
+                # sentence the caller already appends about setting `model:`.
+                raise FileNotFoundError("the folder does not exist")
+            # Imported here so the module loads on machines without the model.
+            from ovat.providers.vlm_genai import GenAIVLMProvider
+            _providers[key] = GenAIVLMProvider(*key)
+        return _providers[key]
 
 
 def describe_image_impl(image_path: str,
                         prompt: str = "Describe this image in one paragraph.",
                         provider=None, model: str | None = None,
-                        device: str | None = None) -> str:
+                        device: str | None = None,
+                        root: str | os.PathLike | None = None) -> str:
     """The real logic, separate from the MCP wrapper so tests can fake the VLM.
 
     Errors come back as readable strings, not exceptions; the agent loop
@@ -75,7 +80,16 @@ def describe_image_impl(image_path: str,
     A near-match substitution leads the result; see transcribe_impl.
     """
     from ovat.tools.fuzzy import resolve_path
-    image_path, note = resolve_path(image_path)
+    from ovat.tools.project import resolve_inside
+    if root is not None:
+        _, why = resolve_inside(image_path, Path(root).resolve())
+        if why is not None:
+            return f"Error: {why}"
+    image_path, note = resolve_path(image_path, root=root)
+    if root is not None:
+        _, why = resolve_inside(image_path, Path(root).resolve())
+        if why is not None:
+            return f"Error: {why}"
     result = _describe(image_path, prompt, provider, model, device)
     return f"{note}\n{result}" if note else result
 
@@ -93,7 +107,8 @@ def _describe(image_path: str, prompt: str, provider, model, device) -> str:
                     f"`model:` in workflow.yml to a local OpenVINO VLM "
                     f"folder.")
     try:
-        return str(provider.generate(prompt, [image_path]))
+        with VLM_LOCK:
+            return str(provider.generate(prompt, [image_path]))
     except Exception as exc:
         return f"Error analyzing image: {exc}"
 

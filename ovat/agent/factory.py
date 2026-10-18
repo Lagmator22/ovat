@@ -250,7 +250,7 @@ def _make_search_docs(retriever: RetrieverProvider | None):
     )
 
 
-def _make_transcribe(tool_cfg=None):
+def _make_transcribe(tool_cfg=None, root=None):
     """Bind this tool's configured model and device into the callable.
 
     Default-arg binding, for the same reason _make_mcp_caller uses it: the
@@ -259,19 +259,20 @@ def _make_transcribe(tool_cfg=None):
     """
     model = getattr(tool_cfg, "model", None)
     device = getattr(tool_cfg, "device", None)
-    return lambda path, language="en", _m=model, _d=device: (
+    return lambda path, language="en", _m=model, _d=device, _r=root: (
         transcribe_tool.transcribe_impl(path, language,
-                                        model=_m, device=_d))
+                                        model=_m, device=_d, root=_r))
 
 
-def _make_describe_image(tool_cfg=None):
+def _make_describe_image(tool_cfg=None, root=None):
     """Same binding as _make_transcribe, for the vision model."""
     model = getattr(tool_cfg, "model", None)
     device = getattr(tool_cfg, "device", None)
     return lambda image_path, prompt="Describe this image in one paragraph.", \
-        _m=model, _d=device: (
+        _m=model, _d=device, _r=root: (
             describe_image_tool.describe_image_impl(image_path, prompt,
-                                                    model=_m, device=_d))
+                                                    model=_m, device=_d,
+                                                    root=_r))
 
 
 def _make_coding_tools(root, stop) -> dict:
@@ -403,10 +404,12 @@ def build_tools(config: WorkflowConfig,
     # its model is the embedder in the rag: section.
     store = todo_tool.TodoStore()          # this agent's list, never saved
     ask_bus = events if events is not None else EventBus()
+    root = project_root()
     builders = {
         "search_docs": lambda cfg: _make_search_docs(retriever),
-        "transcribe": _make_transcribe,
-        "describe_image": _make_describe_image,
+        "transcribe": lambda cfg, _r=root: _make_transcribe(cfg, root=_r),
+        "describe_image": lambda cfg, _r=root: _make_describe_image(
+            cfg, root=_r),
         "todo": lambda cfg: (lambda action, todos=None, _s=store:
                              todo_tool.todo_impl(action, todos, _s)),
         # Reads bus.asker when called, so an interface that connects after
@@ -418,7 +421,7 @@ def build_tools(config: WorkflowConfig,
         "web_search": _make_web_search,
     }
     coding = _make_coding_tools(
-        project_root(), events.stop if events is not None else None)
+        root, events.stop if events is not None else None)
     builders.update({name: (lambda cfg, _f=fn: _f)
                      for name, fn in coding.items()})
     tools = {}

@@ -141,9 +141,15 @@ class ApprovalBroker:
 
     def __call__(self, tool: str, arguments: dict, reason: str = "") -> bool:
         """The approver signature permissions.gate() expects."""
+        sensitive = reason.startswith(
+            ("modifying sensitive file", "reading sensitive file")
+        )
         with self._lock:
-            if (self.auto_approve or tool in self._session_allowed
-                    or tool in self._always_allowed):
+            if self.auto_approve or (
+                not sensitive
+                and (tool in self._session_allowed
+                     or tool in self._always_allowed)
+            ):
                 return True
         if self.on_request is None:
             return False
@@ -160,10 +166,10 @@ class ApprovalBroker:
         # A person who walked away is a no, not a thread stuck forever.
         if not request._done.wait(self.timeout):
             self._finish(request, REFUSE)
-        if request.decision == SESSION:
+        if not sensitive and request.decision == SESSION:
             with self._lock:
                 self._session_allowed.add(tool)
-        elif request.decision == ALWAYS:
+        elif not sensitive and request.decision == ALWAYS:
             with self._lock:
                 self._always_allowed.add(tool)
             if self.on_always is not None:
