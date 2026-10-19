@@ -31,7 +31,10 @@ def press(container, key: str) -> CompletionResult:
 
 
 def scroll(container, delta: int) -> None:
-    """Wheel: move the highlight one row."""
+    """Wheel: move the highlight one row without wrapping."""
+    manager = getattr(container, "_completion_manager", None)
+    if manager is not None and manager.scroll(delta):
+        return
     press(container, "down" if delta > 0 else "up")
 
 

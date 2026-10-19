@@ -544,6 +544,23 @@ def test_the_wheel_moves_the_highlight_in_the_completion_popup():
             popup.post_message(events.MouseScrollUp(
                 popup, 1, 1, 0, -1, 0, False, False, False))
             await until(pilot, lambda: _highlighted(popup) == 0)
+            # Mouse scroll up at index 0 must not wrap to the bottom
+            popup.post_message(events.MouseScrollUp(
+                popup, 1, 1, 0, -1, 0, False, False, False))
+            await pilot.pause(0.05)
+            assert _highlighted(popup) == 0
+            # But keyboard Up arrow must wrap to the bottom
+            rows = list(popup.query("_CompletionRow"))
+            await pilot.press("up")
+            await until(pilot, lambda: _highlighted(popup) == len(rows) - 1)
+            # Mouse scroll down at the bottom must not wrap to index 0
+            popup.post_message(events.MouseScrollDown(
+                popup, 1, 1, 0, 1, 0, False, False, False))
+            await pilot.pause(0.05)
+            assert _highlighted(popup) == len(rows) - 1
+            # But keyboard Down arrow must wrap to index 0
+            await pilot.press("down")
+            await until(pilot, lambda: _highlighted(popup) == 0)
             await pilot.press("escape")
     run(go())
 
