@@ -54,6 +54,13 @@ class MultiCompletionManager:
             return CompletionResult.IGNORED
         return self._active_controller.on_key(event, text, cursor_index)
 
+    def scroll(self, delta: int) -> bool:
+        if self._active_controller is None:
+            return False
+        if hasattr(self._active_controller, "scroll"):
+            return self._active_controller.scroll(delta)
+        return False
+
     def has_active_completion(self) -> bool:
         return (
             self._active_controller is not None and self._active_controller.is_showing()

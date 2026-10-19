@@ -81,6 +81,21 @@ class SlashCommandController:
 
         return result
 
+    def scroll(self, delta: int) -> bool:
+        """Move the selection without wrapping (for mouse wheel)."""
+        if not self._suggestions:
+            return False
+
+        count = len(self._suggestions)
+        new_index = max(0, min(count - 1, self._selected_index + delta))
+        if new_index == self._selected_index:
+            return True
+        self._selected_index = new_index
+        self._view.render_completion_suggestions(
+            self._suggestions, self._selected_index
+        )
+        return True
+
     def _move_selection(self, delta: int) -> None:
         if not self._suggestions:
             return
