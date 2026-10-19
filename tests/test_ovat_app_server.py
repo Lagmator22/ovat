@@ -424,6 +424,13 @@ class FakeSession:
         self.server_calls.append("stop")
         self.serving = False
 
+    def cancel_shell(self):
+        if self.shell_busy:
+            self.shell_killed.set()
+            self.shell_gate.set()
+            return True
+        return False
+
     def cancel(self):
         self.cancels += 1
         stopped = False
@@ -433,9 +440,7 @@ class FakeSession:
             stopped = True
         self.broker.cancel_all()
         self.questions.cancel_all()
-        if self.shell_busy:
-            self.shell_killed.set()
-            self.shell_gate.set()
+        if self.cancel_shell():
             stopped = True
         return stopped
 
@@ -3457,3 +3462,72 @@ def test_subagent_done_updates_session_token_usage_when_initially_none(tmp_path)
             assert child.context_usage is not None
             assert child.context_usage.total_tokens == 70
     run(go())
+
+
+def test_interrupting_a_shell_command_during_a_turn_leaves_the_turn_running():
+    """ShellRuns.interrupt must stop only the shell command, not the active
+    agent turn."""
+    async def go():
+        async with served(hold_turn=True, hold_shell=True) as (
+                session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await session.enqueue("keep thinking")
+            await poll(lambda: fake.busy)
+
+            shell_events = []
+
+            async def drive_shell():
+                async for ev in session.resources.shell.run("sleep 99"):
+                    shell_events.append(ev)
+
+            task = asyncio.create_task(drive_shell())
+            await poll(lambda: fake.shell_busy and bool(shell_events))
+            op_id = shell_events[0].entry.id
+            client = session._connection.current
+            await client.request("session/shellCommand", {
+                "sessionId": session.session_id,
+                "action": "interrupt",
+                "operationId": op_id,
+            })
+            await asyncio.wait_for(task, T)
+            assert isinstance(shell_events[-1].entry.state, CancelledEffectState)
+            assert fake.shell_killed.is_set()
+            assert not fake.stop.is_set(), (
+                "interrupting the `!` shell command also cancelled the turn")
+
+            fake.turn_gate.set()
+            seen = await events_until(session, is_completed)
+            assert completed_turn(seen).status is PublicTurnStatus.COMPLETED
+    run(go())
+
+
+def test_hardware_sampling_skips_overlapping_ticks():
+    """OvatAgentApp._sample_hardware must not spawn a new worker thread while a
+    previous hardware sample is still in flight."""
+    pytest.importorskip("textual")
+    from ovat.tui.agent_app import OvatAgentApp
+
+    started = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    class SlowMonitor:
+        def sample(self):
+            calls.append(1)
+            started.set()
+            release.wait(5)
+            return {"cpu": 10.0}
+
+    dummy = SimpleNamespace(
+        _hardware=SlowMonitor(),
+        _hw_sampling=False,
+        post_message=lambda msg: None,
+    )
+    assert hasattr(OvatAgentApp, "_sample_hardware")
+    OvatAgentApp._sample_hardware(dummy)
+    assert started.wait(5)
+    # Second tick fires while the first is still blocked in sample()
+    OvatAgentApp._sample_hardware(dummy)
+    release.set()
+    time.sleep(0.05)
+    assert len(calls) == 1, f"overlapping hardware samples ran concurrently: {len(calls)}"

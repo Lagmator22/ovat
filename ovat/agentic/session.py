@@ -249,6 +249,7 @@ class AgentSession:
         self.last_trace: dict = {}
         self.totals = {"turns": 0, "prompt_tokens": 0, "completion_tokens": 0}
         self._lock = threading.Lock()
+        self._build_lock = threading.Lock()
         self._shell: subprocess.Popen | None = None
         self._server: subprocess.Popen | None = None
         self._unsubscribe = None
@@ -303,50 +304,52 @@ class AgentSession:
 
     def _build_now(self, engine: str | None, picked: dict,
                    fresh: bool = False) -> None:
-        if not self.workflow:
-            self._emit(BuildFailed(
-                "No workflow here. Run `/workflow path/to/workflow.yml`, or "
-                "start with `ovat agent path/to/workflow.yml`. `ovat init` "
-                "writes a starter one."))
-            return
-        try:
-            config = self._load(self.workflow)
-            default_model = config.model.name
-            overrides = {**({} if fresh else self._overrides), **picked}
-            if overrides.get("name") == "":
-                del overrides["name"]               # back to the file's own
-            if overrides:
-                config = config.model_copy(update={
-                    "model": config.model.model_copy(update=overrides)})
-            if engine:
-                config = config.model_copy(update={
-                    "agent": config.agent.model_copy(update={"type": engine})})
-            agent = self._build(self.mcp_selection.config_for_build(config))
-        except Exception as exc:
-            self._emit(BuildFailed(f"Could not build {self.workflow}: "
-                                   f"{_brief(exc)}"))
-            return
-        self._drop_agent()
-        self.config, self.agent = config, agent
-        self._overrides = overrides
-        agent.events.approver = self.broker
-        agent.events.asker = self.questions
+        with self._build_lock:
+            if not self.workflow:
+                self._emit(BuildFailed(
+                    "No workflow here. Run `/workflow path/to/workflow.yml`, or "
+                    "start with `ovat agent path/to/workflow.yml`. `ovat init` "
+                    "writes a starter one."))
+                return
+            try:
+                config = self._load(self.workflow)
+                default_model = config.model.name
+                overrides = {**({} if fresh else self._overrides), **picked}
+                if overrides.get("name") == "":
+                    del overrides["name"]               # back to the file's own
+                if overrides:
+                    config = config.model_copy(update={
+                        "model": config.model.model_copy(update=overrides)})
+                if engine:
+                    config = config.model_copy(update={
+                        "agent": config.agent.model_copy(update={"type": engine})})
+                agent = self._build(self.mcp_selection.config_for_build(config))
+            except Exception as exc:
+                self._emit(BuildFailed(f"Could not build {self.workflow}: "
+                                       f"{_brief(exc)}"))
+                return
+            with self._lock:
+                self._drop_agent()
+                self.config, self.agent = config, agent
+                self._overrides = overrides
+                agent.events.approver = self.broker
+                agent.events.asker = self.questions
 
-        def _on_bus(e: Event) -> None:
-            if e.type == ANSWER_DELTA:
-                self._emit(AnswerDelta(e.data.get("text") or ""))
-            elif e.type == REASONING_DELTA:
-                self._emit(ReasoningDelta(e.data.get("text") or ""))
-            elif e.type == STEER_TAKEN:
-                self._emit(Steered(e.data.get("text") or "",
-                                   int(e.data.get("index") or 0)))
-            else:
-                self._emit(AgentActivity(e))
+            def _on_bus(e: Event) -> None:
+                if e.type == ANSWER_DELTA:
+                    self._emit(AnswerDelta(e.data.get("text") or ""))
+                elif e.type == REASONING_DELTA:
+                    self._emit(ReasoningDelta(e.data.get("text") or ""))
+                elif e.type == STEER_TAKEN:
+                    self._emit(Steered(e.data.get("text") or "",
+                                       int(e.data.get("index") or 0)))
+                else:
+                    self._emit(AgentActivity(e))
 
-        self._unsubscribe = agent.events.subscribe(_on_bus)
-        self.info = describe_agent(config, agent, self.workflow, default_model)
-        self.refresh_mcp()
-        self._emit(Ready(self.info))
+            self._unsubscribe = agent.events.subscribe(_on_bus)
+            self.info = describe_agent(config, agent, self.workflow, default_model)
+            self.refresh_mcp()
+            self._emit(Ready(self.info))
 
     def refresh_mcp(self) -> None:
         if self.config is not None:
@@ -562,6 +565,18 @@ class AgentSession:
                         found.append(src)
         return found
 
+    def cancel_shell(self) -> bool:
+        """Stop only a running `!` shell command without cancelling an active
+        agent turn or denying pending approvals."""
+        if self._shell is not None and self._shell.poll() is None:
+            from ovat.cli.shell import kill
+            try:
+                kill(self._shell)
+            except Exception:
+                pass
+            return True
+        return False
+
     def cancel(self) -> bool:
         """Esc: stop the turn, deny open approvals, end a `!` command."""
         stopped = False
@@ -570,12 +585,7 @@ class AgentSession:
             stopped = True
         self.broker.cancel_all()
         self.questions.cancel_all()
-        if self._shell is not None and self._shell.poll() is None:
-            from ovat.cli.shell import kill
-            try:
-                kill(self._shell)
-            except Exception:
-                pass
+        if self.cancel_shell():
             stopped = True
         return stopped
 

@@ -202,7 +202,8 @@ def observed(name: str, function: Callable, bus: EventBus,
     always has. A tool that may not run returns the sentence saying why,
     which the model reads like any other tool result.
     """
-    from ovat.agent.permissions import gate
+    from ovat.agent.permissions import ALLOW, ASK, gate
+    from ovat.tools.project import is_sensitive_path
 
     @functools.wraps(function)
     def wrapper(*args, **kwargs):
@@ -213,7 +214,20 @@ def observed(name: str, function: Callable, bus: EventBus,
         try:
             bus.emit(TOOL_STARTED, call_id=call_id, name=name,
                      arguments=dict(kwargs))
-            refusal = gate(bus, name, dict(kwargs), permission)
+            effective_perm = permission
+            reason = ""
+            file_arg = kwargs.get("file_path")
+            if name in ("write_file", "edit") and is_sensitive_path(file_arg):
+                if effective_perm == ALLOW:
+                    effective_perm = ASK
+                reason = f"modifying sensitive file {file_arg}"
+            elif name == "read_file" and is_sensitive_path(
+                    file_arg, for_read=True):
+                if effective_perm == ALLOW:
+                    effective_perm = ASK
+                reason = f"reading sensitive file {file_arg}"
+            refusal = gate(bus, name, dict(kwargs), effective_perm,
+                           reason=reason)
             if refusal is not None:
                 bus.emit(TOOL_ENDED, call_id=call_id, name=name, status="denied",
                          duration_s=0.0, result_chars=len(refusal))

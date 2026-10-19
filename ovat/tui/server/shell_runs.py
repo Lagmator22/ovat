@@ -100,7 +100,11 @@ class ShellRuns:
         except asyncio.CancelledError:
             # The server is closing: end the command with it.
             op.interrupted = True
-            ctx.agent.cancel()
+            cancel_shell = getattr(ctx.agent, "cancel_shell", None)
+            if callable(cancel_shell):
+                cancel_shell()
+            else:
+                ctx.agent.cancel()
             raise
         return SessionShellCommandResponse(last_event_id=projector.event_id)
 
@@ -109,9 +113,11 @@ class ShellRuns:
         if op is None or op.id != operation_id:
             return
         op.interrupted = True
-        # AgentSession.cancel also stops a running turn; a `!` command during
-        # a turn is the one case where that reaches further than asked.
-        self._ctx.agent.cancel()
+        cancel_shell = getattr(self._ctx.agent, "cancel_shell", None)
+        if callable(cancel_shell):
+            cancel_shell()
+        else:
+            self._ctx.agent.cancel()
 
     # ---- the session reports ---------------------------------------------------
 

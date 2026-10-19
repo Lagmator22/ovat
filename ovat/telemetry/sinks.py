@@ -27,6 +27,7 @@ class JSONFileSink(TelemetrySink):
     def __init__(self, path: str):
         self.path = path
         self._handle = None
+        self._lock = threading.Lock()
         # The first write failure, kept rather than raised. record() must not
         # break the run it measures, but the CLI must not then announce a
         # file it never wrote, which is what it did.
@@ -35,24 +36,26 @@ class JSONFileSink(TelemetrySink):
     def record(self, sample: dict) -> None:
         if not sample:
             return
-        try:
-            if self._handle is None:
-                self._handle = open(self.path, "a", encoding="utf-8")
-            self._handle.write(json.dumps(sample) + "\n")
-            self._handle.flush()
-        except Exception as exc:
-            # A full disk must not end the agent run. The measurement is lost;
-            # the work is not.
-            if self.error is None:
-                self.error = f"{type(exc).__name__}: {exc}"
+        with self._lock:
+            try:
+                if self._handle is None:
+                    self._handle = open(self.path, "a", encoding="utf-8")
+                self._handle.write(json.dumps(sample) + "\n")
+                self._handle.flush()
+            except Exception as exc:
+                # A full disk must not end the agent run. The measurement is lost;
+                # the work is not.
+                if self.error is None:
+                    self.error = f"{type(exc).__name__}: {exc}"
 
     def close(self) -> None:
-        if self._handle is not None:
-            try:
-                self._handle.close()
-            except Exception:
-                pass
-            self._handle = None
+        with self._lock:
+            if self._handle is not None:
+                try:
+                    self._handle.close()
+                except Exception:
+                    pass
+                self._handle = None
 
 
 class LiveBufferSink(TelemetrySink):

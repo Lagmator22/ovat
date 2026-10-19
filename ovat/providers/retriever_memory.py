@@ -71,6 +71,12 @@ class InMemoryRetrieverProvider(RetrieverProvider):
             self._sources = []
             self._vectors = None
             self._closed = True
+        close_embedder = getattr(self.embedder, "close", None)
+        if callable(close_embedder):
+            try:
+                close_embedder()
+            except Exception:
+                pass
 
     def __enter__(self) -> "InMemoryRetrieverProvider":
         return self
@@ -111,7 +117,8 @@ class InMemoryRetrieverProvider(RetrieverProvider):
         With no sources there is no key to replace on, so those chunks are
         appended. Same deliberate limit as the other backend.
         """
-        self._check_open()
+        with self._write_lock:
+            self._check_open()
         if not texts:
             return
         # Outside the lock: embedding is pure compute and can be slow enough
@@ -142,11 +149,19 @@ class InMemoryRetrieverProvider(RetrieverProvider):
         emits, cosine and L2 rank identically, so the two backends agree on
         ordering rather than merely on format.
         """
-        self._check_open()
-        if self._vectors is None or not self._texts:
-            return []
+        with self._write_lock:
+            self._check_open()
+            if self._vectors is None or not self._texts:
+                return []
         query_vector = np.asarray(self.embedder.embed([query])[0],
                                   dtype=np.float32)
+        with self._write_lock:
+            self._check_open()
+            if self._vectors is None or not self._texts:
+                return []
+            texts = list(self._texts)
+            sources = list(self._sources)
+            vectors = self._vectors
 
         # Normalise both sides, guarding the zero vector: an empty or degenerate
         # embedding would otherwise divide by zero and hand back nan, which
@@ -155,14 +170,14 @@ class InMemoryRetrieverProvider(RetrieverProvider):
             norm = np.linalg.norm(a, axis=axis, keepdims=axis is not None)
             return a / np.where(norm == 0, 1.0, norm)
 
-        similarity = unit(self._vectors, axis=1) @ unit(query_vector)
+        similarity = unit(vectors, axis=1) @ unit(query_vector)
         distances = 1.0 - similarity
 
         # argsort over the whole set: exact, and cheap at this scale. top_k is
         # clamped because asking for more than exists is a reasonable thing for
         # a caller to do and must not raise.
         order = np.argsort(distances)[:max(0, top_k)]
-        return [{"text": self._texts[i],
-                 "source": self._sources[i],
+        return [{"text": texts[i],
+                 "source": sources[i],
                  "distance": float(distances[i])}
                 for i in order]

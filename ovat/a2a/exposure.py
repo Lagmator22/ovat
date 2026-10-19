@@ -32,6 +32,8 @@ PATH_TOOLS = frozenset({"transcribe", "describe_image"})
 
 _HIDDEN_BY_KIND = {
     "mcp_stdio": "an MCP tool; list it in a2a.server.expose_tools to offer it",
+    "mcp_http": "an MCP tool; list it in a2a.server.expose_tools to offer it",
+    "mcp_sse": "an MCP tool; list it in a2a.server.expose_tools to offer it",
     "a2a": "it would let a caller send messages on to another agent",
     "subagent": "it would let a caller hand tasks on to this workflow's "
                 "subagents",

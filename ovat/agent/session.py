@@ -99,12 +99,13 @@ class Session:
 
     def save(self, path: str) -> None:
         """I dump the whole history to a JSON file so I can resume later."""
-        # A copy inside the lock, dumped outside it: json.dump does file I/O,
-        # and holding the lock across that would block the answer stream for
-        # as long as the write takes.
+        # A copy inside the lock, dumped outside it: json.dumps and file I/O
+        # happen outside the lock so the answer stream is not blocked, and
+        # write_text writes a temp file first so a failure never truncates path.
+        from pathlib import Path
+        from ovat.agentic.atomic import write_text
         snapshot = self.snapshot()
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(snapshot, f, indent=2)
+        write_text(Path(path), json.dumps(snapshot, indent=2))
 
     @classmethod
     def load(cls, path: str) -> "Session":

@@ -119,7 +119,7 @@ def serve(
     rprint(f"Audit:  {esc(prepared.audit_path or 'off')}")
     rprint("[dim]Ctrl-C to stop.[/dim]")
     app = build_app(prepared.service, prepared.card, prepared.callers,
-                    prepared.allowed_hosts)
+                    prepared.allowed_hosts, token_file=prepared.token_file)
     uvicorn.run(app, host=s.host, port=s.port, log_level="warning",
                 ssl_certfile=tls_cert, ssl_keyfile=tls_key)
 

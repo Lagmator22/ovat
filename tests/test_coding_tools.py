@@ -551,3 +551,89 @@ def test_an_edited_file_keeps_its_mode(root):
     target.chmod(0o755)
     edit_impl("run.sh", "a", "b", root=root)
     assert target.stat().st_mode & 0o777 == 0o755
+
+
+def test_sensitive_files_require_explicit_approval_even_when_tool_is_allowed(
+        root):
+    from ovat.agent.permissions import ApprovalBroker, ONCE, SESSION
+    from ovat.tools.project import is_sensitive_path
+
+    for p in (".env", ".env.local", "sub/.env.prod", ".git/config",
+              ".git/hooks/pre-commit", ".ovat/permissions.json",
+              "workflow.yml", "workflow.yaml"):
+        assert is_sensitive_path(p) is True, p
+    for p in ("src/main.py", ".env.example", "README.md"):
+        assert is_sensitive_path(p) is False, p
+
+    bus = EventBus()
+    prompts = []
+
+    def on_req(req):
+        prompts.append((req.tool, req.arguments.get("file_path"), req.reason))
+        # Try granting SESSION on a sensitive write; it must not bypass the next
+        # sensitive file check.
+        broker.resolve(req.id, SESSION if len(prompts) == 1 else ONCE)
+
+    broker = ApprovalBroker(on_request=on_req, always=["write_file", "edit"])
+    bus.approver = broker
+
+    write_fn = observed(
+        "write_file",
+        lambda file_path, content: f"wrote {file_path}",
+        bus,
+        permission="allow",
+    )
+    read_fn = observed(
+        "read_file",
+        lambda file_path: f"read {file_path}",
+        bus,
+        permission="allow",
+    )
+
+    # Normal files do not prompt when permission is allow / in always_allow
+    assert write_fn(file_path="src/app.py", content="ok") == "wrote src/app.py"
+    assert read_fn(file_path="workflow.yml") == "read workflow.yml"
+    assert prompts == []
+
+    # Writing .env or .git/hooks/pre-commit or workflow.yml prompts every time
+    assert write_fn(file_path=".env", content="SECRET=1") == "wrote .env"
+    assert write_fn(file_path=".git/hooks/pre-commit", content="x") == (
+        "wrote .git/hooks/pre-commit"
+    )
+    assert write_fn(file_path="workflow.yml", content="x") == (
+        "wrote workflow.yml"
+    )
+    assert len(prompts) == 3
+
+    # Reading .env also prompts
+    assert read_fn(file_path=".env.local") == "read .env.local"
+    assert len(prompts) == 4
+
+
+def test_ripgrep_command_passes_no_config_and_no_follow(root, monkeypatch):
+    import io
+    seen_cmd = []
+
+    class FakeProc:
+        def __init__(self, cmd, **kwargs):
+            seen_cmd.extend(cmd)
+            self.stdout = io.BytesIO(b"a.py:1:needle\n")
+            self.stderr = io.BytesIO(b"")
+
+        def kill(self):
+            pass
+
+        def wait(self):
+            return 0
+
+    (root / "a.py").write_text("needle\n")
+    monkeypatch.setattr(grep_tool.shutil, "which", lambda name: "/usr/bin/rg")
+    monkeypatch.setattr(
+        grep_tool.subprocess,
+        "Popen",
+        lambda cmd, **kw: FakeProc(cmd, **kw),
+    )
+    grep_impl("needle", root)
+    assert "--no-config" in seen_cmd
+    assert "--no-follow" in seen_cmd
+

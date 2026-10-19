@@ -122,7 +122,8 @@ def _load_cached_pipeline(key):
 
 
 def transcribe_impl(path: str, language: str = "en", pipeline=None,
-                    model: str | None = None, device: str | None = None) -> str:
+                    model: str | None = None, device: str | None = None,
+                    root: str | os.PathLike | None = None) -> str:
     """The real logic, kept separate so my tests can pass a fake pipeline.
 
     Note to myself: I check the file exists first and return a clear error
@@ -132,8 +133,18 @@ def transcribe_impl(path: str, language: str = "en", pipeline=None,
     when it is, the note saying so leads the result, so the substitution is
     never silent.
     """
+    from pathlib import Path
     from ovat.tools.fuzzy import resolve_path
-    path, note = resolve_path(path)
+    from ovat.tools.project import resolve_inside
+    if root is not None:
+        _, why = resolve_inside(path, Path(root).resolve())
+        if why is not None:
+            return f"Error: {why}"
+    path, note = resolve_path(path, root=root)
+    if root is not None:
+        _, why = resolve_inside(path, Path(root).resolve())
+        if why is not None:
+            return f"Error: {why}"
     result = _transcribe(path, language, pipeline, model, device)
     return f"{note}\n{result}" if note else result
 

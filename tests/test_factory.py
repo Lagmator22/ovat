@@ -37,6 +37,66 @@ def test_args_model_from_schema_handles_null_parameters():
     assert model is not None
 
 
+def test_args_model_from_schema_supports_nested_objects_arrays_enums_and_unions():
+    """External MCP servers (GitHub, Linear, FastMCP) emit type lists,
+    anyOf unions, enums, typed array items, and nested object properties."""
+    from pydantic import ValidationError
+    from ovat.agent.arg_models import args_model_from_schema
+
+    schema = {
+        "function": {
+            "name": "create_issue",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": ["string", "null"]},
+                    "milestone": {
+                        "anyOf": [{"type": "integer"}, {"type": "null"}],
+                        "default": None,
+                    },
+                    "state": {
+                        "type": "string",
+                        "enum": ["open", "closed"],
+                        "default": "open",
+                    },
+                    "labels": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "assignee": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "role": {"type": "string", "default": "member"},
+                        },
+                        "required": ["id"],
+                    },
+                },
+                "required": ["title", "assignee"],
+            },
+        }
+    }
+    Model = args_model_from_schema("create_issue", schema)
+    inst = Model(title="Bug", labels=["p1"], assignee={"id": 7})
+    assert inst.title == "Bug"
+    assert inst.milestone is None
+    assert inst.state == "open"
+    assert inst.labels == ["p1"]
+    assert inst.assignee == {"id": 7, "role": "member"}
+    assert isinstance(inst.assignee, dict)
+
+    # Enum and nested required field validation must reject invalid inputs
+    with pytest.raises(ValidationError):
+        Model(title="Bug", state="invalid_state", assignee={"id": 7})
+    with pytest.raises(ValidationError):
+        Model(title="Bug", assignee={"role": "member"})
+
+    # Generated JSON schema for framework engines retains array item and enum info
+    gen = Model.model_json_schema()
+    assert gen["properties"]["state"]["enum"] == ["open", "closed"]
+
+
+
 def test_build_llm_wires_the_request_timeout_into_the_client():
     # The whole point of the config field: it must reach the actual HTTP
     # client, otherwise a hung OVMS still blocks for the SDK default (~600s).

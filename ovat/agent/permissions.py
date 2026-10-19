@@ -66,7 +66,7 @@ def default_permission(kind: str, url: str | None = None,
         return ASK
     if kind == "api":
         return ASK
-    if kind == "a2a":
+    if kind in ("a2a", "mcp_http", "mcp_sse"):
         return ALLOW if url and is_loopback(url) else ASK
     return ALLOW
 
@@ -141,9 +141,16 @@ class ApprovalBroker:
 
     def __call__(self, tool: str, arguments: dict, reason: str = "") -> bool:
         """The approver signature permissions.gate() expects."""
-        if (self.auto_approve or tool in self._session_allowed
-                or tool in self._always_allowed):
-            return True
+        sensitive = reason.startswith(
+            ("modifying sensitive file", "reading sensitive file")
+        )
+        with self._lock:
+            if self.auto_approve or (
+                not sensitive
+                and (tool in self._session_allowed
+                     or tool in self._always_allowed)
+            ):
+                return True
         if self.on_request is None:
             return False
         from ovat.agent.events import CURRENT_SUBAGENT
@@ -159,10 +166,12 @@ class ApprovalBroker:
         # A person who walked away is a no, not a thread stuck forever.
         if not request._done.wait(self.timeout):
             self._finish(request, REFUSE)
-        if request.decision == SESSION:
-            self._session_allowed.add(tool)
-        elif request.decision == ALWAYS:
-            self._always_allowed.add(tool)
+        if not sensitive and request.decision == SESSION:
+            with self._lock:
+                self._session_allowed.add(tool)
+        elif not sensitive and request.decision == ALWAYS:
+            with self._lock:
+                self._always_allowed.add(tool)
             if self.on_always is not None:
                 try:
                     self.on_always(tool)
@@ -185,12 +194,23 @@ class ApprovalBroker:
         for request in pending:
             self._finish(request, REFUSE)
 
+    def cancel_for_call(self, call_id: str) -> None:
+        """Deny open requests belonging to one subagent delegate call."""
+        if not call_id:
+            return
+        with self._lock:
+            pending = [r for r in self._open.values()
+                       if r.agent_call == call_id]
+        for request in pending:
+            self._finish(request, REFUSE)
+
     def pending(self) -> list[ApprovalRequest]:
         with self._lock:
             return list(self._open.values())
 
     def forget_session_grants(self) -> None:
-        self._session_allowed.clear()
+        with self._lock:
+            self._session_allowed.clear()
 
     def _finish(self, request: ApprovalRequest, decision: str) -> bool:
         with self._lock:

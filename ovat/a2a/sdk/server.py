@@ -207,14 +207,38 @@ class _Guard:
     """
 
     def __init__(self, app, callers: dict[str, str],
-                 max_body: int = MAX_BODY_BYTES):
+                 max_body: int = MAX_BODY_BYTES, token_file=None):
         self.app = app
         self._callers = [(t.encode(), name) for t, name in callers.items()]
         self._max_body = max_body
+        self._token_file = token_file
+        self._token_mtime: int | None = None
+        if self._token_file is not None:
+            try:
+                self._token_mtime = self._token_file.stat().st_mtime_ns
+            except OSError:
+                pass
+
+    def _refresh_token_if_needed(self) -> None:
+        if self._token_file is None:
+            return
+        try:
+            mtime = self._token_file.stat().st_mtime_ns
+            raw = self._token_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            return
+        if not raw:
+            return
+        if mtime != self._token_mtime or self._callers != [
+            (raw.encode(), "local")
+        ]:
+            self._token_mtime = mtime
+            self._callers = [(raw.encode(), "local")]
 
     def _caller(self, header: bytes) -> str | None:
         if not header.startswith(b"Bearer "):
             return None
+        self._refresh_token_if_needed()
         sent = header[len(b"Bearer "):].strip()
         found = None
         for token, name in self._callers:     # no early exit: timing-safe
@@ -264,7 +288,7 @@ def _capped(receive, limit: int):
 
 
 def build_app(service: A2AService, card: dict, callers: dict[str, str],
-              allowed_hosts: list[str]):
+              allowed_hosts: list[str], token_file=None):
     """The whole server as one ASGI app, ready for uvicorn."""
     sdk_card = to_agent_card(_with_compat_interface(card))
     handler = DefaultRequestHandler(agent_executor=OVATExecutor(service),
@@ -290,8 +314,10 @@ def build_app(service: A2AService, card: dict, callers: dict[str, str],
     # Order matters: the host check runs first, so a page in the user's
     # browser that rebinds a name to 127.0.0.1 is refused before anything
     # else looks at it.
-    return TrustedHostMiddleware(_Guard(app, callers),
-                                 allowed_hosts=allowed_hosts)
+    return TrustedHostMiddleware(
+        _Guard(app, callers, token_file=token_file),
+        allowed_hosts=allowed_hosts,
+    )
 
 
 def card_json(card: dict) -> str:

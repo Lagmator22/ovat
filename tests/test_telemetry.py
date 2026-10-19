@@ -1475,3 +1475,56 @@ def test_the_bottom_bar_shows_gpu_only_when_a_source_reads_one():
         HardwareMonitor([GPUSource(counter=Silent())]).sample())
     assert format_reading(
         HardwareMonitor([GPUSource(counter=Busy())]).sample()) == "GPU 12%"
+
+
+def test_intel_hardware_source_stop_kills_stubborn_process(tmp_path):
+    """If ut ignores SIGTERM and wait() times out, stop() must escalate to
+    kill() so the background profiler does not leak and hold the scratch dir."""
+    import subprocess
+
+    src = IntelHardwareSource()
+    events = []
+
+    class StubbornProc:
+        def terminate(self):
+            events.append("terminate")
+
+        def wait(self, timeout=None):
+            events.append("wait")
+            if "kill" not in events:
+                raise subprocess.TimeoutExpired(cmd="ut", timeout=timeout)
+            return 0
+
+        def kill(self):
+            events.append("kill")
+
+    src._proc = StubbornProc()
+    scratch = tmp_path / "ut-out"
+    scratch.mkdir()
+    src._out_path = str(scratch)
+    src.stop()
+    assert "kill" in events, f"stop() did not escalate to kill(): {events}"
+    assert not scratch.exists()
+
+
+def test_json_file_sink_locks_concurrent_writes(tmp_path):
+    """JSONFileSink must guard its file handle with a lock like LiveBufferSink."""
+    path = tmp_path / "locked.jsonl"
+    sink = JSONFileSink(str(path))
+    assert hasattr(sink, "_lock"), "JSONFileSink has no _lock"
+    acquired = []
+    real_lock = sink._lock
+
+    class TrackingLock:
+        def __enter__(self):
+            acquired.append("enter")
+            return real_lock.__enter__()
+
+        def __exit__(self, *exc):
+            acquired.append("exit")
+            return real_lock.__exit__(*exc)
+
+    sink._lock = TrackingLock()
+    sink.record({"a": 1})
+    sink.close()
+    assert acquired.count("enter") >= 2

@@ -28,6 +28,8 @@ class QuestionRequest:
     question: str
     choices: list[str]
     answer: str | None = None         # None: nobody answered (cancelled)
+    agent: str = ""                   # the subagent asking, "" for the main agent
+    agent_call: str = ""              # its delegate call's id
     _done: threading.Event = field(default_factory=threading.Event,
                                    repr=False)
 
@@ -49,7 +51,10 @@ class QuestionBroker:
         """The asker signature ask_user expects. May block."""
         if self.on_request is None:
             return None
-        request = QuestionRequest(next(self._ids), question, list(choices))
+        from ovat.agent.events import CURRENT_SUBAGENT
+        agent, agent_call = CURRENT_SUBAGENT.get()
+        request = QuestionRequest(next(self._ids), question, list(choices),
+                                  agent=agent, agent_call=agent_call)
         with self._lock:
             self._open[request.id] = request
         try:
@@ -74,6 +79,16 @@ class QuestionBroker:
         """No answer for everything still open (the turn was cancelled)."""
         with self._lock:
             pending = list(self._open.values())
+        for request in pending:
+            self._finish(request, None)
+
+    def cancel_for_call(self, call_id: str) -> None:
+        """No answer for open questions belonging to one subagent call."""
+        if not call_id:
+            return
+        with self._lock:
+            pending = [r for r in self._open.values()
+                       if r.agent_call == call_id]
         for request in pending:
             self._finish(request, None)
 

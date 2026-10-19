@@ -26,3 +26,10 @@ class OVMSEmbeddingsProvider(EmbeddingsProvider):
     def embed(self, texts: list[str]) -> list[list[float]]:
         resp = self.client.embeddings.create(model=self.model, input=texts)
         return [d.embedding for d in resp.data]
+
+    def close(self) -> None:
+        """Close the underlying OpenAI HTTP client pool."""
+        try:
+            self.client.close()
+        except Exception:
+            pass

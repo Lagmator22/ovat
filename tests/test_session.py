@@ -45,3 +45,29 @@ def test_save_then_load_is_identical(tmp_path):
     s.save(str(path))
     loaded = Session.load(str(path))
     assert loaded.messages == s.messages
+
+
+def test_save_uses_atomic_replacement(monkeypatch, tmp_path):
+    """Saving over an existing session file must write to a temp file and
+    replace atomically so a mid-write failure never leaves a truncated file."""
+    import os
+    import pytest
+
+    s1 = Session(system_prompt="sys")
+    s1.add_user("first turn")
+    path = tmp_path / "session.json"
+    s1.save(str(path))
+
+    s2 = Session(system_prompt="sys")
+    s2.add_user("second turn")
+
+    def fail_replace(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "replace", fail_replace)
+    with pytest.raises(OSError, match="disk full"):
+        s2.save(str(path))
+
+    assert Session.load(str(path)).messages == s1.messages
+    assert list(tmp_path.glob("*.tmp")) == []
+

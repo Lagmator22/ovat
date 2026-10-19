@@ -145,6 +145,7 @@ class SDKPeer:
         if self._closed:
             return
         self._closed = True
+        atexit.unregister(self.close)
         try:
             asyncio.run_coroutine_threadsafe(
                 self._aclose(), self._loop).result(timeout=5)
@@ -190,15 +191,27 @@ class SDKPeer:
     async def _connect(self):
         if self._client is not None:
             return self._client
-        self._http = httpx.AsyncClient(
+        http = httpx.AsyncClient(
             event_hooks={"request": [self._add_token]},
             timeout=httpx.Timeout(self._timeout, connect=10))
-        sdk_card = await A2ACardResolver(self._http, self.url).get_agent_card()
-        self._card = _remote_card(sdk_card, self.url)
-        self._client = await create_client(sdk_card, ClientConfig(
-            streaming=self._card.streaming, httpx_client=self._http,
-            supported_protocol_bindings=["JSONRPC", "HTTP+JSON"]))
-        return self._client
+        try:
+            sdk_card = await A2ACardResolver(http, self.url).get_agent_card()
+            for iface in getattr(sdk_card, "supported_interfaces", ()):
+                if iface.url and not same_origin(iface.url, self.url):
+                    raise PeerError(
+                        "protocol",
+                        f"the agent card at {self.url} points to another "
+                        f"origin: {iface.url}",
+                    )
+            self._card = _remote_card(sdk_card, self.url)
+            self._client = await create_client(sdk_card, ClientConfig(
+                streaming=self._card.streaming, httpx_client=http,
+                supported_protocol_bindings=["JSONRPC", "HTTP+JSON"]))
+            self._http = http
+            return self._client
+        except BaseException:
+            await http.aclose()
+            raise
 
     async def _fetch_card(self) -> RemoteCard:
         await self._connect()

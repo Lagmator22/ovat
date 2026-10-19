@@ -136,6 +136,16 @@ class AgentPool:
             slot = self._slots.get(key)
             return slot.turns if slot else 0
 
+    def has_room(self, key) -> bool:
+        with self._lock:
+            if key in self._slots or len(self._slots) < self._size:
+                return True
+            return any(not slot.users for slot in self._slots.values())
+
+    def capacity_refusal(self) -> str:
+        return (f"all {self._size} conversations are busy "
+                f"(a2a.server.max_contexts)")
+
     def acquire(self, key) -> _Slot:
         """The slot for `key`, building its agent on first use. Called on a
         worker thread: building can load an embedder from disk."""
@@ -254,6 +264,8 @@ class A2AService:
             caller=task.caller, text=task.text, hops=task.hops,
             chain=list(task.chain), queued=self._waiting,
             turns=self._pool.turns(key)))
+        if not refusal and not self._pool.has_room(key):
+            refusal = self._pool.capacity_refusal()
         if refusal:
             self.stats["rejected"] += 1
             await reporter.rejected(refusal)
@@ -278,6 +290,14 @@ class A2AService:
             self.stats["canceled"] += 1
             self._record(task, "canceled", None)
             raise
+        except PoolFull as exc:
+            self.stats["rejected"] += 1
+            sentence = str(exc)
+            try:
+                await reporter.rejected(sentence)
+            except Exception:
+                pass
+            self._record(task, "rejected", sentence)
         except Exception:
             # Never the exception text: it can carry paths and names from
             # this machine. The full traceback goes to the server's log.
@@ -403,7 +423,7 @@ class A2AService:
                         "chain": [*task.chain, self.server_id]}
                     unsubscribe = agent.events.subscribe(on_event)
                     old_approver = getattr(agent.events, "approver", None)
-                    if task.approval_capable:
+                    if task.approval_capable and self.s.allow_remote_approvals:
                         agent.events.approver = approver
                     try:
                         answer = agent.run(task.text)
@@ -540,10 +560,11 @@ class A2AService:
                 totals: dict | None = None) -> None:
         if self._audit is None:
             return
+        question = (task.text or "")[:self.s.max_message_chars]
         self._audit.write({
             "caller": task.caller, "task_id": task.task_id,
             "context_id": task.context_id, "state": state,
-            "question": task.text, "answer": answer,
+            "question": question, "answer": answer,
             "tools": tools or [], "sources": sources or [],
             "totals": totals or {}, "hops": task.hops,
         })

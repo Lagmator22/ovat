@@ -495,6 +495,7 @@ class ModelServer:
             # If OVMS already exited, stop waiting. The reason is in the log
             # file (self.log_path) instead of being hidden.
             if self.process is not None and self.process.poll() is not None:
+                self.forget_api_key_file()
                 return False
             try:
                 # An opener with an EMPTY ProxyHandler, not urlopen. urlopen
@@ -507,6 +508,7 @@ class ModelServer:
                     urllib.request.ProxyHandler({}))
                 with opener.open(self.health_url, timeout=2) as r:
                     if r.status == 200:
+                        self.forget_api_key_file()
                         return True
             except (urllib.error.URLError, OSError):
                 pass  # not up yet, keep waiting
@@ -516,12 +518,14 @@ class ModelServer:
                 marker = current
                 last_change = time.time()      # still working: reset the clock
             elif time.time() - last_change >= stall_timeout:
+                self.forget_api_key_file()
                 return False                   # nothing has moved: really stuck
 
             if on_progress is not None:
                 on_progress(time.time() - start)
             polls += 1
             if max_polls is not None and polls >= max_polls:
+                self.forget_api_key_file()
                 return False
             time.sleep(2)
 

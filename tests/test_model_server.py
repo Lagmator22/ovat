@@ -852,6 +852,34 @@ def test_stop_deletes_the_api_key_file(monkeypatch, tmp_path):
     assert not os.path.exists(key_file)
 
 
+def test_wait_until_ready_deletes_the_api_key_file_once_ready(monkeypatch, tmp_path):
+    """_write_api_key_file documents that the key file is only needed until the
+    server is up. wait_until_ready must unlink it as soon as readiness succeeds."""
+    server, cmd = _captured_cmd(monkeypatch, tmp_path, api_key="s3cret")
+    key_file = cmd[cmd.index("--api_key_file") + 1]
+    assert os.path.exists(key_file)
+
+    class _ReadyResponse:
+        status = 200
+        def __enter__(self):
+            return self
+        def __exit__(self, *exc):
+            return False
+
+    class _ReadyOpener:
+        def open(self, *a, **k):
+            return _ReadyResponse()
+
+    monkeypatch.setattr("ovat.core.model_server.urllib.request.build_opener",
+                        lambda *a, **k: _ReadyOpener())
+    server.process = None
+    try:
+        assert server.wait_until_ready(stall_timeout=5) is True
+        assert not os.path.exists(key_file), "key file lingered in /tmp after server became ready"
+    finally:
+        server.forget_api_key_file()
+
+
 @pytest.mark.parametrize("address, expected", [
     ("127.0.0.1", True), ("127.0.0.2", True), ("::1", True), ("[::1]", True),
     ("localhost", True), ("127.0.0.1,::1", True),

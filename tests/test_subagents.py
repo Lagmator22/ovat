@@ -793,3 +793,84 @@ def test_an_api_subagent_sends_no_thinking_field_unless_asked(monkeypatch):
     runner._bus.approver = lambda name, args, reason: True
     runner.run("cloud", "say PONG")
     assert sent[0]["extra_body"] is None
+
+
+def test_workflow_subagent_inherits_parent_bus_context(monkeypatch, tmp_path):
+    """A2A hop and seen-agent tracking live in bus.context; a workflow
+    subagent must inherit a copy so it cannot reset hop limits."""
+    runner, bus, built = _workflow_runner(monkeypatch, tmp_path)
+    bus.context = {"a2a_hops": 2, "a2a_seen": ("agent-a", "agent-b")}
+    runner.run("researcher", "check hops")
+    child = built[0]
+    assert child.events.context == {
+        "a2a_hops": 2, "a2a_seen": ("agent-a", "agent-b")}
+    assert child.events.context is not bus.context
+
+
+def test_cancel_child_unblocks_pending_approval_and_question_for_that_child_only(
+        monkeypatch, tmp_path):
+    """Cancelling one running subagent must immediately wake its blocked
+    approval or question prompt without cancelling a sibling's prompt."""
+    from ovat.agent.events import CURRENT_CALL_ID, CURRENT_SUBAGENT
+    from ovat.agent.questions import QuestionBroker
+
+    runner, bus, _ = _workflow_runner(monkeypatch, tmp_path)
+    approver = ApprovalBroker(on_request=lambda r: None, timeout=5.0)
+    asker = QuestionBroker(on_request=lambda r: None, timeout=5.0)
+    bus.approver = approver
+    bus.asker = asker
+
+    results = {}
+
+    def child_waiting_approval():
+        tok = CURRENT_SUBAGENT.set(("researcher", "call-c1"))
+        try:
+            results["c1_approval"] = approver("shell", {"cmd": "ls"}, "")
+        finally:
+            CURRENT_SUBAGENT.reset(tok)
+
+    def sibling_waiting_approval():
+        tok = CURRENT_SUBAGENT.set(("researcher", "call-c2"))
+        try:
+            results["c2_approval"] = approver("shell", {"cmd": "pwd"}, "")
+        finally:
+            CURRENT_SUBAGENT.reset(tok)
+
+    def child_waiting_question():
+        tok = CURRENT_SUBAGENT.set(("researcher", "call-c1"))
+        try:
+            results["c1_question"] = asker("Which env?", ["dev", "prod"])
+        finally:
+            CURRENT_SUBAGENT.reset(tok)
+
+    # Register call-c1 as an active child run on the runner
+    runner._child_stops["call-c1"] = threading.Event()
+    runner._child_stops["call-c2"] = threading.Event()
+
+    t1 = threading.Thread(target=child_waiting_approval)
+    t2 = threading.Thread(target=sibling_waiting_approval)
+    t3 = threading.Thread(target=child_waiting_question)
+    t1.start()
+    t2.start()
+    t3.start()
+
+    deadline = time.monotonic() + 2.0
+    while len(approver.pending()) < 2 or len(asker.pending()) < 1:
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+
+    assert runner.cancel_child("call-c1") is True
+    t1.join(timeout=0.5)
+    t3.join(timeout=0.5)
+    assert not t1.is_alive()
+    assert not t3.is_alive()
+    assert results["c1_approval"] is False
+    assert results["c1_question"] is None
+
+    # Sibling call-c2 is still waiting and unaffected
+    assert len(approver.pending()) == 1
+    assert approver.pending()[0].agent_call == "call-c2"
+    approver.resolve(approver.pending()[0].id, permissions.ONCE)
+    t2.join(timeout=0.5)
+    assert results["c2_approval"] is True
+

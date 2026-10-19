@@ -250,7 +250,7 @@ def _make_search_docs(retriever: RetrieverProvider | None):
     )
 
 
-def _make_transcribe(tool_cfg=None):
+def _make_transcribe(tool_cfg=None, root=None):
     """Bind this tool's configured model and device into the callable.
 
     Default-arg binding, for the same reason _make_mcp_caller uses it: the
@@ -259,19 +259,20 @@ def _make_transcribe(tool_cfg=None):
     """
     model = getattr(tool_cfg, "model", None)
     device = getattr(tool_cfg, "device", None)
-    return lambda path, language="en", _m=model, _d=device: (
+    return lambda path, language="en", _m=model, _d=device, _r=root: (
         transcribe_tool.transcribe_impl(path, language,
-                                        model=_m, device=_d))
+                                        model=_m, device=_d, root=_r))
 
 
-def _make_describe_image(tool_cfg=None):
+def _make_describe_image(tool_cfg=None, root=None):
     """Same binding as _make_transcribe, for the vision model."""
     model = getattr(tool_cfg, "model", None)
     device = getattr(tool_cfg, "device", None)
     return lambda image_path, prompt="Describe this image in one paragraph.", \
-        _m=model, _d=device: (
+        _m=model, _d=device, _r=root: (
             describe_image_tool.describe_image_impl(image_path, prompt,
-                                                    model=_m, device=_d))
+                                                    model=_m, device=_d,
+                                                    root=_r))
 
 
 def _make_coding_tools(root, stop) -> dict:
@@ -380,6 +381,13 @@ def close_agent(agent) -> None:
             # Shutting down must not raise: one wedged server should not stop
             # the others being closed, nor take down the caller.
             pass
+    llm = getattr(agent, "llm", None)
+    close_llm = getattr(llm, "close", None)
+    if callable(close_llm):
+        try:
+            close_llm()
+        except Exception:
+            pass
 
 
 def build_tools(config: WorkflowConfig,
@@ -403,10 +411,12 @@ def build_tools(config: WorkflowConfig,
     # its model is the embedder in the rag: section.
     store = todo_tool.TodoStore()          # this agent's list, never saved
     ask_bus = events if events is not None else EventBus()
+    root = project_root()
     builders = {
         "search_docs": lambda cfg: _make_search_docs(retriever),
-        "transcribe": _make_transcribe,
-        "describe_image": _make_describe_image,
+        "transcribe": lambda cfg, _r=root: _make_transcribe(cfg, root=_r),
+        "describe_image": lambda cfg, _r=root: _make_describe_image(
+            cfg, root=_r),
         "todo": lambda cfg: (lambda action, todos=None, _s=store:
                              todo_tool.todo_impl(action, todos, _s)),
         # Reads bus.asker when called, so an interface that connects after
@@ -418,7 +428,7 @@ def build_tools(config: WorkflowConfig,
         "web_search": _make_web_search,
     }
     coding = _make_coding_tools(
-        project_root(), events.stop if events is not None else None)
+        root, events.stop if events is not None else None)
     builders.update({name: (lambda cfg, _f=fn: _f)
                      for name, fn in coding.items()})
     tools = {}
@@ -435,25 +445,40 @@ def build_tools(config: WorkflowConfig,
                 "kind": "builtin",
                 "_entry": tool_cfg,
             }
-        elif tool_cfg.type == "mcp_stdio":
-            if not tool_cfg.command:
-                raise ValueError(
-                    f"Tool '{tool_cfg.name}' has type mcp_stdio but no "
-                    f"command to launch the server with."
-                )
-            from ovat.tools.mcp_client import (MCPStdioServer,
+        elif tool_cfg.type in ("mcp_stdio", "mcp_http", "mcp_sse"):
+            from ovat.tools.mcp_client import (MCPHttpServer, MCPStdioServer,
                                                openai_schema_from_mcp_tool)
-            server = MCPStdioServer(tool_cfg.command, env=tool_cfg.env)
+            if tool_cfg.type == "mcp_stdio":
+                if not tool_cfg.command:
+                    raise ValueError(
+                        f"Tool '{tool_cfg.name}' has type mcp_stdio but no "
+                        f"command to launch the server with."
+                    )
+                server = MCPStdioServer(tool_cfg.command, env=tool_cfg.env)
+            else:
+                transport = "sse" if tool_cfg.type == "mcp_sse" else "http"
+                server = MCPHttpServer(
+                    tool_cfg.url,
+                    transport=transport,
+                    connect_timeout=tool_cfg.timeout or 30.0,
+                    headers=tool_cfg.headers,
+                    token_env=tool_cfg.token_env,
+                )
             server.mcp_name = tool_cfg.name
             if servers is not None:
-                # Handed back so somebody owns the subprocess's lifetime.
+                # Handed back so somebody owns the server's lifetime.
                 servers.append(server)
             for remote in server.tools:
-                tools[remote.name] = {
-                    "schema": openai_schema_from_mcp_tool(remote),
+                tool_key = (f"{tool_cfg.name}__{remote.name}"
+                            if remote.name in tools else remote.name)
+                schema = openai_schema_from_mcp_tool(remote)
+                schema["function"]["name"] = tool_key
+                tools[tool_key] = {
+                    "schema": schema,
                     "function": _make_mcp_caller(server, remote.name),
-                    "kind": "mcp_stdio",
+                    "kind": tool_cfg.type,
                     "mcp_source": tool_cfg.name,
+                    "mcp_tool_name": remote.name,
                     "_entry": tool_cfg,
                 }
         elif tool_cfg.type == "a2a":
@@ -462,7 +487,7 @@ def build_tools(config: WorkflowConfig,
         else:
             raise ValueError(
                 f"Unsupported tool type '{tool_cfg.type}' for '{tool_cfg.name}'. "
-                f"Supported: builtin, mcp_stdio, a2a."
+                f"Supported: builtin, mcp_stdio, mcp_http, mcp_sse, a2a."
             )
     # Every tool from THIS config entry gets its permission: an mcp_stdio
     # entry's applies to each tool its server advertises.
@@ -572,6 +597,8 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False,
         """Hand the agent its subprocesses and its event bus."""
         agent.mcp_servers = mcp_servers
         agent.events = events
+        if not hasattr(agent, "llm"):
+            agent.llm = llm
         if subagent_runner is not None:
             agent.subagent_runner = subagent_runner
         return agent

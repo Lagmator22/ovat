@@ -556,7 +556,11 @@ class IntelHardwareSource(TelemetrySource):
         if self._proc is not None:
             try:
                 self._proc.terminate()
-                self._proc.wait(timeout=5)
+                try:
+                    self._proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
+                    self._proc.wait(timeout=2)
             except Exception:
                 pass
             self._proc = None

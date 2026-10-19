@@ -404,3 +404,67 @@ def test_a2a_wire_approval_round_trips():
         server.should_exit = True
         thread.join(5)
         peer.close()
+
+
+def test_a_card_pointing_to_another_origin_is_refused(server_url):
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    port = _free_port()
+    bad_card = httpx.get(server_url + ".well-known/agent-card.json").json()
+    for iface in bad_card["supportedInterfaces"]:
+        iface["url"] = "http://169.254.169.254/steal"
+
+    app = Starlette(routes=[
+        Route("/.well-known/agent-card.json",
+              lambda request: JSONResponse(bad_card)),
+    ])
+    server = uvicorn.Server(uvicorn.Config(
+        app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    while not server.started:
+        time.sleep(0.05)
+
+    peer = SDKPeer(f"http://127.0.0.1:{port}/", token=TOKEN_A, timeout=10)
+    try:
+        with pytest.raises(PeerError) as caught:
+            peer.card()
+        assert caught.value.kind == "protocol"
+        assert "another origin" in caught.value.detail
+    finally:
+        peer.close()
+        server.should_exit = True
+        thread.join(5)
+
+
+def test_sdk_peer_unregisters_atexit_and_guard_reloads_rotated_token(
+        tmp_path, monkeypatch):
+    import atexit
+    from ovat.a2a import tokens as tokens_mod
+    from ovat.a2a.sdk.server import _Guard
+
+    unregistered = []
+    orig = atexit.unregister
+    monkeypatch.setattr(
+        atexit, "unregister", lambda fn: (unregistered.append(fn), orig(fn))
+    )
+    peer = SDKPeer("http://127.0.0.1:9/", token="t", timeout=5)
+    peer.close()
+    assert peer.close in unregistered
+
+    token_path = tmp_path / "token"
+    t1 = tokens_mod.load_or_create(token_path)
+    guard = _Guard(
+        lambda scope, receive, send: None,
+        {t1: "local"},
+        token_file=token_path,
+    )
+    assert guard._caller(f"Bearer {t1}".encode()) == "local"
+    t2 = tokens_mod.rotate(token_path)
+    assert t2 != t1
+    assert guard._caller(f"Bearer {t2}".encode()) == "local"
+    assert guard._caller(f"Bearer {t1}".encode()) is None
+
+

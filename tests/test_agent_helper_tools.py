@@ -559,3 +559,39 @@ def test_all_helper_tool_arguments_derive_from_the_schema():
     item = factory.BUILTIN_TOOL_SCHEMAS["todo"]["function"]["parameters"][
         "properties"]["todos"]["items"]
     assert set(item["properties"]) == {"id", "content", "status", "priority"}
+
+
+def test_web_fetch_blocks_cloud_metadata_private_ips_and_dns_rebinding(
+        monkeypatch):
+    import socket
+    from ovat.tools import web_fetch
+
+    for blocked in (
+        "http://169.254.169.254/latest/meta-data/",
+        "http://[fd00:ec2::254]/latest/meta-data/",
+        "http://10.0.0.1/internal",
+        "http://192.168.1.1/admin",
+        "http://172.16.0.5/secret",
+        "http://0.0.0.0:8080/",
+    ):
+        out = web_fetch_impl(blocked, timeout=1)
+        assert _is_error(out) and "refusing to fetch" in out, (blocked, out)
+
+    # A domain that resolves via DNS rebinding to 127.0.0.1 must be refused
+    # even though literal http://127.0.0.1 is allowed for local dev servers.
+    monkeypatch.setattr(
+        web_fetch.socket,
+        "getaddrinfo",
+        lambda host, *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "",
+                                 ("127.0.0.1", 0))],
+    )
+    rebound = web_fetch_impl("http://rebind.evil.example/steal")
+    assert _is_error(rebound) and "loopback" in rebound
+
+
+def test_web_search_searxng_blocks_cloud_metadata_base_url():
+    out = ws.web_search_impl(
+        "query", "searxng", "http://169.254.169.254/latest/meta-data"
+    )
+    assert _is_error(out) and "metadata" in out
+

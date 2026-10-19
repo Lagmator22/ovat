@@ -250,3 +250,182 @@ def test_env_on_a_builtin_tool_is_a_config_error():
     with pytest.raises(ValidationError, match="mcp_stdio"):
         WorkflowConfig(model={"name": "m"},
                        tools=[{"name": "search_docs", "env": {"A": "b"}}])
+
+
+def test_close_unregisters_atexit_hook(monkeypatch):
+    """Closing an MCP server must unregister its atexit callback so closed
+    instances do not accumulate in memory across agent rebuilds."""
+    import atexit
+    registered = []
+    unregistered = []
+    orig_reg = atexit.register
+    orig_unreg = atexit.unregister
+
+    def track_reg(fn, *a, **kw):
+        registered.append(fn)
+        return orig_reg(fn, *a, **kw)
+
+    def track_unreg(fn):
+        unregistered.append(fn)
+        return orig_unreg(fn)
+
+    monkeypatch.setattr(atexit, "register", track_reg)
+    monkeypatch.setattr(atexit, "unregister", track_unreg)
+
+    srv = MCPStdioServer(SEARCH_DOCS_SERVER)
+    assert srv.close in registered
+    srv.close()
+    assert srv.close in unregistered
+
+
+def test_call_tool_surfaces_is_error_with_error_prefix(server, monkeypatch):
+    """An MCP tool result with isError=True must start with 'Error:' so the
+    agent loop and UI treat it as a tool failure instead of normal data."""
+    from types import SimpleNamespace
+
+    async def fake_call_tool(name, args):
+        return SimpleNamespace(
+            isError=True,
+            content=[SimpleNamespace(text="rate limit exceeded")],
+        )
+
+    monkeypatch.setattr(server._session, "call_tool", fake_call_tool)
+    out = server.call_tool("search_docs", {"query": "x"})
+    assert out == "Error: rate limit exceeded"
+
+
+_CRASH_ONCE_SERVER = '''
+import os, pathlib, sys
+from fastmcp import FastMCP
+
+marker = pathlib.Path(sys.argv[1])
+mcp = FastMCP("flaky")
+
+@mcp.tool
+def ping() -> str:
+    if not marker.exists():
+        marker.write_text("crashed", encoding="utf-8")
+        os._exit(1)
+    return "recovered pong"
+
+mcp.run()
+'''
+
+
+def test_call_tool_reconnects_once_on_transport_drop(tmp_path):
+    """When a child MCP server crashes mid-call, call_tool must reconnect
+    once and complete the call instead of leaving the session permanently dead."""
+    script = tmp_path / "flaky.py"
+    script.write_text(_CRASH_ONCE_SERVER, encoding="utf-8")
+    marker = tmp_path / "crashed.flag"
+    srv = MCPStdioServer([sys.executable, str(script), str(marker)])
+    try:
+        out = srv.call_tool("ping", {})
+        assert out == "recovered pong"
+        assert srv.status()["connected"] is True
+    finally:
+        srv.close()
+
+
+def test_colliding_mcp_tool_names_are_namespaced_instead_of_overwritten(
+        monkeypatch):
+    """When two MCP servers advertise a tool with the same name, the second
+    must be namespaced as <server>__<tool> rather than silently overwriting
+    the first."""
+    from types import SimpleNamespace
+    from ovat.tools import mcp_client
+
+    class FakeMCP:
+        def __init__(self, command, env=None, **kw):
+            self.command = command
+            self.tools = [SimpleNamespace(
+                name="ping", description=f"from {command[0]}",
+                inputSchema={"type": "object", "properties": {}})]
+
+        def call_tool(self, name, args):
+            return f"{self.command[0]}:{name}"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(mcp_client, "MCPStdioServer", FakeMCP)
+    cfg = WorkflowConfig(
+        model={"name": "m"},
+        tools=[
+            {"name": "alpha", "type": "mcp_stdio", "command": ["srv_a"]},
+            {"name": "beta", "type": "mcp_stdio", "command": ["srv_b"]},
+        ],
+    )
+    tools = build_tools(cfg)
+    assert "ping" in tools
+    assert "beta__ping" in tools
+    assert tools["ping"]["function"]() == "srv_a:ping"
+    assert tools["beta__ping"]["function"]() == "srv_b:ping"
+    assert tools["beta__ping"]["schema"]["function"]["name"] == "beta__ping"
+
+
+def test_mcp_http_and_sse_transports_wire_headers_and_permissions(monkeypatch):
+    """type: mcp_http and type: mcp_sse connect via MCPHttpServer, expand
+    ${VAR} headers and token_env, and default to ask on remote hosts."""
+    from types import SimpleNamespace
+    from ovat.agent.permissions import default_permission
+    from ovat.tools import mcp_client
+
+    seen = []
+
+    class FakeHttpServer:
+        def __init__(self, url, transport="http", connect_timeout=30.0,
+                     headers=None, token_env=None):
+            seen.append({
+                "url": url,
+                "transport": transport,
+                "headers": headers,
+                "token_env": token_env,
+            })
+            self.url = url
+            self.transport = transport
+            self.tools = [SimpleNamespace(
+                name=f"remote_{transport}", description="remote tool",
+                inputSchema={"type": "object", "properties": {}})]
+
+        def call_tool(self, name, args):
+            return f"ok:{self.transport}:{name}"
+
+        def status(self):
+            return {"connected": True, "error": None,
+                    "url": self.url, "tools": [t.name for t in self.tools]}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(mcp_client, "MCPHttpServer", FakeHttpServer)
+    monkeypatch.setenv("MCP_TOK", "tok-secret")
+    cfg = WorkflowConfig(
+        model={"name": "m"},
+        tools=[
+            {
+                "name": "linear",
+                "type": "mcp_http",
+                "url": "https://mcp.linear.app/mcp",
+                "token_env": "MCP_TOK",
+                "headers": {"X-Workspace": "eng"},
+            },
+            {
+                "name": "local_sse",
+                "type": "mcp_sse",
+                "url": "http://127.0.0.1:8900/sse",
+            },
+        ],
+    )
+    owned = []
+    tools = build_tools(cfg, servers=owned)
+    assert tools["remote_http"]["permission"] == "ask"
+    assert tools["remote_sse"]["permission"] == "allow"
+    assert tools["remote_http"]["function"]() == "ok:http:remote_http"
+    assert tools["remote_sse"]["function"]() == "ok:sse:remote_sse"
+    assert seen[0]["transport"] == "http"
+    assert seen[0]["token_env"] == "MCP_TOK"
+    assert seen[1]["transport"] == "sse"
+    assert default_permission("mcp_http", "https://mcp.linear.app/mcp") == "ask"
+    assert default_permission("mcp_sse", "http://localhost:8900/sse") == "allow"
+

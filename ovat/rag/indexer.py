@@ -139,6 +139,9 @@ def index_folder(folder: str, retriever: RetrieverProvider,
 MANIFEST_SUFFIX = ".sources.json"
 
 
+from ovat.agentic.atomic import write_text
+
+
 def record_index(db_path: str, indexed: dict) -> None:
     """Merge this run's {source: {path, mtime}} into the index's manifest."""
     if not db_path or db_path == ":memory:" or not indexed:
@@ -146,8 +149,8 @@ def record_index(db_path: str, indexed: dict) -> None:
     import json
     manifest = _read_manifest(db_path)
     manifest.update(indexed)
-    with open(db_path + MANIFEST_SUFFIX, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, indent=1, sort_keys=True)
+    write_text(db_path + MANIFEST_SUFFIX,
+               json.dumps(manifest, indent=1, sort_keys=True))
 
 
 def stale_sources(db_path: str) -> list[str]:

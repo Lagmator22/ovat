@@ -115,32 +115,39 @@ PURPOSE = {
                        "`web_search` (ask first), or any tool an MCP server "
                        "advertises.",
     ("tools", "type"): "`builtin` runs in-process; `mcp_stdio` launches an "
-                       "external MCP server; `a2a` asks another agent over "
-                       "A2A (needs `pip install 'ovat[a2a]'`).",
+                       "external MCP server; `mcp_http` and `mcp_sse` connect "
+                       "to a remote MCP server over Streamable HTTP or SSE; "
+                       "`a2a` asks another agent over A2A (needs `pip install "
+                       "'ovat[a2a]'`).",
     ("tools", "command"): "Argv that launches the MCP server. Required when "
                           "`type: mcp_stdio`.",
     ("tools", "env"): "Extra environment for an `mcp_stdio` server, which "
                       "otherwise sees only HOME, PATH and a few more. "
                       "`${VAR}` is expanded from your shell.",
+    ("tools", "headers"): "Extra HTTP headers for an `mcp_http` or `mcp_sse` "
+                          "server. `${VAR}` in values is expanded from your "
+                          "shell.",
     ("tools", "model"): "Where this tool's own weights live. `transcribe` and "
                         "`describe_image` only.",
     ("tools", "device"): "Device for this tool's model, separate from the "
                          "agent's. Omit to let the device router choose.",
-    ("tools", "url"): "Base URL of the other agent. Its Agent Card is read "
-                      "from there. Required when `type: a2a`.",
+    ("tools", "url"): "Base URL of the remote agent or MCP server. Required "
+                      "when `type: a2a`, `mcp_http`, or `mcp_sse`.",
     ("tools", "token_env"): "NAME of the environment variable holding the "
-                            "bearer token for that agent. Never the token "
-                            "itself.",
-    ("tools", "timeout"): "Seconds to wait for the other agent's answer. "
-                          "Unset: 900.",
+                            "bearer token for that remote agent or MCP "
+                            "server. Never the token itself.",
+    ("tools", "timeout"): "Seconds to wait for the remote agent or MCP "
+                          "server. Unset: 900 for `a2a`, 30 for `mcp_http` "
+                          "and `mcp_sse`.",
     ("tools", "description"): "What the model is told this agent does. "
                               "Unset: built from the agent's card.",
     ("tools", "permission"): "`allow`, `ask` (a person says yes first; "
                              "with nobody to ask, as in `ovat run`, it does "
-                             "not run) or `deny`. Unset: `ask` for an `a2a` "
-                             "tool on another machine and for the "
-                             "`write_file`, `edit`, `shell`, `web_fetch` "
-                             "and `web_search` tools, `allow` otherwise.",
+                             "not run) or `deny`. Unset: `ask` for an `a2a`, "
+                             "`mcp_http` or `mcp_sse` tool on another machine "
+                             "and for the `write_file`, `edit`, `shell`, "
+                             "`web_fetch` and `web_search` tools, `allow` "
+                             "otherwise.",
     ("tools", "provider"): "Which search service `web_search` uses: "
                            "`searxng`, `tavily`, `serper` or `brave`. "
                            "`web_search` only. Unset: the tool tells the "
@@ -230,6 +237,10 @@ PURPOSE = {
     ("a2a.server", "max_hops"): "How many agents deep a request may "
                                 "travel, so two agents cannot call each "
                                 "other forever.",
+    ("a2a.server", "allow_remote_approvals"):
+        "Whether a remote caller that supports confirmations may approve "
+        "`permission: ask` tools on this server. Set `false` to refuse all "
+        "`ask` tools on remote requests.",
     ("a2a.server", "audit_log"): "JSON Lines file recording every answer "
                                  "that left. `null` turns it off.",
 

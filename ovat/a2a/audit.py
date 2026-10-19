@@ -45,12 +45,23 @@ class AuditLog:
 
     def tail(self, n: int) -> list[dict]:
         """The last n records, oldest first. Unreadable lines are skipped."""
+        if n <= 0:
+            return []
         try:
-            lines = self.path.read_text(encoding="utf-8").splitlines()
+            with open(self.path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                pos = f.tell()
+                buf = b""
+                while pos > 0 and buf.count(b"\n") <= n:
+                    step = min(65536, pos)
+                    pos -= step
+                    f.seek(pos)
+                    buf = f.read(step) + buf
         except OSError:
             return []
+        lines = buf.decode("utf-8", errors="replace").splitlines()
         out = []
-        for line in lines[-n:] if n > 0 else []:
+        for line in lines[-n:]:
             try:
                 out.append(json.loads(line))
             except ValueError:
