@@ -54,3 +54,12 @@ trace*.json
 
 # Agent worktrees and session scratch: never part of the project.
 .claude/worktrees/
+
+# Media samples and demo recordings (audio/video binaries)
+*.wav
+*.mp3
+*.mp4
+*.webm
+
+# Personal tooling for capturing SVG documentation screenshots
+scripts/capture_media.py
