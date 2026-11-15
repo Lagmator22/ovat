@@ -225,9 +225,7 @@ def test_the_banner_shows_only_the_workflow_file_name():
 def test_nothing_that_phones_home_or_nags_is_on():
     """No update check, no telemetry, no feedback prompt, no editor promo,
     no what's-new from the app this was copied from, no notifications. The
-    update check, the promo and the what's-new are not switched off but
-    gone from the copied app."""
-    from ovat.tui.vibe.cli.textual_ui.widgets.feedback_bar import FeedbackBar
+    update check, feedback bar, promo and what's-new are removed from the client."""
     from ovat.tui.vibe.cli.textual_ui.widgets.messages import (
         GreetingMessage, WhatsNewMessage)
 
@@ -240,11 +238,11 @@ def test_nothing_that_phones_home_or_nags_is_on():
             assert not config.enable_notifications
             assert not config.show_greeting
             for gone in ("_check_update", "_check_and_show_whats_new",
-                         "_maybe_show_vscode_extension_promo"):
+                         "_maybe_show_vscode_extension_promo",
+                         "_maybe_show_feedback_bar"):
                 assert not hasattr(app, gone), gone
             assert not app.query(WhatsNewMessage)
             assert not app.query(GreetingMessage)
-            assert not app.query_one(FeedbackBar).display
             assert (await app.app_server.resources.feedback.should_show(
                 pending_user_messages=1)) is False
     run(go())
@@ -1191,15 +1189,17 @@ def test_ctrl_enter_on_a_framework_engine_says_why_and_the_prompt_still_runs():
     run(go())
 
 
-def test_the_debug_console_key_does_nothing_instead_of_failing():
-    """Ctrl+Backslash (the debug console) is a key of the copied app whose
-    server side OVAT does not have. It must not reach the server."""
+def test_ctrl_backslash_toggles_the_debug_console():
+    """Ctrl+Backslash toggles the DebugConsole overlay and loads server logs."""
     from ovat.tui.vibe.cli.textual_ui.widgets.debug_console import DebugConsole
 
     async def go():
         async with running() as (app, pilot, fake, handle):
             await pilot.press("ctrl+backslash")
-            await pilot.pause(0.3)
+            await until(pilot, lambda: bool(app.query(DebugConsole)))
+            assert app.query(DebugConsole) and not app.query(ErrorMessage)
+            await pilot.press("ctrl+backslash")
+            await until(pilot, lambda: not app.query(DebugConsole))
             assert not app.query(DebugConsole) and not app.query(ErrorMessage)
     run(go())
 
@@ -1509,46 +1509,59 @@ def test_every_ovat_command_is_in_the_new_apps_registry():
 
 def test_the_registry_keeps_a_vibe_command_only_when_the_server_serves_it():
     """The kept commands are DERIVED from the server's route table: for every
-    one of Vibe's commands, the methods its handler calls must all be routes,
-    or the command is not in the registry. Nothing here is a hand-kept list of
-    removed commands, so it cannot drift from the server."""
-    from ovat.tui.agent_commands import (CAPABILITY, VIBE_NEEDS,
+    one of the copied client's commands, the methods its handler calls must all
+    be routes, or the command is not in the registry. Nothing here is a
+    hand-kept list of removed commands, so it cannot drift from the server."""
+    import platform
+    from ovat.tui.agent_commands import (CAPABILITY, CLIENT_COMMAND_NEEDS,
                                          OvatCommandRegistry)
     from ovat.tui.server.methods import all_routes
     from ovat.tui.vibe.app_server.protocol import SERVER_METHODS
     from ovat.tui.vibe.cli.commands import CommandRegistry
+    from ovat.tui.vibe.cli.constants import CLIPBOARD_IMAGE_PASTE_SUPPORTED_SYSTEM
     routes = set(all_routes().names())
     registry = OvatCommandRegistry()
-    vibe = set(CommandRegistry().commands) | set(
+    client_cmds = set(CommandRegistry().commands) | set(
         CommandRegistry(excluded_commands=[])._build_commands())
-    # a command Vibe adds must be classified before it can be offered
-    assert set(VIBE_NEEDS) == vibe
-    for name, needs in VIBE_NEEDS.items():
+    # a command added by the client must be classified before it can be offered
+    assert set(CLIENT_COMMAND_NEEDS) == client_cmds
+    for name, needs in CLIENT_COMMAND_NEEDS.items():
         for method in needs:
             assert method.startswith(CAPABILITY) or method in SERVER_METHODS, (
                 f"{name}: {method} is not a method of the protocol")
-    for name in vibe:
-        works = all(m in routes for m in VIBE_NEEDS[name])
-        assert (name in registry.commands) == works, name
+    paste_supported = platform.system() == CLIPBOARD_IMAGE_PASTE_SUPPORTED_SYSTEM
+    for name in client_cmds:
+        works = all(m in routes for m in CLIENT_COMMAND_NEEDS[name])
+        skip_platform = name == "paste-image" and not paste_supported
+        assert (name in registry.commands) == (works and not skip_platform), name
     # and the other way: nothing offered needs a method the server lacks
-    for name in set(registry.commands) & vibe:
-        assert all(m in routes for m in VIBE_NEEDS[name]), name
+    for name in set(registry.commands) & client_cmds:
+        assert all(m in routes for m in CLIENT_COMMAND_NEEDS[name]), name
     # what that comes to today (it grows when the server learns a method)
-    assert set(registry.commands) & vibe == {
+    expected = {
         "help", "clear", "copy", "exit", "status", "theme", "resume",
         "rewind", "rename", "branch", "log", "compact", "model", "thinking",
-        "reload", "config", "mcp", "voice", "todo"}
+        "reload", "config", "mcp", "voice", "todo", "debug", "loop"}
+    if paste_supported:
+        expected.add("paste-image")
+    assert set(registry.commands) & client_cmds == expected
 
 
 def test_a_removed_command_would_only_have_ended_in_not_supported():
     """The server answers every unrouted method with a readable error, so a
     removed command is one whose handler would hit it."""
-    from ovat.tui.agent_commands import VIBE_NEEDS, OvatCommandRegistry
+    import platform
+    from ovat.tui.agent_commands import (CLIENT_COMMAND_NEEDS,
+                                         OvatCommandRegistry)
     from ovat.tui.server.methods import all_routes
+    from ovat.tui.vibe.cli.constants import CLIPBOARD_IMAGE_PASTE_SUPPORTED_SYSTEM
     routes = set(all_routes().names())
-    for name in VIBE_NEEDS:
+    for name in CLIENT_COMMAND_NEEDS:
+        if (name == "paste-image"
+                and platform.system() != CLIPBOARD_IMAGE_PASTE_SUPPORTED_SYSTEM):
+            continue
         if name not in OvatCommandRegistry().commands:
-            assert any(m not in routes for m in VIBE_NEEDS[name]), name
+            assert any(m not in routes for m in CLIENT_COMMAND_NEEDS[name]), name
 
 
 def test_ovat_agent_ui_picks_the_app():

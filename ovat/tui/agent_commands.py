@@ -21,9 +21,9 @@ copy and quit (Vibe's /exit). Their names and aliases are merged.
 from ovat.agentic import commands as ovat_commands
 from ovat.tui.vibe.cli.commands import Command, CommandRegistry
 
-# What each Vibe command's handler asks of the server. A name with a slash is
+# What each client command's handler asks of the server. A name with a slash is
 # a JSON-RPC method; "capability:..." is something OVAT does not have at all.
-VIBE_NEEDS: dict[str, tuple[str, ...]] = {
+CLIENT_COMMAND_NEEDS: dict[str, tuple[str, ...]] = {
     "help": (),
     "config": ("config/fields/read", "config/write"),
     "model": ("config/fields/read", "config/model/write"),
@@ -32,7 +32,7 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
     "reload": ("config/reload",),
     "clear": ("session/history/clear",),
     "copy": (),
-    "paste-image": ("capability:image input",),
+    "paste-image": (),
     "log": ("session/log/read",),
     # It writes Vibe's log_level, which OVAT does not use: config/write
     # answers "not used by OVAT", so the command would only end in that.
@@ -59,8 +59,8 @@ VIBE_NEEDS: dict[str, tuple[str, ...]] = {
 
 CAPABILITY = "capability:"
 
-# OVAT command -> the Vibe command that is the same thing.
-SAME_AS_VIBE = {"help": "help", "new": "clear", "copy": "copy", "quit": "exit"}
+# OVAT command -> the client command that is the same thing.
+SHARED_COMMANDS = {"help": "help", "new": "clear", "copy": "copy", "quit": "exit"}
 
 # Copied commands whose upstream text describes what they do in Vibe, not
 # here (Vibe's /voice opens a settings panel, its /reload reloads skills, its
@@ -99,10 +99,10 @@ def served_methods() -> frozenset[str]:
     return frozenset(all_routes().names())
 
 
-def vibe_command_works(name: str, served: frozenset[str]) -> bool:
-    """True when every method the Vibe command needs is served. A command
+def client_command_works(name: str, served: frozenset[str]) -> bool:
+    """True when every method the client command needs is served. A command
     this table does not know is NOT kept."""
-    needs = VIBE_NEEDS.get(name)
+    needs = CLIENT_COMMAND_NEEDS.get(name)
     return needs is not None and all(m in served for m in needs)
 
 
@@ -114,7 +114,7 @@ class OvatCommandRegistry(CommandRegistry):
         served = served_methods()
         commands = {name: command
                     for name, command in super()._build_commands().items()
-                    if vibe_command_works(name, served)}
+                    if client_command_works(name, served)}
         # Vibe offers /todo only with its experimental harness; OVAT's todo
         # tool is a plain workflow tool, so /todo is always there.
         if "todo" in commands:
@@ -128,10 +128,10 @@ class OvatCommandRegistry(CommandRegistry):
         for c in ovat_commands.COMMANDS:
             aliases = frozenset({f"/{c.name}", *(f"/{a}" for a in c.aliases
                                                  if a.isalnum())})
-            vibe_name = SAME_AS_VIBE.get(c.name)
-            if vibe_name is not None:
-                if vibe_name in commands:
-                    old = commands[vibe_name]
+            shared_name = SHARED_COMMANDS.get(c.name)
+            if shared_name is not None:
+                if shared_name in commands:
+                    old = commands[shared_name]
                     old.aliases = old.aliases | aliases
                 continue
             commands[c.name] = Command(

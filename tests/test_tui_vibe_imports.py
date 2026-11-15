@@ -63,6 +63,12 @@ NOT_COPIED: dict[str, str] = {
         "ovat.tui.vibe.cli.terminal_detect",
         "ovat.tui.vibe.cli.turn_summary",
         "ovat.tui.vibe.setup.trusted_folders.trust_folder_dialog",
+        "ovat.tui.vibe.cli.textual_ui.widgets.connector_auth_app",
+        "ovat.tui.vibe.cli.textual_ui.widgets.mcp_oauth_app",
+        "ovat.tui.vibe.cli.textual_ui.widgets.proxy_setup_app",
+        "ovat.tui.vibe.cli.textual_ui.widgets.skills_browser",
+        "ovat.tui.vibe.cli.textual_ui.widgets.feedback_bar",
+        "ovat.tui.vibe.cli.textual_ui.provider_auth_status",
     )},
 }
 

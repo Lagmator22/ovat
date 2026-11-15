@@ -142,7 +142,6 @@ from ovat.tui.vibe.cli.textual_ui.notifications import (
     NotificationPort,
     TextualNotificationAdapter,
 )
-from ovat.tui.vibe.cli.textual_ui.provider_auth_status import render_provider_auth_section
 from ovat.tui.vibe.cli.textual_ui.quit_manager import QuitManager
 from ovat.tui.vibe.cli.textual_ui.scheduled_loop_runner import ScheduledLoopCommands
 from ovat.tui.vibe.cli.textual_ui.todo_tracker import TodoTracker, todo_deltas
@@ -170,7 +169,6 @@ from ovat.tui.vibe.cli.textual_ui.widgets.collapsible import CollapsibleSection
 from ovat.tui.vibe.cli.textual_ui.widgets.compact import CompactMessage
 from ovat.tui.vibe.cli.textual_ui.widgets.context_progress import ContextProgress, TokenState
 from ovat.tui.vibe.cli.textual_ui.widgets.debug_console import DebugConsole
-from ovat.tui.vibe.cli.textual_ui.widgets.feedback_bar import FeedbackBar
 from ovat.tui.vibe.cli.textual_ui.widgets.inline_notice import InlineNotice
 from ovat.tui.vibe.cli.textual_ui.widgets.links import normalize_url
 from ovat.tui.vibe.cli.textual_ui.widgets.load_more import HistoryLoadMoreRequested
@@ -201,13 +199,11 @@ from ovat.tui.vibe.cli.textual_ui.widgets.model_picker import ModelOption, Model
 from ovat.tui.vibe.cli.textual_ui.widgets.narrator_status import NarratorStatus
 from ovat.tui.vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from ovat.tui.vibe.cli.textual_ui.widgets.path_display import PathDisplay
-from ovat.tui.vibe.cli.textual_ui.widgets.proxy_setup_app import ProxySetupApp
 from ovat.tui.vibe.cli.textual_ui.widgets.question_app import QuestionApp
 from ovat.tui.vibe.cli.textual_ui.widgets.reload_message import ReloadConfigMessage
 from ovat.tui.vibe.cli.textual_ui.widgets.rewind_app import RewindApp
 from ovat.tui.vibe.cli.textual_ui.widgets.rewind_fork_message import RewindForkMessage
 from ovat.tui.vibe.cli.textual_ui.widgets.session_picker import SessionPickerApp
-from ovat.tui.vibe.cli.textual_ui.widgets.skills_browser import SkillsBrowserApp
 from ovat.tui.vibe.cli.textual_ui.widgets.subagent_transcripts import SubagentTranscripts
 from ovat.tui.vibe.cli.textual_ui.widgets.theme_picker import ThemePickerApp, sorted_theme_names
 from ovat.tui.vibe.cli.textual_ui.widgets.thinking_picker import ThinkingPickerApp
@@ -264,27 +260,13 @@ _MAX_INCOMPLETE_STREAM_RETRIES = 2
 
 if TYPE_CHECKING:
     from ovat.tui.vibe.cli.textual_ui.screens.config import ConfigWriteResult
-    from ovat.tui.vibe.cli.textual_ui.widgets.connector_auth_app import ConnectorAuthApp
     from ovat.tui.vibe.cli.textual_ui.widgets.mcp_app import MCPApp
-    from ovat.tui.vibe.cli.textual_ui.widgets.mcp_oauth_app import MCPOAuthApp
-
-
-def _get_connector_auth_app_class() -> type[ConnectorAuthApp]:
-    from ovat.tui.vibe.cli.textual_ui.widgets.connector_auth_app import ConnectorAuthApp
-
-    return ConnectorAuthApp
 
 
 def _get_mcp_app_class() -> type[MCPApp]:
     from ovat.tui.vibe.cli.textual_ui.widgets.mcp_app import MCPApp
 
     return MCPApp
-
-
-def _get_mcp_oauth_app_class() -> type[MCPOAuthApp]:
-    from ovat.tui.vibe.cli.textual_ui.widgets.mcp_oauth_app import MCPOAuthApp
-
-    return MCPOAuthApp
 
 
 def _public_entry(event: AppServerEvent) -> PublicHistoryEntry | None:
@@ -311,17 +293,13 @@ class BottomApp(StrEnum):
     """
 
     Approval = auto()
-    ConnectorAuth = auto()
     Input = auto()
     LogLevelPicker = auto()
     MCP = auto()
-    MCPOAuth = auto()
     ModelPicker = auto()
-    ProxySetup = auto()
     Question = auto()
     ThemePicker = auto()
     ThinkingPicker = auto()
-    SkillsBrowser = auto()
     Rewind = auto()
     SessionPicker = auto()
 
@@ -862,7 +840,6 @@ class VibeApp(App):  # noqa: PLR0904
             refresh_session_state=lambda: self.app_server.refresh_state(),
             turn_has_started=self._queued_turn_has_started,
             set_loading_queue_count=self._set_loading_queue_count,
-            maybe_show_feedback_bar=self._maybe_show_feedback_bar,
             send_mention_telemetry=self._send_mention_telemetry,
             send_skill_telemetry=self._send_skill_telemetry,
         )
@@ -959,13 +936,6 @@ class VibeApp(App):  # noqa: PLR0904
             for turn in self.app_server.state.turns or []
         )
 
-    async def _maybe_show_feedback_bar(self) -> None:
-        if await self.app_server.resources.feedback.should_show(
-            pending_user_messages=1
-        ):
-            self._feedback_bar.show()
-            await self.app_server.resources.feedback.record("asked")
-
     async def _run_settings_update(
         self, description: str, update: Callable[[], Awaitable[None]]
     ) -> None:
@@ -1058,7 +1028,6 @@ class VibeApp(App):  # noqa: PLR0904
             yield Static(id="loading-area-content")
             self._inline_notice = InlineNotice(id="inline-notice")
             yield self._inline_notice
-            yield FeedbackBar()
 
         with Static(id="bottom-app-container"):
             yield ChatInputContainer(
@@ -1156,7 +1125,6 @@ class VibeApp(App):  # noqa: PLR0904
         self.app_server.resources.config.subscribe(self._on_config_changed)
         set_config_log_level(self.config.log_level)
         self._terminal_notifier.clear_waiting()
-        self._feedback_bar = self.query_one(FeedbackBar)
         if self._chat_input_container is not None:
             self._chat_input_container.replace_command_registry(self.commands)
             self._refresh_command_registry()
@@ -2068,40 +2036,6 @@ class VibeApp(App):  # noqa: PLR0904
         if self._pending_local_question and not self._pending_local_question.done():
             self._pending_local_question.set_result(result)
 
-    def on_chat_text_area_feedback_key_pressed(
-        self, message: ChatTextArea.FeedbackKeyPressed
-    ) -> None:
-        self._feedback_bar.handle_feedback_key(message.rating)
-
-    def on_chat_text_area_snooze_key_pressed(
-        self, message: ChatTextArea.SnoozeKeyPressed
-    ) -> None:
-        self._feedback_bar.handle_snooze_key()
-
-    def on_chat_text_area_non_feedback_key_pressed(
-        self, message: ChatTextArea.NonFeedbackKeyPressed
-    ) -> None:
-        self._feedback_bar.hide()
-
-    async def on_feedback_bar_feedback_given(
-        self, message: FeedbackBar.FeedbackGiven
-    ) -> None:
-        self.app_server.resources.telemetry.record(
-            "vibe.user_rating_feedback",
-            {
-                "rating": message.rating,
-                "version": CORE_VERSION,
-                "model": self.config.active_model.alias,
-            },
-            correlate_last_request=True,
-        )
-        await self.app_server.resources.feedback.record("given")
-
-    async def on_feedback_bar_snooze_key_pressed(
-        self, message: FeedbackBar.SnoozeKeyPressed
-    ) -> None:
-        await self.app_server.resources.feedback.record("snoozed")
-
     async def _remove_loading_widget(self) -> None:
         if self._loading_widget and self._loading_widget.parent:
             await self._loading_widget.remove()
@@ -2194,14 +2128,6 @@ class VibeApp(App):  # noqa: PLR0904
         self, changes: Mapping[str, str | bool | None]
     ) -> None:
         await self.app_server.resources.config.update(changes)
-
-    async def _persist_proxy(self, changes: dict[str, str | None]) -> None:
-        await self.app_server.resources.config.update_proxy(changes)
-        await self._mount_and_scroll(
-            UserCommandMessage(
-                "Proxy settings saved. Restart the CLI for changes to take effect."
-            )
-        )
 
     async def _remove_config_field(self, field: str) -> None:
         response = await self.app_server.resources.config.write(
@@ -2435,58 +2361,6 @@ class VibeApp(App):  # noqa: PLR0904
             self.notify(str(exc), severity="warning", markup=False)
         self.query_one(_get_mcp_app_class()).refresh_index()
         self._refresh_banner()
-
-    async def on_mcpapp_connector_auth_requested(
-        self, message: MCPApp.ConnectorAuthRequested
-    ) -> None:
-        await self._open_connector_auth(message.connector_name)
-
-    async def _open_connector_auth(self, connector_name: str) -> None:
-        connector_auth_app_class = _get_connector_auth_app_class()
-        await self._switch_to_input_app()
-        await self._switch_from_input(
-            connector_auth_app_class(
-                connector_name=connector_name, mcp=self.app_server.resources.mcp
-            )
-        )
-
-    async def on_mcpapp_mcpoauth_requested(
-        self, message: MCPApp.MCPOAuthRequested
-    ) -> None:
-        await self._switch_to_input_app()
-        await self._switch_from_input(
-            _get_mcp_oauth_app_class()(
-                server_name=message.server_name, mcp=self.app_server.resources.mcp
-            )
-        )
-
-    async def on_connector_auth_app_connector_auth_closed(
-        self, message: ConnectorAuthApp.ConnectorAuthClosed
-    ) -> None:
-        if message.refreshed:
-            self._refresh_banner()
-        await self._switch_to_input_app()
-        await self._show_mcp(cmd_args=message.connector_name)
-
-    async def on_mcpoauth_app_mcpoauth_closed(
-        self, message: MCPOAuthApp.MCPOAuthClosed
-    ) -> None:
-        if message.refreshed:
-            await self._refresh_mcp_browser()
-        await self._switch_to_input_app()
-        await self._show_mcp(cmd_args=message.server_name)
-
-    async def on_proxy_setup_app_proxy_setup_closed(
-        self, message: ProxySetupApp.ProxySetupClosed
-    ) -> None:
-        if not message.saved:
-            await self._mount_and_scroll(UserCommandMessage("Proxy setup cancelled."))
-        else:
-            await self._run_settings_update(
-                "proxy settings", partial(self._persist_proxy, message.changes)
-            )
-
-        await self._switch_to_input_app()
 
     async def _handle_command(self, user_input: str) -> bool:
         resolved = self.commands.parse_command(user_input)
@@ -3674,28 +3548,9 @@ class VibeApp(App):  # noqa: PLR0904
 - **Last Turn Tokens**: {format_count_markdown(stats.last_turn_total_tokens)}{last_turn_cached}
 - **Cost**: ${stats.session_cost:.4f}
 """
-        auth_section = await self._provider_auth_section()
-        if auth_section:
-            status_text = f"{status_text}\n{auth_section}"
         message = UserCommandMessage(status_text)
         message.add_class("agent-statistics")
         await self._mount_and_scroll(message)
-
-    async def _provider_auth_section(self) -> str:
-        """The read-only "Model & Provider" section; empty when unavailable.
-
-        Unified Harness sessions only. A Legacy session keeps the
-        statistics-only ``/status``, and so does any failed read: the command
-        never grows an error or an empty section.
-        """
-        if not self.app_server.resources.runtime.experimental_harness:
-            return ""
-        try:
-            view = await self.app_server.resources.provider_auth.read()
-        except Exception as exc:
-            logger.warning("Provider auth status read failed (%s)", type(exc).__name__)
-            return ""
-        return render_provider_auth_section(view)
 
     async def _show_config(self, **kwargs: Any) -> None:
         """Open the full-screen, searchable settings browser."""
@@ -3760,41 +3615,6 @@ class VibeApp(App):  # noqa: PLR0904
         if self._current_bottom_app == BottomApp.ThemePicker:
             return
         await self._switch_to_theme_picker_app()
-
-    async def _show_skills(self, **kwargs: Any) -> None:
-        if self._current_bottom_app == BottomApp.SkillsBrowser:
-            return
-        await self._mount_and_scroll(UserCommandMessage("Skills browser opened."))
-        skills = self.app_server.resources.skills
-        await self._ensure_loading_widget("Loading skills", show_hint=False)
-        try:
-            installed = await skills.read_installed()
-            result = await skills.catalog()
-        finally:
-            await self._remove_loading_widget()
-        await self._switch_from_input(
-            SkillsBrowserApp(
-                actions=skills,
-                installed=installed,
-                catalog=list(result.skills),
-                updates=dict(result.updates),
-                on_changed=skills.read_installed,
-                project_available=result.project_available,
-                catalog_loaded=result.loaded,
-                authenticated=result.authenticated,
-            )
-        )
-
-    async def on_skills_browser_app_closed(
-        self, _message: SkillsBrowserApp.Closed
-    ) -> None:
-        await self._mount_and_scroll(UserCommandMessage("Skills browser closed."))
-        await self._switch_to_input_app()
-
-    async def _show_proxy_setup(self, **kwargs: Any) -> None:
-        if self._current_bottom_app == BottomApp.ProxySetup:
-            return
-        await self._switch_to_proxy_setup_app()
 
     async def _rename_session(self, cmd_args: str = "", **kwargs: Any) -> None:
         title = cmd_args.strip()
@@ -4433,8 +4253,6 @@ class VibeApp(App):  # noqa: PLR0904
                 self._chat_input_container.display = False
                 self._chat_input_container.disabled = True
 
-            self._feedback_bar.hide()
-
             for stale in stale_bottom_apps:
                 await stale.remove()
 
@@ -4475,8 +4293,6 @@ class VibeApp(App):  # noqa: PLR0904
             if self._chat_input_container:
                 self._chat_input_container.display = False
                 self._chat_input_container.disabled = True
-
-            self._feedback_bar.hide()
 
             self._current_bottom_app = BottomApp[
                 type(widget).__name__.removesuffix("App")
@@ -4552,20 +4368,6 @@ class VibeApp(App):  # noqa: PLR0904
                 ansi=current_diff_theme[0], dark=current_diff_theme[1]
             )
 
-    async def _switch_to_proxy_setup_app(self) -> None:
-        if self._current_bottom_app == BottomApp.ProxySetup:
-            return
-
-        try:
-            settings = await self.app_server.resources.config.read_proxy()
-        except Exception as exc:
-            await self._mount_and_scroll(
-                ErrorMessage(f"Failed to read proxy settings: {exc}")
-            )
-            return
-        await self._mount_and_scroll(UserCommandMessage("Proxy setup opened..."))
-        await self._switch_from_input(ProxySetupApp(settings))
-
     async def _switch_to_approval_app(
         self,
         effect: EffectDetail,
@@ -4610,15 +4412,11 @@ class VibeApp(App):  # noqa: PLR0904
             BottomApp.ModelPicker: ModelPickerApp,
             BottomApp.ThemePicker: ThemePickerApp,
             BottomApp.ThinkingPicker: ThinkingPickerApp,
-            BottomApp.ProxySetup: ProxySetupApp,
             BottomApp.Approval: ApprovalApp,
             BottomApp.Question: QuestionApp,
             BottomApp.SessionPicker: SessionPickerApp,
             BottomApp.MCP: _get_mcp_app_class(),
-            BottomApp.ConnectorAuth: _get_connector_auth_app_class(),
-            BottomApp.MCPOAuth: _get_mcp_oauth_app_class(),
             BottomApp.Rewind: RewindApp,
-            BottomApp.SkillsBrowser: SkillsBrowserApp,
         }
         try:
             if self._current_bottom_app == BottomApp.Input:
@@ -4999,15 +4797,6 @@ class VibeApp(App):  # noqa: PLR0904
             BottomApp.MCP: lambda: self._handle_bottom_app_close_escape(
                 _get_mcp_app_class()
             ),
-            BottomApp.ConnectorAuth: lambda: self._handle_bottom_app_close_escape(
-                _get_connector_auth_app_class()
-            ),
-            BottomApp.MCPOAuth: lambda: self._handle_bottom_app_close_escape(
-                _get_mcp_oauth_app_class()
-            ),
-            BottomApp.ProxySetup: lambda: self._handle_bottom_app_close_escape(
-                ProxySetupApp
-            ),
             BottomApp.Approval: self._handle_approval_app_escape,
             BottomApp.Question: self._handle_question_app_escape,
             BottomApp.LogLevelPicker: self._handle_log_level_picker_app_escape,
@@ -5015,9 +4804,6 @@ class VibeApp(App):  # noqa: PLR0904
             BottomApp.ThemePicker: self._handle_theme_picker_app_escape,
             BottomApp.ThinkingPicker: self._handle_thinking_picker_app_escape,
             BottomApp.SessionPicker: self._handle_session_picker_app_escape,
-            BottomApp.SkillsBrowser: lambda: self._handle_bottom_app_close_escape(
-                SkillsBrowserApp
-            ),
         }
 
         if handler := handlers.get(self._current_bottom_app):
