@@ -117,6 +117,7 @@ def project_files(tmp_path, monkeypatch):
         return tmp_path / "project-files" / "prefs_path"
     monkeypatch.setattr(prefs, "prefs_path", path)
     monkeypatch.setattr(userdata, "folder", lambda: tmp_path / "home" / ".ovat")
+    monkeypatch.setenv("OVAT_TUI_HOME", str(tmp_path / "tui-home"))
 
 
 class FakeLLMProvider(LLMProvider):

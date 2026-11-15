@@ -22,7 +22,7 @@ from ovat.agent.events import (REMOTE_STATUS, SUBAGENT_DONE, SUBAGENT_EVENT,
                               TOOL_STARTED)
 from ovat.agentic import session as s
 from ovat.agentic import prefs, sessions
-from ovat.tui.server import saved, views
+from ovat.tui.server import logs, saved, views
 from ovat.tui.server.approvals import Approvals
 from ovat.tui.server.projector import Projector, now_ms
 from ovat.tui.server.questions import Questions
@@ -68,6 +68,8 @@ class ServerContext:
         self.shell = ShellRuns(self)
         self.lifecycle = asyncio.Lock()
         self.closed = False
+        self._log_handler = logs.BufferedLogHandler()
+        logs.attach_ovat_log_handler(self._log_handler)
         self._build_thread: threading.Thread | None = None
         # Things in this process that want every report too (OVAT's own app:
         # its banner and bottom bar follow the agent). Called on the loop,
@@ -531,6 +533,7 @@ class ServerContext:
         if self.closed:
             return
         self.closed = True
+        logs.detach_ovat_log_handler(self._log_handler)
         self.turns.close()
         self.shell.close()
         agent, build = self.agent, self._build_thread

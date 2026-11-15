@@ -8,6 +8,7 @@ existing configs pass the preserved mode.
 """
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -32,3 +33,8 @@ def write_text(path: str | os.PathLike, text: str, *, mode: int = 0o600,
         temp.unlink(missing_ok=True)
         raise
     return target
+
+
+def write_json(path: str | os.PathLike, data, *, mode: int = 0o600) -> Path:
+    """Serialize ``data`` as indented JSON and write it atomically."""
+    return write_text(path, json.dumps(data, indent=2), mode=mode)

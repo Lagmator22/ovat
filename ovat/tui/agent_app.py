@@ -377,9 +377,6 @@ class OvatAgentApp(VibeApp):
     # code without it. Each does nothing here rather than end in "not
     # supported".
 
-    async def action_toggle_debug_console(self, **kwargs: Any) -> None:
-        """Ctrl+Backslash: the console reads the server's log."""
-
     async def _show_voice_settings(self, **kwargs: Any) -> None:
         manager = self._voice_manager
         manager.apply_enabled(not manager.is_enabled)

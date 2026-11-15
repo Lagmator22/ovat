@@ -8,6 +8,14 @@ answers NOT_STEERABLE.
 from ovat.tui.server.rpc import Routes
 from ovat.tui.vibe.app_server.protocol import (CallbackResultParams,
                                                CallbackResultResponse,
+                                               LoopsClearParams,
+                                               LoopsClearResponse,
+                                               LoopsCreateParams,
+                                               LoopsCreateResponse,
+                                               LoopsDeleteParams,
+                                               LoopsDeleteResponse,
+                                               LoopsListParams,
+                                               LoopsListResponse,
                                                TurnEnqueueParams,
                                                TurnInterruptParams,
                                                TurnInterruptResponse,
@@ -82,3 +90,28 @@ async def callback_result(ctx, params: CallbackResultParams):
     else:
         ctx.approvals.answer(params)
     return CallbackResultResponse(last_event_id=projector.event_id)
+
+
+@routes.method("loops/list", LoopsListParams)
+async def loops_list(ctx, params: LoopsListParams):
+    ctx.require_session(params.session_id)
+    return LoopsListResponse(loops=ctx.turns.list_loops())
+
+
+@routes.method("loops/create", LoopsCreateParams)
+async def loops_create(ctx, params: LoopsCreateParams):
+    ctx.require_session(params.session_id)
+    return LoopsCreateResponse(
+        loop=ctx.turns.create_loop(params.interval, params.prompt))
+
+
+@routes.method("loops/delete", LoopsDeleteParams)
+async def loops_delete(ctx, params: LoopsDeleteParams):
+    ctx.require_session(params.session_id)
+    return LoopsDeleteResponse(loop=ctx.turns.delete_loop(params.loop_id))
+
+
+@routes.method("loops/clear", LoopsClearParams)
+async def loops_clear(ctx, params: LoopsClearParams):
+    ctx.require_session(params.session_id)
+    return LoopsClearResponse(count=ctx.turns.clear_loops())
