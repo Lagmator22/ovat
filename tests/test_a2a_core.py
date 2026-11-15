@@ -577,8 +577,9 @@ def test_prepare_allows_ipv6_loopback_hosts(tmp_path):
                                "w.yml", "1.0.0",
                                build=fake_build,
                                token_file=tmp_path / "token", dry_run=True)
+    # that a request with "Host: [::1]:port" gets in is tested on the wire,
+    # in test_a2a_wire.py: a list entry alone proved nothing.
     assert "::1" in prepared.allowed_hosts
-    assert "[::1]" in prepared.allowed_hosts
 
 
 @pytest.mark.parametrize("host, url", [

@@ -28,8 +28,8 @@ from a2a.utils import AGENT_CARD_WELL_KNOWN_PATH
 from google.protobuf.json_format import ParseDict
 from starlette.applications import Starlette
 from starlette.authentication import AuthCredentials, SimpleUser
-from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.responses import JSONResponse
+from starlette.datastructures import Headers
+from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
 from ovat.a2a.service import A2AService, Task
@@ -198,6 +198,40 @@ def _reply(status: int, message: str, **headers) -> JSONResponse:
                         headers=headers or None)
 
 
+def _request_host(header: str) -> str | None:
+    """The host part of a Host header, without port or IPv6 brackets.
+    None when it is not one: "[::1" or "[::1]x"."""
+    header = header.strip().lower()
+    if not header.startswith("["):
+        return header.split(":", 1)[0]
+    end = header.find("]")
+    if end < 0 or header[end + 1:end + 2] not in ("", ":"):
+        return None
+    return header[1:end]
+
+
+class _HostCheck:
+    """Refuse a request whose Host header names none of `allowed_hosts`.
+
+    Starlette's TrustedHostMiddleware cuts the header at its first ':', so
+    "[::1]:9100" became "[" and a server on ::1 refused every request.
+    """
+
+    def __init__(self, app, allowed_hosts: list[str]):
+        self.app = app
+        self._allowed = {h.lower().strip("[]") for h in allowed_hosts}
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            host = _request_host(Headers(scope=scope).get("host", ""))
+            if host is None or host not in self._allowed:
+                response = PlainTextResponse("Invalid host header",
+                                             status_code=400)
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
 class _Guard:
     """Bearer token on everything but the card, and a body-size cap.
 
@@ -314,10 +348,8 @@ def build_app(service: A2AService, card: dict, callers: dict[str, str],
     # Order matters: the host check runs first, so a page in the user's
     # browser that rebinds a name to 127.0.0.1 is refused before anything
     # else looks at it.
-    return TrustedHostMiddleware(
-        _Guard(app, callers, token_file=token_file),
-        allowed_hosts=allowed_hosts,
-    )
+    return _HostCheck(_Guard(app, callers, token_file=token_file),
+                      allowed_hosts)
 
 
 def card_json(card: dict) -> str:

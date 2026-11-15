@@ -79,7 +79,7 @@ def _free_port():
         return s.getsockname()[1]
 
 
-def _serve(admission):
+def _serve(admission, hosts=("127.0.0.1", "localhost")):
     port = _free_port()
     url = f"http://127.0.0.1:{port}/"
     settings = A2AServerConfig(port=port, audit_log=None)
@@ -88,7 +88,7 @@ def _serve(admission):
                          agent={"system_prompt": "SECRET PROMPT"})
     card = card_dict(cfg, settings, _agent().tools, url, "team-docs", "1.2.0")
     app = build_app(service, card, {TOKEN_A: "planner", TOKEN_B: "other"},
-                    ["127.0.0.1", "localhost"])
+                    list(hosts))
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port,
                                            log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
@@ -145,6 +145,28 @@ def test_a_foreign_host_header_is_refused(server_url):
     r = httpx.get(server_url + ".well-known/agent-card.json",
                   headers={"Host": "evil.example"})
     assert r.status_code == 400
+
+
+def test_an_ipv6_loopback_host_header_is_accepted():
+    # Starlette's TrustedHostMiddleware cut "Host: [::1]:9313" at its first
+    # ':' and compared "[", so `serve --host ::1` refused every request,
+    # whatever the allowed list said.
+    server, thread, url = _serve(AllowAll(),
+                                 hosts=["127.0.0.1", "localhost", "::1"])
+    try:
+        port = url.rstrip("/").rsplit(":", 1)[1]
+        card = url + ".well-known/agent-card.json"
+        for host in (f"[::1]:{port}", "[::1]", f"127.0.0.1:{port}",
+                     f"LOCALHOST:{port}"):
+            assert httpx.get(card, headers={"Host": host}).status_code \
+                == 200, host
+        for host in (f"[::2]:{port}", "[", f"[::1:{port}", "evil.example",
+                     f"[::1]x:{port}"):
+            assert httpx.get(card, headers={"Host": host}).status_code \
+                == 400, host
+    finally:
+        server.should_exit = True
+        thread.join(10)
 
 
 def test_an_oversized_body_is_refused_before_parsing(server_url):
