@@ -307,6 +307,8 @@ class FakeSession:
         self.remembered = Session(system_prompt="be brief")
         self.remembered.messages.extend(
             m for m in messages if m.get("role") != "system")
+        if getattr(self.agent, "session", None) is not None:
+            self.agent.session = self.remembered
         return True
 
     def truncate_memory(self, length):
@@ -3531,3 +3533,58 @@ def test_hardware_sampling_skips_overlapping_ticks():
     release.set()
     time.sleep(0.05)
     assert len(calls) == 1, f"overlapping hardware samples ran concurrently: {len(calls)}"
+
+
+def test_subagent_cancelled_status_uses_archived_session_status(tmp_path):
+    from ovat.agent.events import Event, SUBAGENT_DONE, SUBAGENT_STARTED
+    from ovat.tui.vibe.app_server.models import ArchivedSessionStatus
+
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            proj = handle._ctx.projector
+            proj.agent_event(Event(SUBAGENT_STARTED, {
+                "call_id": "c-cancel", "agent": "researcher", "kind": "workflow",
+            }), {})
+            proj.agent_event(Event(SUBAGENT_DONE, {
+                "call_id": "c-cancel", "status": "cancelled", "totals": {},
+            }), {})
+            assert proj.child_sessions["child-c-cancel"].status == ArchivedSessionStatus()
+    run(go())
+
+
+def test_compact_preserves_child_sessions_and_histories(saved_sessions):
+    from ovat.agent.events import Event, SUBAGENT_EVENT, SUBAGENT_STARTED
+
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            proj = handle._ctx.projector
+            proj.agent_event(Event(SUBAGENT_STARTED, {
+                "call_id": "c-keep", "agent": "researcher", "kind": "workflow",
+            }), {})
+            proj.agent_event(Event(SUBAGENT_EVENT, {
+                "call_id": "c-keep",
+                "agent": "researcher",
+                "event": {"type": "tool_started", "name": "search_docs",
+                          "arguments": {"query": "q"}},
+            }), {"search_docs": "builtin"})
+            assert "child-c-keep" in proj.child_sessions
+            assert proj.child_histories["child-c-keep"]
+            await session.compact("keep")
+            assert "child-c-keep" in handle._ctx.projector.child_sessions
+            assert handle._ctx.projector.child_histories["child-c-keep"]
+    run(go())
+
+
+def test_settings_update_rejects_framework_agent_with_max_iterations_and_no_llm():
+    async def go():
+        async with served(native=False) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            fake.agent = SimpleNamespace(max_iterations=10, llm=None)
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.sessions.update_settings(max_turns=5)
+            assert err.value.error.code is ProtocolErrorCode.NOT_IMPLEMENTED
+            assert fake.agent.max_iterations == 10
+    run(go())

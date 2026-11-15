@@ -847,10 +847,12 @@ def test_save_and_load_keep_a_conversation(tmp_path):
             saved = tmp_path / ".ovat" / "sessions" / "mine.json"
             await until(pilot, lambda: saved.is_file())
             fake.agent.session = Session(system_prompt="other")
+            handle._ctx.anchors["stale"] = 1
             await say(pilot, "/load mine")
             await until(pilot, lambda: fake.agent.session.messages
                         == Session.load(str(saved)).messages
                         and "Loaded" in screen_text(app))
+            assert handle._ctx.anchors == {}
             await say(pilot, "/load nothere")
             await until(pilot, lambda: "Saved: mine" in " ".join(
                 w._message for w in app.query(WarningMessage)))

@@ -162,3 +162,27 @@ def test_mcp_browser_opens_toggles_and_closes(rig):
             await say(pilot, "/mcp login docs")
             await until(pilot, lambda: "ConfigureMCP" in screen_text(app).replace(" ", ""))
     asyncio.run(go())
+
+
+def test_mcp_catalog_and_state_preserve_http_and_sse_transports():
+    from ovat.agentic.mcp import MCPSelection
+    from ovat.tui.server.views import mcp_state
+
+    cfg = WorkflowConfig(model={"name": "m"}, tools=[
+        {"name": "local_docs", "type": "mcp_stdio", "command": ["docs-mcp"]},
+        {"name": "remote_http", "type": "mcp_http", "url": "https://api.example/mcp"},
+        {"name": "remote_sse", "type": "mcp_sse", "url": "https://api.example/sse"},
+    ])
+    selection = MCPSelection()
+    statuses = {
+        "local_docs": {"connected": True, "error": None},
+        "remote_http": {"connected": True, "error": None},
+        "remote_sse": {"connected": True, "error": None},
+    }
+    state = mcp_state({"mcp": selection.catalog(cfg, statuses)})
+    transports = {s.name: s.transport for s in state.sources}
+    assert transports == {
+        "local_docs": "stdio",
+        "remote_http": "http",
+        "remote_sse": "sse",
+    }

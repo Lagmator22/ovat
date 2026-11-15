@@ -140,9 +140,9 @@ def _context_window(config) -> int:
         return int(m.ovms_max_prompt_len or 4096)
     roots = ([m.model_repository_path] if m.model_repository_path else []) + (
         list(getattr(config, "model_search_paths", None) or []))
-    # `ovms --pull` lays a model out by its source (models/OpenVINO/<name>),
-    # so that path is tried before the bare name.
-    for name in filter(None, (m.source_model, m.name)):
+    # Try the active model name first so /model switches take effect before
+    # falling back to the original source_model path.
+    for name in filter(None, (m.name, m.source_model)):
         window = read_context_window(name, roots)
         if window:
             return window

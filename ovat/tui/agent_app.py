@@ -502,8 +502,11 @@ class OvatAgentApp(VibeApp):
             self._agent.agent, self.app_server.cwd, cmd_args))
 
     async def _cmd_load(self, cmd_args: str = "", **kwargs: Any) -> None:
-        await self._note(*agent_text.load_conversation(
-            self._agent, self.app_server.cwd, cmd_args))
+        msg, kind = agent_text.load_conversation(
+            self._agent, self.app_server.cwd, cmd_args)
+        if kind == "info":
+            self._handle.clear_anchors()
+        await self._note(msg, kind)
 
     async def _cmd_doctor(self, cmd_args: str = "", **kwargs: Any) -> None:
         from ovat.tui.widgets.doctor import DoctorReport

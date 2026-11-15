@@ -417,3 +417,34 @@ def test_project_context_survives_clear_and_restore_from_the_session_folder(tmp_
     session.restore_memory([{"role": "user", "content": "hello"}])
     prompt = session.memory()[0]["content"]
     assert "Run make check." in prompt and "Run make test." not in prompt
+
+
+def test_context_window_prefers_active_model_over_source_model(tmp_path):
+    from ovat.config.workflow import WorkflowConfig
+
+    orig = tmp_path / "orig"
+    orig.mkdir()
+    (orig / "config.json").write_text(
+        json.dumps({"max_position_embeddings": 4096}), encoding="utf-8")
+    switched = tmp_path / "switched"
+    switched.mkdir()
+    (switched / "config.json").write_text(
+        json.dumps({"max_position_embeddings": 32768}), encoding="utf-8")
+
+    cfg = WorkflowConfig.model_validate({
+        "model": {
+            "name": "switched",
+            "source_model": "orig",
+            "model_repository_path": str(tmp_path),
+        }
+    })
+    assert s._context_window(cfg) == 32768
+
+    fallback_cfg = WorkflowConfig.model_validate({
+        "model": {
+            "name": "missing-local",
+            "source_model": "orig",
+            "model_repository_path": str(tmp_path),
+        }
+    })
+    assert s._context_window(fallback_cfg) == 4096

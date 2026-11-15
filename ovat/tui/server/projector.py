@@ -34,6 +34,7 @@ from ovat.tui.vibe.app_server._patch import apply_json_patch, make_json_patch
 from ovat.tui.vibe.app_server.events import (HistoryEntryAdded,
                                              HistoryEntryUpdated)
 from ovat.tui.vibe.app_server.models import (AgentStatsSnapshot,
+                                             ArchivedSessionStatus,
                                              BlockedEffectState,
                                              CancelledEffectState,
                                              EffectResultDisplay,

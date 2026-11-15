@@ -192,7 +192,8 @@ def runtime_snapshot(info: dict, workflow: str | None, active: str,
 def mcp_state(info):
     from ovat.tui.vibe.app_server.models import MCPSourceSummary
     return MCPState(sources=[MCPSourceSummary(
-        **source, kind="server", transport="stdio")
+        **{**source, "transport": source.get("transport", "stdio")},
+        kind="server")
         for source in info.get("mcp", ())])
 
 
