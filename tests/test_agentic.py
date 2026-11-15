@@ -88,10 +88,24 @@ def test_start_builds_and_reports_ready_with_the_tools():
     assert built[0][1].events.approver is session.broker
 
 
-def test_no_workflow_is_a_sentence_not_a_crash():
-    session, sink, _ = _session(workflow=None)
+def test_no_workflow_is_a_sentence_not_a_crash(tmp_path):
+    # an empty folder of its own: a checkout can hold a workflow.yml.
+    session, sink, _ = _session(workflow=None, cwd=str(tmp_path))
     session.start()
     assert "No workflow here" in sink.wait_for(s.BuildFailed).text
+
+
+def test_an_untrusted_workflow_says_why_it_was_not_loaded(tmp_path):
+    # bare `ovat` in an untrusted folder starts with no workflow. "No
+    # workflow here, `ovat init` writes one" was wrong there: the file IS
+    # there. Vibe's own warning shows once per folder, so from the second
+    # launch on this sentence is the only reason on screen.
+    (tmp_path / "workflow.yml").write_text("model: {name: m}\n")
+    session, sink, _ = _session(workflow=None, cwd=str(tmp_path))
+    session.start()
+    text = sink.wait_for(s.BuildFailed).text
+    assert "workflow.yml" in text and "not trusted" in text
+    assert "/trust" in text and "No workflow here" not in text
 
 
 def test_a_build_error_is_reported_briefly():

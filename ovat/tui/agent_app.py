@@ -584,9 +584,8 @@ def _trusted_workflow(cwd: str) -> str | None:
     found = s.find_workflow(cwd)
     if found is None or trust.status(cwd) == "trusted":
         return found
-    print(f"{os.path.basename(found)} in this folder was not loaded: the "
-          f"folder is not trusted, and loading it would start the tools it "
-          f"lists. Use /trust inside OVAT, `ovat agent --trust`, or name it: "
+    print(f"{trust.not_loaded_reason(found)} Use /trust inside OVAT, "
+          f"`ovat agent --trust`, or name it: "
           f"`ovat agent {os.path.basename(found)}`.",
           file=sys.stderr)
     return None
