@@ -300,6 +300,17 @@ class AgentSession:
                    fresh: bool = False) -> None:
         with self._build_lock:
             if not self.workflow:
+                # bare `ovat` in an untrusted folder lands here with the
+                # folder's workflow.yml left unloaded; say so, not "none here".
+                from ovat.agentic import trust
+                found = find_workflow(self.cwd)
+                if found and trust.status(self.cwd) != "trusted":
+                    name = os.path.basename(found)
+                    self._emit(BuildFailed(
+                        f"{trust.not_loaded_reason(found)} Run `/trust` to "
+                        f"trust this folder and load it, or `/workflow {name}` "
+                        f"to load it this once."))
+                    return
                 self._emit(BuildFailed(
                     "No workflow here. Run `/workflow path/to/workflow.yml`, or "
                     "start with `ovat agent path/to/workflow.yml`. `ovat init` "

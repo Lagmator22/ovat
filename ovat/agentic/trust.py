@@ -121,6 +121,13 @@ def details(cwd: str | os.PathLike) -> dict:
     }
 
 
+def not_loaded_reason(workflow: str) -> str:
+    """Why `workflow` was not loaded on its own; callers add what to do."""
+    return (f"{os.path.basename(workflow)} in this folder was not loaded: the "
+            f"folder is not trusted, and loading it would start the tools it "
+            f"lists.")
+
+
 def untrusted_config_dirs(cwd: str | os.PathLike) -> tuple[list[str], str]:
     """Return ``(dirs, settings_path)`` for untrusted folders containing OVAT config."""
     root = Path(cwd).resolve()
