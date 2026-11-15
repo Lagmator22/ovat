@@ -15,7 +15,6 @@ from pathlib import Path
 
 from rich.text import Text
 
-from ovat.agentic import commands as ovat_commands
 from ovat.agentic.sessions import safe_name, sessions_dir
 from ovat.cli import ui
 
@@ -39,21 +38,6 @@ def tools_markdown(info: dict) -> str:
     return "\n".join(lines)
 
 
-def agents_markdown(info: dict, serving: bool) -> str:
-    lines = ["### Subagents", ""]
-    subs = info.get("subagents", [])
-    lines += ([f"- `{x['name']}` ({x['where']}): {x['description']}"
-               for x in subs] or ["- none (add `subagents:` to the workflow)"])
-    peers = [t for t in info.get("tools", []) if t["kind"] == "a2a"]
-    lines += ["", "### A2A agents used as tools", ""]
-    lines += ([f"- `{p['name']}` ({p['permission']})" for p in peers]
-              or ["- none"])
-    lines += ["", "### This workflow over A2A", "",
-              "- serving (`/serve stop` ends it)" if serving
-              else "- not serving (`/serve` starts it)"]
-    return "\n".join(lines)
-
-
 def trace_markdown(trace: dict) -> str:
     if not trace:
         return "Nothing yet: ask something first."
@@ -73,15 +57,6 @@ def trace_markdown(trace: dict) -> str:
             lines.append(f"  - `{call.get('name')}` "
                          f"{call.get('duration_s')} s")
     return "\n".join(lines)
-
-
-def commands_markdown() -> list[str]:
-    """The `/help` command list (classic app)."""
-    lines = []
-    for c in ovat_commands.COMMANDS:
-        usage = f" {c.usage}" if c.usage else ""
-        lines.append(f"- `/{c.name}{usage}`: {c.help}")
-    return lines
 
 
 # ---- the bottom bar --------------------------------------------------------
