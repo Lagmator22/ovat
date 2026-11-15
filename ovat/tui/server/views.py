@@ -1,15 +1,9 @@
 # ovat/tui/server/views.py
-"""The read-only pictures the copied TUI asks for at startup and on refresh.
+"""Read-only configuration, runtime, and stats view builders for the TUI protocol.
 
-Note to myself: `runtime/read` wants a config, the agent profiles, the
-tools, the stats and a few counters; `config/read` wants the config again.
-Vibe's config has about thirty fields (voice, narrator, other vendors' models...)
-that mean nothing here. They are filled with plain "off" values in ONE place,
-this file, so nobody has to guess later which of them OVAT really has.
-
-What OVAT really has: a model (named by its folder), a device, an engine,
-tools with permissions, subagents, and one switch, auto-approve (`/yolo`),
-which shows up as the second agent profile.
+Constructs ``ConfigView`` and ``RuntimeSnapshot`` payloads from active agent
+state, supplying explicit defaults for client protocol fields that OVAT does not
+use (such as external accounts or narrator TTS settings).
 """
 from __future__ import annotations
 

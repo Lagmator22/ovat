@@ -15,6 +15,11 @@ import tempfile
 import threading
 import time
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 from ovat.telemetry.base import TelemetrySource
 
 
@@ -87,14 +92,14 @@ class SystemSource(TelemetrySource):
         # "previous call", so any other caller in the process shortens our
         # window to microseconds and we read 0.0.
         self._cpu_last: tuple[float, float] | None = None
-        try:
-            import psutil
-            self._proc = psutil.Process()
-            self._cpu_last = self._cpu_times(psutil)
-            psutil.cpu_percent(percpu=True)
-            self._proc.cpu_percent()
-        except Exception:
-            self._proc = None
+        if psutil is not None:
+            try:
+                self._proc = psutil.Process()
+                self._cpu_last = self._cpu_times(psutil)
+                psutil.cpu_percent(percpu=True)
+                self._proc.cpu_percent()
+            except Exception:
+                self._proc = None
 
     @staticmethod
     def _cpu_times(psutil) -> tuple[float, float]:
@@ -116,9 +121,7 @@ class SystemSource(TelemetrySource):
         return round(min(100.0, max(0.0, busy * 100)), 1)
 
     def sample(self) -> dict:
-        try:
-            import psutil
-        except ImportError:
+        if psutil is None:
             return {}
         out = {}
         try:
@@ -168,27 +171,20 @@ class SystemSource(TelemetrySource):
 
     @property
     def unavailable(self) -> str | None:
-        try:
-            import psutil     # noqa: F401
-        except ImportError:
-            return "psutil is not installed"
-        return None
+        return None if psutil is not None else "psutil is not installed"
 
 
 class ProcessMemorySource(TelemetrySource):
-    """This process's resident memory, sampled live.
+    """Resident memory (RSS) of the current OVAT process, sampled live.
 
-    The proposal's <8 GB criterion is about the toolkit's own footprint, and
-    the model's several gigabytes live in OVMS, not here. Says so rather than
-    letting the number be read as the whole system's.
+    Tracked separately from system memory so the toolkit's own footprint is not
+    confused with the OVMS model server process.
     """
 
     name = "process"
 
     def sample(self) -> dict:
-        try:
-            import psutil
-        except ImportError:
+        if psutil is None:
             return {}
         try:
             rss = psutil.Process().memory_info().rss
@@ -198,11 +194,7 @@ class ProcessMemorySource(TelemetrySource):
 
     @property
     def unavailable(self) -> str | None:
-        try:
-            import psutil     # noqa: F401
-        except ImportError:
-            return "psutil is not installed"
-        return None
+        return None if psutil is not None else "psutil is not installed"
 
 
 # Where Intel's Unified Telemetry tool is unzipped. Same problem as OVMS: it
@@ -299,21 +291,11 @@ def find_ut(explicit: str | None = None) -> tuple:
 
 
 class IntelHardwareSource(TelemetrySource):
-    """GPU/NPU utilisation and power, via Intel's Unified Telemetry tool.
+    """GPU and NPU power and utilization metrics via Intel Unified Telemetry.
 
-    This is the Intel-native half, and the number the proposal's stretch goal
-    actually wants: NPU power draw beside agent token counts. Nothing else in
-    the OpenVINO ecosystem puts those two on one screen.
-
-    UT is a SUBPROCESS PROFILER, not a library. There is no Python API: you
-    run `ut -c` for continuous sampling or `ut -a "<cmd>"` to wrap a command.
-    So this shells out and parses, exactly as ModelManager does for ovms.
-
-    Platform truth: Intel's product page lists Windows 11 x64 on Intel Core
-    Ultra (Lunar Lake and later) only, and documents no Linux or macOS build
-    (checked 2026-10-08). A binary someone has on Linux is still tried. On a
-    Mac this reports unavailable with a sentence rather than sampling zeros,
-    which would be indistinguishable from an idle NPU.
+    Executes the external ``ut`` subprocess profiler in continuous mode and
+    parses emitted metric lines. Supported on Intel Core Ultra Windows systems
+    (and Linux when a binary is present); reports unavailable on macOS.
     """
 
     name = "intel"
