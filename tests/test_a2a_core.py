@@ -6,6 +6,7 @@ package docstring), so it is tested here with fakes: a fake agent, a
 Reporter that records what it is told, a peer that replies from a script.
 """
 import asyncio
+import json
 import os
 import stat
 import sys
@@ -576,8 +577,29 @@ def test_prepare_allows_ipv6_loopback_hosts(tmp_path):
                                "w.yml", "1.0.0",
                                build=fake_build,
                                token_file=tmp_path / "token", dry_run=True)
+    # that a request with "Host: [::1]:port" gets in is tested on the wire,
+    # in test_a2a_wire.py: a list entry alone proved nothing.
     assert "::1" in prepared.allowed_hosts
-    assert "[::1]" in prepared.allowed_hosts
+
+
+@pytest.mark.parametrize("host, url", [
+    ("::1", "http://[::1]:9313/"),
+    ("127.0.0.1", "http://127.0.0.1:9313/"),
+])
+def test_the_card_url_brackets_an_ipv6_host(tmp_path, host, url):
+    # "http://::1:9313/" is not a URL: a caller that follows the card's url
+    # (the SDK does) cannot reach it.
+    def fake_build(config, skip_rag=False, select_tools=None):
+        select_tools({})
+        return FakeAgent()
+
+    prepared = serving.prepare(WorkflowConfig(model={"name": "m"}),
+                               A2AServerConfig(host=host, port=9313,
+                                               audit_log=None),
+                               "w.yml", "1.0.0", build=fake_build,
+                               token_file=tmp_path / "token", dry_run=True)
+    assert prepared.url == url
+    assert url in json.dumps(prepared.card)
 
 
 def test_a_dry_run_writes_no_files(tmp_path):

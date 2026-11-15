@@ -78,7 +78,11 @@ def prepare(config: WorkflowConfig, settings: A2AServerConfig,
     dry_run (`ovat a2a card`): decide and describe, but create no token
     file and no audit log, since nothing will be served."""
     scheme = "https" if tls else "http"
-    url = settings.public_url or f"{scheme}://{settings.host}:{settings.port}/"
+    # an IPv6 address goes in brackets in a URL: "http://::1:9100/" is not one.
+    host = settings.host
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    url = settings.public_url or f"{scheme}://{host}:{settings.port}/"
 
     # The first agent is built NOW: it proves the workflow builds (models,
     # index, MCP commands), and it is what the exposure is decided from.
@@ -117,7 +121,7 @@ def prepare(config: WorkflowConfig, settings: A2AServerConfig,
     service = A2AService(build_one, settings, audit=audit)
     card = card_dict(config, settings, exp.select(decided["tools"]), url,
                      settings.name or default_name(workflow_path), version)
-    hosts = ["127.0.0.1", "localhost", "::1", "[::1]"]
+    hosts = ["127.0.0.1", "localhost", "::1"]
     if settings.host not in LOOPBACK and settings.host != "0.0.0.0":
         hosts.append(settings.host)
     if settings.public_url:
