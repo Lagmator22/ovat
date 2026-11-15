@@ -429,3 +429,16 @@ def test_mcp_http_and_sse_transports_wire_headers_and_permissions(monkeypatch):
     assert default_permission("mcp_http", "https://mcp.linear.app/mcp") == "ask"
     assert default_permission("mcp_sse", "http://localhost:8900/sse") == "allow"
 
+
+def test_mcp_http_refuses_credentials_over_non_loopback_http():
+    from ovat.tools.mcp_client import MCPHttpServer
+
+    with pytest.raises(ValueError, match="plain HTTP"):
+        MCPHttpServer("http://mcp.example.com/mcp", token_env="MCP_TOK",
+                      connect_timeout=0.1)
+    with pytest.raises(ValueError, match="plain HTTP"):
+        MCPHttpServer("http://mcp.example.com/mcp",
+                      headers={"Authorization": "Bearer secret"},
+                      connect_timeout=0.1)
+
+

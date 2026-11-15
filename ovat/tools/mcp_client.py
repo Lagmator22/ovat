@@ -273,6 +273,15 @@ class MCPHttpServer(_MCPClientBase):
             if headers else {}
         )
         self.token_env = token_env
+        from ovat.agent.permissions import is_loopback
+        has_creds = bool(token_env) or any(
+            k.lower() == "authorization" for k in self._headers
+        )
+        if url.startswith("http://") and not is_loopback(url) and has_creds:
+            raise ValueError(
+                f"Refusing to send credentials over plain HTTP to {url!r}. "
+                f"Use https://, or a loopback address."
+            )
         super().__init__(label=url, connect_timeout=connect_timeout)
 
     def _request_headers(self) -> dict[str, str] | None:

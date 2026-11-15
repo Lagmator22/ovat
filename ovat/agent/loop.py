@@ -65,9 +65,10 @@ def _parse_args(arguments: str) -> dict | None:
     # for why that is worth unwrapping rather than rejecting.
     arguments = strip_code_fence(arguments)
     try:
-        return json.loads(arguments)
+        parsed = json.loads(arguments)
     except (json.JSONDecodeError, TypeError):
         return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def _serialize_tool_calls(tool_calls) -> list[dict]:

@@ -209,7 +209,8 @@ def transcribe(path: str, language: str = "en") -> str:
     Use me when the user gives a path to an audio recording and wants the
     words in it. I take a WAV file path and return the transcript as text.
     """
-    return transcribe_impl(path, language)
+    from ovat.tools.project import project_root
+    return transcribe_impl(path, language, root=project_root())
 
 
 if __name__ == "__main__":

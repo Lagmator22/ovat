@@ -146,7 +146,8 @@ def describe_image(image_path: str,
     in it. I take the file path (and optionally a specific question) and
     return the description as text.
     """
-    return describe_image_impl(image_path, prompt)
+    from ovat.tools.project import project_root
+    return describe_image_impl(image_path, prompt, root=project_root())
 
 
 if __name__ == "__main__":

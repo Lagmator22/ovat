@@ -698,3 +698,16 @@ def test_stop_during_streaming_returns_cancelled_text_not_partial_or_empty_error
         assert loop.last_trace["totals"]["empty_answer"] is False
         assert loop.last_trace["totals"]["failed"] is True
 
+
+def test_loop_treats_non_dict_tool_arguments_as_invalid_json():
+    llm = FakeLLMProvider([
+        reply("tool_calls", tool_calls=[
+            make_tool_call("tc_1", "get_weather", "[1, 2]")]),
+        reply("stop", content="recovered"),
+    ])
+    agent = AgentLoop(llm, tools=_weather_tool())
+    assert agent.run("weather?") == "recovered"
+    tool_msg = next(m for m in agent.session.messages if m["role"] == "tool")
+    assert "not valid JSON" in tool_msg["content"]
+
+

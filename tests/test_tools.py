@@ -591,3 +591,46 @@ def test_describe_image_serializes_concurrent_provider_calls(tmp_path):
         t.join(5)
     assert max_active == 1
 
+
+def test_standalone_mcp_describe_image_and_transcribe_fence_to_project_root(
+        tmp_path, monkeypatch):
+    from ovat.tools import describe_image, transcribe
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "secret"
+    outside.mkdir()
+    img = outside / "pic.png"
+    img.write_bytes(b"png")
+    wav = outside / "clip.wav"
+    wav.write_bytes(b"RIFF")
+
+    monkeypatch.chdir(project)
+    out_img = describe_image.describe_image(str(img))
+    out_wav = transcribe.transcribe(str(wav))
+    assert out_img.startswith("Error:") and "outside the project folder" in out_img
+    assert out_wav.startswith("Error:") and "outside the project folder" in out_wav
+
+
+def test_fuzzy_resolve_path_prefers_project_root_over_cwd(tmp_path, monkeypatch):
+    from ovat.tools.fuzzy import resolve_path
+
+    cwd_dir = (tmp_path / "cwd").resolve()
+    root_dir = (tmp_path / "root").resolve()
+    (cwd_dir / "sub").mkdir(parents=True)
+    (root_dir / "sub").mkdir(parents=True)
+    (cwd_dir / "sub" / "target.txt").write_text("from cwd", encoding="utf-8")
+    root_target = root_dir / "sub" / "target.txt"
+    root_target.write_text("from root", encoding="utf-8")
+
+    monkeypatch.chdir(cwd_dir)
+
+    exact, note = resolve_path("sub/target.txt", root=root_dir)
+    assert os.path.samefile(exact, root_target)
+    assert note is None
+
+    fuzzy, note = resolve_path("sub/targt.txt", root=root_dir)
+    assert os.path.samefile(fuzzy, root_target)
+    assert note is not None
+
+
