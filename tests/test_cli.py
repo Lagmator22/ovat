@@ -2109,3 +2109,21 @@ def test_agent_trust_flag_trusts_the_folder_first(tmp_path, monkeypatch):
     result = runner.invoke(app, ["agent", "--trust"])
     assert result.exit_code == 0, result.output
     assert seen == [(None, "trusted")]
+
+
+def test_init_does_not_trust_a_folder_for_someone_elses_workflow(tmp_path):
+    """writing other.yml next to a workflow.yml the user did not write must
+    not make bare `ovat` load that workflow.yml."""
+    from ovat.agentic import trust
+    (tmp_path / "workflow.yml").write_text("model: {name: planted}\n")
+    result = runner.invoke(app, ["init", str(tmp_path / "other.yml")])
+    assert result.exit_code == 0
+    assert trust.status(tmp_path) == "untrusted"
+
+
+def test_init_keeps_a_folder_the_user_declined(tmp_path):
+    from ovat.agentic import trust
+    trust.decide(tmp_path, "decline")
+    result = runner.invoke(app, ["init", str(tmp_path / "workflow.yml")])
+    assert result.exit_code == 0
+    assert trust.status(tmp_path) == "untrusted"

@@ -54,6 +54,11 @@ def detected_config_files(cwd: str | os.PathLike) -> list[str]:
     return found
 
 
+def declined(cwd: str | os.PathLike) -> bool:
+    """True when the user explicitly declined to trust ``cwd``."""
+    return userdata.project_key(cwd) in _load()["untrusted"]
+
+
 def status(cwd: str | os.PathLike) -> Literal["trusted", "untrusted"]:
     """Return whether ``cwd`` (or its non-declined git repo) is trusted."""
     data = _load()

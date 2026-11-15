@@ -936,6 +936,24 @@ def index(
            f"from {summary['files']} files.")
 
 
+def _trust_after_init(written: str) -> None:
+    """Trust the folder when the file init wrote is the one bare `ovat` loads.
+
+    the user authored that file, so loading it is safe. a different name
+    (`ovat init other.yml`) next to a workflow.yml from someone else, or a
+    folder the user already declined, is left as it is.
+    """
+    from ovat.agentic import session as agent_session, trust
+    folder = os.path.dirname(written)
+    if agent_session.find_workflow(folder) != written or trust.declined(folder):
+        return
+    try:
+        trust.decide(folder, "trust_cwd")
+    except OSError as exc:
+        rprint(f"[yellow]Could not mark {esc(folder)} as trusted:[/yellow] "
+               f"{esc(str(exc))}. Run [bold]ovat agent --trust[/bold] there.")
+
+
 @app.command()
 def init(
     path: str = typer.Argument("workflow.yml", help="Where to write the starter YAML."),
@@ -957,14 +975,7 @@ def init(
         f.write(starter)
     rprint(f"[green]Wrote starter workflow to[/green] {esc(path)}  "
            f"[dim](model device: {esc(llm_device)}, detected)[/dim]")
-    # the user just wrote this workflow, so `ovat` in that folder may load it.
-    folder = os.path.dirname(os.path.abspath(path))
-    try:
-        from ovat.agentic import trust
-        trust.decide(folder, "trust_cwd")
-    except OSError as exc:
-        rprint(f"[yellow]Could not mark {esc(folder)} as trusted:[/yellow] "
-               f"{esc(str(exc))}. Run [bold]ovat agent --trust[/bold] there.")
+    _trust_after_init(os.path.abspath(path))
 
 
 @app.command()
