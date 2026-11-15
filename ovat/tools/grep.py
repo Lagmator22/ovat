@@ -15,7 +15,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ovat.tools.project import Shown, fail, resolve_inside
+from ovat.tools.project import Shown, fail, is_sensitive_path, resolve_inside
 
 DEFAULT_MAX_MATCHES = 100        # Vibe's default_max_matches
 MAX_OUTPUT_CHARS = 64_000        # Vibe's max_output_bytes
@@ -24,7 +24,7 @@ MAX_LINE_CHARS = 300             # one minified line must not eat the cap
 MAX_FILE_BYTES = 2_000_000       # the Python walk skips bigger files
 
 # Vibe's exclude_patterns, folders first.
-SKIP_DIRS = {".venv", "venv", ".env", "env", "node_modules", ".git",
+SKIP_DIRS = {".venv", "venv", ".env", "env", "node_modules", ".git", ".ovat",
              "__pycache__", ".pytest_cache", ".mypy_cache", ".tox", ".nox",
              "htmlcov", "dist", "build", ".idea", ".vscode"}
 SKIP_FILES = ("*.pyc", "*.pyo", "*.pyd", ".DS_Store", "Thumbs.db",
@@ -70,7 +70,8 @@ def _walk(target: Path, root: Path, regex, glob, limit: int):
             continue
         rel = file.relative_to(root).as_posix() if file.is_relative_to(root) \
             else str(file)
-        if not _matches_glob(rel, glob):
+        if not _matches_glob(rel, glob) or is_sensitive_path(rel,
+                                                             for_read=True):
             continue
         try:
             if file.stat().st_size > MAX_FILE_BYTES:
@@ -113,7 +114,12 @@ def _ripgrep(rg: str, pattern: str, target: Path, root: Path, glob, limit):
         for raw in proc.stdout:
             line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
             # Searching "." makes ripgrep print "./a.py" (".\\a.py" on Windows).
-            lines.append(line[2:] if line[:2] in ("./", ".\\") else line)
+            line = line[2:] if line[:2] in ("./", ".\\") else line
+            # .env and friends are files, so the folder globs above miss
+            # them; read_file would ask first, so grep leaves them out.
+            if is_sensitive_path(line.split(":", 1)[0], for_read=True):
+                continue
+            lines.append(line)
             if len(lines) > limit:
                 break               # enough: do not read a whole monorepo
     finally:

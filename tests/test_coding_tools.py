@@ -637,3 +637,46 @@ def test_ripgrep_command_passes_no_config_and_no_follow(root, monkeypatch):
     assert "--no-config" in seen_cmd
     assert "--no-follow" in seen_cmd
 
+
+
+# ---- grep and symlinks must not get around the sensitive-file gate --------
+
+def test_grep_does_not_search_secret_files_with_or_without_rg(
+        root, monkeypatch):
+    """read_file asks before opening .env or .ovat/*; grep is allowed by
+    default, so it must not return their contents either."""
+    (root / ".env").write_text("TOKEN=hush1\n")
+    (root / ".env.local").write_text("TOKEN=hush2\n")
+    (root / ".envrc").write_text("export TOKEN=hush3\n")
+    (root / ".ovat").mkdir()
+    (root / ".ovat" / "audit.jsonl").write_text('{"token": "hush4"}\n')
+    (root / ".env.example").write_text("TOKEN=hush_example\n")
+    for how, out in _grep_both_ways(monkeypatch, "hush", root).items():
+        for secret in ("hush1", "hush2", "hush3", "hush4"):
+            assert secret not in str(out), (how, secret)
+    # the python walk sees hidden files; the example file is not a secret.
+    assert ".env.example:1:" in str(grep_impl("hush", root))
+    for how, out in _grep_both_ways(monkeypatch, "hush", root,
+                                    path=".env").items():
+        assert "hush1" not in str(out), how
+
+
+def test_a_symlink_to_a_secret_file_is_still_sensitive(root, monkeypatch):
+    """The gate looks at where the path leads, not only at its name."""
+    from ovat.tools.project import is_sensitive_path
+    monkeypatch.chdir(root)
+    (root / ".env").write_text("TOKEN=hush\n")
+    (root / "notes.txt").symlink_to(root / ".env")
+    (root / "docs").mkdir()
+    (root / "docs" / "hooks").symlink_to(root / ".git", target_is_directory=True)
+    assert is_sensitive_path("notes.txt", for_read=True) is True
+    assert is_sensitive_path("docs/hooks/pre-commit") is True
+    assert is_sensitive_path("README.md", for_read=True) is False
+
+
+def test_windows_trailing_dots_and_spaces_do_not_hide_a_secret_file():
+    """Windows drops trailing dots and spaces when it opens a file, so
+    ".env " and ".git./config" name the real files there."""
+    from ovat.tools.project import is_sensitive_path
+    for p in (".env ", ".env.", ".git./config", ".ovat /x.json", "workflow.yml."):
+        assert is_sensitive_path(p) is True, p

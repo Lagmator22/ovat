@@ -100,10 +100,42 @@ def shown_path(path: Path, root: Path) -> str:
 
 
 def is_sensitive_path(raw: str | None, *, for_read: bool = False) -> bool:
-    """True when `raw` names `.env*`, `.git/**`, `.ovat/**`, or `workflow.yml`."""
+    """True when `raw` names `.env*`, `.git/**`, `.ovat/**`, or `workflow.yml`.
+
+    the name as written and the place it resolves to are both checked, so a
+    symlink called notes.txt that points at .env is still sensitive.
+    """
+    if _names_sensitive(raw, for_read):
+        return True
+    root = project_root()
+    resolved, _ = resolve_inside(raw or "", root)
+    if resolved is None or resolved == root:
+        return False
+    return _names_sensitive(str(resolved.relative_to(root)), for_read)
+
+
+def _names_sensitive(raw: str | None, for_read: bool) -> bool:
     text = (raw or "").strip().replace("\\", "/")
     if not text:
         return False
+    # windows ignores trailing dots and spaces in a name: ".git./config"
+    # opens .git/config there.
+    parts = [p.lower().rstrip(" .") for p in Path(text).parts
+             if p not in ("", ".", "/")]
+    parts = [p for p in parts if p]
+    if not parts:
+        return False
+    if ".git" in parts or ".ovat" in parts:
+        return True
+    name = parts[-1]
+    if name == ".env" or (name.startswith(".env.")
+                          and name != ".env.example"):
+        return True
+    if name in (".envrc", ".envrc.local"):
+        return True
+    if not for_read and name in ("workflow.yml", "workflow.yaml"):
+        return True
+    return False
     parts = [p.lower() for p in Path(text).parts if p not in ("", ".", "/")]
     if not parts:
         return False
