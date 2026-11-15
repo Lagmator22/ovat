@@ -113,8 +113,7 @@ def test_missing_checksum_is_tolerated(monkeypatch):
         raise OSError("404")
 
     monkeypatch.setattr(installer.urllib.request, "urlopen", always_404)
-    # None, not a raise: refusing to install because Intel forgot a sibling
-    # file would be our bug on their release process.
+    # Releases without a published hash return None rather than blocking install.
     assert installer._expected_sha256("https://example.invalid/x.zip") is None
 
 

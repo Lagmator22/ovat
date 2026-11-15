@@ -1,17 +1,14 @@
 # tests/test_ovat_app_server.py
-"""OVAT's app server, driven by the copied Vibe client.
+"""OVAT app server integration tests driven via the terminal client (`ovat/tui/vibe/`).
 
-The server (ovat/tui/server/) is the other end of the wire the copied TUI
-speaks. These tests start it with `start_ovat_app_server` and a fake
-AgentSession (the same idea as tests/test_agent_tui.py's FakeSession: a turn
-is played on a thread, exactly as the real session reports one), then use
-Vibe's REAL client, `AppServerSession` and its `resources`, to talk to it.
-So a passing test means the copied client accepted what the server sent: the
-client validates every response with its protocol models and refuses an event
-that is out of order.
+The server (`ovat/tui/server/`) implements the JSON-RPC protocol consumed by the
+TUI frontend. These tests launch it via ``start_ovat_app_server`` with a fake
+``AgentSession`` that plays turns on a worker thread, then exercise the real
+client ``AppServerSession`` and its resources so every wire response and event
+ordering is validated end-to-end.
 
-Every wait is bounded (the Windows runner is slow) and nothing uses
-pytest-asyncio: each test is one `asyncio.run`.
+All waits use bounded polling (for slower Windows CI runners) and each test
+runs inside a standalone ``asyncio.run`` call without ``pytest-asyncio``.
 """
 import asyncio
 import os
@@ -2210,7 +2207,7 @@ def test_an_edit_reaches_the_diff_card_with_its_occurrences(
     assert detail.kind == "file_edit"
     assert detail.input.old_string == "b = 2"
     assert state.status == "completed"
-    # The wire form is camelCase, like every Vibe effect output.
+    # Protocol effect outputs serialize keys in camelCase.
     assert state.output["occurrences"] == [
         {"startLine": 2, "oldText": "b = 2", "newText": "b = 3"}]
     assert state.display.message == "a.py"
@@ -3079,9 +3076,9 @@ def test_a_client_that_cannot_show_questions_gets_no_answer_at_once():
     run(go())
 
 
-# ---- the todo and web tools as Vibe cards ---------------------------------------
+# ---- todo and web tool effect cards -------------------------------------------
 
-def test_todo_and_web_results_become_vibe_cards():
+def test_todo_and_web_results_become_effect_cards():
     from ovat.tui.vibe.app_server.models import (TodoEffectDetail,
                                                  TodoEffectOutput,
                                                  WebFetchEffectDetail,
@@ -3173,7 +3170,7 @@ def test_the_settings_screen_lists_the_workflows_own_settings(tmp_path):
                 "/tools/search_docs/permission"
             assert by_name["engine"].enum_choices[0] == "native"
             assert by_name["theme"].value == "auto"
-            # no Vibe-only setting is listed
+            # Client-only settings unused by OVAT are omitted
             assert not {"voice_mode_enabled", "narrator_enabled", "log_level",
                         "enable_telemetry"} & set(by_name)
             assert response.targets == ["workflow"]

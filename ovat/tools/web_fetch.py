@@ -1,19 +1,13 @@
 # ovat/tools/web_fetch.py
-"""The web_fetch tool: GET one web page and read it as text.
+"""The web_fetch tool: GET one web page and read it as plain text.
 
-Mirrors Mistral Vibe's web_fetch.py (vibe/core/tools/builtins): http and
-https only, a default timeout of 30 s (at most 120), a content cap of
-120,000 bytes, HTML turned into readable markdown, and a redirect to
-ANOTHER site is not followed (it needs its own approval, so the model is
-told the new address and may call again).
+Supports http and https URLs only, with a 30 s default timeout (max 120 s), a
+120,000-byte response cap, HTML-to-markdown text conversion using the Python
+standard library (`urllib` and `html.parser`), and cross-origin redirect guards
+that surface the target URL so callers can explicitly authorize a second fetch.
 
-Not copied: Vibe's httpx + markdownify. OVAT adds no new dependency for
-this; urllib and html.parser from the standard library are enough for
-"readable text of a page". The converter is plainer than markdownify's
-(headings, links, lists, code, paragraphs; no tables).
-
-Permission is `ask` by default (permissions.py): the URL and the request
-leave the machine.
+Permission defaults to ``ask`` (`permissions.py`) because requests leave the
+local machine.
 """
 import errno
 import http.client
@@ -30,12 +24,13 @@ from ovat.tools.project import Shown, fail
 
 DEFAULT_TIMEOUT = 30
 MAX_TIMEOUT = 120
-MAX_CONTENT_BYTES = 120_000      # Vibe's max_content_bytes
+MAX_CONTENT_BYTES = 120_000
 MAX_REDIRECTS = 20
 _VOID_SKIP = {"embed"}
 _AWS_V6_METADATA = ipaddress.ip_network("fd00:ec2::/32")
 _LITERAL_LOOPBACK = {"localhost", "127.0.0.1", "::1"}
-# Read a little more than we keep: HTML shrinks a lot when turned to text.
+# Download slightly more than the kept text budget because HTML markup shrinks
+# substantially when converted to plain text.
 MAX_DOWNLOAD_BYTES = 4_000_000
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -232,7 +227,7 @@ def _origin(url: str) -> tuple:
 
 
 def _normalize(url: str) -> str:
-    """Vibe's rule: no scheme means https."""
+    """Prepend https:// when a URL omits an explicit scheme."""
     url = url.strip()
     raw = url.lstrip("/") if url.startswith("//") else url
     return raw if raw.startswith(("http://", "https://")) else "https://" + raw

@@ -387,7 +387,7 @@ def test_compact_is_refused_on_a_framework_engine_and_during_a_turn(tmp_path):
     busy.busy = True
     with pytest.raises(CompactionFailed, match="turn to end"):
         busy.compact()
-    assert busy.busy is True            # not ours to clear
+    assert busy.busy is True            # remains untouched by the caller
 
 
 def test_a_summary_cannot_close_the_envelope_and_pose_as_the_person():

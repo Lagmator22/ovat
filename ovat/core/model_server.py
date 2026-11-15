@@ -589,9 +589,8 @@ def _pid_is_running(pid: int) -> bool:
     try:
         import psutil
     except ImportError:
-        # Without psutil we cannot check safely, and guessing "dead" would
-        # delete a live server's pidfile. Say alive; the terminate path is
-        # addressed to one pid and is safe on both platforms.
+        # Without psutil, liveness cannot be verified safely; treating it as
+        # alive avoids deleting a running server's pidfile.
         return True
     return psutil.pid_exists(pid)
 
@@ -608,8 +607,8 @@ def _pid_is_our_server(pid: int) -> bool:
     database. Acting on existence alone therefore pointed `ovat serve --stop`
     at a stranger and killed it.
 
-    Unknown answers are treated as "not ours": without psutil, or when the
-    process refuses inspection, the safe move is to not signal.
+    Unknown status is treated conservatively as non-owned: without psutil or
+    when inspection is denied, signaling is skipped.
     """
     try:
         import psutil
@@ -624,13 +623,12 @@ def _pid_is_our_server(pid: int) -> bool:
 
 
 def stop_from_pidfile(pid_path: str = DEFAULT_PID_PATH, wait_seconds: float = 10.0) -> str:
-    """Stop an OVMS recorded in a pidfile; return a short human message.
+    """Stop an OVMS process recorded in a pidfile and return a status message.
 
-    This is for the CLI: the process that STARTED the server is long gone, so
-    all we have is the pid number on disk. Same escalation as stop(): SIGTERM,
-    give it wait_seconds to exit, then SIGKILL. Every odd state (no file, pid
-    already dead) is reported as a message, not an exception; stopping an
-    already-stopped server is a boring success, not an error.
+    Designed for CLI invocations where the launching process has exited and only
+    the pidfile remains. Uses SIGTERM followed by `wait_seconds` and SIGKILL.
+    Missing pidfiles or already-stopped processes return informational status
+    strings rather than raising exceptions.
     """
     if not os.path.exists(pid_path):
         return f"No pidfile at {pid_path}; nothing to stop (server not started here?)."
@@ -652,10 +650,8 @@ def stop_from_pidfile(pid_path: str = DEFAULT_PID_PATH, wait_seconds: float = 10
         os.remove(pid_path)
         return f"OVMS (pid {pid}) is not running; removed the stale pidfile."
 
-    # Alive is not enough: confirm it is OURS before signalling. If the machine
-    # crashed, OVMS died and the OS recycled that number, this pid now belongs
-    # to some unrelated program -- and killing it would be our bug, on their
-    # process. Refuse rather than guess, and say why.
+    # Confirm the PID belongs to an ovms executable before signaling in case the
+    # OS recycled the identifier to an unrelated process after a crash.
     if not _pid_is_our_server(pid):
         os.remove(pid_path)
         return (f"pid {pid} is running but is not an ovms process, so the "

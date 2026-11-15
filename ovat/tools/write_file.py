@@ -1,17 +1,16 @@
 # ovat/tools/write_file.py
-"""The write_file tool: create a file, or replace one, inside the project.
+"""The write_file tool: create or overwrite a file inside the project sandbox.
 
-Mirrors Mistral Vibe's write_file.py (its 64,000 byte cap and parent folder
-creation). One difference on purpose: Vibe refuses to overwrite and sends the
-model to edit. OVAT's write_file asks the person first anyway (default
-permission: ask), and a model that rewrites a small file whole is common, so
-overwriting is allowed and the TUI diffs it against the old text.
+Enforces a 64,000-byte size limit and creates missing parent directories.
+Overwrites are permitted (gated by the ``ask`` default permission), and the TUI
+displays an inline diff against previous file contents when updating an
+existing file.
 """
 from pathlib import Path
 
 from ovat.tools.project import Shown, fail, resolve_inside, save_text, shown_path
 
-MAX_WRITE_BYTES = 64_000         # Vibe's max_write_bytes
+MAX_WRITE_BYTES = 64_000
 
 
 def write_file_impl(file_path: str, content: str, root: Path) -> str:

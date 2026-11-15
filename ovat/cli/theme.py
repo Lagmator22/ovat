@@ -11,7 +11,7 @@ Registering the palette AS a theme fixes both directions at once. OVAT's
 widgets can now be written against $primary and $success like any other
 Textual widget, and they still come out in brand colours because the
 default theme IS the brand. Pick another theme and they follow it, because
-the variables are the theme's, not ours.
+the variables belong to the active theme.
 
 TUI-only, and imported only from the agent TUI, because textual is an optional
 extra: ui.py cannot import this or `ovat --help` would need textual on a

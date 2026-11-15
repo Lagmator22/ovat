@@ -1025,8 +1025,7 @@ def test_init_does_not_write_an_active_rag_block(tmp_path):
     text = out.read_text(encoding="utf-8")
     cfg = load_workflow(str(out))
     assert cfg.rag is None, "init must not enable RAG a new machine cannot run"
-    # ...but the instructions must still be there, or we have only moved the
-    # dead end from a traceback to a silence.
+    # Starter comments must still explain RAG export steps clearly.
     assert "optimum-cli export openvino" in text
     assert "bge-small-en-v1.5" in text
 

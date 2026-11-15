@@ -3,8 +3,8 @@
 
 This is the other half of the MCP story. search_docs.py and transcribe.py can
 already RUN as MCP servers (`python -m ovat.tools.search_docs`); this file is
-the piece that lets an OVAT agent actually CONNECT to one, ours or anyone
-else's, over stdio, using the official `mcp` SDK:
+the piece that lets an OVAT agent connect to external or built-in stdio MCP
+servers using the official `mcp` SDK:
 
     tools:
       - name: search_docs
@@ -321,7 +321,7 @@ class MCPHttpServer(_MCPClientBase):
 
 
 def openai_schema_from_mcp_tool(tool) -> dict:
-    """An MCP tool advertisement -> the OpenAI-style schema our loop shows."""
+    """Convert an MCP tool descriptor into the OpenAI-style schema expected by the agent loop."""
     params = getattr(tool, "input_schema", None)
     if params is None:
         params = getattr(tool, "inputSchema", None)

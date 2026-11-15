@@ -446,8 +446,8 @@ class TurnManager:
         self.cancel_active()
 
     def _require_active(self, expected_turn_id: str) -> _Active:
-        """Mirrors Vibe's `_handler._require_turn_route` and `_turns.
-        StaleTurnError` (same codes, same sentence, the active id in data)."""
+        """Validate that an active turn exists and matches ``expected_turn_id``
+        before steering or interrupting."""
         active = self.active
         if active is None:
             raise RpcError(ProtocolErrorCode.CONFLICT, "No active turn")
@@ -460,10 +460,8 @@ class TurnManager:
     # ---- steering --------------------------------------------------------------
 
     def steer(self, params: TurnSteerParams) -> TurnSteerResponse:
-        """`turn/steer`: one more instruction for the turn that is running.
-        Vibe's `_turns.steer` checks the turn, hands the text to the agent and
-        projects the user's message with source "turn_steer"; so does this,
-        before the response (the client waits for that entry)."""
+        """``turn/steer``: inject follow-up guidance into a running turn and
+        emit the ``turn_steer`` message entry before returning."""
         self.ctx.require_session(params.session_id)
         active = self._require_active(params.expected_turn_id)
         text, blocks = _extract_input(params.message, self.ctx.cwd)
@@ -473,11 +471,8 @@ class TurnManager:
 
     def steer_queued(self, params: TurnQueueSteerParams
                      ) -> TurnQueueSteerResponse:
-        """`session/turn/queue/steer`: a waiting prompt becomes steering for
-        the running turn. Vibe's own legacy server does not have this method
-        (its Unified Harness backend does, and moves the queue item into the
-        turn); the item's entry id becomes the steering entry's id, which is
-        what the client looks for."""
+        """``session/turn/queue/steer``: promote a queued prompt into active
+        turn steering, preserving the queued item's entry id."""
         self.ctx.require_session(params.session_id)
         active = self._require_active(params.expected_turn_id)
         queued = next((q for q in self.queue

@@ -122,9 +122,7 @@ def test_an_unsupported_provider_supplies_what_plano_demands_of_it():
 
 
 def test_tracing_is_on_so_the_gateway_earns_its_hop():
-    """The reason to accept an extra network hop: every request becomes an
-    OpenTelemetry span, which is the W9-W10 telemetry item by configuration
-    rather than by writing an exporter."""
+    """Verify OpenTelemetry request tracing is enabled cleanly via gateway config."""
     tracing = _plano().get("tracing")
     assert tracing, "no tracing block; the extra hop buys nothing"
     assert tracing["random_sampling"] == 100

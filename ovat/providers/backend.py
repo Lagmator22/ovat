@@ -19,8 +19,8 @@ cannot silently drift apart again.
 Deliberately a plain frozen dataclass, not a class with behaviour: it holds no
 client, opens no socket, and is safe to build on a machine with no server. The
 engines own their own client construction, because each framework's client
-takes different arguments; what they share is the ANSWER to "what am I dialling
-and how".
+takes different arguments; what they share is the endpoint, model, timeout,
+and sampling configuration.
 """
 from dataclasses import dataclass
 

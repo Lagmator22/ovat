@@ -27,8 +27,8 @@ agent:
 
 # Without this block search_docs runs in STUB mode and returns fake text.
 # bge-small is ~130 MB and runs happily on the same 8 GB CPU-only laptop,
-# so the Minimal profile keeps real retrieval (matches the proposal's
-# small-model + bge-small minimal tier from the proposal).
+# so the Minimal profile keeps real retrieval (small-model + bge-small
+# minimal tier).
 rag:
   embeddings:
     provider: genai

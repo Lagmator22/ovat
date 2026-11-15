@@ -48,9 +48,9 @@ class GenAILLMProvider(LLMProvider):
              on_token=None) -> dict:
         """Generate a reply. With on_token, stream each token as it decodes.
 
-        on_token is optional so every existing caller behaves exactly as
-        before. When given, openvino_genai calls our streamer per decoded
-        token; we forward the text and return False ("keep generating").
+        on_token is optional so non-streaming callers retain existing behavior.
+        When supplied, openvino_genai invokes the streamer callback per decoded
+        token, forwarding text and returning False to continue generation.
         The final return dict is identical either way.
         """
         # A text LLM gets the conversation AS a conversation. LLMPipeline

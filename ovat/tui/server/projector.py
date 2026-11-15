@@ -57,7 +57,7 @@ from ovat.tui.vibe.app_server.protocol import (ChildSessionUpdatedParams,
 
 Send = Callable[[str, ProtocolModel], None]
 
-# The longest preview a session list shows (Vibe cuts at 160 too).
+# Maximum preview length shown in session lists.
 PREVIEW_CHARS = 160
 
 
@@ -85,8 +85,8 @@ class Projector:
 
     def state(self, *, history_limit: int | None = 200,
               turns_limit: int | None = 200) -> PublicSessionState:
-        """The whole session as a snapshot. A limit of None leaves that part
-        out, as Vibe does when a read asks for no history or no turns."""
+        """Return a snapshot of the session state, omitting history or turns when
+        their respective limit is None."""
         history = self.history
         return PublicSessionState(
             event_id=self.event_id,

@@ -1,7 +1,7 @@
-"""Vibe's MCP panel over workflow mcp_stdio entries, without cloud auth.
+"""MCP panel routes backed by workflow `mcp_stdio` servers without cloud auth.
 
-Mirrors Vibe's app_server/_projection.py MCP source pictures. Selections
-are held by AgentSession and rebuilt through the normal memory-carrying path.
+Projects local MCP server state from `AgentSession` and triggers standard
+memory-preserving agent rebuilds when toggled.
 """
 from ovat.tui.server.rpc import Routes, RpcError
 from ovat.tui.server.views import mcp_state

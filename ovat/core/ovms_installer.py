@@ -213,9 +213,8 @@ def _expected_sha256(asset_url: str) -> str | None:
     Upstream naming is inconsistent: python_off ships
     `ovms_windows_..._python_off.zip.sha256` while python_on ships
     `ovms_windows_..._python_on.sha256` with no `.zip`. Try both rather than
-    guess. A missing checksum is a warning, not a hard failure -- refusing to
-    install because Intel forgot a sibling file would be our bug on their
-    release process.
+    guess. Missing checksums are logged as warnings rather than treated as hard
+    failures so releases without a published hash remain installable.
     """
     stem, _, _ = asset_url.rpartition(".")
     if asset_url.endswith(".tar.gz"):
@@ -382,8 +381,8 @@ def _make_owner_writable(root: str) -> None:
             mode = os.stat(path).st_mode
             os.chmod(path, mode | (0o300 if is_dir else 0o200))
         except OSError:
-            # Best effort. A file we cannot chmod is one the move may fail on,
-            # and that failure is far more informative than one raised here.
+            # Best effort; if permissions prevent updating attributes, any
+            # subsequent move failure will raise with more specific context.
             pass
 
     relax(root, True)
@@ -403,9 +402,9 @@ def _extract_tar(tf, staging: str, members) -> None:
     Ubuntu 26.04. Asking for `tar` explicitly keeps one behaviour across every
     version instead of tracking the interpreter's.
 
-    Path traversal is already blocked before we get here, by _is_safe_member
-    for names and _checked_tar_links for link targets, which is the
-    protection `data` would otherwise be providing.
+    Path traversal is already blocked earlier by _is_safe_member for names and
+    _checked_tar_links for link targets, matching the safety guarantees `data`
+    would otherwise provide.
     """
     # Force the owner's write bit ON before a single byte is written. This is
     # the fix, and it has to happen HERE rather than afterwards: OVMS ships
@@ -589,10 +588,9 @@ def install(root: str = DEFAULT_ROOT, version: str = OVMS_VERSION,
                     f"with; nothing was installed.")
 
         if force and os.path.isdir(root):
-            # Same reason as in _extract: the install we are replacing is full
-            # of 0o555 directories, and ignore_errors would turn "could not
-            # delete the old one" into a silent no-op, so --force would appear
-            # to work while leaving the previous version in place.
+            # Existing installations contain read-only 0o555 directories;
+            # make entries owner-writable before recursive removal so --force
+            # cleanly replaces the previous version rather than silently failing.
             _make_owner_writable(root)
             shutil.rmtree(root)
         _extract(archive, root)

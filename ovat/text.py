@@ -1,14 +1,12 @@
 # ovat/text.py
-"""Reading model output: reasoning blocks, and calls that never got decoded.
+"""Reading model output: reasoning blocks and undecoded tool calls.
 
-This lives at the top level, not under cli/ or agent/, because BOTH need it and
-neither may import the other. The agent loop has to know whether a reply says
-anything; the CLI and the TUI have to know what to display. It started in
-chat_screen.py, moved to cli/ui.py when the plain CLI needed it, and is here now
-that loop.py does too -- one copy each time, per the single-source-of-truth
-rule, because two would drift the moment a new tag spelling appeared.
+Placed at the top level rather than under cli/ or agent/ because both packages
+depend on it without importing each other. The agent loop uses it to check
+whether a reply carries content, and the CLI/TUI use it for display, keeping
+tag parsing in a single place.
 
-Pure stdlib. Importing it costs nothing and pulls in no framework.
+Pure stdlib with zero framework imports.
 """
 import re
 

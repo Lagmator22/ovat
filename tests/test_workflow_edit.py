@@ -196,7 +196,7 @@ def test_every_setting_is_a_field_the_schema_has():
 
 # ---- the UI preferences ---------------------------------------------------------
 
-def test_the_theme_and_the_launchers_paths_share_one_file(tmp_path):
+def test_the_theme_and_selected_paths_share_one_file(tmp_path):
     cwd = str(tmp_path)
     prefs.update(cwd, config="cfg.yml", model_path="models/llm")
     prefs.update(cwd, theme="nord")

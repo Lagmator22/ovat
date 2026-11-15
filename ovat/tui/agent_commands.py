@@ -1,28 +1,19 @@
 # ovat/tui/agent_commands.py
-"""The slash commands of the new agent app: OVAT's, plus the Vibe ones that
-work on OVAT's app server.
+"""Slash-command registry for the agent TUI.
 
-The copied registry (ovat/tui/vibe/cli/commands.py) lists 34 commands. Most
-of them need something OVAT's server does not have (a model picker, MCP,
-an account...), and a command that cannot work must not
-be reachable: it would only end in a "not supported" error. So the table
-below says, for EVERY Vibe command, which server methods its handler calls
-(or which capability it assumes), and the registry keeps a command only when
-all of those are routes the server answers. Nothing is a hand-kept "removed"
-list: when the server learns `session/rename`, `/rename` is kept at the next
-start, and a Vibe update that adds a command must be classified here or a
-test fails.
+Combines OVAT's built-in commands with the terminal-client commands supported by
+OVAT's JSON-RPC app server. Every client command is mapped to its required
+app-server routes (or unsupported capability markers) so unreachable actions are
+filtered cleanly instead of failing at runtime.
 
-OVAT's own commands come from ovat/agentic/commands.py, the one table that
-the classic app and the completion popup use too. Four of them are the same
-thing as a Vibe command and keep Vibe's handler: help, new (Vibe's /clear),
-copy and quit (Vibe's /exit). Their names and aliases are merged.
+Commands overlapping OVAT's table (`help`, `new`/`clear`, `copy`, `quit`/`exit`)
+are unified so names and aliases dispatch to a single handler.
 """
 from ovat.agentic import commands as ovat_commands
 from ovat.tui.vibe.cli.commands import Command, CommandRegistry
 
-# What each client command's handler asks of the server. A name with a slash is
-# a JSON-RPC method; "capability:..." is something OVAT does not have at all.
+# Required server routes per client command ("capability:..." marks features
+# intentionally omitted from OVAT's local runtime).
 CLIENT_COMMAND_NEEDS: dict[str, tuple[str, ...]] = {
     "help": (),
     "config": ("config/fields/read", "config/write"),
@@ -34,8 +25,7 @@ CLIENT_COMMAND_NEEDS: dict[str, tuple[str, ...]] = {
     "copy": (),
     "paste-image": (),
     "log": ("session/log/read",),
-    # It writes Vibe's log_level, which OVAT does not use: config/write
-    # answers "not used by OVAT", so the command would only end in that.
+    # Requires a client-side log_level field unused by OVAT.
     "log-level": ("capability:a log level setting",),
     "debug": ("diagnostics/logs/read",),
     "compact": ("session/compact",),
@@ -62,9 +52,7 @@ CAPABILITY = "capability:"
 # OVAT command -> the client command that is the same thing.
 SHARED_COMMANDS = {"help": "help", "new": "clear", "copy": "copy", "quit": "exit"}
 
-# Copied commands whose upstream text describes what they do in Vibe, not
-# here (Vibe's /voice opens a settings panel, its /reload reloads skills, its
-# /mcp signs in to hosted servers). The aliases OVAT has no use for go too.
+# Upstream client descriptions rewritten for OVAT behavior, plus unused aliases.
 OWN_WORDS = {
     "voice": "Turn local voice dictation on or off. Ctrl+R records; the "
              "audio stays on this machine",
@@ -115,8 +103,8 @@ class OvatCommandRegistry(CommandRegistry):
         commands = {name: command
                     for name, command in super()._build_commands().items()
                     if client_command_works(name, served)}
-        # Vibe offers /todo only with its experimental harness; OVAT's todo
-        # tool is a plain workflow tool, so /todo is always there.
+        # OVAT always enables the todo tool directly in workflow sessions,
+        # without requiring an experimental harness toggle.
         if "todo" in commands:
             commands["todo"].is_available = None
         for name, words in OWN_WORDS.items():

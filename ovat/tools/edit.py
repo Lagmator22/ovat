@@ -1,10 +1,9 @@
 # ovat/tools/edit.py
-"""The edit tool: replace one exact piece of text in a file.
+"""The edit tool: replace an exact snippet inside a project text file.
 
-Mirrors Mistral Vibe's edit.py (vibe/core/tools/builtins) and its
-line_contexts() from vibe/utils/text.py: same checks, same wording, and the
-same `occurrences` (start_line, old lines, new lines) the diff card draws.
-Left out: its checkpoints, atomic_replace and file locks.
+Validates exact matches inside the project sandbox and collects
+`occurrences` (start_line, old lines, new lines) via `line_contexts()` so the
+TUI diff view can render inline changes cleanly.
 """
 import os
 from pathlib import Path

@@ -96,10 +96,8 @@ def test_no_workflow_is_a_sentence_not_a_crash(tmp_path):
 
 
 def test_an_untrusted_workflow_says_why_it_was_not_loaded(tmp_path):
-    # bare `ovat` in an untrusted folder starts with no workflow. "No
-    # workflow here, `ovat init` writes one" was wrong there: the file IS
-    # there. Vibe's own warning shows once per folder, so from the second
-    # launch on this sentence is the only reason on screen.
+    # Launching in an untrusted folder skips workflow.yml and states why
+    # alongside the /trust command instead of claiming no workflow exists.
     (tmp_path / "workflow.yml").write_text("model: {name: m}\n")
     session, sink, _ = _session(workflow=None, cwd=str(tmp_path))
     session.start()

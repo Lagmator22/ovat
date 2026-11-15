@@ -1,16 +1,14 @@
 # tests/test_providers.py
-"""
-Tests written as we go, so the 80%-coverage success criterion isn't a
-panic at the end.
+"""Unit and optional live integration tests for OVAT model providers.
 
-Two kinds of tests:
-  1. CONTRACT/UNIT tests (fast, no models or server): class shapes, ABC rules,
-     URL building, construction.
-  2. INTEGRATION tests (slow, load real models): auto-skipped when the local
-     OpenVINO models aren't present, so the suite stays green everywhere.
+Two tiers:
+  1. Contract/unit tests (fast, no models or server required): class shapes,
+     ABC guarantees, URL construction, client initialization.
+  2. Integration tests (require exported OpenVINO models): automatically
+     skipped when local models are unavailable.
 
-OVMS plugs are tested for construction only (creating the client doesn't
-connect); full OVMS calls get tested once a server is up (Docker / AI PC).
+OVMS providers verify client setup cleanly offline; full server round-trips
+are covered by live integration suites.
 """
 import json
 import os
