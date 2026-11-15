@@ -381,7 +381,8 @@ class IntelHardwareSource(TelemetrySource):
                  "--enable", self.collectors,
                  "--sampling-interval", str(self.sampling_interval_ms)],
                 cwd=self._out_path,
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, text=True)
         except Exception:
             # A profiler that cannot start must not stop the agent running.
             self._proc = None

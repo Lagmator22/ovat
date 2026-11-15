@@ -1368,6 +1368,39 @@ def test_lines_ut_does_print_are_still_read(monkeypatch):
         source.stop()
 
 
+def test_ut_starts_with_stdin_devnull(monkeypatch):
+    import subprocess
+    from ovat.telemetry import sources
+
+    seen_kwargs = {}
+
+    class FakeProc:
+        stdout = iter(())
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            return 0
+
+        def kill(self):
+            pass
+
+    def fake_popen(cmd, **kwargs):
+        seen_kwargs.update(kwargs)
+        return FakeProc()
+
+    monkeypatch.setattr("ovat.telemetry.sources.subprocess.Popen", fake_popen)
+    source = sources.IntelHardwareSource()
+    source.binary = "ut"
+    monkeypatch.setattr("ovat.telemetry.sources.sys.platform", "win32")
+    source.start()
+    try:
+        assert seen_kwargs.get("stdin") is subprocess.DEVNULL
+    finally:
+        source.stop()
+
+
 def test_a_late_power_reading_takes_a_card_slot():
     """Intel UT's first reading lands seconds after the other sources. The
     cards used to be filled once, so five lower-ranked metrics took every

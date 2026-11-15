@@ -338,7 +338,8 @@ class DeployLLM(FakeLLMProvider):
 def test_a2a_wire_approval_round_trips():
     port = _free_port()
     url = f"http://127.0.0.1:{port}/"
-    settings = A2AServerConfig(port=port, audit_log=None)
+    settings = A2AServerConfig(port=port, audit_log=None,
+                               allow_remote_approvals=True)
 
     def make_agent():
         bus = EventBus()

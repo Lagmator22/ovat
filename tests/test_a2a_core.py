@@ -566,6 +566,20 @@ def test_prepare_builds_once_and_reuses_that_agent(tmp_path):
     assert len(builds) == 1                           # the first was reused
 
 
+def test_prepare_allows_ipv6_loopback_hosts(tmp_path):
+    def fake_build(config, skip_rag=False, select_tools=None):
+        select_tools({})
+        return FakeAgent()
+
+    prepared = serving.prepare(WorkflowConfig(model={"name": "m"}),
+                               A2AServerConfig(audit_log=None),
+                               "w.yml", "1.0.0",
+                               build=fake_build,
+                               token_file=tmp_path / "token", dry_run=True)
+    assert "::1" in prepared.allowed_hosts
+    assert "[::1]" in prepared.allowed_hosts
+
+
 def test_a_dry_run_writes_no_files(tmp_path):
     def fake_build(config, skip_rag=False, select_tools=None):
         select_tools({})

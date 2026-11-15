@@ -117,7 +117,7 @@ def prepare(config: WorkflowConfig, settings: A2AServerConfig,
     service = A2AService(build_one, settings, audit=audit)
     card = card_dict(config, settings, exp.select(decided["tools"]), url,
                      settings.name or default_name(workflow_path), version)
-    hosts = ["127.0.0.1", "localhost"]
+    hosts = ["127.0.0.1", "localhost", "::1", "[::1]"]
     if settings.host not in LOOPBACK and settings.host != "0.0.0.0":
         hosts.append(settings.host)
     if settings.public_url:
