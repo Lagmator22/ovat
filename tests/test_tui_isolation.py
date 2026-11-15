@@ -3,7 +3,7 @@
 
 The TUI is an optional front-end (`pip install 'ovat[tui]'`). These tests
 simulate an install without the extra by poisoning sys.modules with None so any
-`import ovat.cli.tui` raises ImportError.
+`import ovat.tui.agent_app` raises ImportError.
 
 This file must never import textual directly or indirectly.
 """
@@ -17,8 +17,7 @@ runner = CliRunner()
 
 
 def _no_tui(monkeypatch):
-    """Make `import ovat.cli.tui` fail, as it would without the [tui] extra."""
-    monkeypatch.setitem(sys.modules, "ovat.cli.tui", None)
+    """Make importing the Textual TUI fail, as it would without `[tui]`."""
     monkeypatch.setitem(sys.modules, "ovat.tui.agent_app", None)
 
 
@@ -62,17 +61,10 @@ def test_cli_modules_never_import_textual_at_module_level():
 
 
 def test_the_cli_never_pulls_in_a_tui_only_module(monkeypatch, tmp_path):
-    """The contract has to hold as the TUI grows, not just for tui.py.
-
-    doctor_screen, chat_screen and commands all import textual at module
-    level, which is fine ONLY while nothing on the CLI path imports them.
-    Poisoning each one turns any such import into an ImportError, so if a
-    future edit reaches for one from main.py, a plain `ovat doctor` breaks
-    here instead of on a user's TUI-less install.
-    """
+    """The CLI must never import TUI-only Textual modules on normal commands."""
     _no_tui(monkeypatch)
-    for name in ("ovat.cli.commands", "ovat.cli.doctor_screen",
-                 "ovat.cli.chat_screen"):
+    for name in ("ovat.tui.agent_app", "ovat.tui.telemetry",
+                 "ovat.tui.doctor", "ovat.cli.theme"):
         monkeypatch.setitem(sys.modules, name, None)
 
     target = tmp_path / "workflow.yml"
@@ -82,11 +74,10 @@ def test_the_cli_never_pulls_in_a_tui_only_module(monkeypatch, tmp_path):
 
 
 def test_the_agent_tui_is_optional_too(monkeypatch, tmp_path):
-    """`ovat agent` is the new TUI; without textual it prints the hint, and
+    """`ovat agent` is the TUI; without textual it prints the hint, and
     nothing else on the CLI path imports it."""
     _no_tui(monkeypatch)
-    for name in ("ovat.tui", "ovat.tui.app"):
-        monkeypatch.setitem(sys.modules, name, None)
+    monkeypatch.setitem(sys.modules, "ovat.tui", None)
     result = runner.invoke(app, ["agent"])
     assert result.exit_code == 1
     assert "ovat[tui]" in result.output
@@ -96,16 +87,12 @@ def test_the_agent_tui_is_optional_too(monkeypatch, tmp_path):
     assert runner.invoke(app, ["--help"]).exit_code == 0
 
 
-def test_without_textual_both_agent_uis_print_the_install_hint(monkeypatch):
-    """`ovat.tui` itself imports no toolkit, so the hint has to come from the
-    app modules failing to import, for the new app and the classic one."""
-    for name in ("ovat.tui.agent_app", "ovat.tui.app"):
-        monkeypatch.setitem(sys.modules, name, None)
-    for ui in (None, "classic"):
-        if ui:
-            monkeypatch.setenv("OVAT_AGENT_UI", ui)
-        result = runner.invoke(app, ["agent"])
-        assert result.exit_code == 1, (ui, result.output)
+def test_without_textual_agent_tui_prints_the_install_hint(monkeypatch):
+    """`ovat.tui` itself imports no toolkit, so the hint comes from the app module failing to import."""
+    monkeypatch.setitem(sys.modules, "ovat.tui.agent_app", None)
+    for argv in (["agent"], ["tui"], []):
+        result = runner.invoke(app, argv)
+        assert result.exit_code == 1, (argv, result.output)
         assert "ovat[tui]" in result.output
 
 

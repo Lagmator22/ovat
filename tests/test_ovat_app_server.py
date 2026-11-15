@@ -2135,9 +2135,7 @@ def test_closing_with_an_approval_open_leaves_nothing_waiting():
 
 
 def test_the_bridge_names_the_session_and_the_turn():
-    from ovat.tui.bridge import Bridge as ClassicBridge
     from ovat.tui.server.bridge import Bridge
-    assert ClassicBridge is Bridge            # the classic app's import path
     bridge = Bridge("s1")
     bridge.turn_id = "t1"
     added = bridge.convert(Event(TOOL_STARTED, {
@@ -2147,7 +2145,7 @@ def test_the_bridge_names_the_session_and_the_turn():
     assert bridge.running("other") is None
     assert bridge.answer("hi").entry.turn_id == "t1"
     assert bridge.reasoning("why").entry.text == "why"
-    plain = Bridge()                          # the classic app's use
+    plain = Bridge()
     assert plain.answer("x").entry.session_id == "ovat"
     assert plain.answer("x").entry.turn_id is None
 

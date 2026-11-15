@@ -309,15 +309,14 @@ def test_an_explicit_path_still_wins_over_everything(tmp_path, monkeypatch):
 
 
 def test_the_sources_table_is_redrawn_every_tick_not_once():
-    """Source availability CHANGES while the page is open: an agent appears
-    the moment /engine ovms finishes building one. Drawn once at mount, the
-    table said "n/a" forever even while that agent was answering."""
+    """Source availability changes while the page is open, so the sources line
+    must be refreshed on every redraw tick."""
     import inspect
 
-    from ovat.cli import telemetry_screen
+    from ovat.tui import telemetry
 
-    redraw = inspect.getsource(telemetry_screen.TelemetryScreen._redraw)
-    assert "_sources_line" in redraw, (
+    redraw = inspect.getsource(telemetry.TelemetryView.redraw)
+    assert "sources_line" in redraw, (
         "the sources line is not refreshed on the redraw tick")
 
 
@@ -738,40 +737,31 @@ def test_the_windows_counter_supplies_utilization_when_there_is_no_sysfs(tmp_pat
 # and cannot answer "is core 6 pinned, and how hard". These pin the numbers.
 
 def test_the_live_tab_shows_a_figure_per_metric_not_a_sparkline():
-    """Every metric in the buffer gets a row of numbers: now, min, max, mean.
-
-    Back the change out -- put the Sparkline loop back -- and this fails:
-    there is no #tel-live-table to query.
-    """
+    """Every metric in the buffer gets a row of numbers: now, min, max, mean."""
     import asyncio
 
     pytest.importorskip("textual")
     from textual.app import App
     from textual.widgets import DataTable
 
-    from ovat.cli.telemetry_screen import TelemetryScreen
+    from ovat.tui.telemetry import TelemetryView
 
     async def scenario():
         class Harness(App):
             def on_mount(self):
-                self.push_screen(TelemetryScreen())
+                self.push_screen(TelemetryView(sources=[]))
 
         app = Harness()
         async with app.run_test() as pilot:
             screen = app.screen
-            # Stop the real collector first: it samples this machine twice a
-            # second into the same buffer, so without this the assertions
-            # measure the developer's CPU instead of the rendering.
             screen.collector.stop()
             screen.live.samples.clear()
-            # Two ticks of one fake source: enough for a min that differs
-            # from a max, so the columns are visibly doing their job.
             screen.live.record({"system.cpu0_pct": 4.0, "npu.utilization": 90.0})
             screen.live.record({"system.cpu0_pct": 96.0, "npu.utilization": 10.0})
-            screen._redraw_numbers()
+            screen._redraw_table()
             await pilot.pause()
 
-            table = screen.query_one("#tel-live-table", DataTable)
+            table = screen.query_one("#tel-table", DataTable)
             rendered = {
                 str(table.get_cell_at((row, 1))): [
                     str(table.get_cell_at((row, column)))
@@ -779,29 +769,26 @@ def test_the_live_tab_shows_a_figure_per_metric_not_a_sparkline():
                 ]
                 for row in range(table.row_count)
             }
-            # per-core CPU is present AS A NUMBER, and so is the NPU
             assert "cpu0_pct" in rendered
             assert "utilization" in rendered
-            # now, min, max, mean -- the scale a bare figure does not carry
             assert rendered["cpu0_pct"] == ["96", "4", "96", "50"]
     asyncio.run(scenario())
 
 
 def test_the_numbers_table_updates_in_place_rather_than_refilling():
-    """Refilling twice a second resets cursor and scroll, so a 16-core table
-    could not be read -- which is the machine it exists for."""
+    """Rows update in place rather than clearing and re-adding every tick."""
     import asyncio
 
     pytest.importorskip("textual")
     from textual.app import App
     from textual.widgets import DataTable
 
-    from ovat.cli.telemetry_screen import TelemetryScreen
+    from ovat.tui.telemetry import TelemetryView
 
     async def scenario():
         class Harness(App):
             def on_mount(self):
-                self.push_screen(TelemetryScreen())
+                self.push_screen(TelemetryView(sources=[]))
 
         app = Harness()
         async with app.run_test() as pilot:
@@ -809,36 +796,34 @@ def test_the_numbers_table_updates_in_place_rather_than_refilling():
             screen.collector.stop()
             screen.live.samples.clear()
             screen.live.record({"system.cpu0_pct": 10.0})
-            screen._redraw_numbers()
+            screen._redraw_table()
             await pilot.pause()
-            table = screen.query_one("#tel-live-table", DataTable)
+            table = screen.query_one("#tel-table", DataTable)
             before = table.row_count
 
             screen.live.record({"system.cpu0_pct": 20.0})
-            screen._redraw_numbers()
+            screen._redraw_table()
             await pilot.pause()
 
-            assert table.row_count == before          # updated, not appended
+            assert table.row_count == before
             assert str(table.get_cell_at((0, 2))) == "20"
     asyncio.run(scenario())
 
 
 def test_clearing_the_page_forgets_the_rows_as_well_as_the_buffer():
-    """Rows are keyed by metric and updated in place, so clearing the buffer
-    without clearing the bookkeeping makes the next tick update cells in a
-    table that no longer has them."""
+    """Resetting clears both the sample buffer and the tracked table rows."""
     import asyncio
 
     pytest.importorskip("textual")
     from textual.app import App
     from textual.widgets import DataTable
 
-    from ovat.cli.telemetry_screen import TelemetryScreen
+    from ovat.tui.telemetry import TelemetryView
 
     async def scenario():
         class Harness(App):
             def on_mount(self):
-                self.push_screen(TelemetryScreen())
+                self.push_screen(TelemetryView(sources=[]))
 
         app = Harness()
         async with app.run_test() as pilot:
@@ -846,18 +831,17 @@ def test_clearing_the_page_forgets_the_rows_as_well_as_the_buffer():
             screen.collector.stop()
             screen.live.samples.clear()
             screen.live.record({"system.cpu0_pct": 10.0})
-            screen._redraw_numbers()
+            screen._redraw_table()
             await pilot.pause()
 
-            screen.action_clear()
+            screen.action_reset()
             await pilot.pause()
-            assert screen.query_one("#tel-live-table", DataTable).row_count == 0
+            assert screen.query_one("#tel-table", DataTable).row_count == 0
 
-            # and the next tick must repopulate rather than raise
             screen.live.record({"system.cpu0_pct": 30.0})
-            screen._redraw_numbers()
+            screen._redraw_table()
             await pilot.pause()
-            assert screen.query_one("#tel-live-table", DataTable).row_count == 1
+            assert screen.query_one("#tel-table", DataTable).row_count == 1
     asyncio.run(scenario())
 
 
@@ -1250,65 +1234,6 @@ def test_the_luid_keeps_the_case_the_counter_uses():
     assert "0x" in _WindowsNPUCounter.choose_adapter(_REAL_INSTANCES)
 
 
-def test_a_headline_card_is_built_before_it_is_mounted():
-    """One mount call per card, with the children already inside it.
-
-    Mounting the card and THEN mounting into it has a window: mount() is
-    asynchronous, so the card's parent may still be unset on the next line,
-    and Textual raises "Unable to find relative location ... because it has
-    no parent". Seen once on the AI PC as card-npu-utilization and never
-    reproduced, which is what a timing window looks like from outside.
-
-    Asserted on the source rather than by racing it, because a test that
-    tries to hit the window is a test that passes for the wrong reason.
-    Restore the mount-then-mount-into-child shape and this fails.
-    """
-    import inspect
-
-    from ovat.cli import telemetry_screen
-
-    body = inspect.getsource(telemetry_screen.TelemetryScreen._rebuild_cards)
-    assert "card.mount(" not in body, (
-        "children are mounted into the card after it is mounted; build the "
-        "card with its children instead")
-    assert "row.mount(Vertical(" in body
-
-
-def test_every_card_still_gets_its_widgets():
-    """The composition change must not quietly drop the bar or the digits."""
-    import asyncio
-
-    pytest.importorskip("textual")
-    from textual.app import App
-    from textual.widgets import Digits, ProgressBar
-
-    from ovat.cli.telemetry_screen import TelemetryScreen, _card_id
-
-    async def scenario():
-        class Harness(App):
-            def on_mount(self):
-                self.push_screen(TelemetryScreen())
-
-        app = Harness()
-        async with app.run_test() as pilot:
-            screen = app.screen
-            screen.collector.stop()
-            screen.live.samples.clear()
-            # a percentage (gets a bar) and a plain figure (does not)
-            screen.live.record({"system.cpu_pct": 40.0, "system.threads": 9})
-            await screen._sync_cards()
-            await pilot.pause()
-
-            percent = screen.query_one(f"#{_card_id('system.cpu_pct')}")
-            assert percent.query(Digits)
-            assert percent.query(ProgressBar)
-
-            plain = screen.query_one(f"#{_card_id('system.threads')}")
-            assert plain.query(Digits)
-            assert not plain.query(ProgressBar)
-    asyncio.run(scenario())
-
-
 # A silent UT must not freeze the collector
 
 def _started_ut(monkeypatch, child_code):
@@ -1402,21 +1327,19 @@ def test_ut_starts_with_stdin_devnull(monkeypatch):
 
 
 def test_a_late_power_reading_takes_a_card_slot():
-    """Intel UT's first reading lands seconds after the other sources. The
-    cards used to be filled once, so five lower-ranked metrics took every
-    slot and POWER never appeared, while its numbers sat in the table (AI
-    PC). The ranking is re-checked each tick and the row rebuilt."""
+    """Re-rank headline tiles on redraw so late-arriving metrics like Intel UT
+    package power replace lower-ranked metrics."""
     import asyncio
 
     pytest.importorskip("textual")
     from textual.app import App
 
-    from ovat.cli.telemetry_screen import MAX_CARDS, TelemetryScreen, _card_id
+    from ovat.tui.telemetry import MAX_TILES, TelemetryView
 
     async def scenario():
         class Harness(App):
             def on_mount(self):
-                self.push_screen(TelemetryScreen())
+                self.push_screen(TelemetryView(sources=[]))
 
         app = Harness()
         async with app.run_test() as pilot:
@@ -1427,17 +1350,19 @@ def test_a_late_power_reading_takes_a_card_slot():
                      "system.cpu_pct": 4.0, "system.ram_used_pct": 36.0,
                      "process.rss_mb": 270.0, "system.proc_cpu_pct": 30.0}
             screen.live.record(early)
-            await screen._sync_cards()
+            screen.redraw()
             await pilot.pause()
-            assert len(screen._cards) == MAX_CARDS
-            assert "intel.pkg_power_w" not in screen._cards
+            metrics = [m for m, *_ in screen._tiles]
+            assert len(metrics) == MAX_TILES
+            assert "intel.pkg_power_w" not in metrics
 
             screen.live.record({**early, "intel.pkg_power_w": 3.9})
-            await screen._sync_cards()
+            screen.redraw()
             await pilot.pause()
-            assert "intel.pkg_power_w" in screen._cards
-            assert screen.query_one(f"#{_card_id('intel.pkg_power_w')}")
-            assert len(screen._cards) == MAX_CARDS
+            metrics = [m for m, *_ in screen._tiles]
+            assert "intel.pkg_power_w" in metrics
+            assert len(metrics) == MAX_TILES
+            assert len(screen.query(".tel-tile")) == MAX_TILES
     asyncio.run(scenario())
 
 

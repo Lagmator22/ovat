@@ -20,11 +20,6 @@ def test_venv_env_marks_children_as_inside_the_tui():
     assert shell.venv_env()["OVAT_TUI"] == "1"
 
 
-def test_match_templates_filters_by_prefix():
-    assert {t.name for t in shell.match_templates("/d")} == {"/doctor"}
-    assert len(shell.match_templates("/")) == len(shell.TEMPLATES)
-
-
 def test_run_command_streams_output_and_returns_zero(tmp_path):
     lines = []
     code = shell.run_command("echo OVAT_HELLO", str(tmp_path), lines.append)
@@ -124,21 +119,3 @@ def test_run_command_streams_a_real_progress_bar_without_flooding():
     assert code == 0
     assert lines[-1] == "final"      # the real line always arrives
     assert len(lines) <= 4           # never more frames than were sent
-
-
-def test_chat_advertises_the_arguments_it_accepts():
-    """`/chat [config] [model-path]` has always worked and was invisible.
-
-    Reported from the AI PC: a remembered config pointed at the plano
-    gateway's /v1 path, chat failed every message, and the menu offered no
-    hint that another config could be passed. .ovat/chat_prefs.json then hands
-    the same one back on every launch, so the default is sticky as well as
-    hidden.
-
-    A feature nobody can discover is not a feature, so the menu names it.
-    """
-    from ovat.cli.shell import TEMPLATES
-
-    chat = next(t for t in TEMPLATES if t.name == "/chat")
-    assert "config" in chat.description
-    assert "model-path" in chat.description or "model" in chat.description

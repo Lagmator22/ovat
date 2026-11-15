@@ -2032,10 +2032,8 @@ def test_run_telemetry_does_not_claim_a_file_it_could_not_write(monkeypatch,
 
 
 def test_the_thinking_switch_reaches_the_local_chat_model(monkeypatch, tmp_path):
-    """`ovat chat` and the TUI build their own GenAILLMProvider; the config
-    switch has to reach both, or it exists only on the OVMS path."""
+    """`ovat chat` forwards ``enable_thinking`` to ``GenAILLMProvider``."""
     from ovat.agent import factory, rag_chat as rag_chat_mod
-    from ovat.cli import chat_screen
     from ovat.cli import main as cli_main
     from ovat.providers import llm_genai
 
@@ -2057,15 +2055,9 @@ def test_the_thinking_switch_reaches_the_local_chat_model(monkeypatch, tmp_path)
     config.write_text("model:\n  name: m\n  enable_thinking: false\n"
                       "rag:\n  retriever:\n    db_path: ':memory:'\n",
                       encoding="utf-8")
-    runner.invoke(app, ["chat", str(config), "-i", "hi"])
-
-    monkeypatch.setattr(chat_screen, "identify_model", lambda p: ("llm", ""),
-                        raising=False)
-    import ovat.core.model_scout as scout
-    monkeypatch.setattr(scout, "identify_model", lambda p: ("llm", ""))
-    chat_screen._build_components(str(config), "m")
-
-    assert seen == [False, False], seen
+    result = runner.invoke(app, ["chat", str(config), "-i", "hi"])
+    assert result.exit_code == 0, result.output
+    assert seen == [False], seen
 
 
 def test_serve_passes_tool_guided_generation_from_the_config(monkeypatch,

@@ -52,22 +52,7 @@ def _version_callback(value: bool) -> None:
 
 
 def _open_tui(config=None, continue_session=False, resume_session=None):
-    """What bare `ovat` and `ovat tui` do: open the agent TUI.
-
-    The first TUI, the launcher (ovat/cli/tui.py), is still here for now;
-    OVAT_LAUNCHER=classic opens it instead. It is to be removed in a later
-    release, like OVAT_AGENT_UI=classic.
-    """
-    if os.environ.get("OVAT_LAUNCHER", "").strip().lower() == "classic":
-        try:
-            from ovat.cli.tui import run_tui
-        except ImportError:
-            rprint("[yellow]The TUI needs Textual.[/yellow] Install it with "
-                   "[bold]pip install 'ovat\\[tui]'[/bold], or use a subcommand "
-                   "like [bold]ovat doctor[/bold]. See [bold]ovat --help[/bold].")
-            raise typer.Exit()
-        run_tui()
-        return
+    """Open the agent TUI for bare `ovat` and `ovat tui`."""
     agent(config, continue_session, resume_session)
 
 
@@ -1626,7 +1611,7 @@ def agent(
         rprint("[red]Use --continue or --resume, not both.[/red]")
         raise typer.Exit(code=1)
     try:
-        from ovat.tui import classic_requested, runner
+        from ovat.tui import runner
         run_agent_tui = runner()
     except ImportError:
         rprint("[yellow]The agent TUI needs the TUI extra:[/yellow] "
@@ -1638,10 +1623,6 @@ def agent(
     if not (continue_session or resume_session):
         run_agent_tui(config)
         return
-    if classic_requested():
-        rprint("[red]--continue and --resume need the new app.[/red] Unset "
-               "OVAT_AGENT_UI to use them.")
-        raise typer.Exit(code=1)
     from ovat.tui.agent_app import CannotOpen
     try:
         run_agent_tui(config, continue_session=continue_session,

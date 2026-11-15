@@ -9,55 +9,6 @@ import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
-
-
-@dataclass
-class SlashTemplate:
-    """A slash shortcut: the text it inserts, or None if it is a UI action."""
-
-    name: str               # e.g. "/doctor"
-    insert: str | None      # the command text it fills in, or None for actions
-    description: str
-    # Where the cursor should land inside `insert` (None = end of text).
-    # `/run` inserts `ovat run  --input ""`; the user's next keystrokes are
-    # the config path, so the cursor belongs in that gap, not at the end.
-    cursor: int | None = None
-
-
-# The slash menu. Each non-action entry inserts a real `ovat ...` command the
-# user can finish and run. /clear and /exit are handled by the TUI itself.
-TEMPLATES = [
-    # Include usage arguments in the description so users can pass another
-    # config or model path explicitly when .ovat/chat_prefs.json points to an
-    # older configuration.
-    SlashTemplate("/chat", None,
-                  "chat with your docs  ·  /chat [config] [model-path]"),
-    # insert=None makes this a UI ACTION: the TUI opens its own doctor screen,
-    # which can re-run the checks in place. `/validate` below still inserts the
-    # subprocess form for anyone who wants `ovat doctor <config>` in the log.
-    SlashTemplate("/doctor", None, "environment + config checks, in-app"),
-    SlashTemplate("/telemetry", None, "live numbers and graphs, in-app"),
-    SlashTemplate("/run", "ovat run  --input \"\"", "run the agent on a config",
-                  cursor=len("ovat run ")),
-    SlashTemplate("/index", "ovat index  ", "index a docs folder for search_docs",
-                  cursor=len("ovat index ")),
-    SlashTemplate("/init", "ovat init ", "write a starter workflow.yml"),
-    SlashTemplate("/validate", "ovat doctor ", "validate a workflow file (via doctor)"),
-    SlashTemplate("/serve", "ovat serve ", "start OVMS for a config (AI PC)"),
-    SlashTemplate("/models", "ovat models list", "list models OVMS can serve (AI PC)"),
-    SlashTemplate("/help", "ovat --help", "show every OVAT subcommand"),
-    SlashTemplate("/clear", None, "clear the output area"),
-    SlashTemplate("/exit", None, "leave the TUI"),
-]
-
-TEMPLATES_BY_NAME = {t.name: t for t in TEMPLATES}
-
-
-def match_templates(prefix: str) -> list:
-    """Templates whose name starts with `prefix` (used to build the dropdown)."""
-    prefix = prefix.lower()
-    return [t for t in TEMPLATES if t.name.startswith(prefix)]
 
 
 def venv_env(columns: int | None = None) -> dict:

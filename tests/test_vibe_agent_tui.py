@@ -1045,6 +1045,8 @@ def _telemetry_sources():
 
 def test_telemetry_opens_over_the_chat_with_the_agents_numbers_and_esc_returns(
         monkeypatch):
+    from textual.widgets import DataTable
+
     from ovat.tui import telemetry
     sources = _telemetry_sources()
     monkeypatch.setattr(telemetry, "_default_sources", lambda: sources)
@@ -1062,6 +1064,9 @@ def test_telemetry_opens_over_the_chat_with_the_agents_numbers_and_esc_returns(
                         and app.screen._tiles)
             view = app.screen
             assert view.styles.background.a == 1            # opaque
+            assert view.query_one("#tel-tiles").region.height == 4
+            table = view.query_one("#tel-table", DataTable)
+            assert table.region.y < 20 and table.row_count >= 3
             await until(pilot, lambda: view.live.latest(
                 "agent.prompt_tokens") == 120)
             assert "npu n/a (no NPU found)" in str(
@@ -1546,17 +1551,9 @@ def test_a_removed_command_would_only_have_ended_in_not_supported():
             assert any(m not in routes for m in VIBE_NEEDS[name]), name
 
 
-def test_ovat_agent_ui_picks_the_app(monkeypatch):
+def test_ovat_agent_ui_picks_the_app():
     from ovat import tui
     from ovat.tui import agent_app
-    from ovat.tui import app as classic
-    monkeypatch.delenv("OVAT_AGENT_UI", raising=False)
-    assert tui.runner() is agent_app.run
-    monkeypatch.setenv("OVAT_AGENT_UI", "classic")
-    assert tui.runner() is classic.run
-    monkeypatch.setenv("OVAT_AGENT_UI", "Classic ")
-    assert tui.runner() is classic.run
-    monkeypatch.setenv("OVAT_AGENT_UI", "anything else")
     assert tui.runner() is agent_app.run
 
 
@@ -1705,12 +1702,10 @@ def test_context_window_shows_percentage_in_the_bottom_bar():
 
 # ---- `ovat agent --continue / --resume` ------------------------------------------
 
-def test_ovat_agent_continue_and_resume_on_the_command_line(
-        monkeypatch, tmp_path):
+def test_ovat_agent_continue_and_resume_on_the_command_line(tmp_path):
     from typer.testing import CliRunner
 
     from ovat.cli.main import app as cli
-    from ovat.tui import app as classic
     invoke = CliRunner().invoke
     workflow = tmp_path / "w.yml"
     workflow.write_text("model: {}\n")
@@ -1724,16 +1719,6 @@ def test_ovat_agent_continue_and_resume_on_the_command_line(
     assert result.exit_code == 1, result.output
     assert "No saved session nope" in result.output
     assert "Traceback" not in result.output
-
-    # the classic app takes neither flag, and a plain start must not pass
-    # them to it (it would fail with a TypeError)
-    calls = []
-    monkeypatch.setattr(classic, "run", lambda *a, **k: calls.append((a, k)))
-    monkeypatch.setenv("OVAT_AGENT_UI", "classic")
-    assert invoke(cli, ["agent", str(workflow)]).exit_code == 0
-    assert calls == [((str(workflow),), {})]
-    result = invoke(cli, ["agent", str(workflow), "--continue"])
-    assert result.exit_code == 1 and "need the new app" in result.output
 
 
 @pytest.mark.parametrize("cancelled", [False, True])
@@ -1805,3 +1790,26 @@ def test_the_voice_notice_describes_how_recording_really_ends():
             assert "10" in text and "seconds" in text
             assert "pause or press" not in text
     run(go())
+
+
+def test_telemetry_view_without_a_session_has_no_agent_source():
+    from ovat.tui import telemetry
+    names = [s.name for s in telemetry.TelemetryView().collector.sources]
+    assert "agent" not in names
+    agent = object()
+    names = [s.name for s in telemetry.TelemetryView(
+        agent=lambda: agent).collector.sources]
+    assert "agent" in names
+
+
+def test_telemetry_prints_whole_numbers_whole_and_flags_a_pinned_cpu():
+    from ovat.tui import telemetry
+    threads = telemetry.tile_text("THREADS", "", "system.threads", 4.0)
+    assert threads.plain.splitlines()[1] == "4"
+    cpu = telemetry.tile_text("SYS CPU", "%", "system.cpu_pct", 97.0)
+    assert "red" in str(cpu.spans) or telemetry.ui.RED in str(cpu.spans)
+    assert telemetry.level_style("system.cpu_pct", 50.0) == ""
+    assert telemetry.ui.YELLOW in telemetry.level_style("npu.utilization", 90)
+    # A dynamic KV cache sits near 100% normally, and process CPU is summed over cores.
+    assert telemetry.level_style("ovms.kv_cache_pct", 99.0) == ""
+    assert telemetry.level_style("system.proc_cpu_pct", 103.0) == ""
