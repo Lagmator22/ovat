@@ -72,22 +72,15 @@ class ChatTextArea(TextArea):
         Binding(
             "alt+right", "cursor_word_right", "Word Right", show=False, priority=True
         ),
-        # Ctrl+V triggers an explicit clipboard-image paste on platforms where
-        # we support it. On other platforms the binding is not registered, so
-        # Textual's default text-paste action handles the key instead and the
-        # user never discovers a feature that wouldn't work for them.
-        *(
-            [
-                Binding(
-                    "ctrl+v",
-                    "paste_image_from_clipboard",
-                    "Paste image from clipboard",
-                    show=False,
-                    priority=True,
-                )
-            ]
-            if platform.system() == CLIPBOARD_IMAGE_PASTE_SUPPORTED_SYSTEM
-            else []
+        # Bind ctrl+v and super+v cleanly across platforms so pasting text
+        # works via OS/in-app clipboards even when terminal bracketed paste is
+        # unavailable, while checking macOS image pasteboards first when supported.
+        Binding(
+            "ctrl+v,super+v",
+            "paste",
+            "Paste from clipboard",
+            show=False,
+            priority=True,
         ),
     ]
 
@@ -144,18 +137,16 @@ class ChatTextArea(TextArea):
             super().__init__()
 
     class ClipboardImagePasted(Message):
-        """Posted when the OS clipboard should be probed for an image.
+        """Posted when the OS clipboard should be probed for an image."""
 
-        `notify_when_empty` is True for explicit user actions (ctrl+v key
-        binding, /paste-image command) so the user gets clear feedback if
-        nothing pasteable is on the clipboard. It is False for the implicit
-        empty-bracketed-paste trigger, which should stay silent because a
-        no-op is the expected outcome of pressing Cmd+V with an empty
-        clipboard.
-        """
-
-        def __init__(self, *, notify_when_empty: bool = False) -> None:
+        def __init__(
+            self,
+            *,
+            notify_when_empty: bool = False,
+            fallback_to_text: bool = False,
+        ) -> None:
             self.notify_when_empty = notify_when_empty
+            self.fallback_to_text = fallback_to_text
             super().__init__()
 
     def __init__(
@@ -418,8 +409,49 @@ class ChatTextArea(TextArea):
     def action_insert_newline(self) -> None:
         self.insert("\n")
 
+    def paste_text_from_clipboard(self) -> bool:
+        """Paste text from OS or internal clipboard into the input."""
+        if self.read_only:
+            return False
+        from ovat.tui.vibe.cli.clipboard import read_clipboard_text
+
+        try:
+            app = self.app
+        except NoActiveAppError:
+            app = None
+        text = read_clipboard_text(app)
+        if not text:
+            return False
+        text = maybe_prepend_at_for_path(text)
+        if result := self._replace_via_keyboard(text, *self.selection):
+            self.move_cursor(result.end_location)
+            return True
+        return False
+
+    def action_paste(self) -> None:
+        """Paste clipboard image (if supported & present) or text."""
+        if self.read_only:
+            return
+        from ovat.tui.vibe.cli.clipboard import _is_ssh_session
+
+        if (
+            platform.system() == CLIPBOARD_IMAGE_PASTE_SUPPORTED_SYSTEM
+            and not _is_ssh_session()
+        ):
+            self.post_message(
+                self.ClipboardImagePasted(
+                    notify_when_empty=False, fallback_to_text=True
+                )
+            )
+            return
+        self.paste_text_from_clipboard()
+
     def action_paste_image_from_clipboard(self) -> None:
-        self.post_message(self.ClipboardImagePasted(notify_when_empty=True))
+        self.post_message(
+            self.ClipboardImagePasted(
+                notify_when_empty=True, fallback_to_text=False
+            )
+        )
 
     def action_open_external_editor(self) -> None:
         editor = ExternalEditor()

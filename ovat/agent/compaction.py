@@ -11,7 +11,6 @@ import re
 
 from ovat.text import split_thinking
 
-# vibe/core/prompts/compact_system.md
 SYSTEM_PROMPT = """\
 You are a dedicated conversation summarizer. Your only job is to read a conversation transcript and produce a faithful, structured handoff summary for another LLM that will resume the task.
 
@@ -22,7 +21,6 @@ Rules:
 - Wrap the entire summary in <summary></summary> tags and output nothing outside them.
 """
 
-# vibe/core/prompts/compact.md
 REQUEST = """\
 CRITICAL: Respond with text only. Do NOT call any tools. Any tool call will be rejected.
 
@@ -48,15 +46,14 @@ Wrap the ENTIRE summary in <summary></summary> tags and output nothing outside t
 # user / assistant order a chat template expects.
 ACKNOWLEDGEMENT = "Understood. I will continue from this summary."
 
-# How much of the person's earlier wording rides along verbatim. Vibe keeps
-# 20 000 tokens; a local model has far less room.
+# Character budget for preserving earlier user prompts verbatim when resuming a
+# compacted session (tuned for smaller local model context windows).
 PREVIOUS_USER_MESSAGES_MAX_CHARS = 4000
 
 _SUMMARY = re.compile(r"<summary>(.*?)</summary>", re.DOTALL)
-# The envelope's own tags (vibe's reserved tags), escaped in everything put
-# inside it. The summary matters most: it retells tool output (a web page, a
-# document), and a planted "</compaction_summary>" would otherwise end the
-# summary early and make what follows read as the person's own words.
+# Reserved envelope tags escaped inside embedded content so tool output or
+# retrieved text containing a closing tag cannot terminate the summary block
+# prematurely.
 _TAGS = ("<previous_user_messages>", "</previous_user_messages>",
          "<previous_user_message>", "</previous_user_message>",
          "<compaction_summary>", "</compaction_summary>")
@@ -77,7 +74,7 @@ class CompactionFailed(Exception):
 
 
 def summary_messages(memory: list[dict], instructions: str) -> list[dict]:
-    """What the summarizing model is sent (vibe's fallback call)."""
+    """Build the system and user messages sent to the summarization model."""
     request = REQUEST
     if instructions.strip():
         request += f"\n## Additional Instructions\n{instructions.strip()}\n"
@@ -90,8 +87,8 @@ def summary_messages(memory: list[dict], instructions: str) -> list[dict]:
 
 
 def render_transcript(messages: list[dict]) -> str:
-    """The conversation as text (vibe manager._render_transcript): each turn
-    under its role, tool calls written out as `[calls name(args)]`."""
+    """Render conversation history as plain text by role, formatting tool calls
+    as `[calls name(args)]`."""
     blocks = []
     for message in messages:
         if message.get("role") == "system":
@@ -110,11 +107,11 @@ def render_transcript(messages: list[dict]) -> str:
 
 
 def summary_of(reply: dict) -> str:
-    """The summary out of the model's reply, or CompactionFailed.
+    """Extract the summary from the model reply, or raise CompactionFailed.
 
-    Vibe fails when the <summary> tags are missing. A small local model
-    often forgets them, and the memory is about to be replaced, so the
-    reply's own text is taken then: only an empty one fails."""
+    Small local models sometimes omit `<summary>` tags, so plain text outside
+    the tags is accepted as long as the reply is non-empty.
+    """
     if reply.get("tool_calls"):
         raise CompactionFailed(
             "The model answered with a tool call instead of a summary, so "
@@ -134,9 +131,11 @@ def summary_of(reply: dict) -> str:
 
 
 def previous_user_messages(memory: list[dict]) -> list[str]:
-    """The person's own messages, newest first into the budget (vibe
-    collect_prior_user_messages), oldest first in the result. An earlier
-    envelope is skipped: its summary is in the transcript the model read."""
+    """Select recent user prompts newest-first within budget, returned oldest-first.
+
+    Prior compaction envelopes are skipped because their summary is already
+    included in the transcript.
+    """
     chosen, room = [], PREVIOUS_USER_MESSAGES_MAX_CHARS
     for message in reversed(memory):
         text = message.get("content") or ""
@@ -151,8 +150,7 @@ def previous_user_messages(memory: list[dict]) -> list[str]:
 
 
 def envelope(memory: list[dict], summary: str) -> str:
-    """The one user message that stands for everything before it
-    (vibe render_compaction_context)."""
+    """Build the single compaction context message wrapping summary and recent prompts."""
     lines = [
         ENVELOPE_START,
         "",

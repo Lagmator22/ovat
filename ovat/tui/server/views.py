@@ -57,8 +57,8 @@ def agent_summaries(info: dict, active: str) -> tuple[AgentSummary,
 
 
 def tool_summaries(info: dict) -> list[ToolSummary]:
-    # is_custom stays False: the copied app shows a deprecation notice for a
-    # custom tool, and OVAT's tools are not Vibe's custom tools.
+    # Keep is_custom=False because OVAT tools use built-in schemas rather than
+    # deprecated upstream custom-tool slots.
     return [ToolSummary(name=t["name"]) for t in info.get("tools", [])]
 
 
@@ -96,19 +96,16 @@ class StatsBook:
                                else 0.0))
 
 
-# What /thinking offers. Vibe's picker lists effort levels; a chat template has
-# one switch, enable_thinking, so the levels are its two positions: "off" is
-# False and anything else is True. The server maps back in methods/config.py.
+# Map OVAT's binary `enable_thinking` toggle onto the /thinking picker's
+# discrete off/high effort choices; methods/config.py maps selections back.
 THINKING_OFF = "off"
 THINKING_ON = "high"
 THINKING_LEVELS = [THINKING_OFF, THINKING_ON]
 
 
 def model_choices(info: dict) -> tuple[list[ModelConfigView], ModelConfigView]:
-    """(the picker's models, the active one). The models are what the session
-    can switch to (info["models"], see ovat/agentic/models.py) as Vibe's
-    ModelConfigView list; the alias is the value `model.name` is set with and
-    the display name is what is shown. The running model is always in it."""
+    """Return ``(available_models, active_model)`` as ``ModelConfigView`` objects
+    for the model picker, ensuring the active model is always included."""
     window = int(info.get("context_window") or 0)
     thinking = THINKING_ON if info.get("thinking") else THINKING_OFF
     shown = info.get("model") or ""

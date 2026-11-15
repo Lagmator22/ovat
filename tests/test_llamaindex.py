@@ -112,9 +112,8 @@ def test_a_response_object_is_reduced_to_its_text():
 
 
 def test_running_inside_an_event_loop_is_refused_not_worked_around():
-    """A running loop means we are being called from async code. Quietly
-    spawning a second loop there is how you get a deadlock that only shows up
-    on someone else's machine, so this raises a readable error instead."""
+    """Calling synchronous ``run()`` inside an active asyncio event loop raises
+    a clear error instead of spawning a nested loop that can deadlock."""
     import asyncio
 
     tools, _ = _tools()

@@ -52,30 +52,26 @@ _WORDS = {
     "search_docs": ("Searching", "Searched", "Searching docs"),
     "transcribe": ("Transcribing", "Transcribed", "Transcribing audio"),
     "describe_image": ("Looking at", "Looked at", "Looking at an image"),
-    # The coding tools; the words are Vibe's own (read_file.py, write_file.py,
-    # edit.py, grep.py, bash.py).
+    # Built-in coding tools matching the frontend's presentation labels.
     "read_file": ("Reading", "Read", "Reading file"),
     "write_file": ("Creating", "Created", "Writing file"),
     "edit": ("Editing", "Edited", "Editing files"),
     "grep": ("Searching", "Searched", "Searching files"),
     "shell": ("Running", "Ran", "Running command"),
-    # todo, ask_user, web_fetch: Vibe's words (todo.py, ask_user_question.py,
-    # web_fetch.py). web_search is OVAT's own tool, same style.
+    # Structured helper and web tools using the same verb-tuple format.
     "todo": ("Updating", "Updated", "Managing todos"),
     "ask_user": ("Asking", "Asked", "Waiting for user input"),
     "web_fetch": ("Fetching", "Fetched", "Fetching URL"),
     "web_search": ("Searching", "Searched", "Searching the web"),
 }
 
-# Vibe's widget wants at least two options per question and adds "Other"
-# (free text) by itself. A question with fewer choices is padded so it can
-# be shown; the person can always type their own answer.
+# The prompt widget expects at least two options per question (adding an "Other"
+# free-text entry automatically). Pad short choice lists so any question opens.
 _PADDING = ("Not sure", "Skip")
 
 
 def question_request(question: str, choices: list[str]) -> UserQuestionRequest:
-    """The question as Vibe's widget wants it. Used for the running card and
-    for the callback (ovat/tui/server/questions.py)."""
+    """Build a ``UserQuestionRequest`` wire payload for ``tui/server/questions.py``."""
     labels = [c[:60] for c in choices]
     for pad in _PADDING:
         if len(labels) >= 2:
@@ -99,7 +95,7 @@ def _first_arg(arguments: dict) -> str:
 
 
 def _coding_detail(name: str, a: dict, display):
-    """The Vibe effect card for a coding tool call, from its arguments."""
+    """The TUI effect card for a coding tool call, from its arguments."""
     try:
         if name == "read_file":
             return FileReadEffectDetail(
@@ -157,7 +153,7 @@ def _coding_detail(name: str, a: dict, display):
 
 
 def _coding_output(shown: dict):
-    """The Vibe output model for what a coding tool reported, or None."""
+    """The TUI output model for what a coding tool reported, or None."""
     kind = shown.get("kind")
     if kind == "shell":
         stdout, stderr = shown.get("stdout", ""), shown.get("stderr", "")
@@ -206,8 +202,8 @@ def _coding_output(shown: dict):
             sources=[WebSearchEffectSource(**x) for x in
                      shown.get("sources") or []])
     else:
-        # ask_user has no result card of Vibe's own; its settled line says
-        # what the person answered.
+        # ask_user renders its answer in the settled card line rather than a
+        # structured result model.
         return None
     return output.model_dump(mode="json", by_alias=True)
 
@@ -240,8 +236,7 @@ def _coding_text(shown: dict) -> str:
 class Bridge:
     def __init__(self, session_id: str = SESSION_ID, first_id: int = 1) -> None:
         self.session_id = session_id
-        # The turn the next entries belong to. None outside a turn (and for
-        # the classic agent TUI, which has no turns).
+        # Active turn ID for subsequent history entries (None outside a turn).
         self.turn_id: str | None = None
         self._entries: dict[str, PublicEffectEntry] = {}
         self._ids = itertools.count(first_id)

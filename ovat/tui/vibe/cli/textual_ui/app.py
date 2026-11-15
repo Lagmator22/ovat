@@ -2116,7 +2116,9 @@ class VibeApp(App):  # noqa: PLR0904
     ) -> None:
         self.run_worker(
             handle_clipboard_image_paste(
-                self, notify_when_empty=message.notify_when_empty
+                self,
+                notify_when_empty=message.notify_when_empty,
+                fallback_to_text=message.fallback_to_text,
             ),
             exclusive=False,
         )

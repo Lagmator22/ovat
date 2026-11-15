@@ -1,14 +1,9 @@
 # ovat/tui/agent_text.py
-"""What the agent TUI says, as plain values both of its apps share.
+"""Formatted text helpers shared across agent TUI commands and views.
 
-There are two apps over the same AgentSession: the classic one
-(ovat/tui/app.py) and the one built on the copied Vibe app
-(ovat/tui/agent_app.py). Their commands print the same tables and lines, so
-the words live here once and each app only decides where to draw them.
-
-Functions return markdown text or a rich Text. A save or a load returns
-`(text, level)` so the caller can show a warning in the right style.
-Nothing in this file imports the UI toolkit's widgets.
+Functions return plain markdown strings or Rich ``Text`` objects (with
+save/load helpers returning ``(text, level)`` tuples) without importing UI
+widgets directly.
 """
 import time
 from pathlib import Path

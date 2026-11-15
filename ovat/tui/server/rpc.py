@@ -47,12 +47,11 @@ class RpcError(Exception):
 
 
 def not_supported(method: str) -> RpcError:
-    """The answer for every method OVAT does not serve.
+    """Build an error response for an unimplemented JSON-RPC method.
 
-    A method that exists in Vibe's protocol gets NOT_IMPLEMENTED, a name the
-    protocol does not know gets METHOD_NOT_FOUND. The copied client treats
-    both as "this backend does not have it" (plugins/read, for one), so the
-    screens that ask degrade instead of failing."""
+    Known protocol methods return NOT_IMPLEMENTED and unknown names return
+    METHOD_NOT_FOUND so optional panels degrade cleanly.
+    """
     code = (ProtocolErrorCode.NOT_IMPLEMENTED if method in SERVER_METHODS
             else ProtocolErrorCode.METHOD_NOT_FOUND)
     return RpcError(code, f"not supported in OVAT: {method}")
@@ -60,11 +59,8 @@ def not_supported(method: str) -> RpcError:
 
 @dataclass(frozen=True)
 class Reply:
-    """A response, plus work to do once it has been queued.
-
-    Vibe's server sends a response first and the events it causes after
-    (a turn answers `turn/start`, then announces itself); `after` is how a
-    handler asks for that order."""
+    """RPC response paired with an optional post-enqueue callback so emitted
+    notifications appear strictly after the RPC response."""
 
     response: ProtocolModel
     after: Callable[[], None] | None = None

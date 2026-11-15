@@ -204,11 +204,12 @@ def open_microphone(callback):
 
 
 class VoiceManager:
-    """Vibe VoiceManagerPort, with local rolling transcription.
+    """Implements ``VoiceManagerPort`` with local rolling Whisper transcription.
 
-    A listener with on_transcribe_partial receives replacement text. Other
-    listeners receive one final on_transcribe_text, as the port expects.
-    Settings are a callable because /workflow may replace the configuration.
+    Listeners exposing ``on_transcribe_partial`` receive incremental replacement
+    text; other listeners receive a final ``on_transcribe_text`` event.
+    Settings are provided via callable because ``/workflow`` can replace the
+    active configuration.
     """
 
     def __init__(self, settings, *, recorder=open_microphone, pipeline=None,

@@ -1,8 +1,9 @@
-"""Adapt local replacement partials to Vibe's text-insertion listener.
+"""Adapt local replacement partials to the TUI text-insertion listener.
 
-The copied input expects text deltas from a remote stream. Whisper can revise
-earlier words, so the adapter replaces only the dictation span and preserves
-the typed prefix, suffix and cursor. No copied input widget needs changing.
+The input widget expects incremental text deltas from a remote stream, whereas
+local Whisper revises earlier words as audio accumulates. This adapter swaps
+only the dictation span while preserving typed prefix, suffix, and cursor
+position.
 """
 from ovat.agentic.voice import VoiceManager
 from ovat.tui.vibe.cli.voice_manager.voice_manager_port import TranscribeState

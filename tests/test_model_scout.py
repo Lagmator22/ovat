@@ -425,8 +425,8 @@ def test_a_graph_that_shows_no_inputs_keeps_the_config_verdict(tmp_path):
 
 
 def test_resolve_says_a_missing_folder_is_missing(tmp_path, monkeypatch, capsys):
-    """A typo in the path was reported as "is not a text LLM", which sent the
-    user hunting for a model problem (AI PC, hands-on test T04)."""
+    """A typo in the model path must report that the directory is missing
+    instead of misclassifying it as a non-text model."""
     from ovat.cli.main import resolve_chat_model
     monkeypatch.setenv("OVAT_MODELS", str(tmp_path))
     monkeypatch.chdir(tmp_path)

@@ -1,17 +1,16 @@
 # ovat/tools/web_search.py
-"""The web_search tool: a web search through the provider the workflow names.
+"""The web_search tool: search the web via a configured provider.
 
-Vibe's web_search.py talks to Mistral's own service; OVAT has no such
-service, so this takes the provider from the tool's entry in workflow.yml:
+Takes the search provider configuration from the tool entry in ``workflow.yml``:
 
     - name: web_search
       provider: searxng        # searxng | tavily | serper | brave
-      base_url: http://localhost:8080   # searxng only: your instance
-      api_key_env: TAVILY_API_KEY       # NAME of the variable, never the key
+      base_url: http://localhost:8080   # searxng only: instance URL
+      api_key_env: TAVILY_API_KEY       # environment variable name, never the key
 
-The key is read from the environment at call time and is never written to a
-result, an error or the trace. Permission is `ask` by default: the query
-leaves the machine.
+API keys are read from the environment at call time and never written to
+results, errors, or telemetry traces. Default permission is ``ask`` because
+search queries leave the local machine.
 
 Provider request and result fields checked on 2026-10-16:
 - SearXNG: https://docs.searxng.org/dev/search_api.html and

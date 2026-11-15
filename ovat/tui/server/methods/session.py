@@ -224,10 +224,9 @@ def _last_compaction(history: list[PublicHistoryEntry]) -> int:
 
 @routes.method("session/compact", SessionCompactParams)
 async def session_compact(ctx, params: SessionCompactParams):
-    """/compact: the model's memory becomes a summary of itself. The
-    transcript keeps everything the person saw and gains a checkpoint where
-    it happened. Mirrors vibe/app_server/_handler.py `_compact`: refused
-    while a turn runs, COMPACTION_FAILED when no summary came."""
+    """/compact: replace model memory with a summary while keeping the full
+    transcript and adding a compaction checkpoint. Refuses while a turn runs
+    and returns COMPACTION_FAILED when summarization fails."""
     projector = _idle_session(ctx, params.session_id, "compacting")
     try:
         # The summary is a blocking model call: off the event loop.
@@ -342,9 +341,8 @@ async def ready_read(ctx, params: SessionReadyReadParams):
 
 def history_page(entries: list[PublicHistoryEntry], *, turn_id: str | None,
                  before: str | None, after: str | None, limit: int):
-    """(page, cursor_before, cursor_after): the same paging as Vibe's server.
-    The cursors are entry ids; `before` is set when older entries remain,
-    `after` when newer ones do."""
+    """Return ``(page, cursor_before, cursor_after)`` paginated by entry id.
+    `before` is set when older entries remain; `after` when newer ones do."""
     if turn_id is not None:
         entries = [e for e in entries if e.turn_id == turn_id]
     if after is not None:

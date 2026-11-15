@@ -1,16 +1,15 @@
 # ovat/tools/read_file.py
 """The read_file tool: numbered lines of a text file inside the project.
 
-Mirrors Mistral Vibe's read_file.py (vibe/core/tools/builtins), minus its
-AGENTS.md discovery, sensitive-file patterns and IO port. Same contract:
-1-indexed offset, a line limit, a byte cap, line numbers in front.
+Reads files strictly within the project sandbox using 1-indexed line offsets,
+a line limit, a byte cap, and numbered output lines.
 """
 from pathlib import Path
 
 from ovat.tools.project import Shown, fail, resolve_inside, shown_path
 
-DEFAULT_LINE_LIMIT = 2000        # Vibe's DEFAULT_LINE_LIMIT
-MAX_BYTES = 50 * 1024            # Vibe's MAX_BYTES
+DEFAULT_LINE_LIMIT = 2000
+MAX_BYTES = 50 * 1024
 
 
 def read_file_impl(file_path: str, root: Path, offset: int | None = None,

@@ -116,14 +116,19 @@ def _convert_to_png_via_sips(data: bytes, *, source_format: str) -> bytes | None
 
 
 async def handle_clipboard_image_paste(
-    app: VibeApp, *, notify_when_empty: bool
+    app: VibeApp,
+    *,
+    notify_when_empty: bool,
+    fallback_to_text: bool = False,
 ) -> None:
     if not is_clipboard_image_paste_supported():
-        # Silently no-op: keybinding and slash command are hidden on
-        # unsupported platforms so the user is never invited to use them.
+        if fallback_to_text:
+            _paste_text_into_chat_input(app)
         return
     data = await asyncio.to_thread(read_clipboard_image)
     if data is None:
+        if fallback_to_text and _paste_text_into_chat_input(app):
+            return
         if notify_when_empty:
             app.notify(
                 "No image found on the clipboard.", severity="warning", timeout=3
@@ -192,6 +197,14 @@ def insert_image_token_at_cursor(app: VibeApp, path: Path) -> bool:
     prefix = "" if not prev_char or prev_char.isspace() else " "
     text_area.insert(f"{prefix}{token} ")
     return True
+
+
+def _paste_text_into_chat_input(app: VibeApp) -> bool:
+    try:
+        text_area = app.query_one(ChatTextArea)
+    except Exception:
+        return False
+    return text_area.paste_text_from_clipboard()
 
 
 # Re-exports for testing without touching private names from outside.

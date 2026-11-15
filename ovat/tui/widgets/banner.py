@@ -1,11 +1,11 @@
 # ovat/tui/widgets/banner.py
 # Layout adapted from Mistral Vibe (https://github.com/mistralai/mistral-vibe,
 # vibe/cli/textual_ui/widgets/banner/banner.py), Copyright Mistral AI, Apache
-# License 2.0. Changed for OVAT: OVAT's chip mark instead of Vibe's mascot,
-# OVAT's facts (model, device, engine, tools, subagents), no Vibe state.
-"""The welcome lines at the top of the transcript.
+# License 2.0. Changed for OVAT: OVAT's chip mark and OVAT's runtime facts
+# (model, device, engine, tools, subagents).
+"""Welcome card rendered at the top of the transcript:
 
-    ⠀⣿⣿⣿⣿⣿⡇   OVAT v1.2.0 · Qwen3.5-4B-int4-ov on GPU · native
+    ⠀⣿⣿⣿⣿⣿⡇   OVAT v1.4.0 · Qwen3.5-4B-int4-ov on GPU · native
     ⠀⣿⣿⣿⣿⣿⡇   1 tool · 3 subagents · workflow.yml
     ⠀⣿⣿⣿⣿⣿⡇   Type /help for more information
 

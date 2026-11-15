@@ -116,7 +116,7 @@ agent:
 
 ```bash
 ovat serve workflow.yml                       # start the model server
-ovat run workflow.yml -i "what did the Q3 review conclude?"
+ovat run workflow.yml -i "what tools do you have?"
 ```
 
 <picture>
@@ -124,12 +124,11 @@ ovat run workflow.yml -i "what did the Q3 review conclude?"
   <img src="assets/diagrams/core-flow-light.svg" alt="workflow.yml is checked against a strict schema, the agent factory wires the model, tools and search, one of four engines runs the loop, and the model runs on an OVMS server or locally through openvino_genai, on an Intel CPU, GPU or NPU. The answer comes back with its sources.">
 </picture>
 
-That is the whole thing. The loop, the schemas, the history, the retries and the
-error messages are the toolkit's job. Twelve commands and one command group cover the rest:
+That is the whole setup. Without a `rag:` block, `search_docs` runs in stub mode so you can check the wiring first; Section 5 adds real document retrieval. The loop, schemas, history, retries and error messages belong to OVAT. Twelve CLI commands and the `ovat a2a` group (plus running bare `ovat` to open the terminal UI) cover the lifecycle:
 
 | Command | Does |
 | --- | --- |
-| `ovat setup` | install the model server for this OS, once |
+| `ovat setup` | install OpenVINO Model Server for this OS, once |
 | `ovat init` | write a starter `workflow.yml` |
 | `ovat doctor` | check Python, devices, drivers, OVMS, and your config |
 | `ovat serve` / `--stop` | start and stop the model server |
@@ -139,8 +138,7 @@ error messages are the toolkit's job. Twelve commands and one command group cove
 | `ovat bench` | run one question through every engine, side by side |
 | `ovat models` | list and pull models |
 | `ovat telemetry` | live CPU / RAM / Intel hardware numbers |
-| `ovat` | a full-screen terminal UI |
-| `ovat agent` | the agent TUI: tools, approvals, subagents, voice |
+| `ovat` / `ovat agent` | open the full-screen terminal agent UI (`ovat tui` is an alias) |
 | `ovat a2a serve` | offer a workflow to other agents over A2A |
 
 <picture>
@@ -224,10 +222,10 @@ environment variable is needed.** Run it once per machine.
 
 It installs OVMS 2026.4.1, the version OVAT is tested against. That pin was
 measured, not picked for being newest: on 15 tool-calling questions through
-all four engines, 2026.4.1 answered 56 of 60 correctly against 42 of 60 for
-2026.2.1, and its GPU server peaked at 4.9 GB instead of 17.3 GB. If an older
-OVMS is already installed, `ovat setup` and `ovat doctor` say so, and
-`ovat setup --force` replaces it.
+all four engines on a Windows AI PC, 2026.4.1 answered 56 of 60 correctly
+against 42 of 60 for 2026.2.1, and its GPU server peaked at 4.9 GB during
+those runs instead of 17.3 GB. If an older OVMS is already installed,
+`ovat setup` and `ovat doctor` say so, and `ovat setup --force` replaces it.
 
 On macOS it tells you there is nothing to install, because Intel publishes
 Windows and Linux x86-64 builds only, and points you at `ovat chat`, which
@@ -339,7 +337,7 @@ rag:
 
 Every value is a swappable string. `provider: ovms` embeds on the server instead
 of locally; `db_path` can live anywhere. Full walkthrough:
-[`examples/rag/`](../examples/rag/).
+[`examples/rag/`](https://github.com/Lagmator22/ovat/tree/main/examples/rag).
 
 ---
 
@@ -394,7 +392,7 @@ ovat run workflow.yml -i "..." --llamaindex
 ovat run workflow.yml -i "..." --langchain      # --react also works
 ```
 
-Full walkthrough: [`examples/react/`](../examples/react/).
+Full walkthrough: [`examples/react/`](https://github.com/Lagmator22/ovat/tree/main/examples/react).
 
 ---
 
@@ -430,18 +428,25 @@ understanding in one set of weights, so the whole example costs 3.5 GB plus
 Nothing here is set outside the file. A workflow that names its models is a
 workflow someone else can run.
 
-Full walkthrough: [`examples/audio-multimodal/`](../examples/audio-multimodal/).
+Full walkthrough: [`examples/audio-multimodal/`](https://github.com/Lagmator22/ovat/tree/main/examples/audio-multimodal).
 
 ---
 
 ## 8. A terminal UI, if you want one
 
-Everything above is the CLI, and the CLI is the product. But there is also a
+Everything above is the CLI, and the CLI is the core product. OVAT also ships a
 full-screen terminal app: `pip install "ovat[tui]"`, then run `ovat` (or
-`ovat agent`). It is a chat-first terminal agent. You point it at a workflow,
-and it streams the answer with foldable reasoning, shows every tool call as a
-card, swaps models and engines with `/model` and `/engine`, and asks before it
-does anything that writes a file, runs a command or sends data off the machine.
+`ovat agent`). Point it at a workflow and it streams answers and foldable
+reasoning on the native engine, shows every tool call as a structured card,
+swaps models and engines with `/model` and `/engine`, and pauses for explicit
+approval before writing files, running shell commands or calling external
+agents.
+
+Security boundaries are kept outside the repository: an untrusted directory's
+`./workflow.yml` is never loaded automatically until you approve it with
+`/trust` or `--trust` (because loading can start `mcp_stdio` servers), and
+"Always allow" rules live in `~/.ovat/permissions.json` rather than inside the
+project tree.
 
 <div align="center">
 <img src="assets/screens/agent-tui/hero-agent-start.png" width="820px" alt="The OVAT agent TUI right after start on an Intel AI PC: the banner says OVAT v1.2.0, Qwen3.5-4B-int4-ov on GPU, native engine, 1 tool and 4 subagents. The slash menu is open, and the bar shows live CPU, GPU, NPU and RAM.">
@@ -539,9 +544,12 @@ And the models themselves:
 > and `model.max_tokens` (4096 by default) if you are near your RAM limit; the steady
 > figures are what to plan for, not a ceiling.
 
-The 4B numbers are measured on a real Intel AI PC; the rows written with `~` are estimates from parameter count and precision, not measurements. Note the peak sits **2.2 GB
-above** steady state, the load spike decides whether it fits, which is why an
-8 GB machine should start at 0.8B even though 4B "looks" like it fits.
+The 4B numbers were measured on a real Intel AI PC (`4.3 GB` steady and
+`6.5 GB` peak during initial model load); the rows written with `~` are
+estimates from parameter count and precision, not measurements. Note the peak
+sits **2.2 GB above** steady state, the load spike decides whether a model
+fits, which is why an 8 GB machine should start at 0.8B even though 4B looks
+like it fits on steady-state RAM.
 
 Switching tiers is two lines:
 
@@ -599,7 +607,7 @@ missing sensor and an idle one look identical in a graph.
 OVAT itself has no OpenTelemetry exporter. If you want per-request
 OpenTelemetry spans, the optional [plano](https://github.com/katanemo/plano)
 gateway produces them. It runs in front of OVMS, outside OVAT. See
-[`examples/plano/`](../examples/plano/).
+[`examples/plano/`](https://github.com/Lagmator22/ovat/tree/main/examples/plano).
 
 ---
 
@@ -674,9 +682,11 @@ ovat doctor workflow.yml
 If `doctor` is green, you are four commands from a working local agent.
 
 - **Repository**, <https://github.com/Lagmator22/ovat>
-- **Architecture**, [`docs/ARCHITECTURE.md`](ARCHITECTURE.md), how the parts fit together
-- **Design decisions**, [`docs/DECISIONS.md`](DECISIONS.md), why each part works the way it does
-- **Examples**, [`examples/`](../examples/), runnable configs from a minimal one to RAG, audio and vision, the agent TUI with subagents and A2A, and a coding agent
+- **Interactive docs site**, <https://lagmator22.github.io/ovat-navigate/>, guided tour of the architecture, results and codebase
+- **Workflow YAML reference**, [`docs/workflow_yaml_reference.md`](https://github.com/Lagmator22/ovat/blob/main/docs/workflow_yaml_reference.md), generated directly from the Pydantic schema
+- **Architecture**, [`docs/ARCHITECTURE.md`](https://github.com/Lagmator22/ovat/blob/main/docs/ARCHITECTURE.md), how the parts fit together
+- **Design decisions**, [`docs/DECISIONS.md`](https://github.com/Lagmator22/ovat/blob/main/docs/DECISIONS.md), why each part works the way it does
+- **Examples**, [`examples/`](https://github.com/Lagmator22/ovat/tree/main/examples), runnable configs from minimal CPU setups to RAG, audio and vision, the agent TUI with subagents and A2A, and a coding agent
 - **OpenVINO Model Server**, <https://docs.openvino.ai/2026/model-server/ovms_what_is_openvino_model_server.html>
 
 OVAT is Apache-2.0 and built as

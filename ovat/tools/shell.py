@@ -1,19 +1,15 @@
 # ovat/tools/shell.py
 """The shell tool: run one command in the project folder.
 
-Mirrors Mistral Vibe's bash.py (vibe/core/tools/builtins) in what the model
-sees: stdout and stderr kept apart, an exit code, a timeout, capped output.
-Left out on purpose: its 1,200-line command policy, managed shells and
-experimental variants. Whether a command may run is the permission gate's
-job (default: ask), not a parser's.
+Returns separated stdout and stderr, exit code, timeout enforcement, and capped
+output. Execution permission is governed directly by the workflow permission
+gate (default: ask).
 
-Two things that cost real sessions elsewhere:
-- Kill the whole tree. A timed-out `sh -c "sleep 999"` leaves the sleep
-  running if only the shell dies. POSIX: the command gets its own process
-  group and the group is killed. Windows: ovat.cli.shell.kill (psutil walk),
-  the same code Esc uses in the TUI.
-- Drain both pipes on threads. Waiting for the exit first deadlocks as soon
-  as a command writes more than a pipe buffer holds.
+Process management guarantees:
+- Full process-tree termination: timed-out `sh -c "sleep ..."` commands kill the
+  entire process group on POSIX or walk descendants with `ovat.cli.shell.kill`
+  on Windows (the same path used when interrupting via Esc in the TUI).
+- Concurrent stream draining on worker threads to avoid pipe buffer deadlocks.
 """
 import locale
 import os

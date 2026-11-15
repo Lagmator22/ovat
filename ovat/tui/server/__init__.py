@@ -1,25 +1,25 @@
 # ovat/tui/server/__init__.py
-"""OVAT's app server: the other end of the copied TUI's wire.
+"""OVAT's JSON-RPC app server backing the terminal client.
 
-The copied Vibe TUI (ovat/tui/vibe/) never touches an agent. It talks
-JSON-RPC to an "app server" through ovat/tui/vibe/app_server/session.py. This
-package is that server, written for OVAT's own AgentSession
-(ovat/agentic/session.py), so the TUI's code stays an unchanged copy:
+The terminal frontend (`ovat/tui/vibe/`) talks exclusively over JSON-RPC via
+`AppServerSession` (`ovat/tui/vibe/app_server/session.py`). This package
+implements that server over OVAT's `AgentSession` (`ovat/agentic/session.py`)
+so frontend modules stay decoupled from agent execution:
 
-    rpc.py         the JSON-RPC loop: framing, dispatch, errors, callbacks
-    context.py     one conversation: the AgentSession and what shares it
-    projector.py   agent reports -> the session the TUI reads, numbered events
-    turns.py       a turn, the queue behind it, how it ends
-    approvals.py   the ApprovalBroker as Vibe callbacks
-    shell_runs.py  `!command`
-    views.py       runtime, config and stats pictures
-    methods/       one handler per JSON-RPC method
-    bridge.py      tool, subagent and remote events -> history entries
+    rpc.py         JSON-RPC loop: framing, dispatch, errors, callbacks
+    context.py     conversation container: AgentSession and shared state
+    projector.py   session events mapped to numbered projector events
+    turns.py       turn lifecycle, queue management, completion handling
+    approvals.py   ApprovalBroker wired to JSON-RPC callbacks
+    shell_runs.py  `!command` execution
+    views.py       runtime, config, and statistics snapshots
+    methods/       JSON-RPC method handlers
+    bridge.py      tool, subagent, and remote status events -> history entries
 
-Nothing here imports textual, and nothing talks to a network.
+Imports neither Textual nor network sockets.
 
-`start_ovat_app_server` wires it all in one process: a memory transport, the
-server task, the copied client and its session.
+`start_ovat_app_server` wires the memory transport, server task, client, and
+session inside a single process.
 """
 from __future__ import annotations
 
@@ -153,8 +153,7 @@ async def start_ovat_app_server(
             resume_session_id=resume_session_id,
             continue_session=continue_session)
     except BaseException:
-        # The client closed itself on the failure (and with it, its end of
-        # the wire); the server task and the agent are still ours to stop.
+        # Clean up server task and agent session after client initialization fails.
         await client.close()
         await handle.close()
         raise

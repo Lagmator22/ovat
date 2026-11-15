@@ -1,20 +1,19 @@
 # ovat/tools/ask_user.py
-"""The ask_user tool: put one question to the PERSON and wait for the answer.
+"""The ask_user tool: ask the user one question and return their answer.
 
-Mirrors Mistral Vibe's ask_user_question.py (vibe/core/tools/builtins) and
-its questions.py. Vibe takes a list of questions with options; OVAT takes
-one question and optional choices, which is what a small local model can
-fill in reliably. The reply to the model is the person's answer as text.
+Accepts a single question with optional predefined choices (a compact schema
+that smaller local models fill reliably) and returns the answer as text.
 
-Who answers is `bus.asker` (agent/questions.py). Without one (`ovat run`, a
-bench worker, an A2A server) the tool says so AT ONCE: a headless run must
-never wait for someone who is not there.
+Interactive responses are supplied by `bus.asker` (`tui/server/questions.py`).
+Headless callers (`ovat run`, benchmark workers, and A2A servers) have no
+asker attached and immediately receive an informational error instead of
+blocking.
 """
 from ovat.tools.project import Shown, fail
 
 NO_PERSON = ("Error: there is no person to ask here; decide yourself or say "
              "what you need.")
-MAX_CHOICES = 4                  # Vibe recommends 2-4 options
+MAX_CHOICES = 4                  # keep selectable options compact in prompts/UI
 
 
 def ask_user_impl(question: str, choices: list | None, bus) -> str:

@@ -34,15 +34,8 @@ def test_run_checks_includes_the_base_checks():
 
 
 def test_doctor_reports_on_every_engine_the_factory_offers():
-    """doctor checked LangChain and nothing else, which was complete while
-    react was the only framework engine. Since W7-W8 there are four, so on a
-    box with LlamaIndex and the OpenAI Agents SDK missing, doctor still said
-    "All clear" and `ovat bench` then failed on two of its four rows. The
-    point of doctor is to answer "what is ready here" before something else
-    has to fail to tell you.
-
-    Driven off factory.AGENT_TYPES so a fifth engine cannot be added without
-    this failing: doctor going quietly stale is the bug being fixed.
+    """Verify doctor inspects every engine registered in ``factory.AGENT_TYPES``
+    so newly added engines cannot remain unchecked and fail later in ``bench``.
     """
     from ovat.agent.factory import AGENT_TYPES
 

@@ -1,12 +1,10 @@
 # ovat/tools/grep.py
-"""The grep tool: find a regex in the project's files.
+"""The grep tool: search project files by regular expression.
 
-Mirrors Mistral Vibe's grep.py (vibe/core/tools/builtins): ripgrep when it is
-installed, the same exclude list, smart case (all lowercase pattern ignores
-case), a match cap and a byte cap. Vibe falls back to GNU grep; OVAT falls
-back to a plain Python walk instead, because Windows has neither and a tool
-that needs a second program installed is a tool that fails on the demo PC.
-Output lines are `path:line:text`, relative to the project folder.
+Uses ripgrep when available and falls back to a pure-Python directory walk
+so searches work without external binaries across Windows, Linux, and macOS.
+Applies smart case (all-lowercase patterns ignore case), directory/file
+exclusions, match/byte caps, and formats output as relative `path:line:text`.
 """
 import fnmatch
 import os
@@ -17,13 +15,13 @@ from pathlib import Path
 
 from ovat.tools.project import Shown, fail, is_sensitive_path, resolve_inside
 
-DEFAULT_MAX_MATCHES = 100        # Vibe's default_max_matches
-MAX_OUTPUT_CHARS = 64_000        # Vibe's max_output_bytes
-SEARCH_TIMEOUT = 60              # Vibe's default_timeout
-MAX_LINE_CHARS = 300             # one minified line must not eat the cap
-MAX_FILE_BYTES = 2_000_000       # the Python walk skips bigger files
+DEFAULT_MAX_MATCHES = 100
+MAX_OUTPUT_CHARS = 64_000
+SEARCH_TIMEOUT = 60
+MAX_LINE_CHARS = 300             # avoid exhausting the output budget on minified lines
+MAX_FILE_BYTES = 2_000_000       # skip very large files during the Python walk
 
-# Vibe's exclude_patterns, folders first.
+# Default excluded directories and files, checked directories-first.
 SKIP_DIRS = {".venv", "venv", ".env", "env", "node_modules", ".git", ".ovat",
              "__pycache__", ".pytest_cache", ".mypy_cache", ".tox", ".nox",
              "htmlcov", "dist", "build", ".idea", ".vscode"}

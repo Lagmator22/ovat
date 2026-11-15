@@ -69,12 +69,9 @@ async def config_schema(ctx, params: ConfigSchemaReadParams):
         config_schema=WorkflowConfig.model_json_schema())
 
 
-# Vibe's `config/fields/read` lists every setting with where each value is set
-# (default, a config layer...) and the layers a write may name; the settings
-# screen is drawn from it, and the /model picker asks it before opening, to
-# refuse a model an administrator pinned. OVAT has no administrator layer: the
-# list is the settings OVAT really has (settings.fields), and the one write
-# target is the workflow file.
+# Lists every configurable field along with where its active value originates
+# (`workflow`, `overrides`, `preferences`, or `default`) and writable targets.
+# OVAT writes strictly to `workflow` (no separate administrator TOML layers).
 @routes.method("config/fields/read", ConfigFieldsReadParams)
 async def config_fields(ctx, params: ConfigFieldsReadParams):
     ctx.require_session(params.session_id)
@@ -93,16 +90,15 @@ def _theme_names() -> set[str]:
     return {views.AUTO_THEME, OVAT_THEME.name, *BUILTIN_THEMES}
 
 
-# Mirrors Vibe's `config/write` (vibe/app_server/_resources.py `_config_write`):
-# refused during a turn (CONFLICT); an invalid edit comes back `rejected`; a
-# failure comes back in `failures`; a write that asked for it
-# (`reload_runtime`) builds the agent again. Without that flag the settings
-# screen writes several fields and sends one `config/reload` when it closes,
-# which rebuilds once, and only if the file changed (ServerContext.reload).
+# Handles `config/write`: refused during a turn (CONFLICT); invalid edits
+# return `rejected`; failures populate `failures`; writes requesting
+# `reload_runtime` rebuild the agent. When the settings modal writes multiple
+# fields at once, it sends one trailing `config/reload` on close, which rebuilds
+# at most once if the file changed (ServerContext.reload).
 #
-# All or nothing: every op is planned first, and the file is written only if
-# the whole result is a valid workflow. A setting Vibe has and OVAT does not
-# (voice, narrator...) is answered "not used by OVAT" and changes nothing.
+# All-or-nothing: every op is planned first, and the file is written only if
+# the whole result stays a valid workflow. Unused protocol fields (voice,
+# narrator, etc.) return a "not used by OVAT" message without modifying files.
 @routes.method("config/write", ConfigWriteParams)
 async def config_write(ctx, params: ConfigWriteParams):
     ctx.require_session(params.session_id)
@@ -153,10 +149,9 @@ async def config_write(ctx, params: ConfigWriteParams):
 
 # ---- the model and thinking pickers (/model, /thinking) -------------------------
 
-# Mirrors Vibe's model_config_write_ops in app_server/_config_write.py:
-# the pickers write the same fields as the settings screen and reload once.
-# An empty alias follows the workflow's default model. The rebuild keeps
-# native conversation memory through ServerContext.reload/pick.
+# Handles `config/model/write` from /model and /thinking pickers by mapping
+# selections onto `config/write` ops with `reload_runtime=True`. An empty alias
+# unpins to the workflow default; ServerContext.reload preserves native memory.
 @routes.method("config/model/write", ModelConfigWriteParams)
 async def config_model_write(ctx, params: ModelConfigWriteParams):
     ctx.require_session(params.session_id)
@@ -193,11 +188,9 @@ async def config_model_write(ctx, params: ModelConfigWriteParams):
     return response
 
 
-# Vibe's `config/reload` re-reads its configuration files and rebuilds the
-# agent loop with the messages kept. OVAT's configuration file is the
-# workflow: it is read again, and the agent rebuilt, only when the file
-# changed since the agent was built (a model pick has just rebuilt it, so the
-# reload the client sends right after one must not load the model twice).
+# Handles `config/reload` by rebuilding the agent only if `workflow.yml` has
+# changed since the last build, avoiding duplicate loads right after a picker
+# write already triggered a reload.
 @routes.method("config/reload", ConfigReloadParams)
 async def config_reload(ctx, params: ConfigReloadParams):
     ctx.require_session(params.session_id)

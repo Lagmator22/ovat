@@ -446,7 +446,7 @@ def test_an_undecoded_tool_call_from_a_framework_engine_is_not_ok():
 # (sampling presets, guided generation, the thinking switch) needs the rate.
 
 class _Flaky:
-    """Fails every other run, like the C1 engine did."""
+    """Fails every second run to verify repeat aggregation."""
 
     calls = 0
 

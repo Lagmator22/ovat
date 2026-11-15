@@ -18,10 +18,8 @@ from ovat.config.workflow import load_workflow
 OK, WARN, FAIL = "ok", "warn", "fail"
 
 
-# Worst first. The order every view of the checks sorts into (the CLI table,
-# the doctor screen, /doctor, the app server's diagnostics list), because the
-# point of running doctor is to find what is broken, and a fail sitting below
-# nine oks is a fail you scroll past.
+# Severity sort order used across CLI tables, /doctor, and server diagnostics,
+# placing failures first so urgent problems appear before healthy checks.
 SEVERITY = {FAIL: 0, WARN: 1, OK: 2}
 
 
@@ -56,16 +54,11 @@ def check_core_deps() -> Check:
 
 
 # One row per framework engine: (label, agent.type, extra, modules needed).
-#
-# This was a single hand-written LangChain check, which was the whole story
-# while react was the only framework engine. Since W7-W8 there are four, and a
-# box missing LlamaIndex or the OpenAI Agents SDK still got "All clear" from
-# doctor and then two failed rows from `ovat bench`. doctor exists so the user
-# learns what is ready HERE before something else fails to tell them.
+# Covers every framework engine listed in factory.AGENT_TYPES so missing optional
+# extras are reported proactively before a bench or workflow run.
 #
 # The engines themselves live in factory.AGENT_TYPES; this table adds only the
-# per-engine install advice, which is presentation, and check_engines() below
-# asserts the two stay in step.
+# per-engine install guidance, and check_engines() asserts the two stay aligned.
 FRAMEWORK_ENGINES = (
     ("LangChain (react)", "react", "langchain", ("langchain", "langgraph")),
     ("LlamaIndex", "llamaindex", "llamaindex",

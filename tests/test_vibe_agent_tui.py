@@ -1,16 +1,13 @@
 # tests/test_vibe_agent_tui.py
-"""`ovat agent` on the full copied Vibe app (ovat/tui/agent_app.py), driven
-headless with Textual's Pilot.
+"""End-to-end tests for ``ovat agent`` (`ovat/tui/agent_app.py`) driven headless
+via Textual's Pilot.
 
-Nothing in the middle is faked: the app talks JSON-RPC to the REAL OVAT app
-server (ovat/tui/server/) through Vibe's own client, and only the AgentSession
-at the far end is a fake that plays a turn on a thread, exactly as the real
-one reports it (the same fake tests/test_ovat_app_server.py uses). So these
-tests cover the app, the wire and the server together; the agent and the
-model are the only parts not here.
+The TUI communicates over JSON-RPC with the real OVAT app server
+(`ovat/tui/server/`) through ``AppServerSession``; only ``AgentSession`` is
+faked to replay deterministic turns on a worker thread.
 
-Every wait is a bounded poll (the Windows runner is slower), and nothing uses
-pytest-asyncio: each test is one `asyncio.run`.
+All waits use bounded polling (for slower Windows CI runners) and each test runs
+via ``asyncio.run`` without ``pytest-asyncio``.
 """
 import asyncio
 import re
@@ -607,9 +604,7 @@ def test_at_offers_the_subagents_before_any_file():
 
 
 def test_todo_opens_the_plan_the_todo_tool_wrote():
-    """/todo stayed hidden as "OVAT has no todo tool" after the todo tool
-    arrived. It needs no server method: it reads the plan from the TODO
-    cards the bridge already makes."""
+    """Verify /todo renders the task plan from todo tool cards client-side."""
     from ovat.tui.vibe.cli.textual_ui.screens.todo_overlay import \
         TodoOverlayScreen
     todos = [{"id": "1", "content": "read the docs", "status": "in_progress",
@@ -1158,6 +1153,76 @@ def test_ctrl_c_copies_a_selection_and_then_counts_towards_quit(copied):
     run(go())
 
 
+def test_ctrl_v_and_super_v_paste_text_from_os_clipboard(monkeypatch):
+    """Ctrl+V and Cmd/Super+V paste OS clipboard text into the input on every
+    platform instead of failing with a missing-image warning on macOS."""
+    import pyperclip
+    from ovat.tui.vibe.cli.textual_ui.widgets.chat_input import paste_image
+
+    monkeypatch.setattr(clipboard, "_is_ssh_session", lambda: False)
+    monkeypatch.setattr(pyperclip, "paste", lambda: "pasted from os")
+    monkeypatch.setattr(paste_image, "read_clipboard_image", lambda: None)
+
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            inp = app.query_one("#input-body")
+            inp.focus()
+            await until(pilot, lambda: inp.input_widget is not None
+                        and app.focused is inp.input_widget)
+            await pilot.press("ctrl+v")
+            await until(pilot, lambda: inp.value == "pasted from os")
+            inp.value = ""
+            await pilot.press("super+v")
+            await until(pilot, lambda: inp.value == "pasted from os")
+    run(go())
+
+
+def test_ctrl_c_inside_input_syncs_app_and_os_clipboard(copied):
+    """Selecting text inside the prompt input and pressing Ctrl+C updates both
+    Textual's internal clipboard and clipboard.copy_to_clipboard."""
+    async def go():
+        async with running() as (app, pilot, fake, handle):
+            inp = app.query_one("#input-body")
+            inp.focus()
+            await until(pilot, lambda: inp.input_widget is not None
+                        and app.focused is inp.input_widget)
+            inp.value = "input selection"
+            inp.input_widget.select_all()
+            await pilot.press("ctrl+c")
+            await until(pilot, lambda: "input selection" in copied)
+            assert app.clipboard == "input selection"
+    run(go())
+
+
+def test_unverified_copy_notice_is_concise_and_ctrl_v_pastes_it(monkeypatch):
+    """When native OS clipboard verification is unavailable (e.g. SSH), the
+    notice stays concise without Shift hints and Ctrl+V still pastes it."""
+    from ovat.tui.vibe.cli.textual_ui.widgets.chat_input import paste_image
+
+    monkeypatch.setattr(clipboard, "_is_ssh_session", lambda: True)
+    monkeypatch.setattr(clipboard, "copy_to_clipboard", lambda text: False)
+    monkeypatch.setattr(paste_image, "read_clipboard_image", lambda: None)
+
+    async def go():
+        async with running(answer="SSH copy answer.") as (
+                app, pilot, fake, handle):
+            await say(pilot, "q")
+            await until(pilot, lambda: app.query(AssistantMessage)
+                        and not app._is_busy())
+            app.screen.text_select_all()
+            await pilot.press("ctrl+c")
+            await until(pilot, lambda: "SSH copy answer." in app.clipboard)
+            notice = str(app._inline_notice.render())
+            assert "hold shift" not in notice.lower()
+            inp = app.query_one("#input-body")
+            inp.focus()
+            await until(pilot, lambda: inp.input_widget is not None
+                        and app.focused is inp.input_widget)
+            await pilot.press("ctrl+v")
+            await until(pilot, lambda: "SSH copy answer." in inp.value)
+    run(go())
+
+
 def test_ctrl_enter_steers_a_waiting_prompt_into_the_running_turn():
     """A prompt typed while the agent works waits in the queue. Ctrl+Enter
     (or Enter on an empty prompt) hands it to the running turn instead of
@@ -1576,9 +1641,8 @@ def test_ovat_agent_ui_picks_the_app():
 
 
 def test_run_agent_closes_the_session_then_the_server(monkeypatch):
-    """The entry point's shutdown: the app's own cleanup closes the session,
-    the handle stops the server task and the agent. (The terminal side of
-    `_run_app_with_cleanup` is Vibe's; here it runs the app headless.)"""
+    """Shutting down closes the client session first, then stops the server
+    task and closes the underlying agent."""
     from ovat.tui import agent_app
     made = []
 
@@ -1680,8 +1744,8 @@ def test_the_copied_app_builds_its_banner_through_a_hook_and_ovat_swaps_it():
 
 
 def test_the_copied_app_reports_errors_to_no_service():
-    """Vibe sends crashes to Sentry. OVAT reports nowhere, so the reporting
-    code is gone, not only switched off; this keeps it from coming back."""
+    """Guard against external telemetry/crash SDK imports (e.g. Sentry)
+    re-entering the vendored frontend."""
     from pathlib import Path
     vibe = Path(__file__).parents[1] / "ovat" / "tui" / "vibe"
     offenders = [str(f.relative_to(vibe)) for f in vibe.rglob("*.py")

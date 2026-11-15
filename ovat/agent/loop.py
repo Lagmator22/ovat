@@ -230,7 +230,7 @@ class AgentLoop:
         return str(result)
 
     def run(self, user_message: str) -> str:
-        """I run the full loop for one user message and return the final text."""
+        """Run the full agent loop for one user message and return the final text."""
         with self._steering_lock:
             self._steering.clear()
             self._steering_open = True

@@ -179,7 +179,7 @@ def test_intel_telemetry_is_honest_about_macos():
     source = IntelHardwareSource()
     if sys.platform == "darwin":
         assert "macOS" in source.unavailable
-    # Wherever we are, an unavailable source samples nothing rather than lying.
+    # An unavailable source reports an empty sample rather than fabricating 0s.
     if source.unavailable:
         assert source.sample() == {}
 
@@ -1001,12 +1001,11 @@ def test_the_first_cpu_reading_is_skipped_rather_than_reported_as_zero():
     assert any(key.startswith("cpu0") for key in second)
 
 
-def test_machine_cpu_comes_from_our_own_readings_not_psutils_shared_clock(
+def test_machine_cpu_uses_instance_readings_not_psutil_shared_clock(
         monkeypatch):
-    """psutil.cpu_percent() keeps ONE "previous call" for the whole process,
-    so another caller makes ours cover microseconds and read 0.0. The bar
-    showed CPU 0% for a whole session. The headline figure is now the busy
-    share of the machine's CPU time between OUR two readings."""
+    """``psutil.cpu_percent()`` keeps a single module-wide timestamp, so another
+    caller in the process shortens the window and causes a 0.0 reading. The
+    headline metric uses the delta between two instance-local CPU time snapshots."""
     import collections
     import psutil
     from ovat.telemetry.sources import SystemSource

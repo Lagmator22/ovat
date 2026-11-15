@@ -37,7 +37,7 @@ def _server():
 
 
 def _start_with_fake(monkeypatch, tmp_path, fake):
-    # Patch Popen where model_server looks it up, so start() "launches" our fake.
+    # Patch Popen where model_server looks it up so start() launches the fake.
     monkeypatch.setattr("ovat.core.model_server.subprocess.Popen",
                         lambda *a, **k: fake)
     server = _server()
@@ -387,9 +387,9 @@ def test_stop_escalates_to_kill_and_still_cleans_up(monkeypatch, tmp_path):
 # stop_from_pidfile: the `ovat serve --stop` path, against a real process
 
 def test_stop_from_pidfile_stops_a_real_process(tmp_path, monkeypatch):
-    # Stubbed because this test is about SIGNALLING, not identity. The stand-in
-    # is a python process, which the identity probe correctly refuses to claim
-    # as our server; that probe has its own test.
+    # Stubbed because this test covers signaling rather than identity. The
+    # stand-in is a Python sleeper process, which the identity probe correctly
+    # declines to treat as a managed ovms server (tested separately).
     monkeypatch.setattr("ovat.core.model_server._pid_is_our_server",
                         lambda pid: True)
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
@@ -397,10 +397,9 @@ def test_stop_from_pidfile_stops_a_real_process(tmp_path, monkeypatch):
     with open(pid_path, "w", encoding="utf-8") as f:
         f.write(str(proc.pid))
 
-    # Zombie gotcha: this sleeper is OUR child, and a dead-but-unreaped child
-    # still answers os.kill(pid, 0), so the liveness poll would say "alive"
-    # forever. A real `ovat serve --stop` stops an orphan that init reaps
-    # instantly. This thread plays init's role and reaps the moment it dies.
+    # This sleeper is a child process, and a dead-but-unreaped zombie child
+    # still answers os.kill(pid, 0) as alive. Spawn a reaper thread so the
+    # process exits cleanly instead of polling until timeout.
     import threading
     threading.Thread(target=proc.wait, daemon=True).start()
 
@@ -438,9 +437,7 @@ def test_liveness_never_sends_signal_zero(tmp_path, monkeypatch):
     while passing on the one platform the bug actually affects, which is the
     worst possible way round.
     """
-    # Same reason as the test above: the stand-in sleeper is not named ovms, so
-    # the identity probe would refuse it. This test is about which SIGNAL is
-    # sent, not about whether the pid is ours.
+    # Identity probe stubbed so the test isolates signal selection.
     monkeypatch.setattr("ovat.core.model_server._pid_is_our_server",
                         lambda pid: True)
     import sys
@@ -453,7 +450,7 @@ def test_liveness_never_sends_signal_zero(tmp_path, monkeypatch):
     monkeypatch.setattr(model_server.os, "kill", recording_kill)
 
     pid_path = tmp_path / "ovms.pid"
-    # Our own pid: certainly alive, so the liveness branch is really taken.
+    # Current interpreter PID is guaranteed live so the liveness probe runs.
     pid_path.write_text(str(os.getpid()), encoding="utf-8")
 
     stop_from_pidfile(str(pid_path), wait_seconds=0)
@@ -490,7 +487,7 @@ def test_stop_from_pidfile_refuses_to_kill_a_process_that_is_not_ovms(tmp_path):
     message = stop_from_pidfile(str(pid_file))
     assert "not an ovms process" in message
     assert not pid_file.exists()            # stale file cleaned up
-    assert os.getpid()                       # ...and we are still here
+    assert os.getpid()                       # current process remains untouched
 
 
 def test_stop_from_pidfile_missing_file_is_a_calm_message(tmp_path):

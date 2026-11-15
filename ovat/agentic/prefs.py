@@ -4,7 +4,7 @@
 Maintains independent keys with read-modify-write updates so separate UI views
 preserve each other's settings:
 
-    config       last workflow selected by the chat launcher
+    config       last selected workflow path
     model_path   last local model folder selected
     theme        selected Textual theme name
 """

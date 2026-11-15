@@ -754,8 +754,8 @@ def resolve_chat_model(model_path: str | None,
     if kind in CHAT_KINDS:
         return model_path
     if not os.path.isdir(model_path):
-        # A wrong path is not "not a text LLM"; see chat_screen for the user
-        # that sentence misled.
+        # Report a missing path explicitly rather than classifying it as a
+        # non-text model.
         rprint(f"[red]No model folder at[/red] {esc(model_path)}.")
     else:
         rprint(f"[red]{esc(os.path.basename(model_path.rstrip('/')))} is not "
@@ -966,9 +966,9 @@ def init(
     if os.path.exists(path):
         rprint(f"[red]Refusing to overwrite existing file:[/red] {esc(path)}")
         raise typer.Exit(code=1)
-    # DeviceManager picks the LLM device for the hardware we are on: GPU on
-    # an AI PC, CPU on a laptop/Mac. The starter file should run where it
-    # was created, not assume a GPU that may not exist.
+    # DeviceManager picks the default LLM device for the host hardware: GPU on
+    # an AI PC, CPU on machines without one. The starter file targets the host
+    # device instead of assuming a GPU that may not exist.
     try:
         from ovat.core.device_manager import DeviceManager
         llm_device = DeviceManager().get_llm_device()
@@ -1021,9 +1021,8 @@ def models(
         _ovms_not_found(how)
         raise typer.Exit(code=1)
     except RuntimeError as exc:
-        # ovms ran but refused. Only FileNotFoundError was caught before, so
-        # this escaped as a raw traceback: the "errors are for users" rule
-        # applies just as much to the tool we shell out to.
+        # Format subprocess failures as user-facing diagnostics rather than
+        # exposing a raw traceback.
         rprint(f"[red]ovms could not do that:[/red] {esc(exc)}")
         rprint(f"[dim]repository:[/dim] {esc(repo)}  "
                f"[dim]· point elsewhere with[/dim] --repo <folder>")
@@ -1153,10 +1152,10 @@ def _offer_ovms_install(assume_yes: bool) -> str | None:
 def _say_if_unverified(what: str) -> None:
     """Warn when an install went ahead with nothing to check it against.
 
-    `setup` promises a checksum check, and the installer does one whenever the
-    release publishes a .sha256. When it does not, installing anyway is the
-    right call (refusing would be our bug on Intel's release process), but the
-    user has to know their archive was never verified.
+    `setup` verifies SHA-256 checksums whenever a release publishes a `.sha256`
+    file. When no checksum asset exists, installation still proceeds (blocking
+    those releases would break valid installs), while warning that the archive
+    could not be verified.
     """
     if what == "installed-unverified":
         rprint("[yellow]Not verified:[/yellow] this OVMS release has no "
@@ -1548,7 +1547,7 @@ def doctor(
     from ovat.cli import diagnostics
     from ovat.cli.ui import console, status_text, wordmark
 
-    # The big sign, like the TUI launcher, but this one says what it is.
+    # Print the command header banner before diagnostics.
     console.print(wordmark("DOCTOR"))
     console.print("[ovat.brand]⚕ OVAT doctor[/ovat.brand]"
                   "[ovat.dim]  ·  environment & workflow diagnostics[/ovat.dim]")

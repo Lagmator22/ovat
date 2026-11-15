@@ -1,10 +1,5 @@
 # ovat/tui/server/safe.py
-"""Showing model-written text to a person who is about to decide something.
-
-Both the app server's approval callbacks and the classic agent TUI
-(ovat/tui/app.py) put a tool's arguments in front of the person, so the
-cleaning lives in one place.
-"""
+"""Sanitizing model-supplied arguments before displaying them in approval panels."""
 
 _APPROVAL_ARG_MAX = 600
 

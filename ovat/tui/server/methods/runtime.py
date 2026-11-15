@@ -54,11 +54,9 @@ async def agents_list(ctx, params: AgentsListParams):
     return AgentsListResponse(active=active, agents=agents)
 
 
-# Vibe's diagnostics are "config issues": a file and a sentence each. OVAT's are
-# the checks of `ovat doctor` and /doctor (ovat/cli/diagnostics.py), the one
-# source: every check that is not ok is an issue, the check's name standing
-# where Vibe has a file name. They import openvino and open a socket, so they
-# run on a thread. OVAT has no hooks.
+# Projects `ovat doctor` / `/doctor` checks (`ovat/cli/diagnostics.py`) onto the
+# JSON-RPC `diagnostics/list` response, mapping check names to the issue file
+# slot. Checks run in a worker thread because they probe OpenVINO and sockets.
 @routes.method("diagnostics/list", DiagnosticsListParams)
 async def diagnostics_list(ctx, params: DiagnosticsListParams):
     ctx.require_session(params.session_id)

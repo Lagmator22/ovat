@@ -11,10 +11,8 @@ from ovat.core.model_server import ovms_env
 class ModelManager:
     """Wraps OVMS model-management CLI commands (--pull, --list_models)."""
 
-    # How long `--list_models` may take before we call the binary wedged.
-    # Listing a repository is a directory read: if it has not answered in half
-    # a minute it is not going to. `pull` deliberately has NO timeout, see the
-    # note on that method.
+    # Timeout for `--list_models`, which only enumerates the local repository.
+    # `pull` deliberately has no timeout because model downloads vary by size.
     LIST_TIMEOUT_S = 30.0
 
     def __init__(self, ovms_binary: str = "ovms"):

@@ -1,22 +1,22 @@
 # ovat/tui/agent_app.py
-"""`ovat agent`, on the full copied Vibe app.
+"""`ovat agent`, subclassing the Textual terminal frontend (`VibeApp`).
 
-    VibeApp (ovat/tui/vibe/cli/textual_ui/app.py)   the copied app
-      -> speaks JSON-RPC to an app server, never to an agent
-    OVAT's app server (ovat/tui/server/)            the other end of that wire
+    VibeApp (ovat/tui/vibe/cli/textual_ui/app.py)   the terminal frontend
+      -> speaks JSON-RPC to an app server, never directly to an agent
+    OVAT's app server (ovat/tui/server/)            the server side of that wire
       -> drives ovat.agentic.session.AgentSession
-    OvatAgentApp (this file)                        what is OVAT's in the app
+    OvatAgentApp (this file)                        OVAT-specific UI behaviour
 
-The subclass is small on purpose. It adds the OVAT commands (the table in
-ovat/tui/agent_commands.py, the handlers here), the OVAT banner with the chip
-mark, the agent's facts and the live hardware reading in the bottom bar, and
-OVAT's theme. It turns off what OVAT does not have: update checks, telemetry,
-feedback prompts, the editor promo, the "what's new" of the app it was copied
-from and spoken summaries. Everything else is the copied app.
+The subclass stays minimal. It adds OVAT slash commands (the table in
+ovat/tui/agent_commands.py, handlers here), the OVAT banner with the chip
+mark, agent identity and live hardware stats in the bottom bar, and OVAT's
+theme. It disables upstream cloud features not used by OVAT: update checks,
+telemetry, feedback prompts, editor promos, upstream release notes, and
+spoken summaries.
 
-`/engine` and `/workflow` have no protocol method (a workflow is not part of
-Vibe's app), so they call the server's handle, which rebuilds the agent and
-tells the app when it is ready.
+`/engine` and `/workflow` have no upstream protocol method (workflows are
+OVAT-specific), so they call the server handler, which rebuilds the agent and
+notifies the app when ready.
 """
 from __future__ import annotations
 
@@ -69,14 +69,12 @@ HARDWARE_EVERY_S = 2.0
 
 
 class AgentBanner(OvatBanner):
-    """OVAT's banner, built where the copied app builds Vibe's.
+    """OVAT status banner wired into the terminal client's banner slot.
 
-    The copied app makes its banner with Vibe's arguments (model list, MCP
-    servers, skills...) and calls `set_state` with them whenever something
-    changes. OVAT's banner takes those calls and ignores the arguments: what
-    it shows (model, device, engine, tools, subagents) comes from
-    `source()`, the live state of the agent, so it is right whenever it is
-    asked, including after /engine.
+    The terminal UI invokes ``set_state`` whenever configuration or runtime
+    metadata updates. This subclass ignores unused upstream arguments and renders
+    live OVAT state (model, device, engine, tools, subagents) via ``source()``
+    so the display stays accurate across commands such as ``/engine``.
     """
 
     def __init__(self, config: Any = None, skills_count: int = 0,
@@ -127,6 +125,13 @@ class HardwareReading(Message):
 
 class OvatAgentApp(VibeApp):
     TITLE = "OVAT agent"
+
+    def copy_to_clipboard(self, text: str) -> None:
+        """Keep Textual's internal clipboard and the OS/OSC 52 clipboard in sync."""
+        self._clipboard = text
+        from ovat.tui.vibe.cli.clipboard import copy_to_clipboard as _copy
+
+        _copy(text)
     # Textual reads CSS_PATH relative to the file of the class being run, so
     # the copied sheet is named in full.
     CSS_PATH = str(Path(VIBE_APP_FILE).parent / "app.tcss")

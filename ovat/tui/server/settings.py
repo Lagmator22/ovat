@@ -1,16 +1,13 @@
 # ovat/tui/server/settings.py
-"""The settings screen's side of the server: which settings OVAT has, what
-they are now, and what a `config/write` may do.
+"""Settings screen backing store: available settings, current values, and
+``config/write`` planning.
 
-Mirrors Vibe's vibe/app_server/_config_introspect.py (the field list the
-screen draws: kind, popular, where each value is set) and _config_write.py
-(the ops a write carries). The difference is where the values live. Vibe has
-layers of TOML; OVAT has ONE workflow file (the layer "workflow"), the
-session's temporary overrides (the layer "overrides") and the UI
-preferences file (the layer "preferences", only the theme).
+Maps OVAT's single ``workflow.yml`` file (layer ``workflow``), temporary session
+overrides (layer ``overrides``), and UI theme preferences (layer
+``preferences``) onto the JSON-RPC configuration schema expected by the TUI.
 
-The file work itself is ovat/agentic/workflow_edit.py and ovat/agentic/prefs.py.
-Here the wire models are only filled in.
+File writes are delegated to ``ovat/agentic/workflow_edit.py`` and
+``ovat/agentic/prefs.py``; this module handles schema projection only.
 """
 from __future__ import annotations
 
@@ -181,9 +178,8 @@ def _plan_theme(result: Plan, op: ConfigWriteOpWire, remove: bool,
 
 
 def _not_a_setting(pointer: str) -> str:
-    """Vibe has about thirty settings OVAT has no use for (voice, narrator,
-    other vendors' models...). They are named in views.config_view with plain
-    off values; a write to one is answered, not applied."""
+    """Return an explicit no-op diagnostic for schema fields that OVAT's local
+    runtime intentionally leaves unused (such as hosted voice/narrator flags)."""
     name = pointer.strip("/").split("/")[0]
     if name in ConfigView.model_fields:
         return f"'{name}' is not used by OVAT, so nothing was changed."

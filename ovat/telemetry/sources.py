@@ -24,13 +24,11 @@ from ovat.telemetry.base import TelemetrySource
 
 
 class AgentTraceSource(TelemetrySource):
-    """The numbers an engine records in `last_trace`, as a source.
+    """Telemetry source exposing per-run engine `last_trace` totals.
 
-    `loop.py` has filled `last_trace` since W9, and the framework engines fill
-    the same totals (ovat/agent/usage.py); this exposes them through the
-    contract so any sink (a JSON file, the live TUI page; an OTLP exporter
-    would be another sink, none exists yet) reads one thing instead of each
-    keeping its own copy.
+    Reads the standardized `totals` recorded by `loop.py` and the framework
+    engines (`ovat/agent/usage.py`) so sinks read from a single telemetry
+    contract without duplicating tracking logic.
     """
 
     name = "agent"
@@ -48,8 +46,8 @@ class AgentTraceSource(TelemetrySource):
         totals = (getattr(self.agent, "last_trace", None) or {}).get("totals")
         if not totals:
             return {}
-        # Absent stays absent. A zero here would read as "used no tokens",
-        # which is a different claim from "nobody told us".
+        # Keep absent metrics omitted rather than coalescing to 0, which would
+        # misreport missing token counts as zero usage.
         return {k: v for k, v in totals.items() if v is not None}
 
     @property
@@ -86,11 +84,9 @@ class SystemSource(TelemetrySource):
         self._proc = None
         # Whether a CPU reading has yet covered a real interval. See sample().
         self._cpu_primed = False
-        # The machine's busy and total CPU time at the last reading. The
-        # headline cpu_pct is worked out from OUR OWN pair of readings, not
-        # from psutil.cpu_percent(): that one keeps a single module-wide
-        # "previous call", so any other caller in the process shortens our
-        # window to microseconds and we read 0.0.
+        # System CPU times from the previous sample. Calculating cpu_pct from an
+        # instance-local baseline avoids psutil.cpu_percent()'s module-global
+        # timestamp, which other callers in the process could reset to ~0ms.
         self._cpu_last: tuple[float, float] | None = None
         if psutil is not None:
             try:

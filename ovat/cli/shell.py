@@ -77,7 +77,7 @@ def _kill_tree(proc: subprocess.Popen) -> None:
 
     The descendants are listed BEFORE anything dies, because Windows does not
     reparent orphans: once cmd.exe is gone, nothing links its children back to
-    the pid we hold. cmd.exe dies first so it cannot start the next command of
+    the tracked PID. cmd.exe dies first so it cannot start the next command of
     an `a & b` line while its current one is being killed.
     """
     import psutil
@@ -85,7 +85,7 @@ def _kill_tree(proc: subprocess.Popen) -> None:
     try:
         descendants = psutil.Process(proc.pid).children(recursive=True)
     except psutil.Error:
-        descendants = []                  # already gone, or not ours to list
+        descendants = []                  # already exited or inaccessible
     proc.kill()
     for child in descendants:
         try:

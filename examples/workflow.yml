@@ -4,22 +4,22 @@
 #   ovat run examples/workflow.yml --input "your question"
 
 model:
-  name: Qwen3.5-4B-int4-ov          # the model name my OVMS server serves
+  name: Qwen3.5-4B-int4-ov          # the model name the OVMS server serves
   device: GPU                     # CPU, GPU, or NPU on the AI PC
-  ovms_url: http://localhost:8000/v3 # for vm(linux) like wsl2 testing, format is like => ovms_url: http://[IP_ADDRESS]:8000/v3
+  ovms_url: http://localhost:8000/v3 # for remote OVMS (e.g. WSL2 to Windows host), use http://<host-ip>:8000/v3
   tool_parser: qwen3coder     # name it: 'auto' decoded nothing for Qwen3.5 on OVMS 2026.2.1
   # Only used by `ovat serve` to start OVMS and locate the model:
   source_model: OpenVINO/Qwen3.5-4B-int4-ov   # HF id (downloaded if not on disk)
   model_repository_path: models             # folder where models live (absolute path is fine)
 
 tools:
-  - name: search_docs             # my built-in document search tool
+  - name: search_docs             # built-in document search tool
     type: builtin
-  - name: transcribe              # my built-in audio transcription tool
+  - name: transcribe              # built-in audio transcription tool
     type: builtin
 
 agent:
-  type: native                    # native = my own loop.py; react = LangChain
+  type: native                    # native = OVAT loop; react = LangChain
   max_iterations: 10
   system_prompt: >-
     You are a helpful assistant that uses tools when needed.

@@ -1,15 +1,14 @@
 # ovat/tools/todo.py
-"""The todo tool: the agent's own task list for a long job.
+"""The todo tool: the agent's in-session task list for multi-step jobs.
 
-Mirrors Mistral Vibe's todo.py (vibe/core/tools/builtins): one tool with
-action "read" or "write"; "write" REPLACES the whole list; items have an id,
-content, status and priority; at most 100; ids unique. The list lives in a
-TodoStore that factory.build_tools makes once per built agent, so it is
-session state and never touches the disk.
+Exposes one tool with ``action="read"`` or ``action="write"`` (where ``write``
+replaces the list). Items carry ``id``, ``content``, ``status``, and
+``priority``, capped at 100 items with unique IDs. State lives in an in-memory
+``TodoStore`` created per built agent by ``factory.build_tools``.
 """
 from ovat.tools.project import Shown, fail
 
-MAX_TODOS = 100                  # Vibe's TodoConfig.max_todos
+MAX_TODOS = 100
 STATUSES = ("pending", "in_progress", "completed", "cancelled")
 PRIORITIES = ("low", "medium", "high")
 _MARK = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]",
@@ -17,7 +16,7 @@ _MARK = {"pending": "[ ]", "in_progress": "[~]", "completed": "[x]",
 
 
 class TodoStore:
-    """The list for one agent. A plain holder, like Vibe's TodoState."""
+    """In-memory task list container scoped to a single built agent."""
 
     def __init__(self) -> None:
         self.items: list[dict] = []
