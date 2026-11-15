@@ -1,18 +1,17 @@
 # ovat/tools/project.py
-"""What the five coding tools share: the project folder fence and `Shown`.
+"""Shared project-folder sandbox helpers and `Shown` tool outputs.
 
-Note to myself: read_file, write_file, edit, grep and shell let the model
-touch the user's own files, so two things have to be the same everywhere.
+Coding tools (`read_file`, `write_file`, `edit`, `grep`, `shell`) share two
+contracts:
 
-1. The fence. The project folder is the working directory when the agent was
-   built. A path is resolved (symlinks included) BEFORE it is compared, so a
-   link inside the project that points outside is refused, and so is "../x".
-2. What a tool hands back. The model reads a plain string, but the TUI wants
-   structure (a diff, an exit code). `Shown` is a str that also carries a
-   `display` dict. Every engine just sees a str; only events.observed() looks
-   for `.display`.
+1. Project fence: relative paths are resolved (including symlinks) against the
+   project working directory before comparison so symlinks or ``../`` paths
+   escaping the workspace root are rejected.
+2. Dual output: tool return values implement ``str`` for LLM engines while
+   carrying structured ``display`` metadata (diffs, exit codes) read by
+   ``events.observed()`` for the terminal UI.
 
-Stdlib only, like events.py: the CLI imports this and must stay light.
+Kept standard-library-only because lightweight CLI modules import it.
 """
 from pathlib import Path
 
@@ -123,20 +122,6 @@ def _names_sensitive(raw: str | None, for_read: bool) -> bool:
     parts = [p.lower().split(":", 1)[0].rstrip(" .") for p in Path(text).parts
              if p not in ("", ".", "/")]
     parts = [p for p in parts if p]
-    if not parts:
-        return False
-    if ".git" in parts or ".ovat" in parts:
-        return True
-    name = parts[-1]
-    if name == ".env" or (name.startswith(".env.")
-                          and name != ".env.example"):
-        return True
-    if name in (".envrc", ".envrc.local"):
-        return True
-    if not for_read and name in ("workflow.yml", "workflow.yaml"):
-        return True
-    return False
-    parts = [p.lower() for p in Path(text).parts if p not in ("", ".", "/")]
     if not parts:
         return False
     if ".git" in parts or ".ovat" in parts:

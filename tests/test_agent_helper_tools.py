@@ -1,10 +1,5 @@
 # tests/test_agent_helper_tools.py
-"""todo, ask_user, web_fetch, web_search and the project context.
-
-Note to myself: the tools are plain functions, so these tests call them
-directly. The web ones talk to a throwaway http.server on 127.0.0.1 or to a
-faked `_request`; nothing here reaches the internet.
-"""
+"""Unit tests for todo, ask_user, web_fetch, web_search, and project context."""
 import http.server
 import threading
 import urllib.error
@@ -606,3 +601,74 @@ def test_web_fetch_refuses_every_non_global_address():
         assert check_safe_url(url) is not None, url
     assert check_safe_url("http://8.8.8.8/") is None
     assert check_safe_url("http://100.64.0.1/", allow_private_lan=True) is None
+
+
+def test_web_fetch_pins_resolved_ip_against_dns_rebinding_toctou(
+        site, monkeypatch):
+    """web_fetch dials the IP validated during lookup instead of re-resolving
+    the hostname inside urllib."""
+    import socket
+    from urllib.parse import urlparse
+
+    port = urlparse(site).port
+    calls = 0
+    real_getaddrinfo = socket.getaddrinfo
+    real_create_connection = socket.create_connection
+    dialed = []
+
+    def rebinding_getaddrinfo(host, *args, **kwargs):
+        nonlocal calls
+        if host == "rebind.evil.example":
+            calls += 1
+            ip = "93.184.216.34" if calls == 1 else "127.0.0.1"
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 0))]
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    def tracking_create_connection(address, *args, **kwargs):
+        host, target_port = address
+        dialed.append(host)
+        if host == "93.184.216.34":
+            return real_create_connection(("127.0.0.1", target_port),
+                                          *args, **kwargs)
+        if host == "rebind.evil.example":
+            resolved = socket.getaddrinfo(host, target_port, 0,
+                                          socket.SOCK_STREAM)[0][4][0]
+            return real_create_connection((resolved, target_port),
+                                          *args, **kwargs)
+        return real_create_connection(address, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", rebinding_getaddrinfo)
+    monkeypatch.setattr(socket, "create_connection", tracking_create_connection)
+
+    out = web_fetch_impl(f"http://rebind.evil.example:{port}/page", timeout=2)
+    assert calls == 1
+    assert dialed == ["93.184.216.34"]
+    assert "# Hello" in out
+
+    # Also verify HTTPS pinning dials the pinned IP while preserving TLS SNI.
+    import ssl
+    from ovat.tools.web_fetch import _PinnedHTTPSConnection
+    tls_dialed = []
+    wrapped_hosts = []
+
+    class _DummySock:
+        def setsockopt(self, *args):
+            pass
+
+    ctx = ssl.create_default_context()
+    monkeypatch.setattr(
+        ctx, "wrap_socket",
+        lambda sock, server_hostname=None: (
+            wrapped_hosts.append(server_hostname), sock
+        )[1],
+    )
+    monkeypatch.setattr(
+        socket, "create_connection",
+        lambda addr, *a, **kw: (tls_dialed.append(addr), _DummySock())[1],
+    )
+    conn = _PinnedHTTPSConnection(
+        "secure.example", 443, context=ctx, pinned_ip="93.184.216.34"
+    )
+    conn.connect()
+    assert tls_dialed == [("93.184.216.34", 443)]
+    assert wrapped_hosts == ["secure.example"]
