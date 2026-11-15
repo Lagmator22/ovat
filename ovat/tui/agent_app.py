@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import os
 import re
+import sys
 import threading
 from functools import partial
 from pathlib import Path
@@ -557,10 +559,31 @@ async def run_agent(workflow: str | None, *, cwd: str | None = None,
         await handle.close()
 
 
+def _trusted_workflow(cwd: str) -> str | None:
+    """./workflow.yml, but only in a folder the user trusts.
+
+    building a workflow starts its mcp_stdio commands, so a cloned
+    repository must not get to run them just because `ovat` was opened in
+    it. naming the file on the command line is an explicit choice and skips
+    this check.
+    """
+    from ovat.agentic import trust
+    found = s.find_workflow(cwd)
+    if found is None or trust.status(cwd) == "trusted":
+        return found
+    print(f"{os.path.basename(found)} in this folder was not loaded: the "
+          f"folder is not trusted, and loading it would start the tools it "
+          f"lists. Run `ovat agent {os.path.basename(found)}` to use it.",
+          file=sys.stderr)
+    return None
+
+
 def run(workflow: str | None = None, *,
         continue_session: bool = False,
         resume_session_id: str | None = None) -> None:
     """Entry point for `ovat agent`."""
-    asyncio.run(run_agent(workflow or s.find_workflow(),
+    if workflow is None:
+        workflow = _trusted_workflow(os.getcwd())
+    asyncio.run(run_agent(workflow,
                           continue_session=continue_session,
                           resume_session_id=resume_session_id))
