@@ -2089,3 +2089,20 @@ def test_serve_passes_tool_guided_generation_from_the_config(monkeypatch,
         model_yaml="  ovms_tool_guided_generation: true\n")
     assert result.exit_code == 0, result.output
     assert kwargs.get("tool_guided_generation") is True
+
+
+def test_dry_run_closes_built_agent(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from ovat.cli import main as cli_main
+
+    closed = []
+    fake_agent = SimpleNamespace(tools={}, max_iterations=5)
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: fake_agent)
+    monkeypatch.setattr(cli_main, "close_agent", closed.append)
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    result = runner.invoke(app, ["run", str(config), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert closed == [fake_agent]
+

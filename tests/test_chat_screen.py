@@ -1487,6 +1487,24 @@ def test_thinking_and_load_stand_down_while_an_answer_is_running(
     _run(scenario())
 
 
+def test_ctrl_c_on_busy_chat_screen_stops_generation_instead_of_arming_quit(
+        monkeypatch, tmp_path):
+    monkeypatch.setattr(chat_screen, "_build_components", _fake_components)
+
+    async def scenario():
+        app = OvatTUI()
+        async with app.run_test() as pilot:
+            screen = await _push_ready_screen(app, pilot, tmp_path)
+            screen._busy = True
+            app._busy = False
+            app.action_cancel_or_quit()
+            await pilot.pause()
+            assert screen._stop_stream is True
+            assert not any("again to quit" in str(n.message)
+                           for n in app._notifications)
+    _run(scenario())
+
+
 # A reshaping answer must not be written through two paths at once
 
 class SplitTagLLM:

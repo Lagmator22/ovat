@@ -10,7 +10,6 @@ Nothing here is decorative-only. The styles below are referenced by name from
 the real command output, so changing a colour in one place restyles the whole
 CLI.
 """
-import re
 import sys
 
 from rich.console import Console
@@ -223,9 +222,6 @@ def status_text(status: str) -> Text:
 # and it must not import from cli/. Re-exported under the old names so every
 # existing caller keeps working, and so there is still exactly ONE copy.
 from ovat.text import (  # noqa: E402  (re-export, deliberately at the bottom)
-    THINK_BLOCK as _THINK_BLOCK,
-    THINK_CLOSE as _THINK_CLOSE,
-    THINK_OPEN as _THINK_OPEN,
     looks_like_undecoded_tool_call,
     says_nothing,
     strip_thinking,

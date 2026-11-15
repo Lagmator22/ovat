@@ -635,6 +635,10 @@ class OvatTUI(App):
             self.screen.clear_selection()
             self.notify("Copied the selection.", timeout=2)
             return
+        if (getattr(self.screen, "_busy", False)
+                and hasattr(self.screen, "action_back")):
+            self.screen.action_back()
+            return
         if self._busy:
             self._cancel_running()
             return

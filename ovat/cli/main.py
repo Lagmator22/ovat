@@ -96,7 +96,6 @@ def _entry(
     # start a second TUI in a piped subprocess; escape codes as garbage, the
     # command slot wedged. Now it gets a hint instead, before Textual even
     # gets imported.
-    import os
     if os.environ.get("OVAT_TUI"):
         rprint("[yellow]You are already inside the OVAT TUI.[/yellow] "
                "Type a subcommand instead (e.g. [bold]ovat doctor[/bold]), "
@@ -308,11 +307,14 @@ def run(
 
     # dry-run lets me prove the wiring on any machine, even with no OVMS server.
     if dry_run:
-        # Tool names can come from an MCP server, so they are data too.
-        rprint(f"[green]Built agent[/green]  model={esc(cfg.model.name)}  "
-               f"tools={esc(list(agent.tools))}  "
-               f"max_iterations={agent.max_iterations}")
-        rprint("[yellow]dry-run:[/yellow] not calling the model.")
+        try:
+            # Tool names can come from an MCP server, so they are data too.
+            rprint(f"[green]Built agent[/green]  model={esc(cfg.model.name)}  "
+                   f"tools={esc(list(agent.tools))}  "
+                   f"max_iterations={agent.max_iterations}")
+            rprint("[yellow]dry-run:[/yellow] not calling the model.")
+        finally:
+            close_agent(agent)
         raise typer.Exit()
 
     # Show which engine is actually running, so it is visible in a demo. The
@@ -982,7 +984,6 @@ def init(
     path: str = typer.Argument("workflow.yml", help="Where to write the starter YAML."),
 ):
     """Write a starter workflow.yml tuned to THIS machine's hardware."""
-    import os
     if os.path.exists(path):
         rprint(f"[red]Refusing to overwrite existing file:[/red] {esc(path)}")
         raise typer.Exit(code=1)
@@ -1563,11 +1564,6 @@ def doctor(
     it and see whether its model and OVMS look ready.
     """
     import platform
-    import sys
-
-    from rich import box
-    from rich.table import Table
-    from rich.text import Text
 
     from ovat.cli import diagnostics
     from ovat.cli.ui import console, status_text, wordmark

@@ -13,7 +13,7 @@ How to run these for real, from WSL on the AI PC with ovms.exe serving:
     pytest tests/test_ovms_live.py -v
 """
 import os
-import socket
+import urllib.request
 
 import pytest
 
@@ -27,17 +27,12 @@ OVMS_MODEL = os.environ.get("OVAT_OVMS_MODEL", "Qwen3.5-4B-int4-ov")
 
 
 def _ovms_reachable() -> bool:
-    """I try a quick TCP connect to the OVMS port. If it fails, I skip.
-
-    Note to myself: this runs at collection time, so on my Mac (nothing on
-    port 8000) it fails in about a second and every test below is skipped.
-    """
+    """Try GET /models on the OVMS server; skip when unreachable or not OVMS."""
     try:
-        host_port = OVMS_URL.split("//", 1)[1].split("/", 1)[0]
-        host, _, port = host_port.partition(":")
-        with socket.create_connection((host, int(port or "80")), timeout=1):
-            return True
-    except OSError:
+        url = f"{OVMS_URL.rstrip('/')}/models"
+        with urllib.request.urlopen(url, timeout=1) as resp:
+            return resp.status == 200
+    except Exception:
         return False
 
 

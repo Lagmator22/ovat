@@ -26,7 +26,6 @@ headless in milliseconds.
 """
 import json
 import os
-import re
 import time
 
 from rich.text import Text
@@ -36,7 +35,7 @@ from textual.binding import Binding
 from textual.color import Color
 from textual.screen import ModalScreen, Screen
 from textual.containers import Vertical, VerticalScroll
-from textual.widgets import (Collapsible, Input, Label, Markdown,
+from textual.widgets import (Collapsible, Label, Markdown,
                              OptionList, Rule, Static)
 from textual.widgets.option_list import Option
 
