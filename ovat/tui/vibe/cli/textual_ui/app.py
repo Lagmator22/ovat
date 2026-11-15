@@ -5338,8 +5338,8 @@ class VibeApp(App):  # noqa: PLR0904
             warning = (
                 "⚠ Untrusted local config folders are being ignored:\n\n"
                 f"{folders}\n\n"
-                f'If you want them loaded, remove them from "untrusted" in '
-                f"{response.settings_path}, or ask OVAT to do it."
+                "Run /trust to trust this folder and load its workflow.yml "
+                f"(saved in {response.settings_path})."
             )
             await self._mount_and_scroll(WarningMessage(warning, show_border=False))
             await asyncio.to_thread(

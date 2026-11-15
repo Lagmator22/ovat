@@ -474,6 +474,19 @@ class OvatAgentApp(VibeApp):
             return
         await self._rebuild(self._handle.switch_workflow(path))
 
+    async def _cmd_trust(self, **kwargs: Any) -> None:
+        from ovat.agentic import trust
+        cwd = self.app_server.cwd
+        trust.decide(cwd, "trust_cwd")
+        found = s.find_workflow(cwd)
+        if found is None:
+            await self._note("This folder is trusted. It has no workflow.yml "
+                             "to load.")
+            return
+        await self._note(f"This folder is trusted. Loading "
+                         f"`{os.path.basename(found)}`.")
+        await self._rebuild(self._handle.switch_workflow(found))
+
     async def _rebuild(self, switching) -> None:
         """Run a switch on the server handle; the banner shows the agent is
         loading until the server reports it ready (or says why not)."""
@@ -573,7 +586,8 @@ def _trusted_workflow(cwd: str) -> str | None:
         return found
     print(f"{os.path.basename(found)} in this folder was not loaded: the "
           f"folder is not trusted, and loading it would start the tools it "
-          f"lists. Run `ovat agent {os.path.basename(found)}` to use it.",
+          f"lists. Use /trust inside OVAT, `ovat agent --trust`, or name it: "
+          f"`ovat agent {os.path.basename(found)}`.",
           file=sys.stderr)
     return None
 

@@ -1826,3 +1826,15 @@ def test_telemetry_prints_whole_numbers_whole_and_flags_a_pinned_cpu():
     # A dynamic KV cache sits near 100% normally, and process CPU is summed over cores.
     assert telemetry.level_style("ovms.kv_cache_pct", 99.0) == ""
     assert telemetry.level_style("system.proc_cpu_pct", 103.0) == ""
+
+
+def test_trust_marks_the_folder_and_loads_its_workflow(tmp_path):
+    from ovat.agentic import trust
+    (tmp_path / "workflow.yml").write_text("model: {name: x}\n")
+
+    async def go():
+        async with running(cwd=str(tmp_path)) as (app, pilot, fake, handle):
+            await say(pilot, "/trust")
+            await until(pilot, lambda: trust.status(tmp_path) == "trusted"
+                        and "workflow.yml" in banner_text(app))
+    run(go())

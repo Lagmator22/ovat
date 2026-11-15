@@ -202,7 +202,8 @@ as always `"stop"`.
   `workflow_edit.py` (/config edits keeping comments), `mcp.py`,
   `sessions.py` (saved conversations), `trust.py` (workspace trust, kept in
   `~/.ovat/trusted.json`: `./workflow.yml` is built on its own only in a
-  trusted folder, because building it starts its `mcp_stdio` commands).
+  trusted folder, because building it starts its `mcp_stdio` commands.
+  `ovat init`, `ovat agent --trust` and `/trust` grant it).
 - `ovat/userdata.py`: the user folder `~/.ovat`. "Always allow" grants
   (`permissions.json`, per project) and the A2A server token
   (`a2a/<id>.token`) live there, NEVER in the project's own `.ovat/`: a
@@ -748,9 +749,6 @@ LICENSE.
 
 After the `wip/phase3` branch:
 - The AI PC A-to-Z test (`~/claude-projects/ovat/test_guide/`).
-- The TUI has no way to trust a folder yet (the server method exists, the
-  client never sends it); until then, `ovat agent workflow.yml` is the
-  opt-in.
 - A docs site refresh after merge, and a PyPI release.
 - GPU utilisation without Intel UT on real hardware; GPU/NPU on Linux.
 

@@ -32,6 +32,7 @@ COMMANDS: tuple[Command, ...] = (
     Command("trace", "What the last answer did: turns, tools, tokens"),
     Command("yolo", "Approve every tool for this session (again: off)"),
     Command("workflow", "Load another workflow file", usage="<path.yml>"),
+    Command("trust", "Trust this folder and load its workflow.yml"),
     Command("save", "Save the conversation", usage="[name]"),
     Command("load", "Load a saved conversation", usage="<name>"),
     Command("copy", "Copy the last answer to the clipboard"),

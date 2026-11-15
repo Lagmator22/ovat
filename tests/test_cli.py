@@ -2084,3 +2084,28 @@ def test_dry_run_closes_built_agent(monkeypatch, tmp_path):
     assert result.exit_code == 0, result.output
     assert closed == [fake_agent]
 
+
+
+def test_init_trusts_the_folder_it_writes_into(tmp_path):
+    """the user wrote that workflow, so bare `ovat` there may load it."""
+    from ovat.agentic import trust
+    assert trust.status(tmp_path) == "untrusted"
+    result = runner.invoke(app, ["init", str(tmp_path / "workflow.yml")])
+    assert result.exit_code == 0
+    assert trust.status(tmp_path) == "trusted"
+
+
+def test_agent_trust_flag_trusts_the_folder_first(tmp_path, monkeypatch):
+    pytest.importorskip("textual")
+    from ovat.agentic import trust
+    import ovat.tui as tui_pkg
+    seen = []
+
+    def fake_runner():
+        return lambda config, **kwargs: seen.append(
+            (config, trust.status(tmp_path)))
+    monkeypatch.setattr(tui_pkg, "runner", fake_runner)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["agent", "--trust"])
+    assert result.exit_code == 0, result.output
+    assert seen == [(None, "trusted")]

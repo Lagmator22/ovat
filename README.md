@@ -322,7 +322,7 @@ stops, and Ctrl-C stops it early. `--max-tokens N` sets a cap.
 | `ovat bench <config> -i "..."` | One question through several engines, side by side. `--repeat N` |
 | `ovat telemetry` | Live CPU, memory and Intel hardware numbers. `--once` for one snapshot |
 | `ovat tui` | The agent TUI, same as `ovat agent` and as `ovat` with no arguments |
-| `ovat agent [config]` | The agent TUI: a local coding and research agent with tools, approvals, subagents, saved sessions and voice. `--continue`, `--resume <id>` |
+| `ovat agent [config]` | The agent TUI: a local coding and research agent with tools, approvals, subagents, saved sessions and voice. `--continue`, `--resume <id>`, `--trust` |
 | `ovat a2a serve\|card\|call\|token` | Offer a workflow to other agents over A2A, or ask one |
 
 `ovat <command> --help` lists every option.
@@ -525,10 +525,12 @@ You choose once, for the session, for this project, or deny:
 <img src="docs/assets/screens/agent-tui/agent-approval-local-api.png" width="800px" alt="The approval panel for the local_api subagent: it warns that the task is sent to http://localhost:8000/v3 and offers Allow once, Allow for the remainder of the session, Always allow this tool in this project, and Deny.">
 </div>
 
-- `ovat` does not load a `workflow.yml` it merely finds in the folder,
+- `ovat` loads the folder's `workflow.yml` only once you trust the folder,
   because loading a workflow starts the tools it lists, and a cloned
-  repository should not get to do that. Name the file to use it:
-  `ovat agent workflow.yml`.
+  repository should not get to do that. `ovat init` trusts the folder it
+  writes into. Elsewhere, run `/trust` in the TUI or `ovat agent --trust`, or
+  name the file: `ovat agent workflow.yml`. Trust is kept in
+  `~/.ovat/trusted.json`, never in the project.
 - Sessions are saved. `ovat agent --continue` or `--resume <id>` (or
   `/resume`) brings one back, `Esc Esc` rewinds, `/branch` forks, `/compact`
   summarizes.

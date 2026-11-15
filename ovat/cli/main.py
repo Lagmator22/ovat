@@ -51,9 +51,10 @@ def _version_callback(value: bool) -> None:
     raise typer.Exit()
 
 
-def _open_tui(config=None, continue_session=False, resume_session=None):
+def _open_tui(config=None, continue_session=False, resume_session=None,
+              trust=False):
     """Open the agent TUI for bare `ovat` and `ovat tui`."""
-    agent(config, continue_session, resume_session)
+    agent(config, continue_session, resume_session, trust)
 
 
 @app.callback()
@@ -956,6 +957,14 @@ def init(
         f.write(starter)
     rprint(f"[green]Wrote starter workflow to[/green] {esc(path)}  "
            f"[dim](model device: {esc(llm_device)}, detected)[/dim]")
+    # the user just wrote this workflow, so `ovat` in that folder may load it.
+    folder = os.path.dirname(os.path.abspath(path))
+    try:
+        from ovat.agentic import trust
+        trust.decide(folder, "trust_cwd")
+    except OSError as exc:
+        rprint(f"[yellow]Could not mark {esc(folder)} as trusted:[/yellow] "
+               f"{esc(str(exc))}. Run [bold]ovat agent --trust[/bold] there.")
 
 
 @app.command()
@@ -1586,9 +1595,12 @@ def tui(
     resume_session: str = typer.Option(
         None, "--resume", "-r",
         help="Resume a saved conversation by its id (the start is enough)."),
+    trust: bool = typer.Option(
+        False, "--trust",
+        help="Trust this folder, so its workflow.yml loads from now on."),
 ):
     """Open the TUI: the same as `ovat agent`, and as `ovat` with no args."""
-    _open_tui(config, continue_session, resume_session)
+    _open_tui(config, continue_session, resume_session, trust)
 
 
 @app.command()
@@ -1601,6 +1613,9 @@ def agent(
     resume_session: str = typer.Option(
         None, "--resume", "-r",
         help="Resume a saved conversation by its id (the start is enough)."),
+    trust: bool = typer.Option(
+        False, "--trust",
+        help="Trust this folder, so its workflow.yml loads from now on."),
 ):
     """Chat with an agent: live tools, subagents, A2A, !shell (new TUI)."""
     if os.environ.get("OVAT_TUI") == "1":
@@ -1620,6 +1635,9 @@ def agent(
     if config and not os.path.isfile(config):
         rprint(f"[red]No such workflow file:[/red] {esc(config)}")
         raise typer.Exit(code=1)
+    if trust:
+        from ovat.agentic import trust as workspace_trust
+        workspace_trust.decide(os.getcwd(), "trust_cwd")
     if not (continue_session or resume_session):
         run_agent_tui(config)
         return
