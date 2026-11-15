@@ -9,10 +9,7 @@ from textual.app import App
 from textual.widget import Widget
 from textual.widgets import Input, TextArea
 
-NATIVE_COPY_HINT = (
-    "if paste fails, hold Shift (Option in iTerm2, Fn in Terminal.app) "
-    "while selecting for native copy"
-)
+NATIVE_COPY_HINT = "terminal OSC 52 only; paste inside TUI with Ctrl+V"
 
 
 @dataclass(frozen=True)
@@ -48,6 +45,22 @@ def _copy_native(text: str) -> bool:
 
 def _is_ssh_session() -> bool:
     return bool(os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"))
+
+
+def read_clipboard_text(app: App | None = None) -> str:
+    """Read text from the OS clipboard, falling back to Textual's internal clipboard."""
+    if not _is_ssh_session():
+        try:
+            import pyperclip
+
+            text = pyperclip.paste()
+            if text:
+                return text
+        except Exception:
+            pass
+    if app is not None:
+        return getattr(app, "clipboard", "") or ""
+    return ""
 
 
 def copy_to_clipboard(text: str) -> bool:
@@ -145,6 +158,9 @@ def copy_text_to_clipboard(
     if not text:
         return None
 
+    # Keep Textual's in-app clipboard synchronized so Ctrl+V works even over
+    # SSH or on terminals where the OS pasteboard is inaccessible.
+    app._clipboard = text
     verified = copy_to_clipboard(text)
 
     if show_toast:
@@ -154,7 +170,7 @@ def copy_text_to_clipboard(
             app.notify(
                 f"{success_message} · {NATIVE_COPY_HINT}",
                 severity="information",
-                timeout=6,
+                timeout=4,
                 markup=False,
             )
     return ClipboardCopyResult(text=text, verified=verified)
