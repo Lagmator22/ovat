@@ -942,6 +942,10 @@ def _trust_after_init(written: str) -> None:
     the user authored that file, so loading it is safe. a different name
     (`ovat init other.yml`) next to a workflow.yml from someone else, or a
     folder the user already declined, is left as it is.
+
+    this is safe only while trust gates nothing but loading that one file.
+    anything else that starts to depend on trust (project config under
+    .ovat/, a parent repo's files) must not be granted through this path.
     """
     from ovat.agentic import session as agent_session, trust
     folder = os.path.dirname(written)
