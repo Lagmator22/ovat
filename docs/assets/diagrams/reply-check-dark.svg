@@ -1,0 +1,187 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 472" width="880" height="472" role="img" aria-labelledby="treplycheck dreplycheck">
+<title id="treplycheck">A reply with no tool calls</title><desc id="dreplycheck">If tool markup is still in the text and finish_reason is length, the reply was cut at max_tokens and the markup is a truncated fragment. Markup without length is undecoded_tool_call: the server did not decode it. No markup and nothing after the reasoning is empty_answer. Otherwise it is a real answer.</desc>
+<defs><radialGradient id="bgreplycheck" cx="0.12" cy="0" r="1.1"><stop offset="0" stop-color="#1f2236"/><stop offset="0.7" stop-color="#161826"/></radialGradient><linearGradient id="rulereplycheck" x1="0" x2="1"><stop offset="0" stop-color="#3f424d" stop-opacity="0"/><stop offset="0.08" stop-color="#3f424d"/><stop offset="0.92" stop-color="#3f424d"/><stop offset="1" stop-color="#3f424d" stop-opacity="0"/></linearGradient><pattern id="dpreplycheck" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#262836"/></pattern><marker id="ahreplycheck" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="#75798c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>@keyframes k0{0%{stroke-dashoffset:30;opacity:1}11.538%{stroke-dashoffset:30;opacity:1}14.423%{stroke-dashoffset:0}98.846%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr0{animation:k0 26s linear infinite}
+@keyframes k1{0%{stroke-dashoffset:18;opacity:0}11.538%{stroke-dashoffset:18;opacity:0}11.615%{opacity:1}14.423%{stroke-dashoffset:-30;opacity:1}14.615%{stroke-dashoffset:-30;opacity:0}100%{stroke-dashoffset:-30;opacity:0}}.cm0{animation:k1 26s linear infinite}
+@keyframes k2{0%{stroke-dashoffset:54;opacity:1}23.077%{stroke-dashoffset:54;opacity:1}25.962%{stroke-dashoffset:0}98.846%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr1{animation:k2 26s linear infinite}
+@keyframes k3{0%{stroke-dashoffset:32.4;opacity:0}23.077%{stroke-dashoffset:32.4;opacity:0}23.154%{opacity:1}25.962%{stroke-dashoffset:-54;opacity:1}26.154%{stroke-dashoffset:-54;opacity:0}100%{stroke-dashoffset:-54;opacity:0}}.cm1{animation:k3 26s linear infinite}
+@keyframes k4{0%{stroke-dashoffset:44;opacity:1}34.615%{stroke-dashoffset:44;opacity:1}37.500%{stroke-dashoffset:0}98.846%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr2{animation:k4 26s linear infinite}
+@keyframes k5{0%{stroke-dashoffset:26.4;opacity:0}34.615%{stroke-dashoffset:26.4;opacity:0}34.692%{opacity:1}37.500%{stroke-dashoffset:-44;opacity:1}37.692%{stroke-dashoffset:-44;opacity:0}100%{stroke-dashoffset:-44;opacity:0}}.cm2{animation:k5 26s linear infinite}
+@keyframes k6{0%{stroke-dashoffset:282;opacity:1}46.154%{stroke-dashoffset:282;opacity:1}49.038%{stroke-dashoffset:0}98.846%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr3{animation:k6 26s linear infinite}
+@keyframes k7{0%{stroke-dashoffset:46;opacity:0}46.154%{stroke-dashoffset:46;opacity:0}46.231%{opacity:1}49.038%{stroke-dashoffset:-282;opacity:1}49.231%{stroke-dashoffset:-282;opacity:0}100%{stroke-dashoffset:-282;opacity:0}}.cm3{animation:k7 26s linear infinite}
+@keyframes k8{0%{stroke-dashoffset:52;opacity:1}57.692%{stroke-dashoffset:52;opacity:1}60.577%{stroke-dashoffset:0}98.846%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr4{animation:k8 26s linear infinite}
+@keyframes k9{0%{stroke-dashoffset:31.2;opacity:0}57.692%{stroke-dashoffset:31.2;opacity:0}57.769%{opacity:1}60.577%{stroke-dashoffset:-52;opacity:1}60.769%{stroke-dashoffset:-52;opacity:0}100%{stroke-dashoffset:-52;opacity:0}}.cm4{animation:k9 26s linear infinite}
+@keyframes k10{0%{stroke-dashoffset:52;opacity:1}69.231%{stroke-dashoffset:52;opacity:1}72.115%{stroke-dashoffset:0}98.846%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr5{animation:k10 26s linear infinite}
+@keyframes k11{0%{stroke-dashoffset:31.2;opacity:0}69.231%{stroke-dashoffset:31.2;opacity:0}69.308%{opacity:1}72.115%{stroke-dashoffset:-52;opacity:1}72.308%{stroke-dashoffset:-52;opacity:0}100%{stroke-dashoffset:-52;opacity:0}}.cm5{animation:k11 26s linear infinite}
+@keyframes k12{0%{stroke-dashoffset:54;opacity:1}80.769%{stroke-dashoffset:54;opacity:1}83.654%{stroke-dashoffset:0}98.846%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr6{animation:k12 26s linear infinite}
+@keyframes k13{0%{stroke-dashoffset:32.4;opacity:0}80.769%{stroke-dashoffset:32.4;opacity:0}80.846%{opacity:1}83.654%{stroke-dashoffset:-54;opacity:1}83.846%{stroke-dashoffset:-54;opacity:0}100%{stroke-dashoffset:-54;opacity:0}}.cm6{animation:k13 26s linear infinite}
+@keyframes k14{0%{opacity:0}0.000%{opacity:0}1.154%{opacity:1}98.846%{opacity:1}100%{opacity:0}}.vr{animation:k14 26s linear infinite}
+@keyframes k15{0%{opacity:0}0.000%{opacity:0}1.154%{opacity:1}10.385%{opacity:1}11.538%{opacity:0}100%{opacity:0}}.ar{animation:k15 26s linear infinite}
+@keyframes k16{0%{opacity:0}13.846%{opacity:0}15.000%{opacity:1}98.846%{opacity:1}100%{opacity:0}}.vq1{animation:k16 26s linear infinite}
+@keyframes k17{0%{opacity:0}13.846%{opacity:0}15.000%{opacity:1}21.923%{opacity:1}23.077%{opacity:0}100%{opacity:0}}.aq1{animation:k17 26s linear infinite}
+@keyframes k18{0%{opacity:0}25.385%{opacity:0}26.538%{opacity:1}98.846%{opacity:1}100%{opacity:0}}.vq0{animation:k18 26s linear infinite}
+@keyframes k19{0%{opacity:0}25.385%{opacity:0}26.538%{opacity:1}33.462%{opacity:1}34.615%{opacity:0}100%{opacity:0}}.aq0{animation:k19 26s linear infinite}
+@keyframes k20{0%{opacity:0}36.923%{opacity:0}38.077%{opacity:1}98.846%{opacity:1}100%{opacity:0}}.vt{animation:k20 26s linear infinite}
+@keyframes k21{0%{opacity:0}36.923%{opacity:0}38.077%{opacity:1}45.000%{opacity:1}46.154%{opacity:0}100%{opacity:0}}.at{animation:k21 26s linear infinite}
+@keyframes k22{0%{opacity:0}48.462%{opacity:0}49.615%{opacity:1}98.846%{opacity:1}100%{opacity:0}}.va{animation:k22 26s linear infinite}
+@keyframes k23{0%{opacity:0}48.462%{opacity:0}49.615%{opacity:1}56.538%{opacity:1}57.692%{opacity:0}100%{opacity:0}}.aa{animation:k23 26s linear infinite}
+@keyframes k24{0%{opacity:0}60.000%{opacity:0}61.154%{opacity:1}98.846%{opacity:1}100%{opacity:0}}.vq2{animation:k24 26s linear infinite}
+@keyframes k25{0%{opacity:0}60.000%{opacity:0}61.154%{opacity:1}68.077%{opacity:1}69.231%{opacity:0}100%{opacity:0}}.aq2{animation:k25 26s linear infinite}
+@keyframes k26{0%{opacity:0}83.077%{opacity:0}84.231%{opacity:1}98.846%{opacity:1}100%{opacity:0}}.vc{animation:k26 26s linear infinite}
+@keyframes k27{0%{opacity:0}83.077%{opacity:0}84.231%{opacity:1}97.692%{opacity:1}98.846%{opacity:0}100%{opacity:0}}.ac{animation:k27 26s linear infinite}
+@keyframes k28{0%{opacity:0}71.538%{opacity:0}72.692%{opacity:1}98.846%{opacity:1}100%{opacity:0}}.vb{animation:k28 26s linear infinite}
+@keyframes k29{0%{opacity:0}71.538%{opacity:0}72.692%{opacity:1}79.615%{opacity:1}80.769%{opacity:0}100%{opacity:0}}.ab{animation:k29 26s linear infinite}
+@keyframes k30{0%{opacity:0}0.000%{opacity:0}1.154%{opacity:1}10.385%{opacity:1}11.538%{opacity:0}100%{opacity:0}}.tk0{animation:k30 26s linear infinite}
+@keyframes k31{0%{opacity:0}0.000%{opacity:0}1.154%{opacity:1}10.385%{opacity:1}11.538%{opacity:0}100%{opacity:0}}.cp0{animation:k31 26s linear infinite}
+@keyframes k32{0%{opacity:0}11.538%{opacity:0}12.692%{opacity:1}21.923%{opacity:1}23.077%{opacity:0}100%{opacity:0}}.tk1{animation:k32 26s linear infinite}
+@keyframes k33{0%{opacity:0}11.538%{opacity:0}12.692%{opacity:1}21.923%{opacity:1}23.077%{opacity:0}100%{opacity:0}}.cp1{animation:k33 26s linear infinite}
+@keyframes k34{0%{opacity:0}23.077%{opacity:0}24.231%{opacity:1}33.462%{opacity:1}34.615%{opacity:0}100%{opacity:0}}.tk2{animation:k34 26s linear infinite}
+@keyframes k35{0%{opacity:0}23.077%{opacity:0}24.231%{opacity:1}33.462%{opacity:1}34.615%{opacity:0}100%{opacity:0}}.cp2{animation:k35 26s linear infinite}
+@keyframes k36{0%{opacity:0}34.615%{opacity:0}35.769%{opacity:1}45.000%{opacity:1}46.154%{opacity:0}100%{opacity:0}}.tk3{animation:k36 26s linear infinite}
+@keyframes k37{0%{opacity:0}34.615%{opacity:0}35.769%{opacity:1}45.000%{opacity:1}46.154%{opacity:0}100%{opacity:0}}.cp3{animation:k37 26s linear infinite}
+@keyframes k38{0%{opacity:0}46.154%{opacity:0}47.308%{opacity:1}56.538%{opacity:1}57.692%{opacity:0}100%{opacity:0}}.tk4{animation:k38 26s linear infinite}
+@keyframes k39{0%{opacity:0}46.154%{opacity:0}47.308%{opacity:1}56.538%{opacity:1}57.692%{opacity:0}100%{opacity:0}}.cp4{animation:k39 26s linear infinite}
+@keyframes k40{0%{opacity:0}57.692%{opacity:0}58.846%{opacity:1}68.077%{opacity:1}69.231%{opacity:0}100%{opacity:0}}.tk5{animation:k40 26s linear infinite}
+@keyframes k41{0%{opacity:0}57.692%{opacity:0}58.846%{opacity:1}68.077%{opacity:1}69.231%{opacity:0}100%{opacity:0}}.cp5{animation:k41 26s linear infinite}
+@keyframes k42{0%{opacity:0}69.231%{opacity:0}70.385%{opacity:1}79.615%{opacity:1}80.769%{opacity:0}100%{opacity:0}}.tk6{animation:k42 26s linear infinite}
+@keyframes k43{0%{opacity:0}69.231%{opacity:0}70.385%{opacity:1}79.615%{opacity:1}80.769%{opacity:0}100%{opacity:0}}.cp6{animation:k43 26s linear infinite}
+@keyframes k44{0%{opacity:0}80.769%{opacity:0}81.923%{opacity:1}98.846%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.tk7{animation:k44 26s linear infinite}
+@keyframes k45{0%{opacity:0}80.769%{opacity:0}81.923%{opacity:1}98.846%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.cp7{animation:k45 26s linear infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}.v{opacity:1!important}.cap,.cmt{opacity:0!important}.sum{opacity:1!important}.tr{stroke-dashoffset:0!important}}</style>
+<rect x="0.5" y="0.5" width="879" height="471" rx="8" fill="url(#bgreplycheck)" stroke="#292b31"/>
+<rect x="12" y="48" width="856" height="364" fill="url(#dpreplycheck)"/>
+<text x="28" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#9184d9">OVAT</text>
+<text x="72" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#b2b6ca">A REPLY WITH NO TOOL CALLS</text>
+<path d="M174 116 L200 116" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahreplycheck)"/>
+<path d="M390 116 L440 116" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahreplycheck)"/>
+<path d="M640 116 L680 116" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahreplycheck)"/>
+<path d="M540 152 L540 168 Q540 178 550 178 L760 178 Q770 178 770 188 L770 200" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahreplycheck)"/>
+<path d="M295 152 L295 200" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahreplycheck)"/>
+<path d="M295 272 L295 320" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahreplycheck)"/>
+<path d="M390 236 L440 236" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahreplycheck)"/>
+<path class="tr tr0" d="M174 116 L200 116" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="30 30" stroke-dashoffset="30"/>
+<path class="cmt cm0" d="M174 116 L200 116" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="18 68" stroke-dashoffset="18" opacity="0"/>
+<path class="tr tr1" d="M390 116 L440 116" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="54 54" stroke-dashoffset="54"/>
+<path class="cmt cm1" d="M390 116 L440 116" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="32.4 106.4" stroke-dashoffset="32.4" opacity="0"/>
+<path class="tr tr2" d="M640 116 L680 116" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="44 44" stroke-dashoffset="44"/>
+<path class="cmt cm2" d="M640 116 L680 116" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="26.4 90.4" stroke-dashoffset="26.4" opacity="0"/>
+<path class="tr tr3" d="M540 152 L540 168 Q540 178 550 178 L760 178 Q770 178 770 188 L770 200" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="282 282" stroke-dashoffset="282"/>
+<path class="cmt cm3" d="M540 152 L540 168 Q540 178 550 178 L760 178 Q770 178 770 188 L770 200" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 348" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr4" d="M295 152 L295 200" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="52 52" stroke-dashoffset="52"/>
+<path class="cmt cm4" d="M295 152 L295 200" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="31.2 103.2" stroke-dashoffset="31.2" opacity="0"/>
+<path class="tr tr5" d="M295 272 L295 320" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="52 52" stroke-dashoffset="52"/>
+<path class="cmt cm5" d="M295 272 L295 320" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="31.2 103.2" stroke-dashoffset="31.2" opacity="0"/>
+<path class="tr tr6" d="M390 236 L440 236" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="54 54" stroke-dashoffset="54"/>
+<path class="cmt cm6" d="M390 236 L440 236" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="32.4 106.4" stroke-dashoffset="32.4" opacity="0"/>
+<rect x="397.95" y="105" width="34.1" height="22" rx="9" fill="#161826" stroke="#3f424d" stroke-width="0.8"/>
+<text x="415" y="120" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">yes</text>
+<rect x="642.95" y="105" width="34.1" height="22" rx="9" fill="#161826" stroke="#3f424d" stroke-width="0.8"/>
+<text x="660" y="120" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">yes</text>
+<rect x="596.3" y="167" width="27.4" height="22" rx="9" fill="#161826" stroke="#3f424d" stroke-width="0.8"/>
+<text x="610" y="182" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">no</text>
+<rect x="281.3" y="165" width="27.4" height="22" rx="9" fill="#161826" stroke="#3f424d" stroke-width="0.8"/>
+<text x="295" y="180" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">no</text>
+<rect x="281.3" y="285" width="27.4" height="22" rx="9" fill="#161826" stroke="#3f424d" stroke-width="0.8"/>
+<text x="295" y="300" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">no</text>
+<rect x="397.95" y="225" width="34.1" height="22" rx="9" fill="#161826" stroke="#3f424d" stroke-width="0.8"/>
+<text x="415" y="240" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">yes</text>
+<g>
+<rect x="24" y="96" width="150" height="40" rx="20" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vr" x="24" y="96" width="150" height="40" rx="20" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ar" opacity="0"><rect x="24" y="96" width="150" height="40" rx="20" fill="none" stroke="#9184d9" stroke-width="1.8"/></g>
+<text x="99" y="120.69" text-anchor="middle" style="font:500 12.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">no tool_calls</text>
+</g>
+<g>
+<rect x="200" y="80" width="190" height="72" rx="6" fill="#1b1d2b" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vq1" x="200" y="80" width="190" height="72" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aq1" opacity="0"><rect x="200" y="80" width="190" height="72" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M200 94 V86 Q200 80 206 80 H216" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="214" y="103.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Markup left?</text>
+<text x="214" y="122.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">tool markup still</text>
+<text x="214" y="138.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">in the text</text>
+<circle cx="374" cy="96" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="374" y="99.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">?</text>
+</g>
+<g>
+<rect x="440" y="80" width="200" height="72" rx="6" fill="#1b1d2b" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vq0" x="440" y="80" width="200" height="72" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aq0" opacity="0"><rect x="440" y="80" width="200" height="72" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M440 94 V86 Q440 80 446 80 H456" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="454" y="111.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Cut at length?</text>
+<text x="454" y="130.75" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">finish_reason</text>
+<circle cx="624" cy="96" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="624" y="99.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">?</text>
+</g>
+<g>
+<rect x="680" y="72" width="180" height="88" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vt" x="680" y="72" width="180" height="88" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="at" opacity="0"><rect x="680" y="72" width="180" height="88" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M680 86 V78 Q680 72 686 72 H696" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="694" y="103.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Truncated</text>
+<text x="694" y="122.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">cut at max_tokens,</text>
+<text x="694" y="138.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">markup is a fragment</text>
+<circle cx="844" cy="88" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<path d="M841.2 85.2 L846.8 90.8 M846.8 85.2 L841.2 90.8" fill="none" stroke="#b2b6ca" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<g>
+<rect x="680" y="200" width="180" height="84" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v va" x="680" y="200" width="180" height="84" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aa" opacity="0"><rect x="680" y="200" width="180" height="84" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M680 214 V206 Q680 200 686 200 H696" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="694" y="228.81" style="font:500 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">undecoded_tool_call</text>
+<text x="694" y="247.81" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">the server did not</text>
+<text x="694" y="263.81" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">decode the markup</text>
+<circle cx="844" cy="216" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<path d="M841.2 213.2 L846.8 218.8 M846.8 213.2 L841.2 218.8" fill="none" stroke="#b2b6ca" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<g>
+<rect x="200" y="200" width="190" height="72" rx="6" fill="#1b1d2b" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vq2" x="200" y="200" width="190" height="72" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aq2" opacity="0"><rect x="200" y="200" width="190" height="72" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M200 214 V206 Q200 200 206 200 H216" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="214" y="223.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Answer left?</text>
+<text x="214" y="242.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">anything after</text>
+<text x="214" y="258.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">the reasoning?</text>
+<circle cx="374" cy="216" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="374" y="219.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">?</text>
+</g>
+<g>
+<rect x="440" y="204" width="200" height="64" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vc" x="440" y="204" width="200" height="64" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ac" opacity="0"><rect x="440" y="204" width="200" height="64" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M440 218 V210 Q440 204 446 204 H456" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="454" y="241.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#d2cefd">A real answer</text>
+<circle cx="624" cy="220" r="8" fill="none" stroke="#9184d9" stroke-width="1"/>
+<path d="M620.5 220 L623 222.6 L627.6 217.4" fill="none" stroke="#9184d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g>
+<rect x="200" y="320" width="190" height="72" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vb" x="200" y="320" width="190" height="72" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ab" opacity="0"><rect x="200" y="320" width="190" height="72" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M200 334 V326 Q200 320 206 320 H216" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="214" y="343.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">empty_answer</text>
+<text x="214" y="362.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">the parser swallowed</text>
+<text x="214" y="378.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">the reply</text>
+<circle cx="374" cy="336" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<path d="M371.2 333.2 L376.8 338.8 M376.8 333.2 L371.2 338.8" fill="none" stroke="#b2b6ca" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<rect x="28" y="418" width="824" height="1" fill="url(#rulereplycheck)"/>
+<rect x="728" y="442" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk0" x="728" y="442" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp0" opacity="0"><text x="28" y="446" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">01 / 08</text><text x="92" y="446" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">A reply came back with no tool_calls. What does it mean?</text></g>
+<rect x="744" y="442" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk1" x="744" y="442" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp1" opacity="0"><text x="28" y="446" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">02 / 08</text><text x="92" y="446" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Is there tool markup still in the text?</text></g>
+<rect x="760" y="442" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk2" x="760" y="442" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp2" opacity="0"><text x="28" y="446" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">03 / 08</text><text x="92" y="446" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Yes. Did it stop because finish_reason is length?</text></g>
+<rect x="776" y="442" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk3" x="776" y="442" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp3" opacity="0"><text x="28" y="446" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">04 / 08</text><text x="92" y="446" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Yes: it was cut at max_tokens. The markup is a truncated fragment.</text></g>
+<rect x="792" y="442" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk4" x="792" y="442" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp4" opacity="0"><text x="28" y="446" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">05 / 08</text><text x="92" y="446" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">No: the server did not decode the markup. That is undecoded_tool_call.</text></g>
+<rect x="808" y="442" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk5" x="808" y="442" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp5" opacity="0"><text x="28" y="446" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">06 / 08</text><text x="92" y="446" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">No markup. Is anything left after the reasoning?</text></g>
+<rect x="824" y="442" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk6" x="824" y="442" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp6" opacity="0"><text x="28" y="446" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">07 / 08</text><text x="92" y="446" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">No: the parser swallowed the reply. That is empty_answer.</text></g>
+<rect x="840" y="442" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk7" x="840" y="442" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp7" opacity="0"><text x="28" y="446" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">08 / 08</text><text x="92" y="446" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Yes: it is a real answer.</text></g>
+<text class="sum" x="28" y="446" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed" opacity="0">Markup and length: truncated. Markup alone: undecoded_tool_call. Nothing left: empty_answer. Else the answer.</text>
+</svg>

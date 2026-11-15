@@ -1,0 +1,291 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 450" width="960" height="450" role="img" aria-labelledby="tloopexits dloopexits">
+<title id="tloopexits">Every exit from the native loop</title><desc id="dloopexits">Ask, read, act, report, until no tool calls come back or the round cap is hit. A reply labelled tool_calls with none sent is reported, not re-asked. Leftover markup is undecoded_tool_call, reasoning only is empty_answer, and a real answer comes back with the trace.</desc>
+<defs><radialGradient id="bgloopexits" cx="0.12" cy="0" r="1.1"><stop offset="0" stop-color="#f9faff"/><stop offset="0.7" stop-color="#f3f5fe"/></radialGradient><linearGradient id="ruleloopexits" x1="0" x2="1"><stop offset="0" stop-color="#b2b6ca" stop-opacity="0"/><stop offset="0.08" stop-color="#b2b6ca"/><stop offset="0.92" stop-color="#b2b6ca"/><stop offset="1" stop-color="#b2b6ca" stop-opacity="0"/></linearGradient><pattern id="dploopexits" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#dde0ee"/></pattern><marker id="ahloopexits" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="#75798c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>@keyframes k0{0%{stroke-dashoffset:28;opacity:1}5.882%{stroke-dashoffset:28;opacity:1}7.888%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr0{animation:k0 37.4s linear infinite}
+@keyframes k1{0%{stroke-dashoffset:16.8;opacity:0}5.882%{stroke-dashoffset:16.8;opacity:0}5.936%{opacity:1}7.888%{stroke-dashoffset:-28;opacity:1}8.021%{stroke-dashoffset:-28;opacity:0}100%{stroke-dashoffset:-28;opacity:0}}.cm0{animation:k1 37.4s linear infinite}
+@keyframes k2{0%{stroke-dashoffset:28;opacity:1}12.834%{stroke-dashoffset:28;opacity:1}14.840%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr1{animation:k2 37.4s linear infinite}
+@keyframes k3{0%{stroke-dashoffset:16.8;opacity:0}12.834%{stroke-dashoffset:16.8;opacity:0}12.888%{opacity:1}14.840%{stroke-dashoffset:-28;opacity:1}14.973%{stroke-dashoffset:-28;opacity:0}100%{stroke-dashoffset:-28;opacity:0}}.cm1{animation:k3 37.4s linear infinite}
+@keyframes k4{0%{stroke-dashoffset:52;opacity:1}19.786%{stroke-dashoffset:52;opacity:1}21.791%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr2{animation:k4 37.4s linear infinite}
+@keyframes k5{0%{stroke-dashoffset:31.2;opacity:0}19.786%{stroke-dashoffset:31.2;opacity:0}19.840%{opacity:1}21.791%{stroke-dashoffset:-52;opacity:1}21.925%{stroke-dashoffset:-52;opacity:0}100%{stroke-dashoffset:-52;opacity:0}}.cm2{animation:k5 37.4s linear infinite}
+@keyframes k6{0%{stroke-dashoffset:28;opacity:1}26.203%{stroke-dashoffset:28;opacity:1}28.209%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr3{animation:k6 37.4s linear infinite}
+@keyframes k7{0%{stroke-dashoffset:16.8;opacity:0}26.203%{stroke-dashoffset:16.8;opacity:0}26.257%{opacity:1}28.209%{stroke-dashoffset:-28;opacity:1}28.342%{stroke-dashoffset:-28;opacity:0}100%{stroke-dashoffset:-28;opacity:0}}.cm3{animation:k7 37.4s linear infinite}
+@keyframes k8{0%{stroke-dashoffset:28;opacity:1}33.155%{stroke-dashoffset:28;opacity:1}35.160%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr4{animation:k8 37.4s linear infinite}
+@keyframes k9{0%{stroke-dashoffset:16.8;opacity:0}33.155%{stroke-dashoffset:16.8;opacity:0}33.209%{opacity:1}35.160%{stroke-dashoffset:-28;opacity:1}35.294%{stroke-dashoffset:-28;opacity:0}100%{stroke-dashoffset:-28;opacity:0}}.cm4{animation:k9 37.4s linear infinite}
+@keyframes k10{0%{stroke-dashoffset:176;opacity:1}39.037%{stroke-dashoffset:176;opacity:1}41.043%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr5{animation:k10 37.4s linear infinite}
+@keyframes k11{0%{stroke-dashoffset:46;opacity:0}39.037%{stroke-dashoffset:46;opacity:0}39.091%{opacity:1}41.043%{stroke-dashoffset:-176;opacity:1}41.176%{stroke-dashoffset:-176;opacity:0}100%{stroke-dashoffset:-176;opacity:0}}.cm5{animation:k11 37.4s linear infinite}
+@keyframes k12{0%{stroke-dashoffset:54;opacity:1}45.989%{stroke-dashoffset:54;opacity:1}47.995%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr6{animation:k12 37.4s linear infinite}
+@keyframes k13{0%{stroke-dashoffset:32.4;opacity:0}45.989%{stroke-dashoffset:32.4;opacity:0}46.043%{opacity:1}47.995%{stroke-dashoffset:-54;opacity:1}48.128%{stroke-dashoffset:-54;opacity:0}100%{stroke-dashoffset:-54;opacity:0}}.cm6{animation:k13 37.4s linear infinite}
+@keyframes k14{0%{stroke-dashoffset:28;opacity:1}52.941%{stroke-dashoffset:28;opacity:1}54.947%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr7{animation:k14 37.4s linear infinite}
+@keyframes k15{0%{stroke-dashoffset:16.8;opacity:0}52.941%{stroke-dashoffset:16.8;opacity:0}52.995%{opacity:1}54.947%{stroke-dashoffset:-28;opacity:1}55.080%{stroke-dashoffset:-28;opacity:0}100%{stroke-dashoffset:-28;opacity:0}}.cm7{animation:k15 37.4s linear infinite}
+@keyframes k16{0%{stroke-dashoffset:44;opacity:1}59.893%{stroke-dashoffset:44;opacity:1}61.898%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr8{animation:k16 37.4s linear infinite}
+@keyframes k17{0%{stroke-dashoffset:26.4;opacity:0}59.893%{stroke-dashoffset:26.4;opacity:0}59.947%{opacity:1}61.898%{stroke-dashoffset:-44;opacity:1}62.032%{stroke-dashoffset:-44;opacity:0}100%{stroke-dashoffset:-44;opacity:0}}.cm8{animation:k17 37.4s linear infinite}
+@keyframes k18{0%{stroke-dashoffset:52;opacity:1}66.845%{stroke-dashoffset:52;opacity:1}68.850%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr9{animation:k18 37.4s linear infinite}
+@keyframes k19{0%{stroke-dashoffset:31.2;opacity:0}66.845%{stroke-dashoffset:31.2;opacity:0}66.898%{opacity:1}68.850%{stroke-dashoffset:-52;opacity:1}68.984%{stroke-dashoffset:-52;opacity:0}100%{stroke-dashoffset:-52;opacity:0}}.cm9{animation:k19 37.4s linear infinite}
+@keyframes k20{0%{stroke-dashoffset:199;opacity:1}72.727%{stroke-dashoffset:199;opacity:1}74.733%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr10{animation:k20 37.4s linear infinite}
+@keyframes k21{0%{stroke-dashoffset:46;opacity:0}72.727%{stroke-dashoffset:46;opacity:0}72.781%{opacity:1}74.733%{stroke-dashoffset:-199;opacity:1}74.866%{stroke-dashoffset:-199;opacity:0}100%{stroke-dashoffset:-199;opacity:0}}.cm10{animation:k21 37.4s linear infinite}
+@keyframes k22{0%{stroke-dashoffset:54;opacity:1}79.679%{stroke-dashoffset:54;opacity:1}81.684%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr11{animation:k22 37.4s linear infinite}
+@keyframes k23{0%{stroke-dashoffset:32.4;opacity:0}79.679%{stroke-dashoffset:32.4;opacity:0}79.733%{opacity:1}81.684%{stroke-dashoffset:-54;opacity:1}81.818%{stroke-dashoffset:-54;opacity:0}100%{stroke-dashoffset:-54;opacity:0}}.cm11{animation:k23 37.4s linear infinite}
+@keyframes k24{0%{stroke-dashoffset:206;opacity:1}86.631%{stroke-dashoffset:206;opacity:1}88.636%{stroke-dashoffset:0}99.198%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr12{animation:k24 37.4s linear infinite}
+@keyframes k25{0%{stroke-dashoffset:46;opacity:0}86.631%{stroke-dashoffset:46;opacity:0}86.684%{opacity:1}88.636%{stroke-dashoffset:-206;opacity:1}88.770%{stroke-dashoffset:-206;opacity:0}100%{stroke-dashoffset:-206;opacity:0}}.cm12{animation:k25 37.4s linear infinite}
+@keyframes k26{0%{opacity:0}0.000%{opacity:0}0.802%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.vstart{animation:k26 37.4s linear infinite}
+@keyframes k27{0%{opacity:0}0.000%{opacity:0}0.802%{opacity:1}5.080%{opacity:1}5.882%{opacity:0}100%{opacity:0}}.astart{animation:k27 37.4s linear infinite}
+@keyframes k28{0%{opacity:0}7.487%{opacity:0}8.289%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.vask{animation:k28 37.4s linear infinite}
+@keyframes k29{0%{opacity:0}7.487%{opacity:0}8.289%{opacity:1}12.032%{opacity:1}12.834%{opacity:0}40.642%{opacity:0}41.444%{opacity:1}45.187%{opacity:1}45.989%{opacity:0}100%{opacity:0}}.aask{animation:k29 37.4s linear infinite}
+@keyframes k30{0%{opacity:0}14.439%{opacity:0}15.241%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.vread{animation:k30 37.4s linear infinite}
+@keyframes k31{0%{opacity:0}14.439%{opacity:0}15.241%{opacity:1}18.984%{opacity:1}19.786%{opacity:0}100%{opacity:0}}.aread{animation:k31 37.4s linear infinite}
+@keyframes k32{0%{opacity:0}54.545%{opacity:0}55.348%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.vlabel{animation:k32 37.4s linear infinite}
+@keyframes k33{0%{opacity:0}54.545%{opacity:0}55.348%{opacity:1}59.091%{opacity:1}59.893%{opacity:0}100%{opacity:0}}.alabel{animation:k33 37.4s linear infinite}
+@keyframes k34{0%{opacity:0}61.497%{opacity:0}62.299%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.verrA{animation:k34 37.4s linear infinite}
+@keyframes k35{0%{opacity:0}61.497%{opacity:0}62.299%{opacity:1}66.043%{opacity:1}66.845%{opacity:0}100%{opacity:0}}.aerrA{animation:k35 37.4s linear infinite}
+@keyframes k36{0%{opacity:0}34.759%{opacity:0}35.561%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.vcap{animation:k36 37.4s linear infinite}
+@keyframes k37{0%{opacity:0}34.759%{opacity:0}35.561%{opacity:1}38.235%{opacity:1}39.037%{opacity:0}100%{opacity:0}}.acap{animation:k37 37.4s linear infinite}
+@keyframes k38{0%{opacity:0}27.807%{opacity:0}28.610%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.vreport{animation:k38 37.4s linear infinite}
+@keyframes k39{0%{opacity:0}27.807%{opacity:0}28.610%{opacity:1}32.353%{opacity:1}33.155%{opacity:0}100%{opacity:0}}.areport{animation:k39 37.4s linear infinite}
+@keyframes k40{0%{opacity:0}21.390%{opacity:0}22.193%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.vact{animation:k40 37.4s linear infinite}
+@keyframes k41{0%{opacity:0}21.390%{opacity:0}22.193%{opacity:1}25.401%{opacity:1}26.203%{opacity:0}100%{opacity:0}}.aact{animation:k41 37.4s linear infinite}
+@keyframes k42{0%{opacity:0}68.449%{opacity:0}69.251%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.vcheck{animation:k42 37.4s linear infinite}
+@keyframes k43{0%{opacity:0}68.449%{opacity:0}69.251%{opacity:1}71.925%{opacity:1}72.727%{opacity:0}100%{opacity:0}}.acheck{animation:k43 37.4s linear infinite}
+@keyframes k44{0%{opacity:0}47.594%{opacity:0}48.396%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.verrB{animation:k44 37.4s linear infinite}
+@keyframes k45{0%{opacity:0}47.594%{opacity:0}48.396%{opacity:1}52.139%{opacity:1}52.941%{opacity:0}100%{opacity:0}}.aerrB{animation:k45 37.4s linear infinite}
+@keyframes k46{0%{opacity:0}74.332%{opacity:0}75.134%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.verrC{animation:k46 37.4s linear infinite}
+@keyframes k47{0%{opacity:0}74.332%{opacity:0}75.134%{opacity:1}78.877%{opacity:1}79.679%{opacity:0}100%{opacity:0}}.aerrC{animation:k47 37.4s linear infinite}
+@keyframes k48{0%{opacity:0}81.283%{opacity:0}82.086%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.verrD{animation:k48 37.4s linear infinite}
+@keyframes k49{0%{opacity:0}81.283%{opacity:0}82.086%{opacity:1}85.829%{opacity:1}86.631%{opacity:0}100%{opacity:0}}.aerrD{animation:k49 37.4s linear infinite}
+@keyframes k50{0%{opacity:0}88.235%{opacity:0}89.037%{opacity:1}99.198%{opacity:1}100%{opacity:0}}.vdone{animation:k50 37.4s linear infinite}
+@keyframes k51{0%{opacity:0}88.235%{opacity:0}89.037%{opacity:1}98.396%{opacity:1}99.198%{opacity:0}100%{opacity:0}}.adone{animation:k51 37.4s linear infinite}
+@keyframes k52{0%{opacity:0}0.000%{opacity:0}0.802%{opacity:1}5.080%{opacity:1}5.882%{opacity:0}100%{opacity:0}}.tk0{animation:k52 37.4s linear infinite}
+@keyframes k53{0%{opacity:0}0.000%{opacity:0}0.802%{opacity:1}5.080%{opacity:1}5.882%{opacity:0}100%{opacity:0}}.cp0{animation:k53 37.4s linear infinite}
+@keyframes k54{0%{opacity:0}5.882%{opacity:0}6.684%{opacity:1}12.032%{opacity:1}12.834%{opacity:0}100%{opacity:0}}.tk1{animation:k54 37.4s linear infinite}
+@keyframes k55{0%{opacity:0}5.882%{opacity:0}6.684%{opacity:1}12.032%{opacity:1}12.834%{opacity:0}100%{opacity:0}}.cp1{animation:k55 37.4s linear infinite}
+@keyframes k56{0%{opacity:0}12.834%{opacity:0}13.636%{opacity:1}18.984%{opacity:1}19.786%{opacity:0}100%{opacity:0}}.tk2{animation:k56 37.4s linear infinite}
+@keyframes k57{0%{opacity:0}12.834%{opacity:0}13.636%{opacity:1}18.984%{opacity:1}19.786%{opacity:0}100%{opacity:0}}.cp2{animation:k57 37.4s linear infinite}
+@keyframes k58{0%{opacity:0}19.786%{opacity:0}20.588%{opacity:1}25.401%{opacity:1}26.203%{opacity:0}100%{opacity:0}}.tk3{animation:k58 37.4s linear infinite}
+@keyframes k59{0%{opacity:0}19.786%{opacity:0}20.588%{opacity:1}25.401%{opacity:1}26.203%{opacity:0}100%{opacity:0}}.cp3{animation:k59 37.4s linear infinite}
+@keyframes k60{0%{opacity:0}26.203%{opacity:0}27.005%{opacity:1}32.353%{opacity:1}33.155%{opacity:0}100%{opacity:0}}.tk4{animation:k60 37.4s linear infinite}
+@keyframes k61{0%{opacity:0}26.203%{opacity:0}27.005%{opacity:1}32.353%{opacity:1}33.155%{opacity:0}100%{opacity:0}}.cp4{animation:k61 37.4s linear infinite}
+@keyframes k62{0%{opacity:0}33.155%{opacity:0}33.957%{opacity:1}38.235%{opacity:1}39.037%{opacity:0}100%{opacity:0}}.tk5{animation:k62 37.4s linear infinite}
+@keyframes k63{0%{opacity:0}33.155%{opacity:0}33.957%{opacity:1}38.235%{opacity:1}39.037%{opacity:0}100%{opacity:0}}.cp5{animation:k63 37.4s linear infinite}
+@keyframes k64{0%{opacity:0}39.037%{opacity:0}39.840%{opacity:1}45.187%{opacity:1}45.989%{opacity:0}100%{opacity:0}}.tk6{animation:k64 37.4s linear infinite}
+@keyframes k65{0%{opacity:0}39.037%{opacity:0}39.840%{opacity:1}45.187%{opacity:1}45.989%{opacity:0}100%{opacity:0}}.cp6{animation:k65 37.4s linear infinite}
+@keyframes k66{0%{opacity:0}45.989%{opacity:0}46.791%{opacity:1}52.139%{opacity:1}52.941%{opacity:0}100%{opacity:0}}.tk7{animation:k66 37.4s linear infinite}
+@keyframes k67{0%{opacity:0}45.989%{opacity:0}46.791%{opacity:1}52.139%{opacity:1}52.941%{opacity:0}100%{opacity:0}}.cp7{animation:k67 37.4s linear infinite}
+@keyframes k68{0%{opacity:0}52.941%{opacity:0}53.743%{opacity:1}59.091%{opacity:1}59.893%{opacity:0}100%{opacity:0}}.tk8{animation:k68 37.4s linear infinite}
+@keyframes k69{0%{opacity:0}52.941%{opacity:0}53.743%{opacity:1}59.091%{opacity:1}59.893%{opacity:0}100%{opacity:0}}.cp8{animation:k69 37.4s linear infinite}
+@keyframes k70{0%{opacity:0}59.893%{opacity:0}60.695%{opacity:1}66.043%{opacity:1}66.845%{opacity:0}100%{opacity:0}}.tk9{animation:k70 37.4s linear infinite}
+@keyframes k71{0%{opacity:0}59.893%{opacity:0}60.695%{opacity:1}66.043%{opacity:1}66.845%{opacity:0}100%{opacity:0}}.cp9{animation:k71 37.4s linear infinite}
+@keyframes k72{0%{opacity:0}66.845%{opacity:0}67.647%{opacity:1}71.925%{opacity:1}72.727%{opacity:0}100%{opacity:0}}.tk10{animation:k72 37.4s linear infinite}
+@keyframes k73{0%{opacity:0}66.845%{opacity:0}67.647%{opacity:1}71.925%{opacity:1}72.727%{opacity:0}100%{opacity:0}}.cp10{animation:k73 37.4s linear infinite}
+@keyframes k74{0%{opacity:0}72.727%{opacity:0}73.529%{opacity:1}78.877%{opacity:1}79.679%{opacity:0}100%{opacity:0}}.tk11{animation:k74 37.4s linear infinite}
+@keyframes k75{0%{opacity:0}72.727%{opacity:0}73.529%{opacity:1}78.877%{opacity:1}79.679%{opacity:0}100%{opacity:0}}.cp11{animation:k75 37.4s linear infinite}
+@keyframes k76{0%{opacity:0}79.679%{opacity:0}80.481%{opacity:1}85.829%{opacity:1}86.631%{opacity:0}100%{opacity:0}}.tk12{animation:k76 37.4s linear infinite}
+@keyframes k77{0%{opacity:0}79.679%{opacity:0}80.481%{opacity:1}85.829%{opacity:1}86.631%{opacity:0}100%{opacity:0}}.cp12{animation:k77 37.4s linear infinite}
+@keyframes k78{0%{opacity:0}86.631%{opacity:0}87.433%{opacity:1}99.198%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.tk13{animation:k78 37.4s linear infinite}
+@keyframes k79{0%{opacity:0}86.631%{opacity:0}87.433%{opacity:1}99.198%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.cp13{animation:k79 37.4s linear infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}.v{opacity:1!important}.cap,.cmt{opacity:0!important}.sum{opacity:1!important}.tr{stroke-dashoffset:0!important}}</style>
+<rect x="0.5" y="0.5" width="959" height="449" rx="8" fill="url(#bgloopexits)" stroke="#cfd3e5"/>
+<rect x="12" y="48" width="936" height="342" fill="url(#dploopexits)"/>
+<text x="28" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#796cbf">OVAT</text>
+<text x="72" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#595d6c">EVERY EXIT FROM THE NATIVE LOOP</text>
+<path d="M164 116 L188 116" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M338 116 L362 116" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M447 148 L447 196" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M362 228 L338 228" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M188 228 L164 228" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M94 196 L94 182 Q94 172 104 172 L208 172 Q218 172 218 162 L218 148" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M94 260 L94 310" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M532 116 L556 116" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M736 116 L776 116" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M646 148 L646 196" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M592 260 L592 276 Q592 286 582 286 L457 286 Q447 286 447 296 L447 310" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M646 260 L646 310" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path d="M736 228 L846 228 Q856 228 856 238 L856 310" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloopexits)"/>
+<path class="tr tr0" d="M164 116 L188 116" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="28 28" stroke-dashoffset="28"/>
+<path class="cmt cm0" d="M164 116 L188 116" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="16.8 64.8" stroke-dashoffset="16.8" opacity="0"/>
+<path class="tr tr1" d="M338 116 L362 116" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="28 28" stroke-dashoffset="28"/>
+<path class="cmt cm1" d="M338 116 L362 116" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="16.8 64.8" stroke-dashoffset="16.8" opacity="0"/>
+<path class="tr tr2" d="M447 148 L447 196" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="52 52" stroke-dashoffset="52"/>
+<path class="cmt cm2" d="M447 148 L447 196" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="31.2 103.2" stroke-dashoffset="31.2" opacity="0"/>
+<path class="tr tr3" d="M362 228 L338 228" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="28 28" stroke-dashoffset="28"/>
+<path class="cmt cm3" d="M362 228 L338 228" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="16.8 64.8" stroke-dashoffset="16.8" opacity="0"/>
+<path class="tr tr4" d="M188 228 L164 228" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="28 28" stroke-dashoffset="28"/>
+<path class="cmt cm4" d="M188 228 L164 228" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="16.8 64.8" stroke-dashoffset="16.8" opacity="0"/>
+<path class="tr tr5" d="M94 196 L94 182 Q94 172 104 172 L208 172 Q218 172 218 162 L218 148" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="176 176" stroke-dashoffset="176"/>
+<path class="cmt cm5" d="M94 196 L94 182 Q94 172 104 172 L208 172 Q218 172 218 162 L218 148" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 242" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr6" d="M94 260 L94 310" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="54 54" stroke-dashoffset="54"/>
+<path class="cmt cm6" d="M94 260 L94 310" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="32.4 106.4" stroke-dashoffset="32.4" opacity="0"/>
+<path class="tr tr7" d="M532 116 L556 116" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="28 28" stroke-dashoffset="28"/>
+<path class="cmt cm7" d="M532 116 L556 116" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="16.8 64.8" stroke-dashoffset="16.8" opacity="0"/>
+<path class="tr tr8" d="M736 116 L776 116" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="44 44" stroke-dashoffset="44"/>
+<path class="cmt cm8" d="M736 116 L776 116" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="26.4 90.4" stroke-dashoffset="26.4" opacity="0"/>
+<path class="tr tr9" d="M646 148 L646 196" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="52 52" stroke-dashoffset="52"/>
+<path class="cmt cm9" d="M646 148 L646 196" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="31.2 103.2" stroke-dashoffset="31.2" opacity="0"/>
+<path class="tr tr10" d="M592 260 L592 276 Q592 286 582 286 L457 286 Q447 286 447 296 L447 310" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="199 199" stroke-dashoffset="199"/>
+<path class="cmt cm10" d="M592 260 L592 276 Q592 286 582 286 L457 286 Q447 286 447 296 L447 310" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 265" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr11" d="M646 260 L646 310" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="54 54" stroke-dashoffset="54"/>
+<path class="cmt cm11" d="M646 260 L646 310" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="32.4 106.4" stroke-dashoffset="32.4" opacity="0"/>
+<path class="tr tr12" d="M736 228 L846 228 Q856 228 856 238 L856 310" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="206 206" stroke-dashoffset="206"/>
+<path class="cmt cm12" d="M736 228 L846 228 Q856 228 856 238 L856 310" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 272" stroke-dashoffset="46" opacity="0"/>
+<rect x="429.95" y="161" width="34.1" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="447" y="176" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">yes</text>
+<rect x="76.95" y="161" width="34.1" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="94" y="176" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">yes</text>
+<rect x="80.3" y="274" width="27.4" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="94" y="289" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">no</text>
+<rect x="530.3" y="89" width="27.4" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="544" y="104" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">no</text>
+<rect x="738.95" y="89" width="34.1" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="756" y="104" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">yes</text>
+<rect x="632.3" y="161" width="27.4" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="646" y="176" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">no</text>
+<g>
+<rect x="24" y="96" width="140" height="40" rx="20" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vstart" x="24" y="96" width="140" height="40" rx="20" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="astart" opacity="0"><rect x="24" y="96" width="140" height="40" rx="20" fill="none" stroke="#796cbf" stroke-width="1.8"/></g>
+<text x="94" y="120.88" text-anchor="middle" style="font:500 13px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">user message</text>
+</g>
+<g>
+<rect x="188" y="84" width="150" height="64" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vask" x="188" y="84" width="150" height="64" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aask" opacity="0"><rect x="188" y="84" width="150" height="64" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M188 98 V90 Q188 84 194 84 H204" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="202" y="101.75" style="font:500 10px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#75798c">1 ASK</text>
+<text x="202" y="119.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">POST history</text>
+<text x="202" y="138.25" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">and the tool menu</text>
+</g>
+<g>
+<rect x="362" y="84" width="170" height="64" rx="6" fill="#e9ecf8" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vread" x="362" y="84" width="170" height="64" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aread" opacity="0"><rect x="362" y="84" width="170" height="64" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M362 98 V90 Q362 84 368 84 H378" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="376" y="111.25" style="font:500 10px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#75798c">2 READ</text>
+<text x="376" y="128.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Tool calls?</text>
+<circle cx="516" cy="100" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<text x="516" y="103.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">?</text>
+</g>
+<g>
+<rect x="556" y="84" width="180" height="64" rx="6" fill="#e9ecf8" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vlabel" x="556" y="84" width="180" height="64" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="alabel" opacity="0"><rect x="556" y="84" width="180" height="64" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M556 98 V90 Q556 84 562 84 H572" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="570" y="111.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">finish_reason</text>
+<text x="570" y="130.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">says tool_calls?</text>
+<circle cx="720" cy="100" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<text x="720" y="103.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">?</text>
+</g>
+<g>
+<rect x="776" y="84" width="160" height="64" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v verrA" x="776" y="84" width="160" height="64" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aerrA" opacity="0"><rect x="776" y="84" width="160" height="64" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M776 98 V90 Q776 84 782 84 H792" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="790" y="111.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Report it</text>
+<text x="790" y="130.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">none sent, no re-ask</text>
+<circle cx="920" cy="100" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<path d="M917.2 97.2 L922.8 102.8 M922.8 97.2 L917.2 102.8" fill="none" stroke="#595d6c" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<g>
+<rect x="24" y="196" width="140" height="64" rx="6" fill="#e9ecf8" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vcap" x="24" y="196" width="140" height="64" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="acap" opacity="0"><rect x="24" y="196" width="140" height="64" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M24 210 V202 Q24 196 30 196 H40" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="38" y="223.25" style="font:500 10px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#75798c">CAP</text>
+<text x="38" y="240.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Rounds left?</text>
+<circle cx="148" cy="212" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<text x="148" y="215.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">?</text>
+</g>
+<g>
+<rect x="188" y="196" width="150" height="64" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vreport" x="188" y="196" width="150" height="64" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="areport" opacity="0"><rect x="188" y="196" width="150" height="64" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M188 210 V202 Q188 196 194 196 H204" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="202" y="213.75" style="font:500 10px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#75798c">4 REPORT</text>
+<text x="202" y="231.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Add results</text>
+<text x="202" y="250.25" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">to the history</text>
+</g>
+<g>
+<rect x="362" y="196" width="170" height="64" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vact" x="362" y="196" width="170" height="64" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aact" opacity="0"><rect x="362" y="196" width="170" height="64" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M362 210 V202 Q362 196 368 196 H378" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="376" y="223.25" style="font:500 10px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#75798c">3 ACT</text>
+<text x="376" y="240.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Run each tool</text>
+</g>
+<g>
+<rect x="556" y="196" width="180" height="64" rx="6" fill="#e9ecf8" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vcheck" x="556" y="196" width="180" height="64" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="acheck" opacity="0"><rect x="556" y="196" width="180" height="64" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M556 210 V202 Q556 196 562 196 H572" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="570" y="233.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Content usable?</text>
+<circle cx="720" cy="212" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<text x="720" y="215.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">?</text>
+</g>
+<g>
+<rect x="24" y="310" width="140" height="56" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v verrB" x="24" y="310" width="140" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aerrB" opacity="0"><rect x="24" y="310" width="140" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M24 324 V316 Q24 310 30 310 H40" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="38" y="343.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Report the cap</text>
+<circle cx="148" cy="326" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<path d="M145.2 323.2 L150.8 328.8 M150.8 323.2 L145.2 328.8" fill="none" stroke="#595d6c" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<g>
+<rect x="362" y="310" width="170" height="56" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v verrC" x="362" y="310" width="170" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aerrC" opacity="0"><rect x="362" y="310" width="170" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M362 324 V316 Q362 310 368 310 H378" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="376" y="332.44" style="font:500 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#292b31">undecoded_tool_call</text>
+<text x="376" y="351.44" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">markup left in it</text>
+<circle cx="516" cy="326" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<path d="M513.2 323.2 L518.8 328.8 M518.8 323.2 L513.2 328.8" fill="none" stroke="#595d6c" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<g>
+<rect x="556" y="310" width="180" height="56" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v verrD" x="556" y="310" width="180" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aerrD" opacity="0"><rect x="556" y="310" width="180" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M556 324 V316 Q556 310 562 310 H572" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="570" y="333" style="font:500 12px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#292b31">empty_answer</text>
+<text x="570" y="352" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">only reasoning</text>
+<circle cx="720" cy="326" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<path d="M717.2 323.2 L722.8 328.8 M722.8 323.2 L717.2 328.8" fill="none" stroke="#595d6c" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<g>
+<rect x="776" y="310" width="160" height="56" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vdone" x="776" y="310" width="160" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="adone" opacity="0"><rect x="776" y="310" width="160" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M776 324 V316 Q776 310 782 310 H792" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="790" y="342.88" style="font:500 13px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#5d5294">answer + trace</text>
+<circle cx="920" cy="326" r="8" fill="none" stroke="#796cbf" stroke-width="1"/>
+<path d="M916.5 326 L919 328.6 L923.6 323.4" fill="none" stroke="#796cbf" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="28" y="396" width="904" height="1" fill="url(#ruleloopexits)"/>
+<rect x="712" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk0" x="712" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp0" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">01 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">A user message starts the loop.</text></g>
+<rect x="728" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk1" x="728" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp1" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">02 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">1. Ask: POST the history and the tool menu to the model.</text></g>
+<rect x="744" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk2" x="744" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp2" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">03 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">2. Read: are there tool calls in the reply?</text></g>
+<rect x="760" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk3" x="760" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp3" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">04 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Yes: 3. Act. Each tool runs.</text></g>
+<rect x="776" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk4" x="776" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp4" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">05 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">4. Report: the tool results are added to the history.</text></g>
+<rect x="792" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk5" x="792" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp5" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">06 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Are there rounds left?</text></g>
+<rect x="808" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk6" x="808" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp6" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">07 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Yes: ask again. The loop runs up to max_iterations rounds.</text></g>
+<rect x="824" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk7" x="824" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp7" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">08 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">No rounds left: OVAT reports the cap.</text></g>
+<rect x="840" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk8" x="840" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp8" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">09 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">No tool calls. Does finish_reason still say tool_calls?</text></g>
+<rect x="856" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk9" x="856" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp9" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">10 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Yes, but none were sent: report it, do not re-ask.</text></g>
+<rect x="872" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk10" x="872" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp10" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">11 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">No: is the content usable?</text></g>
+<rect x="888" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk11" x="888" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp11" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">12 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Tool markup left in the text: undecoded_tool_call.</text></g>
+<rect x="904" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk12" x="904" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp12" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">13 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Only reasoning, no answer: empty_answer.</text></g>
+<rect x="920" y="420" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk13" x="920" y="420" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp13" opacity="0"><text x="28" y="424" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">14 / 14</text><text x="92" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">A real answer comes back with the trace.</text></g>
+<text class="sum" x="28" y="424" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31" opacity="0">Ask, read, act, report. Exits: the cap, a label with no calls, undecoded markup, empty answer, or the answer.</text>
+</svg>

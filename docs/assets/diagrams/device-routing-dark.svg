@@ -1,0 +1,186 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 484" width="880" height="484" role="img" aria-labelledby="tdevicerouting ddevicerouting">
+<title id="tdevicerouting">Device routing as a decision</title><desc id="ddevicerouting">At startup OVAT checks the devices. CPU only: everything on the CPU. CPU and GPU: the LLM on the GPU, embeddings and whisper on the CPU. CPU, GPU and NPU: the LLM on the GPU, embeddings on the NPU, whisper on the CPU. Serving an LLM on the NPU needs an int4-cw-ov export, a capped prompt, no batching or beam search, and ignores KV cache settings.</desc>
+<defs><radialGradient id="bgdevicerouting" cx="0.12" cy="0" r="1.1"><stop offset="0" stop-color="#1f2236"/><stop offset="0.7" stop-color="#161826"/></radialGradient><linearGradient id="ruledevicerouting" x1="0" x2="1"><stop offset="0" stop-color="#3f424d" stop-opacity="0"/><stop offset="0.08" stop-color="#3f424d"/><stop offset="0.92" stop-color="#3f424d"/><stop offset="1" stop-color="#3f424d" stop-opacity="0"/></linearGradient><pattern id="dpdevicerouting" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#262836"/></pattern><marker id="ahdevicerouting" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="#75798c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>@keyframes k0{0%{stroke-dashoffset:40;opacity:1}0.000%{stroke-dashoffset:40;opacity:1}3.641%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr0{animation:k0 20.6s linear infinite}
+@keyframes k1{0%{stroke-dashoffset:24;opacity:0}0.000%{stroke-dashoffset:24;opacity:0}0.097%{opacity:1}3.641%{stroke-dashoffset:-40;opacity:1}3.883%{stroke-dashoffset:-40;opacity:0}100%{stroke-dashoffset:-40;opacity:0}}.cm0{animation:k1 20.6s linear infinite}
+@keyframes k2{0%{stroke-dashoffset:118.8;opacity:1}14.563%{stroke-dashoffset:118.8;opacity:1}18.204%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr1{animation:k2 20.6s linear infinite}
+@keyframes k3{0%{stroke-dashoffset:46;opacity:0}14.563%{stroke-dashoffset:46;opacity:0}14.660%{opacity:1}18.204%{stroke-dashoffset:-118.8;opacity:1}18.447%{stroke-dashoffset:-118.8;opacity:0}100%{stroke-dashoffset:-118.8;opacity:0}}.cm1{animation:k3 20.6s linear infinite}
+@keyframes k4{0%{stroke-dashoffset:62;opacity:1}29.126%{stroke-dashoffset:62;opacity:1}32.767%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr2{animation:k4 20.6s linear infinite}
+@keyframes k5{0%{stroke-dashoffset:37.2;opacity:0}29.126%{stroke-dashoffset:37.2;opacity:0}29.223%{opacity:1}32.767%{stroke-dashoffset:-62;opacity:1}33.010%{stroke-dashoffset:-62;opacity:0}100%{stroke-dashoffset:-62;opacity:0}}.cm2{animation:k5 20.6s linear infinite}
+@keyframes k6{0%{stroke-dashoffset:142.8;opacity:1}43.689%{stroke-dashoffset:142.8;opacity:1}47.330%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr3{animation:k6 20.6s linear infinite}
+@keyframes k7{0%{stroke-dashoffset:46;opacity:0}43.689%{stroke-dashoffset:46;opacity:0}43.786%{opacity:1}47.330%{stroke-dashoffset:-142.8;opacity:1}47.573%{stroke-dashoffset:-142.8;opacity:0}100%{stroke-dashoffset:-142.8;opacity:0}}.cm3{animation:k7 20.6s linear infinite}
+@keyframes k8{0%{stroke-dashoffset:51.8;opacity:1}58.252%{stroke-dashoffset:51.8;opacity:1}61.893%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr4{animation:k8 20.6s linear infinite}
+@keyframes k9{0%{stroke-dashoffset:31.08;opacity:0}58.252%{stroke-dashoffset:31.08;opacity:0}58.350%{opacity:1}61.893%{stroke-dashoffset:-51.8;opacity:1}62.136%{stroke-dashoffset:-51.8;opacity:0}100%{stroke-dashoffset:-51.8;opacity:0}}.cm4{animation:k9 20.6s linear infinite}
+@keyframes k10{0%{stroke-dashoffset:682;opacity:1}72.816%{stroke-dashoffset:682;opacity:1}76.456%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr5{animation:k10 20.6s linear infinite}
+@keyframes k11{0%{stroke-dashoffset:46;opacity:0}72.816%{stroke-dashoffset:46;opacity:0}72.913%{opacity:1}76.456%{stroke-dashoffset:-682;opacity:1}76.699%{stroke-dashoffset:-682;opacity:0}100%{stroke-dashoffset:-682;opacity:0}}.cm5{animation:k11 20.6s linear infinite}
+@keyframes k12{0%{stroke-dashoffset:472;opacity:1}72.816%{stroke-dashoffset:472;opacity:1}76.456%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr6{animation:k12 20.6s linear infinite}
+@keyframes k13{0%{stroke-dashoffset:46;opacity:0}72.816%{stroke-dashoffset:46;opacity:0}72.913%{opacity:1}76.456%{stroke-dashoffset:-472;opacity:1}76.699%{stroke-dashoffset:-472;opacity:0}100%{stroke-dashoffset:-472;opacity:0}}.cm6{animation:k13 20.6s linear infinite}
+@keyframes k14{0%{stroke-dashoffset:262;opacity:1}72.816%{stroke-dashoffset:262;opacity:1}76.456%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr7{animation:k14 20.6s linear infinite}
+@keyframes k15{0%{stroke-dashoffset:46;opacity:0}72.816%{stroke-dashoffset:46;opacity:0}72.913%{opacity:1}76.456%{stroke-dashoffset:-262;opacity:1}76.699%{stroke-dashoffset:-262;opacity:0}100%{stroke-dashoffset:-262;opacity:0}}.cm7{animation:k15 20.6s linear infinite}
+@keyframes k16{0%{stroke-dashoffset:61;opacity:1}72.816%{stroke-dashoffset:61;opacity:1}76.456%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr8{animation:k16 20.6s linear infinite}
+@keyframes k17{0%{stroke-dashoffset:36.6;opacity:0}72.816%{stroke-dashoffset:36.6;opacity:0}72.913%{opacity:1}76.456%{stroke-dashoffset:-61;opacity:1}76.699%{stroke-dashoffset:-61;opacity:0}100%{stroke-dashoffset:-61;opacity:0}}.cm8{animation:k17 20.6s linear infinite}
+@keyframes k18{0%{opacity:0}2.913%{opacity:0}4.369%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vst{animation:k18 20.6s linear infinite}
+@keyframes k19{0%{opacity:0}2.913%{opacity:0}4.369%{opacity:1}13.107%{opacity:1}14.563%{opacity:0}100%{opacity:0}}.ast{animation:k19 20.6s linear infinite}
+@keyframes k20{0%{opacity:0}2.913%{opacity:0}4.369%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vdet{animation:k20 20.6s linear infinite}
+@keyframes k21{0%{opacity:0}2.913%{opacity:0}4.369%{opacity:1}13.107%{opacity:1}14.563%{opacity:0}100%{opacity:0}}.adet{animation:k21 20.6s linear infinite}
+@keyframes k22{0%{opacity:0}17.476%{opacity:0}18.932%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vc1{animation:k22 20.6s linear infinite}
+@keyframes k23{0%{opacity:0}17.476%{opacity:0}18.932%{opacity:1}27.670%{opacity:1}29.126%{opacity:0}100%{opacity:0}}.ac1{animation:k23 20.6s linear infinite}
+@keyframes k24{0%{opacity:0}32.039%{opacity:0}33.495%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vc2{animation:k24 20.6s linear infinite}
+@keyframes k25{0%{opacity:0}32.039%{opacity:0}33.495%{opacity:1}42.233%{opacity:1}43.689%{opacity:0}100%{opacity:0}}.ac2{animation:k25 20.6s linear infinite}
+@keyframes k26{0%{opacity:0}46.602%{opacity:0}48.058%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vc3{animation:k26 20.6s linear infinite}
+@keyframes k27{0%{opacity:0}46.602%{opacity:0}48.058%{opacity:1}56.796%{opacity:1}58.252%{opacity:0}100%{opacity:0}}.ac3{animation:k27 20.6s linear infinite}
+@keyframes k28{0%{opacity:0}61.165%{opacity:0}62.621%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vlim{animation:k28 20.6s linear infinite}
+@keyframes k29{0%{opacity:0}61.165%{opacity:0}62.621%{opacity:1}71.359%{opacity:1}72.816%{opacity:0}100%{opacity:0}}.alim{animation:k29 20.6s linear infinite}
+@keyframes k30{0%{opacity:0}75.728%{opacity:0}77.184%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vl1{animation:k30 20.6s linear infinite}
+@keyframes k31{0%{opacity:0}75.728%{opacity:0}77.184%{opacity:1}97.087%{opacity:1}98.544%{opacity:0}100%{opacity:0}}.al1{animation:k31 20.6s linear infinite}
+@keyframes k32{0%{opacity:0}75.728%{opacity:0}77.184%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vl2{animation:k32 20.6s linear infinite}
+@keyframes k33{0%{opacity:0}75.728%{opacity:0}77.184%{opacity:1}97.087%{opacity:1}98.544%{opacity:0}100%{opacity:0}}.al2{animation:k33 20.6s linear infinite}
+@keyframes k34{0%{opacity:0}75.728%{opacity:0}77.184%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vl3{animation:k34 20.6s linear infinite}
+@keyframes k35{0%{opacity:0}75.728%{opacity:0}77.184%{opacity:1}97.087%{opacity:1}98.544%{opacity:0}100%{opacity:0}}.al3{animation:k35 20.6s linear infinite}
+@keyframes k36{0%{opacity:0}75.728%{opacity:0}77.184%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vl4{animation:k36 20.6s linear infinite}
+@keyframes k37{0%{opacity:0}75.728%{opacity:0}77.184%{opacity:1}97.087%{opacity:1}98.544%{opacity:0}100%{opacity:0}}.al4{animation:k37 20.6s linear infinite}
+@keyframes k38{0%{opacity:0}0.000%{opacity:0}1.456%{opacity:1}13.107%{opacity:1}14.563%{opacity:0}100%{opacity:0}}.tk0{animation:k38 20.6s linear infinite}
+@keyframes k39{0%{opacity:0}0.000%{opacity:0}1.456%{opacity:1}13.107%{opacity:1}14.563%{opacity:0}100%{opacity:0}}.cp0{animation:k39 20.6s linear infinite}
+@keyframes k40{0%{opacity:0}14.563%{opacity:0}16.019%{opacity:1}27.670%{opacity:1}29.126%{opacity:0}100%{opacity:0}}.tk1{animation:k40 20.6s linear infinite}
+@keyframes k41{0%{opacity:0}14.563%{opacity:0}16.019%{opacity:1}27.670%{opacity:1}29.126%{opacity:0}100%{opacity:0}}.cp1{animation:k41 20.6s linear infinite}
+@keyframes k42{0%{opacity:0}29.126%{opacity:0}30.583%{opacity:1}42.233%{opacity:1}43.689%{opacity:0}100%{opacity:0}}.tk2{animation:k42 20.6s linear infinite}
+@keyframes k43{0%{opacity:0}29.126%{opacity:0}30.583%{opacity:1}42.233%{opacity:1}43.689%{opacity:0}100%{opacity:0}}.cp2{animation:k43 20.6s linear infinite}
+@keyframes k44{0%{opacity:0}43.689%{opacity:0}45.146%{opacity:1}56.796%{opacity:1}58.252%{opacity:0}100%{opacity:0}}.tk3{animation:k44 20.6s linear infinite}
+@keyframes k45{0%{opacity:0}43.689%{opacity:0}45.146%{opacity:1}56.796%{opacity:1}58.252%{opacity:0}100%{opacity:0}}.cp3{animation:k45 20.6s linear infinite}
+@keyframes k46{0%{opacity:0}58.252%{opacity:0}59.709%{opacity:1}71.359%{opacity:1}72.816%{opacity:0}100%{opacity:0}}.tk4{animation:k46 20.6s linear infinite}
+@keyframes k47{0%{opacity:0}58.252%{opacity:0}59.709%{opacity:1}71.359%{opacity:1}72.816%{opacity:0}100%{opacity:0}}.cp4{animation:k47 20.6s linear infinite}
+@keyframes k48{0%{opacity:0}72.816%{opacity:0}74.272%{opacity:1}98.544%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.tk5{animation:k48 20.6s linear infinite}
+@keyframes k49{0%{opacity:0}72.816%{opacity:0}74.272%{opacity:1}98.544%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.cp5{animation:k49 20.6s linear infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}.v{opacity:1!important}.cap,.cmt{opacity:0!important}.sum{opacity:1!important}.tr{stroke-dashoffset:0!important}}</style>
+<rect x="0.5" y="0.5" width="879" height="483" rx="8" fill="url(#bgdevicerouting)" stroke="#292b31"/>
+<rect x="12" y="48" width="856" height="376" fill="url(#dpdevicerouting)"/>
+<text x="28" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#9184d9">OVAT</text>
+<text x="72" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#b2b6ca">DEVICE ROUTING AS A DECISION</text>
+<path d="M164 170 L200 170" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahdevicerouting)"/>
+<path d="M330 158.8 L345 158.8 Q355 158.8 355 148.8 L355 104 Q355 94 365 94 L380 94" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahdevicerouting)"/>
+<path d="M330 170 L351 170 Q355 170 355 174 L355 174 Q355 178 359 178 L380 178" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahdevicerouting)"/>
+<path d="M330 181.2 L345 181.2 Q355 181.2 355 191.2 L355 260 Q355 270 365 270 L380 270" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahdevicerouting)"/>
+<path d="M600 270 L616.1 270 Q620 270 620 273.9 L620 273.9 Q620 277.8 623.9 277.8 L640 277.8" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahdevicerouting)"/>
+<path d="M750 300 L750 318 Q750 328 740 328 L132 328 Q122 328 122 338 L122 350" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahdevicerouting)"/>
+<path d="M750 300 L750 318 Q750 328 740 328 L342 328 Q332 328 332 338 L332 350" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahdevicerouting)"/>
+<path d="M750 300 L750 318 Q750 328 740 328 L552 328 Q542 328 542 338 L542 350" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahdevicerouting)"/>
+<path d="M750 300 L750 324.5 Q750 328 753.5 328 L753.5 328 Q757 328 757 331.5 L757 350" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahdevicerouting)"/>
+<path class="tr tr0" d="M164 170 L200 170" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="40 40" stroke-dashoffset="40"/>
+<path class="cmt cm0" d="M164 170 L200 170" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="24 84" stroke-dashoffset="24" opacity="0"/>
+<path class="tr tr1" d="M330 158.8 L345 158.8 Q355 158.8 355 148.8 L355 104 Q355 94 365 94 L380 94" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="118.8 118.8" stroke-dashoffset="118.8"/>
+<path class="cmt cm1" d="M330 158.8 L345 158.8 Q355 158.8 355 148.8 L355 104 Q355 94 365 94 L380 94" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 184.8" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr2" d="M330 170 L351 170 Q355 170 355 174 L355 174 Q355 178 359 178 L380 178" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="62 62" stroke-dashoffset="62"/>
+<path class="cmt cm2" d="M330 170 L351 170 Q355 170 355 174 L355 174 Q355 178 359 178 L380 178" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="37.2 119.2" stroke-dashoffset="37.2" opacity="0"/>
+<path class="tr tr3" d="M330 181.2 L345 181.2 Q355 181.2 355 191.2 L355 260 Q355 270 365 270 L380 270" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="142.8 142.8" stroke-dashoffset="142.8"/>
+<path class="cmt cm3" d="M330 181.2 L345 181.2 Q355 181.2 355 191.2 L355 260 Q355 270 365 270 L380 270" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 208.8" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr4" d="M600 270 L616.1 270 Q620 270 620 273.9 L620 273.9 Q620 277.8 623.9 277.8 L640 277.8" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="51.8 51.8" stroke-dashoffset="51.8"/>
+<path class="cmt cm4" d="M600 270 L616.1 270 Q620 270 620 273.9 L620 273.9 Q620 277.8 623.9 277.8 L640 277.8" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="31.08 102.88" stroke-dashoffset="31.08" opacity="0"/>
+<path class="tr tr5" d="M750 300 L750 318 Q750 328 740 328 L132 328 Q122 328 122 338 L122 350" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="682 682" stroke-dashoffset="682"/>
+<path class="cmt cm5" d="M750 300 L750 318 Q750 328 740 328 L132 328 Q122 328 122 338 L122 350" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 748" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr6" d="M750 300 L750 318 Q750 328 740 328 L342 328 Q332 328 332 338 L332 350" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="472 472" stroke-dashoffset="472"/>
+<path class="cmt cm6" d="M750 300 L750 318 Q750 328 740 328 L342 328 Q332 328 332 338 L332 350" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 538" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr7" d="M750 300 L750 318 Q750 328 740 328 L552 328 Q542 328 542 338 L542 350" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="262 262" stroke-dashoffset="262"/>
+<path class="cmt cm7" d="M750 300 L750 318 Q750 328 740 328 L552 328 Q542 328 542 338 L542 350" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 328" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr8" d="M750 300 L750 324.5 Q750 328 753.5 328 L753.5 328 Q757 328 757 331.5 L757 350" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="61 61" stroke-dashoffset="61"/>
+<path class="cmt cm8" d="M750 300 L750 324.5 Q750 328 753.5 328 L753.5 328 Q757 328 757 331.5 L757 350" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="36.6 117.6" stroke-dashoffset="36.6" opacity="0"/>
+<g>
+<rect x="24" y="150" width="140" height="40" rx="20" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vst" x="24" y="150" width="140" height="40" rx="20" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ast" opacity="0"><rect x="24" y="150" width="140" height="40" rx="20" fill="none" stroke="#9184d9" stroke-width="1.8"/></g>
+<text x="94" y="174.88" text-anchor="middle" style="font:500 13px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">ovat startup</text>
+</g>
+<g>
+<rect x="200" y="142" width="130" height="56" rx="6" fill="#1b1d2b" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vdet" x="200" y="142" width="130" height="56" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="adet" opacity="0"><rect x="200" y="142" width="130" height="56" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M200 156 V148 Q200 142 206 142 H216" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="214" y="175.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Devices?</text>
+<circle cx="314" cy="158" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="314" y="161.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">?</text>
+</g>
+<g>
+<rect x="380" y="64" width="220" height="60" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vc1" x="380" y="64" width="220" height="60" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ac1" opacity="0"><rect x="380" y="64" width="220" height="60" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M380 78 V70 Q380 64 386 64 H396" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="394" y="89.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">CPU only</text>
+<text x="394" y="108.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">everything on the CPU</text>
+</g>
+<g>
+<rect x="380" y="140" width="220" height="76" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vc2" x="380" y="140" width="220" height="76" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ac2" opacity="0"><rect x="380" y="140" width="220" height="76" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M380 154 V146 Q380 140 386 140 H396" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="394" y="165.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">CPU + GPU</text>
+<text x="394" y="184.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">LLM: GPU</text>
+<text x="394" y="200.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">embeddings, whisper: CPU</text>
+</g>
+<g>
+<rect x="380" y="232" width="220" height="76" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vc3" x="380" y="232" width="220" height="76" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ac3" opacity="0"><rect x="380" y="232" width="220" height="76" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M380 246 V238 Q380 232 386 232 H396" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="394" y="257.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">CPU + GPU + NPU</text>
+<text x="394" y="276.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">LLM: GPU, embeddings: NPU</text>
+<text x="394" y="292.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">whisper: CPU</text>
+</g>
+<g>
+<rect x="640" y="240" width="220" height="60" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vlim" x="640" y="240" width="220" height="60" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="alim" opacity="0"><rect x="640" y="240" width="220" height="60" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M640 254 V246 Q640 240 646 240 H656" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="654" y="265.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">LLM on the NPU</text>
+<text x="654" y="284.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">four limits</text>
+</g>
+<g>
+<rect x="24" y="350" width="196" height="56" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vl1" x="24" y="350" width="196" height="56" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="al1" opacity="0"><rect x="24" y="350" width="196" height="56" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M24 364 V356 Q24 350 30 350 H40" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="38" y="373.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Export</text>
+<text x="38" y="392.75" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">needs -int4-cw-ov</text>
+<circle cx="204" cy="366" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="204" y="369.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">!</text>
+</g>
+<g>
+<rect x="234" y="350" width="196" height="56" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vl2" x="234" y="350" width="196" height="56" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="al2" opacity="0"><rect x="234" y="350" width="196" height="56" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M234 364 V356 Q234 350 240 350 H250" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="248" y="373.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Prompt capped</text>
+<text x="248" y="392.75" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">--max_prompt_len</text>
+<circle cx="414" cy="366" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="414" y="369.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">!</text>
+</g>
+<g>
+<rect x="444" y="350" width="196" height="56" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vl3" x="444" y="350" width="196" height="56" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="al3" opacity="0"><rect x="444" y="350" width="196" height="56" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M444 364 V356 Q444 350 450 350 H460" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="458" y="373.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">No batching</text>
+<text x="458" y="392.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">or beam search</text>
+<circle cx="624" cy="366" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="624" y="369.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">!</text>
+</g>
+<g>
+<rect x="654" y="350" width="206" height="56" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vl4" x="654" y="350" width="206" height="56" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="al4" opacity="0"><rect x="654" y="350" width="206" height="56" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M654 364 V356 Q654 350 660 350 H670" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="668" y="373.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">KV cache</text>
+<text x="668" y="392.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">settings ignored</text>
+<circle cx="844" cy="366" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="844" y="369.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">!</text>
+</g>
+<rect x="28" y="430" width="824" height="1" fill="url(#ruledevicerouting)"/>
+<rect x="760" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk0" x="760" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp0" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">01 / 06</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">At startup OVAT checks which Intel devices the machine has.</text></g>
+<rect x="776" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk1" x="776" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp1" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">02 / 06</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">CPU only, like a Mac or a dev laptop: everything runs on the CPU.</text></g>
+<rect x="792" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk2" x="792" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp2" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">03 / 06</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">CPU + GPU: the LLM on the GPU, embeddings and whisper on the CPU.</text></g>
+<rect x="808" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk3" x="808" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp3" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">04 / 06</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">CPU + GPU + NPU: LLM on the GPU, embeddings on the NPU, whisper on the CPU.</text></g>
+<rect x="824" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk4" x="824" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp4" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">05 / 06</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Serving the LLM itself on the NPU comes with limits:</text></g>
+<rect x="840" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk5" x="840" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp5" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">06 / 06</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">an int4-cw-ov export, a capped prompt, no batching or beam search, no KV cache settings.</text></g>
+<text class="sum" x="28" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed" opacity="0">CPU only, CPU + GPU, or CPU + GPU + NPU. An LLM on the NPU comes with four limits.</text>
+</svg>

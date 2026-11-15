@@ -1,0 +1,177 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 360" width="880" height="360" role="img" aria-labelledby="tloadconfig dloadconfig">
+<title id="tloadconfig">Loading a workflow</title><desc id="dloadconfig">Every command loads workflow.yml through _load_config(), the only loader: yaml.safe_load parses it, WorkflowConfig validates it with extra=forbid, a model validator fills tool_parser from the model name, and build_agent() receives it. A missing file, bad YAML or a schema error each become one sentence.</desc>
+<defs><radialGradient id="bgloadconfig" cx="0.12" cy="0" r="1.1"><stop offset="0" stop-color="#1f2236"/><stop offset="0.7" stop-color="#161826"/></radialGradient><linearGradient id="ruleloadconfig" x1="0" x2="1"><stop offset="0" stop-color="#3f424d" stop-opacity="0"/><stop offset="0.08" stop-color="#3f424d"/><stop offset="0.92" stop-color="#3f424d"/><stop offset="1" stop-color="#3f424d" stop-opacity="0"/></linearGradient><pattern id="dploadconfig" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#262836"/></pattern><marker id="ahloadconfig" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="#75798c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>@keyframes k0{0%{stroke-dashoffset:15;opacity:1}12.931%{stroke-dashoffset:15;opacity:1}16.164%{stroke-dashoffset:0}98.707%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr0{animation:k0 23.2s linear infinite}
+@keyframes k1{0%{stroke-dashoffset:9;opacity:0}12.931%{stroke-dashoffset:9;opacity:0}13.017%{opacity:1}16.164%{stroke-dashoffset:-15;opacity:1}16.379%{stroke-dashoffset:-15;opacity:0}100%{stroke-dashoffset:-15;opacity:0}}.cm0{animation:k1 23.2s linear infinite}
+@keyframes k2{0%{stroke-dashoffset:15;opacity:1}25.862%{stroke-dashoffset:15;opacity:1}29.095%{stroke-dashoffset:0}98.707%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr1{animation:k2 23.2s linear infinite}
+@keyframes k3{0%{stroke-dashoffset:9;opacity:0}25.862%{stroke-dashoffset:9;opacity:0}25.948%{opacity:1}29.095%{stroke-dashoffset:-15;opacity:1}29.310%{stroke-dashoffset:-15;opacity:0}100%{stroke-dashoffset:-15;opacity:0}}.cm1{animation:k3 23.2s linear infinite}
+@keyframes k4{0%{stroke-dashoffset:15;opacity:1}38.793%{stroke-dashoffset:15;opacity:1}42.026%{stroke-dashoffset:0}98.707%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr2{animation:k4 23.2s linear infinite}
+@keyframes k5{0%{stroke-dashoffset:9;opacity:0}38.793%{stroke-dashoffset:9;opacity:0}38.879%{opacity:1}42.026%{stroke-dashoffset:-15;opacity:1}42.241%{stroke-dashoffset:-15;opacity:0}100%{stroke-dashoffset:-15;opacity:0}}.cm2{animation:k5 23.2s linear infinite}
+@keyframes k6{0%{stroke-dashoffset:15;opacity:1}51.724%{stroke-dashoffset:15;opacity:1}54.957%{stroke-dashoffset:0}98.707%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr3{animation:k6 23.2s linear infinite}
+@keyframes k7{0%{stroke-dashoffset:9;opacity:0}51.724%{stroke-dashoffset:9;opacity:0}51.810%{opacity:1}54.957%{stroke-dashoffset:-15;opacity:1}55.172%{stroke-dashoffset:-15;opacity:0}100%{stroke-dashoffset:-15;opacity:0}}.cm3{animation:k7 23.2s linear infinite}
+@keyframes k8{0%{stroke-dashoffset:15;opacity:1}64.655%{stroke-dashoffset:15;opacity:1}67.888%{stroke-dashoffset:0}98.707%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr4{animation:k8 23.2s linear infinite}
+@keyframes k9{0%{stroke-dashoffset:9;opacity:0}64.655%{stroke-dashoffset:9;opacity:0}64.741%{opacity:1}67.888%{stroke-dashoffset:-15;opacity:1}68.103%{stroke-dashoffset:-15;opacity:0}100%{stroke-dashoffset:-15;opacity:0}}.cm4{animation:k9 23.2s linear infinite}
+@keyframes k10{0%{stroke-dashoffset:108;opacity:1}77.586%{stroke-dashoffset:108;opacity:1}80.819%{stroke-dashoffset:0}98.707%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr5{animation:k10 23.2s linear infinite}
+@keyframes k11{0%{stroke-dashoffset:46;opacity:0}77.586%{stroke-dashoffset:46;opacity:0}77.672%{opacity:1}80.819%{stroke-dashoffset:-108;opacity:1}81.034%{stroke-dashoffset:-108;opacity:0}100%{stroke-dashoffset:-108;opacity:0}}.cm5{animation:k11 23.2s linear infinite}
+@keyframes k12{0%{stroke-dashoffset:160;opacity:1}77.586%{stroke-dashoffset:160;opacity:1}80.819%{stroke-dashoffset:0}98.707%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr6{animation:k12 23.2s linear infinite}
+@keyframes k13{0%{stroke-dashoffset:46;opacity:0}77.586%{stroke-dashoffset:46;opacity:0}77.672%{opacity:1}80.819%{stroke-dashoffset:-160;opacity:1}81.034%{stroke-dashoffset:-160;opacity:0}100%{stroke-dashoffset:-160;opacity:0}}.cm6{animation:k13 23.2s linear infinite}
+@keyframes k14{0%{stroke-dashoffset:284;opacity:1}77.586%{stroke-dashoffset:284;opacity:1}80.819%{stroke-dashoffset:0}98.707%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr7{animation:k14 23.2s linear infinite}
+@keyframes k15{0%{stroke-dashoffset:46;opacity:0}77.586%{stroke-dashoffset:46;opacity:0}77.672%{opacity:1}80.819%{stroke-dashoffset:-284;opacity:1}81.034%{stroke-dashoffset:-284;opacity:0}100%{stroke-dashoffset:-284;opacity:0}}.cm7{animation:k15 23.2s linear infinite}
+@keyframes k16{0%{opacity:0}0.000%{opacity:0}1.293%{opacity:1}98.707%{opacity:1}100%{opacity:0}}.vyaml{animation:k16 23.2s linear infinite}
+@keyframes k17{0%{opacity:0}0.000%{opacity:0}1.293%{opacity:1}11.638%{opacity:1}12.931%{opacity:0}100%{opacity:0}}.ayaml{animation:k17 23.2s linear infinite}
+@keyframes k18{0%{opacity:0}15.517%{opacity:0}16.810%{opacity:1}98.707%{opacity:1}100%{opacity:0}}.vload{animation:k18 23.2s linear infinite}
+@keyframes k19{0%{opacity:0}15.517%{opacity:0}16.810%{opacity:1}24.569%{opacity:1}25.862%{opacity:0}100%{opacity:0}}.aload{animation:k19 23.2s linear infinite}
+@keyframes k20{0%{opacity:0}28.448%{opacity:0}29.741%{opacity:1}98.707%{opacity:1}100%{opacity:0}}.vparse{animation:k20 23.2s linear infinite}
+@keyframes k21{0%{opacity:0}28.448%{opacity:0}29.741%{opacity:1}37.500%{opacity:1}38.793%{opacity:0}100%{opacity:0}}.aparse{animation:k21 23.2s linear infinite}
+@keyframes k22{0%{opacity:0}41.379%{opacity:0}42.672%{opacity:1}98.707%{opacity:1}100%{opacity:0}}.vval{animation:k22 23.2s linear infinite}
+@keyframes k23{0%{opacity:0}41.379%{opacity:0}42.672%{opacity:1}50.431%{opacity:1}51.724%{opacity:0}100%{opacity:0}}.aval{animation:k23 23.2s linear infinite}
+@keyframes k24{0%{opacity:0}54.310%{opacity:0}55.603%{opacity:1}98.707%{opacity:1}100%{opacity:0}}.vder{animation:k24 23.2s linear infinite}
+@keyframes k25{0%{opacity:0}54.310%{opacity:0}55.603%{opacity:1}63.362%{opacity:1}64.655%{opacity:0}100%{opacity:0}}.ader{animation:k25 23.2s linear infinite}
+@keyframes k26{0%{opacity:0}67.241%{opacity:0}68.534%{opacity:1}98.707%{opacity:1}100%{opacity:0}}.vfac{animation:k26 23.2s linear infinite}
+@keyframes k27{0%{opacity:0}67.241%{opacity:0}68.534%{opacity:1}76.293%{opacity:1}77.586%{opacity:0}100%{opacity:0}}.afac{animation:k27 23.2s linear infinite}
+@keyframes k28{0%{opacity:0}80.172%{opacity:0}81.466%{opacity:1}98.707%{opacity:1}100%{opacity:0}}.vf1{animation:k28 23.2s linear infinite}
+@keyframes k29{0%{opacity:0}80.172%{opacity:0}81.466%{opacity:1}97.414%{opacity:1}98.707%{opacity:0}100%{opacity:0}}.af1{animation:k29 23.2s linear infinite}
+@keyframes k30{0%{opacity:0}80.172%{opacity:0}81.466%{opacity:1}98.707%{opacity:1}100%{opacity:0}}.vf2{animation:k30 23.2s linear infinite}
+@keyframes k31{0%{opacity:0}80.172%{opacity:0}81.466%{opacity:1}97.414%{opacity:1}98.707%{opacity:0}100%{opacity:0}}.af2{animation:k31 23.2s linear infinite}
+@keyframes k32{0%{opacity:0}80.172%{opacity:0}81.466%{opacity:1}98.707%{opacity:1}100%{opacity:0}}.vf3{animation:k32 23.2s linear infinite}
+@keyframes k33{0%{opacity:0}80.172%{opacity:0}81.466%{opacity:1}97.414%{opacity:1}98.707%{opacity:0}100%{opacity:0}}.af3{animation:k33 23.2s linear infinite}
+@keyframes k34{0%{opacity:0}0.000%{opacity:0}1.293%{opacity:1}11.638%{opacity:1}12.931%{opacity:0}100%{opacity:0}}.tk0{animation:k34 23.2s linear infinite}
+@keyframes k35{0%{opacity:0}0.000%{opacity:0}1.293%{opacity:1}11.638%{opacity:1}12.931%{opacity:0}100%{opacity:0}}.cp0{animation:k35 23.2s linear infinite}
+@keyframes k36{0%{opacity:0}12.931%{opacity:0}14.224%{opacity:1}24.569%{opacity:1}25.862%{opacity:0}100%{opacity:0}}.tk1{animation:k36 23.2s linear infinite}
+@keyframes k37{0%{opacity:0}12.931%{opacity:0}14.224%{opacity:1}24.569%{opacity:1}25.862%{opacity:0}100%{opacity:0}}.cp1{animation:k37 23.2s linear infinite}
+@keyframes k38{0%{opacity:0}25.862%{opacity:0}27.155%{opacity:1}37.500%{opacity:1}38.793%{opacity:0}100%{opacity:0}}.tk2{animation:k38 23.2s linear infinite}
+@keyframes k39{0%{opacity:0}25.862%{opacity:0}27.155%{opacity:1}37.500%{opacity:1}38.793%{opacity:0}100%{opacity:0}}.cp2{animation:k39 23.2s linear infinite}
+@keyframes k40{0%{opacity:0}38.793%{opacity:0}40.086%{opacity:1}50.431%{opacity:1}51.724%{opacity:0}100%{opacity:0}}.tk3{animation:k40 23.2s linear infinite}
+@keyframes k41{0%{opacity:0}38.793%{opacity:0}40.086%{opacity:1}50.431%{opacity:1}51.724%{opacity:0}100%{opacity:0}}.cp3{animation:k41 23.2s linear infinite}
+@keyframes k42{0%{opacity:0}51.724%{opacity:0}53.017%{opacity:1}63.362%{opacity:1}64.655%{opacity:0}100%{opacity:0}}.tk4{animation:k42 23.2s linear infinite}
+@keyframes k43{0%{opacity:0}51.724%{opacity:0}53.017%{opacity:1}63.362%{opacity:1}64.655%{opacity:0}100%{opacity:0}}.cp4{animation:k43 23.2s linear infinite}
+@keyframes k44{0%{opacity:0}64.655%{opacity:0}65.948%{opacity:1}76.293%{opacity:1}77.586%{opacity:0}100%{opacity:0}}.tk5{animation:k44 23.2s linear infinite}
+@keyframes k45{0%{opacity:0}64.655%{opacity:0}65.948%{opacity:1}76.293%{opacity:1}77.586%{opacity:0}100%{opacity:0}}.cp5{animation:k45 23.2s linear infinite}
+@keyframes k46{0%{opacity:0}77.586%{opacity:0}78.879%{opacity:1}98.707%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.tk6{animation:k46 23.2s linear infinite}
+@keyframes k47{0%{opacity:0}77.586%{opacity:0}78.879%{opacity:1}98.707%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.cp6{animation:k47 23.2s linear infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}.v{opacity:1!important}.cap,.cmt{opacity:0!important}.sum{opacity:1!important}.tr{stroke-dashoffset:0!important}}</style>
+<rect x="0.5" y="0.5" width="879" height="359" rx="8" fill="url(#bgloadconfig)" stroke="#292b31"/>
+<rect x="12" y="48" width="856" height="252" fill="url(#dploadconfig)"/>
+<text x="28" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#9184d9">OVAT</text>
+<text x="72" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#b2b6ca">LOADING A WORKFLOW</text>
+<path d="M154 126 L165 126" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloadconfig)"/>
+<path d="M295 126 L306 126" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloadconfig)"/>
+<path d="M436 126 L447 126" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloadconfig)"/>
+<path d="M577 126 L588 126" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloadconfig)"/>
+<path d="M718 126 L729 126" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahloadconfig)"/>
+<path d="M204 164 L204 194 Q204 204 194 204 L178 204 Q168 204 168 214 L168 232" fill="none" stroke="#75798c" stroke-width="1.3" stroke-dasharray="3 4" marker-end="url(#ahloadconfig)"/>
+<path d="M230 164 L230 194 Q230 204 240 204 L308 204 Q318 204 318 214 L318 232" fill="none" stroke="#75798c" stroke-width="1.3" stroke-dasharray="3 4" marker-end="url(#ahloadconfig)"/>
+<path d="M256 164 L256 194 Q256 204 266 204 L458 204 Q468 204 468 214 L468 232" fill="none" stroke="#75798c" stroke-width="1.3" stroke-dasharray="3 4" marker-end="url(#ahloadconfig)"/>
+<path class="tr tr0" d="M154 126 L165 126" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="15 15" stroke-dashoffset="15"/>
+<path class="cmt cm0" d="M154 126 L165 126" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="9 44" stroke-dashoffset="9" opacity="0"/>
+<path class="tr tr1" d="M295 126 L306 126" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="15 15" stroke-dashoffset="15"/>
+<path class="cmt cm1" d="M295 126 L306 126" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="9 44" stroke-dashoffset="9" opacity="0"/>
+<path class="tr tr2" d="M436 126 L447 126" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="15 15" stroke-dashoffset="15"/>
+<path class="cmt cm2" d="M436 126 L447 126" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="9 44" stroke-dashoffset="9" opacity="0"/>
+<path class="tr tr3" d="M577 126 L588 126" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="15 15" stroke-dashoffset="15"/>
+<path class="cmt cm3" d="M577 126 L588 126" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="9 44" stroke-dashoffset="9" opacity="0"/>
+<path class="tr tr4" d="M718 126 L729 126" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="15 15" stroke-dashoffset="15"/>
+<path class="cmt cm4" d="M718 126 L729 126" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="9 44" stroke-dashoffset="9" opacity="0"/>
+<path class="tr tr5" d="M204 164 L204 194 Q204 204 194 204 L178 204 Q168 204 168 214 L168 232" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="108 108" stroke-dashoffset="108"/>
+<path class="cmt cm5" d="M204 164 L204 194 Q204 204 194 204 L178 204 Q168 204 168 214 L168 232" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 174" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr6" d="M230 164 L230 194 Q230 204 240 204 L308 204 Q318 204 318 214 L318 232" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="160 160" stroke-dashoffset="160"/>
+<path class="cmt cm6" d="M230 164 L230 194 Q230 204 240 204 L308 204 Q318 204 318 214 L318 232" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 226" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr7" d="M256 164 L256 194 Q256 204 266 204 L458 204 Q468 204 468 214 L468 232" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="284 284" stroke-dashoffset="284"/>
+<path class="cmt cm7" d="M256 164 L256 194 Q256 204 266 204 L458 204 Q468 204 468 214 L468 232" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 350" stroke-dashoffset="46" opacity="0"/>
+<g>
+<rect x="24" y="88" width="130" height="76" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vyaml" x="24" y="88" width="130" height="76" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ayaml" opacity="0"><rect x="24" y="88" width="130" height="76" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M24 102 V94 Q24 88 30 88 H40" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="38" y="121" style="font:500 12px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">workflow.yml</text>
+<text x="38" y="140" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">the file</text>
+</g>
+<g>
+<rect x="165" y="88" width="130" height="76" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vload" x="165" y="88" width="130" height="76" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aload" opacity="0"><rect x="165" y="88" width="130" height="76" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M165 102 V94 Q165 88 171 88 H181" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="179" y="120.81" style="font:500 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">_load_config()</text>
+<text x="179" y="139.81" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">the only loader</text>
+</g>
+<g>
+<rect x="306" y="88" width="130" height="76" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vparse" x="306" y="88" width="130" height="76" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aparse" opacity="0"><rect x="306" y="88" width="130" height="76" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M306 102 V94 Q306 88 312 88 H322" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="320" y="121" style="font:500 12px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">safe_load</text>
+<text x="320" y="140" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">or {} if empty</text>
+</g>
+<g>
+<rect x="447" y="88" width="130" height="76" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vval" x="447" y="88" width="130" height="76" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aval" opacity="0"><rect x="447" y="88" width="130" height="76" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M447 102 V94 Q447 88 453 88 H463" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="461" y="120.81" style="font:500 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">WorkflowConfig</text>
+<text x="461" y="139.81" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">extra=forbid</text>
+</g>
+<g>
+<rect x="588" y="88" width="130" height="76" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vder" x="588" y="88" width="130" height="76" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ader" opacity="0"><rect x="588" y="88" width="130" height="76" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M588 102 V94 Q588 88 594 88 H604" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="602" y="113.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Derive</text>
+<text x="602" y="132.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">tool_parser from</text>
+<text x="602" y="148.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">the model name</text>
+</g>
+<g>
+<rect x="729" y="88" width="130" height="76" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vfac" x="729" y="88" width="130" height="76" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="afac" opacity="0"><rect x="729" y="88" width="130" height="76" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M729 102 V94 Q729 88 735 88 H745" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="743" y="113" style="font:500 12px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#d2cefd">build_agent()</text>
+<text x="743" y="132" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">a config it</text>
+<text x="743" y="148" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">can trust</text>
+<circle cx="843" cy="104" r="8" fill="none" stroke="#9184d9" stroke-width="1"/>
+<path d="M839.5 104 L842 106.6 L846.6 101.4" fill="none" stroke="#9184d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g>
+<rect x="100" y="232" width="136" height="56" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vf1" x="100" y="232" width="136" height="56" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="af1" opacity="0"><rect x="100" y="232" width="136" height="56" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M100 246 V238 Q100 232 106 232 H116" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="114" y="255.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Missing file</text>
+<text x="114" y="274.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">one sentence</text>
+<circle cx="220" cy="248" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<path d="M217.2 245.2 L222.8 250.8 M222.8 245.2 L217.2 250.8" fill="none" stroke="#b2b6ca" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<g>
+<rect x="250" y="232" width="136" height="56" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vf2" x="250" y="232" width="136" height="56" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="af2" opacity="0"><rect x="250" y="232" width="136" height="56" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M250 246 V238 Q250 232 256 232 H266" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="264" y="255.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Bad YAML</text>
+<text x="264" y="274.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">one sentence</text>
+<circle cx="370" cy="248" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<path d="M367.2 245.2 L372.8 250.8 M372.8 245.2 L367.2 250.8" fill="none" stroke="#b2b6ca" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<g>
+<rect x="400" y="232" width="136" height="56" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vf3" x="400" y="232" width="136" height="56" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="af3" opacity="0"><rect x="400" y="232" width="136" height="56" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M400 246 V238 Q400 232 406 232 H416" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="414" y="255.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Schema error</text>
+<text x="414" y="274.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">one sentence</text>
+<circle cx="520" cy="248" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<path d="M517.2 245.2 L522.8 250.8 M522.8 245.2 L517.2 250.8" fill="none" stroke="#b2b6ca" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<rect x="28" y="306" width="824" height="1" fill="url(#ruleloadconfig)"/>
+<rect x="744" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk0" x="744" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp0" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">01 / 07</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Every command reads workflow.yml the same way.</text></g>
+<rect x="760" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk1" x="760" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp1" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">02 / 07</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">_load_config() is the only loader. No command reads the YAML on its own.</text></g>
+<rect x="776" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk2" x="776" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp2" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">03 / 07</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">yaml.safe_load parses it. An empty file becomes {}.</text></g>
+<rect x="792" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk3" x="792" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp3" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">04 / 07</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">WorkflowConfig validates it. With extra=forbid, an unknown key is an error.</text></g>
+<rect x="808" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk4" x="808" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp4" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">05 / 07</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">A model validator fills tool_parser from the model name.</text></g>
+<rect x="824" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk5" x="824" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp5" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">06 / 07</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">build_agent() gets a config it can trust.</text></g>
+<rect x="840" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk6" x="840" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp6" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">07 / 07</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">A missing file, bad YAML or a schema error each end in one sentence.</text></g>
+<text class="sum" x="28" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed" opacity="0">One loader: parse, validate with extra=forbid, fill tool_parser, build. Any failure is one sentence.</text>
+</svg>

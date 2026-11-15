@@ -243,12 +243,13 @@ as always `"stop"`.
 - `docs/ARCHITECTURE.md` (layers 1-9, the design record the mentors asked
   for), `docs/BLOG.md`, `examples/` (minimal, rag, react, audio-multimodal,
   document-qa, document-qa-npu, plano).
-- `docs/assets/diagrams/`: 9 animated SVG diagrams, each as `-light` and
-  `-dark` picked with `<picture>`. core-flow, agent-loop, engines, devices
-  and rag have no generator: edit the SVGs directly. agent-tui, approval-flow,
-  a2a-flow and subagents come from `scripts/gen_agent_diagrams.py`: change the
-  spec there and run it (`--site-out DIR` also writes the interactive version
-  that the docs site uses). Do not hand-edit those four.
+- `docs/assets/diagrams/`: 21 animated Nocturne SVG diagrams, each as `-light`
+  and `-dark` picked with `<picture>`. All 21 come from
+  `scripts/gen_agent_diagrams.py` (nine for README and examples, twelve for
+  `docs/ARCHITECTURE.md`): change the spec there and run it (`--site-out DIR`
+  also writes the interactive version that the docs site uses). Do not
+  hand-edit the SVGs; `tests/test_diagrams.py` checks every one against the
+  generator.
 - The documentation site lives in its OWN repo, Lagmator22/ovat-navigate
   (local folder ~/ovat_navigate, GitHub Pages:
   https://lagmator22.github.io/ovat-navigate/). Never add its files here;
@@ -298,7 +299,9 @@ as always `"stop"`.
 6. **Tests gate everything.** Run `python -m pytest -q` with the venv's own
    interpreter (`.venv/bin/python` on macOS, `.\.venv\Scripts\python.exe` on
    the AI PC), never the system one. About 1500 tests; must end green
-   (`-n auto` works, pytest-xdist is in `[dev]`). Every fix ships with a
+   (`-n auto` works with `-m "not live"` so live hardware or server tests do
+   not run in parallel alongside unit tests; pytest-xdist is in `[dev]`).
+   Every fix ships with a
    test, and that test must FAIL with the fix backed out: verify it, do not
    assume. A test that passes against the broken code is worse than none,
    and that has happened here more than once. One logical change per

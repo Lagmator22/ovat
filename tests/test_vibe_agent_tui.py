@@ -513,7 +513,8 @@ def test_slash_lists_every_command_in_the_popup():
         async with running(size=(120, 50)) as (app, pilot, fake, handle):
             await pilot.press("/")
             popup = app.query_one("#completion-popup")
-            await until(pilot, lambda: popup.styles.display == "block")
+            await until(pilot, lambda: popup.styles.display == "block"
+                        and bool(popup.query(".completion-command")))
             text = popup.content_text
             for name in ("help", "doctor", "telemetry", "agents", "ask"):
                 assert f"/{name}" in text
@@ -534,7 +535,8 @@ def test_the_wheel_moves_the_highlight_in_the_completion_popup():
         async with running(size=(120, 50)) as (app, pilot, fake, handle):
             await pilot.press("/")
             popup = app.query_one("#completion-popup")
-            await until(pilot, lambda: popup.styles.display == "block")
+            await until(pilot, lambda: popup.styles.display == "block"
+                        and bool(popup.query(".completion-command")))
             assert _highlighted(popup) == 0
             popup.post_message(events.MouseScrollDown(
                 popup, 1, 1, 0, 1, 0, False, False, False))
@@ -568,7 +570,8 @@ def test_a_click_on_a_row_of_the_completion_popup_chooses_it():
         async with running(size=(120, 50)) as (app, pilot, fake, handle):
             await pilot.press("/")
             popup = app.query_one("#completion-popup")
-            await until(pilot, lambda: popup.styles.display == "block")
+            await until(pilot, lambda: popup.styles.display == "block"
+                        and bool(popup.query(".completion-command")))
             rows = list(popup.query("_CompletionRow"))
             label = str(rows[2].query_one(".completion-command").render())
             await pilot.click(rows[2].query_one(".completion-command"))
@@ -590,7 +593,9 @@ def test_at_offers_the_subagents_before_any_file():
             # finishes, so the Tab below did nothing (seen on macOS CI).
             manager = app.query_one(ChatInputContainer)._completion_manager
             await until(pilot, lambda: manager._active_controller is not None
-                        and manager._active_controller._pending_future is None)
+                        and manager._active_controller._pending_future is None
+                        and bool(popup.query(".completion-command"))
+                        and "researcher" in popup.content_text)
             first = popup.query("_CompletionRow").first()
             assert "researcher" in str(
                 first.query_one(".completion-command").render())

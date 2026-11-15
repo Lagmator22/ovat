@@ -584,14 +584,6 @@ ovat telemetry                                         # live table for the mach
 ovat telemetry --once                                  # one snapshot
 ```
 
-In the TUI, `/telemetry` opens a page with two tabs. **Live** shows the
-numbers and a status line for every source (live, silent, or not available
-here, with the reason). **Help** explains what each number means.
-
-<div align="center">
-<img src="docs/assets/screens/telemetry-live.png" width="760px" alt="The TUI telemetry page on an Intel AI PC: cards for NPU, KV cache, system RAM, OVAT memory and OVAT CPU, a table of live numbers including Intel power rows, and a status line showing system, process, npu, ovms and intel all live">
-</div>
-
 Two rules the numbers follow. **Unknown stays unknown**: a missing token count
 is `null`, never `0`. **A missing source says why**: on a Mac you see "Intel
 Unified Telemetry does not run on macOS", not a row of zeros. Note that
@@ -599,8 +591,7 @@ Unified Telemetry does not run on macOS", not a row of zeros. Note that
 the OVMS process, so measure that one instead.
 [How telemetry works](docs/ARCHITECTURE.md#telemetry).
 
-
-Inside `ovat agent`, `/telemetry` opens the same live numbers. Here a local
+In the agent TUI, `/telemetry` opens these live numbers. Here a local
 model is answering: Intel package power reads 23.5 W, the GPU clock reads
 1,950 MHz, the KV cache reads 66.7% of its current allocation, and the NPU is
 idle because the model runs on the GPU:
