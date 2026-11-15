@@ -360,8 +360,9 @@ class Bridge:
     def convert(self, event: Event, kinds: dict[str, str]):
         """The history event for one agent event, or None."""
         if event.type == TOOL_STARTED:
-            return self.tool_started(event, kinds.get(
-                event.data.get("name"), "builtin"))
+            kind = event.data.get("kind") or kinds.get(
+                event.data.get("name"), "builtin")
+            return self.tool_started(event, kind)
         if event.type == TOOL_ENDED:
             return self.tool_ended(event)
         if event.type in (SUBAGENT_STATUS, REMOTE_STATUS):

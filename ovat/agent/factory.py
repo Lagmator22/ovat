@@ -388,6 +388,19 @@ def close_agent(agent) -> None:
             close_llm()
         except Exception:
             pass
+    retriever = getattr(agent, "retriever", None)
+    close_retriever = getattr(retriever, "close", None)
+    if callable(close_retriever):
+        try:
+            close_retriever()
+        except Exception:
+            pass
+    close_agent_loop = getattr(agent, "close", None)
+    if callable(close_agent_loop):
+        try:
+            close_agent_loop()
+        except Exception:
+            pass
 
 
 def build_tools(config: WorkflowConfig,
@@ -574,10 +587,7 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False,
         config = config.model_copy(update={
             "agent": config.agent.model_copy(update={"system_prompt": prompt})})
     retriever = None if skip_rag else build_rag(config)
-    if retriever is not None:
-        search_docs_tool.configure(retriever)
-
-    llm = build_llm(config)
+    llm = None
     # Collected so close_agent() can shut the subprocesses down. Without an
     # owner they survive until the interpreter exits.
     mcp_servers: list = []
@@ -585,51 +595,76 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False,
     # `stop` flag is how either of them cancels a run.
     if events is None:
         events = EventBus()
-    tools = build_tools(config, retriever=retriever, servers=mcp_servers,
-                        events=events)
-    if select_tools is not None:
-        tools = select_tools(tools)
-    tools = observe_tools(tools, events)
 
-    subagent_runner = tools.get("delegate", {}).get("runner")
-    agent_type = config.agent.type
-    def _own(agent):
-        """Hand the agent its subprocesses and its event bus."""
-        agent.mcp_servers = mcp_servers
-        agent.events = events
-        if not hasattr(agent, "llm"):
-            agent.llm = llm
-        if subagent_runner is not None:
-            agent.subagent_runner = subagent_runner
-        return agent
+    def _cleanup_partial() -> None:
+        for server in mcp_servers:
+            try:
+                server.close()
+            except Exception:
+                pass
+        if llm is not None and callable(getattr(llm, "close", None)):
+            try:
+                llm.close()
+            except Exception:
+                pass
+        if retriever is not None and callable(getattr(retriever, "close", None)):
+            try:
+                retriever.close()
+            except Exception:
+                pass
 
-    if agent_type == "native":
-        return _own(AgentLoop(
-            llm=llm,
-            tools=tools,
-            system_prompt=config.agent.system_prompt,
-            max_iterations=config.agent.max_iterations,
-            engine_name=agent_type,
-            stop=events.stop,
-            events=events,
-        ))
-    # Each framework is imported INSIDE its branch so the native path never
-    # pays the import cost of a framework it does not use, and so a machine
-    # with only one of them installed still runs the others' configs' errors
-    # as readable text rather than an ImportError at module load.
-    if agent_type == "react":
-        from ovat.agent.langchain_agent import build_react_agent
-        return _own(build_react_agent(config, tools))
+    try:
+        agent_type = config.agent.type
+        llm = build_llm(config) if agent_type == "native" else None
+        tools = build_tools(config, retriever=retriever, servers=mcp_servers,
+                            events=events)
+        if select_tools is not None:
+            tools = select_tools(tools)
+        tools = observe_tools(tools, events)
 
-    if agent_type == "llamaindex":
-        from ovat.agent.llamaindex_agent import build_llamaindex_agent
-        return _own(build_llamaindex_agent(config, tools))
+        subagent_runner = tools.get("delegate", {}).get("runner")
 
-    if agent_type == "openai-agents":
-        from ovat.agent.openai_agents_agent import build_openai_agents_agent
-        return _own(build_openai_agents_agent(config, tools))
+        def _own(agent):
+            """Hand the agent its subprocesses, retriever and its event bus."""
+            agent.mcp_servers = mcp_servers
+            agent.events = events
+            agent.retriever = retriever
+            if llm is not None and not hasattr(agent, "llm"):
+                agent.llm = llm
+            if subagent_runner is not None:
+                agent.subagent_runner = subagent_runner
+            return agent
 
-    raise ValueError(
-        f"Unknown agent type '{agent_type}'. Supported: "
-        f"{', '.join(AGENT_TYPES)}."
-    )
+        if agent_type == "native":
+            return _own(AgentLoop(
+                llm=llm,
+                tools=tools,
+                system_prompt=config.agent.system_prompt,
+                max_iterations=config.agent.max_iterations,
+                engine_name=agent_type,
+                stop=events.stop,
+                events=events,
+            ))
+        # Each framework is imported INSIDE its branch so the native path never
+        # pays the import cost of a framework it does not use, and so a machine
+        # with only one of them installed still runs the others' configs' errors
+        # as readable text rather than an ImportError at module load.
+        if agent_type == "react":
+            from ovat.agent.langchain_agent import build_react_agent
+            return _own(build_react_agent(config, tools))
+
+        if agent_type == "llamaindex":
+            from ovat.agent.llamaindex_agent import build_llamaindex_agent
+            return _own(build_llamaindex_agent(config, tools))
+
+        if agent_type == "openai-agents":
+            from ovat.agent.openai_agents_agent import build_openai_agents_agent
+            return _own(build_openai_agents_agent(config, tools))
+
+        raise ValueError(
+            f"Unknown agent type '{agent_type}'. Supported: "
+            f"{', '.join(AGENT_TYPES)}."
+        )
+    except Exception:
+        _cleanup_partial()
+        raise

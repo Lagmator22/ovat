@@ -123,6 +123,19 @@ class LlamaIndexAgent:
         self.last_trace: dict = {}
         self._calls: list = []
         self._tools_ran = 0
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def _run_loop(self, coro):
+        if self._loop is None or self._loop.is_closed():
+            self._loop = asyncio.new_event_loop()
+        return self._loop.run_until_complete(coro)
+
+    def close(self) -> None:
+        if self._loop is not None and not self._loop.is_closed():
+            try:
+                self._loop.close()
+            except Exception:
+                pass
 
     def run(self, user_message: str) -> str:
         """Run the agent for one message and return the final text.
@@ -149,7 +162,7 @@ class LlamaIndexAgent:
         self._calls, self._tools_ran = [], 0
         started = time.monotonic()
         try:
-            return asyncio.run(self._arun(user_message))
+            return self._run_loop(self._arun(user_message))
         except WorkflowRuntimeError as exc:
             # LlamaIndex's own cap, reached. Only THAT error becomes the
             # native loop's sentence; any other workflow failure is a real

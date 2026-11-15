@@ -372,3 +372,35 @@ def test_a_capped_agents_run_still_reports_what_it_cost(monkeypatch):
     assert totals["failed"] is True
     assert (totals["prompt_tokens"], totals["completion_tokens"]) == (9, 2)
     assert totals["tool_calls"] == 0
+
+
+def test_multi_turn_runs_reuse_one_event_loop_until_closed(monkeypatch):
+    import agents
+    from ovat.agent.factory import close_agent
+
+    tools, _ = _tools()
+    loops = []
+
+    class FakeResult:
+        raw_responses = []
+        new_items = []
+
+        def __init__(self, text):
+            self.final_output = text
+
+        def to_input_list(self):
+            return []
+
+    async def fake_run(agent, input_items, max_turns=None):
+        loops.append(asyncio.get_running_loop())
+        return FakeResult(f"reply:{input_items[-1]['content']}")
+
+    monkeypatch.setattr(agents.Runner, "run", fake_run)
+    agent = OpenAIAgentsAgent(object(), tools, 3, None)
+    assert agent.run("turn 1") == "reply:turn 1"
+    assert not loops[0].is_closed()
+    assert agent.run("turn 2") == "reply:turn 2"
+    assert loops[0] is loops[1]
+    assert not loops[0].is_closed()
+    close_agent(agent)
+    assert loops[0].is_closed()

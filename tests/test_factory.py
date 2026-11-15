@@ -510,3 +510,65 @@ def test_a_named_but_unset_api_key_variable_is_a_sentence(monkeypatch):
     config = _cfg(model={"name": "m", "ovms_api_key_env": "OVAT_TEST_OVMS_KEY"})
     with pytest.raises(ValueError, match="OVAT_TEST_OVMS_KEY"):
         build_llm(config)
+
+
+def test_close_agent_closes_retriever_and_build_agent_avoids_global(monkeypatch):
+    from ovat.agent import factory
+    from ovat.tools import search_docs as sd
+
+    closed = []
+
+    class FakeRetriever:
+        def retrieve(self, query, top_k=5):
+            return []
+
+        def close(self):
+            closed.append("retriever")
+
+    sd.configure(None)
+    monkeypatch.setattr(factory, "build_rag", lambda cfg: FakeRetriever())
+    agent = build_agent(_cfg(), skip_rag=False)
+    assert getattr(agent, "retriever", None) is not None
+    assert sd._retriever is None
+    factory.close_agent(agent)
+    assert closed == ["retriever"]
+
+
+def test_build_agent_cleans_up_partial_resources_on_failure(monkeypatch):
+    from ovat.agent import factory
+
+    closed = []
+
+    class FakeRetriever:
+        def close(self):
+            closed.append("retriever")
+
+    class FakeServer:
+        def close(self):
+            closed.append("server")
+
+    def failing_build_tools(config, retriever=None, servers=None, events=None):
+        servers.append(FakeServer())
+        raise TimeoutError("second server timed out")
+
+    monkeypatch.setattr(factory, "build_rag", lambda cfg: FakeRetriever())
+    monkeypatch.setattr(factory, "build_tools", failing_build_tools)
+    with pytest.raises(TimeoutError, match="second server timed out"):
+        build_agent(_cfg(), skip_rag=False)
+    assert "server" in closed and "retriever" in closed
+
+
+def test_framework_engines_do_not_attach_unused_native_llm(monkeypatch):
+    from ovat.agent import factory
+
+    monkeypatch.setattr(factory, "build_llm",
+                        lambda cfg: (_ for _ in ()).throw(
+                            AssertionError("should not build native llm")))
+    for engine, mod in (("react", "langchain"),
+                        ("llamaindex", "llama_index.core"),
+                        ("openai-agents", "agents")):
+        pytest.importorskip(mod)
+        cfg = WorkflowConfig(model={"name": "m"}, agent={"type": engine})
+        agent = build_agent(cfg, skip_rag=True)
+        assert getattr(agent, "llm", None) is None
+

@@ -379,3 +379,25 @@ def test_the_usage_is_read_from_a_reply_object_as_well_as_a_dict():
                                 "completion_tokens": 3}}) == (7, 3)
     assert _usage_of({"usage": None}) == (None, None)
     assert _usage_of(None) == (None, None)
+
+
+def test_multi_turn_runs_reuse_one_event_loop_until_closed():
+    import asyncio
+    from ovat.agent.factory import close_agent
+
+    tools, _ = _tools()
+    loops = []
+
+    class FakeAgent:
+        async def run(self, message, chat_history=None, **kwargs):
+            loops.append(asyncio.get_running_loop())
+            return f"reply:{message}"
+
+    agent = LlamaIndexAgent(FakeAgent(), tools, 3, None)
+    assert agent.run("turn 1") == "reply:turn 1"
+    assert not loops[0].is_closed()
+    assert agent.run("turn 2") == "reply:turn 2"
+    assert loops[0] is loops[1]
+    assert not loops[0].is_closed()
+    close_agent(agent)
+    assert loops[0].is_closed()

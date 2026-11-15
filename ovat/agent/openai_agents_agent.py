@@ -161,6 +161,19 @@ class OpenAIAgentsAgent:
         self.last_failed = False
         # What the last run() cost, in the native loop's shape.
         self.last_trace: dict = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def _run_loop(self, coro):
+        if self._loop is None or self._loop.is_closed():
+            self._loop = asyncio.new_event_loop()
+        return self._loop.run_until_complete(coro)
+
+    def close(self) -> None:
+        if self._loop is not None and not self._loop.is_closed():
+            try:
+                self._loop.close()
+            except Exception:
+                pass
 
     def run(self, user_message: str) -> str:
         """Run for one message and return the final text.
@@ -186,7 +199,7 @@ class OpenAIAgentsAgent:
         self.last_failed = False
         started = time.monotonic()
         try:
-            result = asyncio.run(Runner.run(
+            result = self._run_loop(Runner.run(
                 self._agent,
                 [*self._input_items, {"role": "user", "content": user_message}],
                 # One "turn" is a model call plus its tool round, which is the

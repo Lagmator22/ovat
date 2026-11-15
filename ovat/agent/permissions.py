@@ -145,10 +145,10 @@ class ApprovalBroker:
             ("modifying sensitive file", "reading sensitive file")
         )
         with self._lock:
-            if self.auto_approve or (
-                not sensitive
-                and (tool in self._session_allowed
-                     or tool in self._always_allowed)
+            if not sensitive and (
+                self.auto_approve
+                or tool in self._session_allowed
+                or tool in self._always_allowed
             ):
                 return True
         if self.on_request is None:

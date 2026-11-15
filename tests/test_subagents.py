@@ -346,6 +346,51 @@ def test_child_events_carry_call_id_and_totals(monkeypatch, tmp_path):
     assert "duration_s" in done_ev.data
 
 
+def test_subagent_tool_kind_reaches_child_projector_without_parent_entry(monkeypatch, tmp_path):
+    from ovat.agent.events import (CURRENT_CALL_ID, SUBAGENT_EVENT,
+                                   SUBAGENT_STARTED)
+    from ovat.tui.server.projector import Projector
+    from ovat.tui.vibe.app_server.models import IdleSessionStatus, PublicSession
+
+    class A2AChild:
+        def __init__(self):
+            self.events = EventBus()
+            self.stop = None
+            self.closed = False
+            self.tools = {"remote_peer": {"kind": "a2a"}}
+            self.last_trace = {"totals": {"failed": False}}
+
+        def run(self, task):
+            self.events.emit(TOOL_STARTED, name="remote_peer", call_id="rc1",
+                             arguments={"message": "hi"})
+            return "done"
+
+    child = A2AChild()
+    runner, bus, _ = _workflow_runner(monkeypatch, tmp_path, child=child)
+    seen = []
+    bus.subscribe(seen.append)
+
+    token = CURRENT_CALL_ID.set("parent-c1")
+    try:
+        runner.run("researcher", "ask peer")
+    finally:
+        CURRENT_CALL_ID.reset(token)
+
+    ev = next(e for e in seen if e.type == SUBAGENT_EVENT)
+    assert ev.data["event"]["kind"] == "a2a"
+
+    proj = Projector(PublicSession(
+        id="p1", status=IdleSessionStatus(), created_at=0, updated_at=0),
+        lambda m, p: None)
+    proj.agent_event(next(e for e in seen if e.type == SUBAGENT_STARTED), {})
+    # Parent kinds map does NOT contain child's remote_peer tool.
+    proj.agent_event(ev, {})
+    effects = [e for e in proj.child_histories["child-parent-c1"]
+               if hasattr(e, "detail")]
+    assert len(effects) == 1
+    assert effects[0].detail.kind == "subagent"
+
+
 def test_cancel_child_stops_one_without_stopping_parent_or_sibling(monkeypatch, tmp_path):
     from ovat.agent.events import CURRENT_CALL_ID
     runner, bus, built = _workflow_runner(monkeypatch, tmp_path)
@@ -873,4 +918,48 @@ def test_cancel_child_unblocks_pending_approval_and_question_for_that_child_only
     approver.resolve(approver.pending()[0].id, permissions.ONCE)
     t2.join(timeout=0.5)
     assert results["c2_approval"] is True
+
+
+def test_auto_approve_still_asks_for_sensitive_files():
+    asked = []
+    broker = ApprovalBroker(on_request=lambda req: (
+        asked.append(req),
+        broker.resolve(req.id, permissions.REFUSE),
+    ))
+    broker.auto_approve = True
+    assert broker("read_file", {"file_path": ".env"},
+                  "reading sensitive file .env") is False
+    assert broker("write_file", {"file_path": ".git/hooks/pre-commit"},
+                  "modifying sensitive file .git/hooks/pre-commit") is False
+    assert len(asked) == 2
+
+
+def test_run_api_closes_provider_after_answer(monkeypatch):
+    from ovat.agent.subagents import CombinedStopEvent, SubagentRunner
+    from ovat.providers import llm_ovms
+
+    closed = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            pass
+
+        def chat(self, messages, tools=None, on_token=None):
+            return {"finish_reason": "stop", "content": "ok",
+                    "tool_calls": None, "usage": None}
+
+        def close(self):
+            closed.append("closed")
+
+    monkeypatch.setattr(llm_ovms, "OVMSLLMProvider", FakeProvider)
+    cfg = _cfg([{"name": "cloud", "description": "d",
+                 "api": {"base_url": "https://api.example.com/v1",
+                         "model": "gpt"}}])
+    runner = SubagentRunner(cfg.subagents, EventBus())
+    answer, _ = runner._run_api(cfg.subagents[0], "hi", "c1",
+                                CombinedStopEvent())
+    assert "ok" in answer
+    assert closed == ["closed"]
+
+
 
