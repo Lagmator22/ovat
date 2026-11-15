@@ -15,9 +15,12 @@ this; urllib and html.parser from the standard library are enough for
 Permission is `ask` by default (permissions.py): the URL and the request
 leave the machine.
 """
+import errno
+import http.client
 import ipaddress
 import re
 import socket
+import sys
 import urllib.error
 import urllib.request
 from html.parser import HTMLParser
@@ -153,10 +156,73 @@ def html_to_text(html: str, base: str = "") -> str:
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Hand every redirect back to us: the check on WHERE it goes is ours."""
+    """Stop automatic redirects so each hop is validated explicitly."""
 
     def redirect_request(self, *args, **kwargs):
         return None
+
+
+def _connect_pinned_tcp(conn: http.client.HTTPConnection,
+                        pinned_ip: str) -> None:
+    sys.audit("http.client.connect", conn, pinned_ip, conn.port)
+    conn.sock = socket.create_connection(
+        (pinned_ip, conn.port), conn.timeout, conn.source_address)
+    try:
+        conn.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except OSError as exc:
+        if exc.errno != errno.ENOPROTOOPT:
+            raise
+    if conn._tunnel_host:
+        conn._tunnel()
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """HTTP connection that dials a pinned IP while preserving the Host header."""
+
+    def __init__(self, *args, pinned_ip: str, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._pinned_ip = pinned_ip
+
+    def connect(self):
+        _connect_pinned_tcp(self, self._pinned_ip)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection that dials a pinned IP while preserving TLS SNI."""
+
+    def __init__(self, *args, pinned_ip: str, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._pinned_ip = pinned_ip
+
+    def connect(self):
+        _connect_pinned_tcp(self, self._pinned_ip)
+        server_hostname = self._tunnel_host or self.host
+        self.sock = self._context.wrap_socket(
+            self.sock, server_hostname=server_hostname)
+
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    def __init__(self, pinned_ip: str):
+        super().__init__()
+        self._pinned_ip = pinned_ip
+
+    def http_open(self, req):
+        return self.do_open(
+            lambda *args, **kwargs: _PinnedHTTPConnection(
+                *args, pinned_ip=self._pinned_ip, **kwargs),
+            req)
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, pinned_ip: str):
+        super().__init__()
+        self._pinned_ip = pinned_ip
+
+    def https_open(self, req):
+        return self.do_open(
+            lambda *args, **kwargs: _PinnedHTTPSConnection(
+                *args, pinned_ip=self._pinned_ip, **kwargs),
+            req, context=self._context)
 
 
 def _origin(url: str) -> tuple:
@@ -195,28 +261,38 @@ def _check_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
         return "refusing to fetch a link-local or cloud metadata address."
     if ip.is_unspecified or ip.is_multicast:
         return "refusing to fetch a reserved or unspecified address."
-    if ip.is_private and not allow_private_lan:
+    # is_global also covers shared address space (100.64.0.0/10), which
+    # is_private misses on python 3.10.
+    if (ip.is_private or not ip.is_global) and not allow_private_lan:
         return "refusing to fetch a private network address."
     if ip.is_reserved and not ip.is_private:
         return "refusing to fetch a reserved or unspecified address."
     return None
 
 
-def check_safe_url(url: str, *, allow_private_lan: bool = False) -> str | None:
-    """Return a refusal sentence if `url` resolves to a forbidden address."""
+def _resolve_safe_url(
+    url: str, *, allow_private_lan: bool = False
+) -> tuple[str | None, str | None]:
+    """Validate `url` and return `(pinned_ip, refusal_reason)`."""
     host = (urlparse(url).hostname or "").strip().lower()
     if not host:
-        return "the URL is invalid; use an http or https address."
+        return None, "the URL is invalid; use an http or https address."
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
         pass
     else:
-        return _check_ip(ip, host, allow_private_lan)
+        reason = _check_ip(ip, host, allow_private_lan)
+        if reason:
+            return None, reason
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        return str(ip), None
     try:
         infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
     except OSError:
-        return None
+        return None, None
+    pinned_ip: str | None = None
     for _, _, _, _, sockaddr in infos:
         raw_ip = str(sockaddr[0]).split("%")[0]
         try:
@@ -225,8 +301,17 @@ def check_safe_url(url: str, *, allow_private_lan: bool = False) -> str | None:
             continue
         reason = _check_ip(ip, host, allow_private_lan)
         if reason:
-            return reason
-    return None
+            return None, reason
+        if pinned_ip is None:
+            if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+                ip = ip.ipv4_mapped
+            pinned_ip = str(ip)
+    return pinned_ip, None
+
+
+def check_safe_url(url: str, *, allow_private_lan: bool = False) -> str | None:
+    """Return a refusal sentence if `url` resolves to a forbidden address."""
+    return _resolve_safe_url(url, allow_private_lan=allow_private_lan)[1]
 
 
 def web_fetch_impl(url: str, timeout: int | None = None) -> str:
@@ -255,11 +340,15 @@ def web_fetch_impl(url: str, timeout: int | None = None) -> str:
             raise ValueError("missing host")
     except ValueError:
         return fail("web_fetch", "the URL is invalid; use an http or https address.")
-    opener = urllib.request.build_opener(_NoRedirect)
     for _ in range(MAX_REDIRECTS + 1):
-        blocked = check_safe_url(current)
+        pinned_ip, blocked = _resolve_safe_url(current)
         if blocked:
             return fail("web_fetch", blocked)
+        handlers: list = [_NoRedirect]
+        if pinned_ip:
+            handlers.extend([_PinnedHTTPHandler(pinned_ip),
+                             _PinnedHTTPSHandler(pinned_ip)])
+        opener = urllib.request.build_opener(*handlers)
         request = urllib.request.Request(current, headers={
             "User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9",
             "Accept": "text/html,application/xhtml+xml,application/xml;"

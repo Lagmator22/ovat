@@ -1,74 +1,14 @@
 # ovat/cli/shell.py
-"""Run real terminal commands from the TUI, inside the venv, with colour.
+"""Subprocess shell execution helper for interactive UIs without Textual coupling.
 
-The TUI is a styled front-end over a real shell: whatever the user types (that
-is not a UI action) is executed here exactly as it would be in their terminal.
-Keeping this layer free of any Textual import means I can unit test it with a
-trivial command like `echo` and never open a screen.
-
-Two design choices make it behave like an activated venv:
-  * I prepend the venv's bin directory to PATH, so `ovat`, `python`, and
-    `pytest` resolve to the venv copies even when the venv is not "activated".
-  * I set FORCE_COLOR so tools like ovat and pytest still emit ANSI colour into
-    the pipe; the TUI turns those codes back into styled text.
+Prepends the active Python environment's ``bin``/``Scripts`` directory to
+``PATH`` and sets ``FORCE_COLOR=1`` so child CLI commands resolve consistently
+and emit ANSI formatting cleanly without requiring Textual in unit tests.
 """
 import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
-
-
-@dataclass
-class SlashTemplate:
-    """A slash shortcut: the text it inserts, or None if it is a UI action."""
-
-    name: str               # e.g. "/doctor"
-    insert: str | None      # the command text it fills in, or None for actions
-    description: str
-    # Where the cursor should land inside `insert` (None = end of text).
-    # `/run` inserts `ovat run  --input ""`; the user's next keystrokes are
-    # the config path, so the cursor belongs in that gap, not at the end.
-    cursor: int | None = None
-
-
-# The slash menu. Each non-action entry inserts a real `ovat ...` command the
-# user can finish and run. /clear and /exit are handled by the TUI itself.
-TEMPLATES = [
-    # The arguments are named in the description because they are otherwise
-    # undiscoverable. `/chat` accepts `[config] [model-path]` and has since it
-    # was written, but the menu said only "chat with your indexed docs" -- so a
-    # user whose remembered config was the wrong one had no way to see that
-    # another could be passed, and `.ovat/chat_prefs.json` keeps handing back
-    # the same one. Reported from the AI PC: stuck on a config pointing at the
-    # plano gateway's /v1 path with no visible way to choose another.
-    SlashTemplate("/chat", None,
-                  "chat with your docs  ·  /chat [config] [model-path]"),
-    # insert=None makes this a UI ACTION: the TUI opens its own doctor screen,
-    # which can re-run the checks in place. `/validate` below still inserts the
-    # subprocess form for anyone who wants `ovat doctor <config>` in the log.
-    SlashTemplate("/doctor", None, "environment + config checks, in-app"),
-    SlashTemplate("/telemetry", None, "live numbers and graphs, in-app"),
-    SlashTemplate("/run", "ovat run  --input \"\"", "run the agent on a config",
-                  cursor=len("ovat run ")),
-    SlashTemplate("/index", "ovat index  ", "index a docs folder for search_docs",
-                  cursor=len("ovat index ")),
-    SlashTemplate("/init", "ovat init ", "write a starter workflow.yml"),
-    SlashTemplate("/validate", "ovat doctor ", "validate a workflow file (via doctor)"),
-    SlashTemplate("/serve", "ovat serve ", "start OVMS for a config (AI PC)"),
-    SlashTemplate("/models", "ovat models list", "list models OVMS can serve (AI PC)"),
-    SlashTemplate("/help", "ovat --help", "show every OVAT subcommand"),
-    SlashTemplate("/clear", None, "clear the output area"),
-    SlashTemplate("/exit", None, "leave the TUI"),
-]
-
-TEMPLATES_BY_NAME = {t.name: t for t in TEMPLATES}
-
-
-def match_templates(prefix: str) -> list:
-    """Templates whose name starts with `prefix` (used to build the dropdown)."""
-    prefix = prefix.lower()
-    return [t for t in TEMPLATES if t.name.startswith(prefix)]
 
 
 def venv_env(columns: int | None = None) -> dict:
@@ -88,20 +28,12 @@ def venv_env(columns: int | None = None) -> dict:
 
 
 def spawn(cmd: str, cwd: str, env: dict | None = None) -> subprocess.Popen:
-    """Start `cmd` in a shell. The caller streams stdout and can terminate it.
+    """Launch ``cmd`` in the platform shell with closed stdin and piped output.
 
-    I route through the user's shell so pipes, globs, and redirects work like a
-    normal terminal. stdin is closed so an interactive program gets EOF and
-    exits instead of hanging the UI.
-
-    The `executable` argument is POSIX-only ON PURPOSE. It does not mean the
-    same thing on both platforms: with shell=True, POSIX uses it to pick WHICH
-    shell interprets the command, but Windows uses it to REPLACE cmd.exe. And
-    SHELL is a POSIX convention that is normally unset on Windows, so the old
-    unconditional `executable=env.get("SHELL", "/bin/sh")` handed Windows a
-    path that does not exist there: every command typed into the TUI died with
-    FileNotFoundError. Leaving it off lets Windows use COMSPEC (cmd.exe), which
-    is the shell a Windows user is expecting anyway.
+    Uses the user's shell so pipes, globs, and redirects work normally, and sets
+    ``stdin=DEVNULL`` so interactive prompts receive EOF instead of hanging UI
+    callers. ``executable`` is set only on POSIX because Windows ``shell=True``
+    uses ``executable`` to replace ``COMSPEC`` (``cmd.exe``) rather than wrap it.
     """
     env = env or venv_env()
     kwargs = {}
@@ -164,20 +96,11 @@ def _kill_tree(proc: subprocess.Popen) -> None:
 
 def iter_display_lines(stream, progress_interval: float = 0.5,
                        _clock=time.monotonic):
-    """Yield printable lines from a process stream, taming \\r progress bars.
+    """Yield printable lines from a subprocess pipe, throttling ``\\r`` progress redraws.
 
-    The problem: pip/tqdm redraw ONE line many times a second with bare
-    carriage returns and send no newline until the end. Iterating the stream
-    by lines therefore shows nothing for minutes, then dumps one giant line.
-
-    Two tricks here:
-    - os.read() on the raw fd returns whatever bytes are AVAILABLE (a plain
-      text-mode read(4096) would block until it had all 4096 chars; no
-      streaming at all).
-    - a frame that ends in \\r is a transient redraw. The log is append-only,
-      so instead of appending every redraw I let at most one through per
-      progress_interval; the final state arrives with the tool's closing
-      newline anyway.
+    Uses unbuffered ``os.read`` on the raw file descriptor for incremental
+    streaming and limits repeated ``\\r`` redraw frames to ``progress_interval``
+    so append-only logs do not flood with transient progress updates.
     """
     fd = stream.fileno()
     buf = ""
@@ -185,7 +108,7 @@ def iter_display_lines(stream, progress_interval: float = 0.5,
     while True:
         try:
             chunk = os.read(fd, 4096)
-        except OSError:            # stream closed under us (cancel path)
+        except OSError:            # Stream closed on process exit or cancellation.
             break
         if not chunk:
             break
@@ -210,11 +133,7 @@ def iter_display_lines(stream, progress_interval: float = 0.5,
 
 
 def run_command(cmd: str, cwd: str, on_line, env: dict | None = None) -> int:
-    """Run `cmd` to completion, calling on_line(text) for each output line.
-
-    Returns the process exit code. This is the synchronous helper my tests use;
-    the TUI uses spawn() directly so it can also cancel a long-running command.
-    """
+    """Run ``cmd`` synchronously and pass each display line to ``on_line(text)``."""
     proc = spawn(cmd, cwd, env)
     try:
         for line in iter_display_lines(proc.stdout):

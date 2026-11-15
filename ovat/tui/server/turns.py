@@ -1,43 +1,47 @@
 # ovat/tui/server/turns.py
-"""Turns: starting one, the queue behind it, and how one ends.
+"""Turn lifecycle and prompt queue management for the app server.
 
-Note to myself: the agent runs ONE turn at a time (AgentSession.ask refuses
-a second). Vibe's TUI sends every prompt through a queue (`session/turn/
-enqueue`): an idle server promotes the item at once, a busy one keeps it. So
-this file owns both halves:
-
-- the turn that is running (`active`), from the request to the moment the
-  session reports TurnDone (or the moment it could never start), and
-- the queue of prompts that came in while it ran.
-
-The order of events matches Vibe's server, which the client's bookkeeping
-depends on: the response first, then queueUpdated (the item is there), then
-queueUpdated (it was promoted), then turn/started, the user's message, the
-agent's entries, the stats, and turn/completed last.
-
-A prompt that arrives before the agent has finished building (loading a model
-takes a while) is accepted: the turn starts, waits for the build, and then
-asks. If the build failed the turn fails with that sentence.
+Serializes execution against ``AgentSession`` (one active turn at a time),
+queues prompts arriving while busy via ``session/turn/enqueue``, and emits
+ordered protocol notifications (response -> queue updates -> ``turn/started`` ->
+history entries -> stats -> ``turn/completed``). Prompts submitted while the
+agent is still initializing are queued and execute once ready or fail cleanly if
+agent construction fails.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
+import os
+import re
+import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from uuid import uuid4
 
 from ovat.agentic import session as s
 from ovat.text import THINK_CLOSE, THINK_OPEN
+from ovat.tools import project
 from ovat.tui.server import saved
 from ovat.tui.server.projector import now_ms
 from ovat.tui.server.rpc import Reply, RpcError
-from ovat.tui.vibe.app_server.models import (JsonPatchOperation,
+from ovat.tui.vibe.app_server._turn_input import image_attachment_from_session_block
+from ovat.tui.vibe.app_server.models import (FileImageSource,
+                                             ImageAttachment,
+                                             ImageContentBlock,
+                                             InlineImageSource,
+                                             JsonPatchOperation,
                                              PublicEntryGenerationStatus,
                                              PublicError, PublicMessageEntry,
                                              PublicQueuedTurn, PublicTurn,
                                              PublicTurnQueue,
                                              PublicTurnStatus,
                                              PublicTurnStopReason,
+                                             ScheduledLoop,
+                                             SessionImageContentBlock,
                                              SessionTextContentBlock,
                                              TextContentBlock,
                                              TurnUserInputEntry)
@@ -53,6 +57,18 @@ from ovat.tui.vibe.app_server.protocol import (ProtocolErrorCode,
 
 QUEUE_MAX = 32
 STREAM_FLUSH_SECONDS = 0.05
+MIN_LOOP_SECONDS = 5
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+_MIME_TO_EXT = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+_ALLOWED_IMAGE_EXTS = frozenset(_MIME_TO_EXT.values()) | {".jpeg"}
+_LOOP_UNITS = {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}
+_LOOP_INTERVAL_RE = re.compile(r"^(\d+)\s*([smhd]?)$", re.IGNORECASE)
 
 
 class BuildFailedError(Exception):
@@ -86,6 +102,13 @@ class _Queued:
     params: TurnEnqueueParams
     text: str
     entry_id: str | None
+    blocks: list = field(default_factory=list)
+
+
+@dataclass
+class _LoopEntry:
+    loop: ScheduledLoop
+    task: asyncio.Task | None = None
 
 
 class TurnManager:
@@ -96,6 +119,7 @@ class TurnManager:
         self.paused = False
         # idempotency key -> (the params it came with, the queue item it made)
         self._receipts: dict[str, tuple[TurnEnqueueParams, str]] = {}
+        self.loops: dict[str, _LoopEntry] = {}
 
     @property
     def active_id(self) -> str | None:
@@ -118,13 +142,13 @@ class TurnManager:
         if self.queue:
             raise RpcError(ProtocolErrorCode.CONFLICT,
                            "Resume queued turns before starting a new turn")
-        text = _text_of(params.message)
+        text, blocks = _extract_input(params.message, ctx.cwd)
         if not text.strip():
             raise RpcError(ProtocolErrorCode.INVALID_PARAMS,
                            "Turn input is empty")
         turn, begin = self._prepare(
             text, params.client_user_message_id,
-            [b for b in params.message if isinstance(b, TextContentBlock)],
+            blocks,
             queue_item_id=None, injected=params.injected)
         self._warn_if_dropped(params.message)
         return Reply(TurnStartResponse(
@@ -217,10 +241,21 @@ class TurnManager:
                                message=f"{type(exc).__name__}: {exc}"))
 
     def _warn_if_dropped(self, blocks) -> None:
-        if any(not isinstance(b, TextContentBlock) for b in blocks):
+        if any(
+            not isinstance(
+                b,
+                (
+                    TextContentBlock,
+                    ImageContentBlock,
+                    SessionTextContentBlock,
+                    SessionImageContentBlock,
+                ),
+            )
+            for b in blocks
+        ):
             self.ctx.projector.warning(
-                "Only the text of your message was sent: images and "
-                "attached files are not supported in OVAT yet.")
+                "Only the text and images of your message were sent: "
+                "attached resources are not supported in OVAT yet.")
 
     # ---- the agent reports -----------------------------------------------------
 
@@ -431,10 +466,8 @@ class TurnManager:
         before the response (the client waits for that entry)."""
         self.ctx.require_session(params.session_id)
         active = self._require_active(params.expected_turn_id)
-        text = _text_of(params.message)
-        self._steer(active, text, params.client_user_message_id,
-                    [b for b in params.message
-                     if isinstance(b, TextContentBlock)])
+        text, blocks = _extract_input(params.message, self.ctx.cwd)
+        self._steer(active, text, params.client_user_message_id, blocks)
         self._warn_if_dropped(params.message)
         return TurnSteerResponse(last_event_id=self.ctx.projector.event_id)
 
@@ -521,7 +554,7 @@ class TurnManager:
     def enqueue(self, params: TurnEnqueueParams) -> Reply:
         ctx = self.ctx
         ctx.require_session(params.session_id)
-        text, entry_id = _queued_text(params)
+        text, entry_id, blocks = _queued_input(params, ctx.cwd)
         key = params.idempotency_key
         if key is not None and key in self._receipts:
             known_params, item_id = self._receipts[key]
@@ -538,7 +571,7 @@ class TurnManager:
             id=str(uuid4()), created_at=now_ms(),
             entries=[e.model_copy(deep=True) for e in params.entries])
         self.queue.append(_Queued(item, params.model_copy(deep=True), text,
-                                  entry_id))
+                                  entry_id, blocks))
         if key is not None:
             self._receipts[key] = (params.model_copy(deep=True), item.id)
         return Reply(TurnEnqueueResponse(queue_item_id=item.id),
@@ -546,7 +579,7 @@ class TurnManager:
 
     def replace(self, queue_item_id: str, params: TurnEnqueueParams) -> Reply:
         self.ctx.require_session(params.session_id)
-        text, entry_id = _queued_text(params)
+        text, entry_id, blocks = _queued_input(params, self.ctx.cwd)
         for index, queued in enumerate(self.queue):
             if queued.item.id == queue_item_id:
                 break
@@ -556,7 +589,7 @@ class TurnManager:
         item = queued.item.model_copy(update={
             "entries": [e.model_copy(deep=True) for e in params.entries]})
         self.queue[index] = _Queued(item, params.model_copy(deep=True), text,
-                                    entry_id)
+                                    entry_id, blocks)
         if params.idempotency_key is not None:
             self._receipts[params.idempotency_key] = (
                 params.model_copy(deep=True), queue_item_id)
@@ -603,14 +636,98 @@ class TurnManager:
         self._emit_queue()
         begin()
 
+    # ---- scheduled loops -------------------------------------------------------
+
+    def list_loops(self) -> list[ScheduledLoop]:
+        return [entry.loop.model_copy() for entry in self.loops.values()]
+
+    def create_loop(self, interval: str, prompt: str) -> ScheduledLoop:
+        seconds = _parse_loop_interval(interval)
+        clean_prompt = (prompt or "").strip()
+        if not clean_prompt:
+            raise RpcError(ProtocolErrorCode.INVALID_PARAMS,
+                           "Loop prompt cannot be empty")
+        loop_id = uuid4().hex[:8]
+        loop = ScheduledLoop(
+            id=loop_id,
+            prompt=clean_prompt,
+            interval_seconds=seconds,
+            next_fire_at=time.time() + seconds,
+        )
+        entry = _LoopEntry(loop=loop)
+        self.loops[loop_id] = entry
+        entry.task = self.ctx.loop.create_task(
+            self._loop_worker(entry), name=f"ovat-loop-{loop_id}")
+        return loop.model_copy()
+
+    def delete_loop(self, loop_id: str) -> ScheduledLoop:
+        entry = self.loops.pop(loop_id, None)
+        if entry is None:
+            raise RpcError(ProtocolErrorCode.NOT_FOUND,
+                           f"Scheduled loop not found: {loop_id}")
+        if entry.task is not None:
+            entry.task.cancel()
+        return entry.loop.model_copy()
+
+    def clear_loops(self) -> int:
+        count = len(self.loops)
+        for entry in self.loops.values():
+            if entry.task is not None:
+                entry.task.cancel()
+        self.loops.clear()
+        return count
+
+    async def _loop_worker(self, entry: _LoopEntry) -> None:
+        try:
+            while (
+                not self.ctx.closed
+                and self.loops.get(entry.loop.id) is entry
+            ):
+                delay = max(0.0, entry.loop.next_fire_at - time.time())
+                await asyncio.sleep(delay)
+                if (
+                    self.ctx.closed
+                    or self.loops.get(entry.loop.id) is not entry
+                    or self.ctx.projector is None
+                ):
+                    return
+                interval = entry.loop.interval_seconds or MIN_LOOP_SECONDS
+                entry.loop.next_fire_at = time.time() + interval
+                try:
+                    self._submit_scheduled_prompt(entry.loop.prompt)
+                except Exception:
+                    pass
+        except asyncio.CancelledError:
+            return
+
+    def _submit_scheduled_prompt(self, prompt: str) -> None:
+        session_id = self.ctx.projector.session.id
+        if self.active is None and not self.queue and not self.paused:
+            reply = self.start(TurnStartParams(
+                session_id=session_id,
+                message=[TextContentBlock(text=prompt)],
+                injected=True,
+            ))
+        else:
+            reply = self.enqueue(TurnEnqueueParams(
+                session_id=session_id,
+                entries=[TurnUserInputEntry(
+                    content=[SessionTextContentBlock(text=prompt)],
+                )],
+            ))
+        if reply.after is not None:
+            reply.after()
+
     # ---- a new conversation / shutdown -----------------------------------------
 
     def reset(self) -> None:
         self.queue.clear()
         self.paused = False
         self._receipts.clear()
+        self.clear_loops()
 
     def close(self) -> None:
+        self.clear_loops()
         active = self.active
         if active is not None:
             if active.flush_handle is not None:
@@ -620,7 +737,154 @@ class TurnManager:
                 active.task.cancel()
 
 
+def _parse_loop_interval(raw: str) -> int:
+    text = (raw or "").strip()
+    match = _LOOP_INTERVAL_RE.match(text)
+    if match is None:
+        raise RpcError(
+            ProtocolErrorCode.INVALID_PARAMS,
+            f"Invalid loop interval: {raw!r} (expected e.g. 30s, 5m, 1h)",
+        )
+    value = int(match.group(1))
+    unit = match.group(2).lower()
+    seconds = value * _LOOP_UNITS[unit]
+    if seconds < MIN_LOOP_SECONDS:
+        raise RpcError(
+            ProtocolErrorCode.INVALID_PARAMS,
+            f"Loop interval must be at least {MIN_LOOP_SECONDS}s",
+        )
+    return seconds
+
+
+def _materialize_image(
+    attachment: ImageAttachment, cwd: str | None
+) -> tuple[str, ImageAttachment]:
+    root = Path(cwd or os.getcwd()).resolve()
+    paste_dir = root / ".ovat" / "pasted_images"
+    temp_paste_dir = (Path(tempfile.gettempdir()) / "ovat-pasted-images").resolve()
+    source = attachment.source
+
+    if isinstance(source, InlineImageSource):
+        ext = _MIME_TO_EXT.get(attachment.mime_type.lower())
+        if ext is None:
+            raise RpcError(
+                ProtocolErrorCode.INVALID_PARAMS,
+                f"Unsupported image media type: {attachment.mime_type}",
+            )
+        try:
+            raw = base64.b64decode(source.data, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise RpcError(
+                ProtocolErrorCode.INVALID_PARAMS,
+                f"Invalid image data: {exc}",
+            ) from exc
+        if not raw or len(raw) > _MAX_IMAGE_BYTES:
+            raise RpcError(
+                ProtocolErrorCode.INVALID_PARAMS,
+                "Inline image is empty or exceeds 10 MB limit",
+            )
+        paste_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"image-{uuid4().hex[:10]}{ext}"
+        target = paste_dir / filename
+        target.write_bytes(raw)
+        rel = f".ovat/pasted_images/{filename}"
+        saved_att = ImageAttachment(
+            source=FileImageSource(path=str(target)),
+            alias=attachment.alias or filename,
+            mime_type=attachment.mime_type,
+        )
+        return f"[Attached image: {rel}]", saved_att
+
+    try:
+        src = Path(source.path).expanduser().resolve()
+        stat = src.stat()
+    except OSError as exc:
+        raise RpcError(
+            ProtocolErrorCode.INVALID_PARAMS,
+            f"Image file not readable: {source.path}",
+        ) from exc
+    if not src.is_file():
+        raise RpcError(
+            ProtocolErrorCode.INVALID_PARAMS,
+            f"Image path is not a file: {source.path}",
+        )
+    ext = src.suffix.lower()
+    if ext not in _ALLOWED_IMAGE_EXTS:
+        raise RpcError(
+            ProtocolErrorCode.INVALID_PARAMS,
+            f"Unsupported image file extension: {ext or '(none)'}",
+        )
+    if stat.st_size <= 0 or stat.st_size > _MAX_IMAGE_BYTES:
+        raise RpcError(
+            ProtocolErrorCode.INVALID_PARAMS,
+            "Image file is empty or exceeds 10 MB limit",
+        )
+
+    if src.is_relative_to(root):
+        rel = src.relative_to(root).as_posix()
+        in_pasted_dir = src.is_relative_to(paste_dir)
+        if not in_pasted_dir and (
+            project._names_sensitive(rel, True)
+            or project.is_sensitive_path(rel, for_read=True)
+        ):
+            raise RpcError(
+                ProtocolErrorCode.INVALID_PARAMS,
+                f"Refusing sensitive image path: {rel}",
+            )
+        saved_att = ImageAttachment(
+            source=FileImageSource(path=str(src)),
+            alias=attachment.alias or src.name,
+            mime_type=attachment.mime_type,
+        )
+        return f"[Attached image: {rel}]", saved_att
+
+    if src.is_relative_to(temp_paste_dir):
+        paste_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"pasted-{uuid4().hex[:10]}{ext}"
+        target = paste_dir / filename
+        target.write_bytes(src.read_bytes())
+        rel = f".ovat/pasted_images/{filename}"
+        saved_att = ImageAttachment(
+            source=FileImageSource(path=str(target)),
+            alias=attachment.alias or filename,
+            mime_type=attachment.mime_type,
+        )
+        return f"[Attached image: {rel}]", saved_att
+
+    raise RpcError(
+        ProtocolErrorCode.INVALID_PARAMS,
+        f"Image path is outside workspace: {source.path}",
+    )
+
+
+def _extract_input(blocks, cwd: str | None) -> tuple[str, list]:
+    text_parts: list[str] = []
+    display_blocks: list = []
+    for block in blocks:
+        if isinstance(block, (TextContentBlock, SessionTextContentBlock)):
+            if block.text:
+                text_parts.append(block.text)
+                display_blocks.append(TextContentBlock(text=block.text))
+        elif isinstance(block, ImageContentBlock):
+            marker, saved_att = _materialize_image(block.attachment, cwd)
+            text_parts.append(marker)
+            display_blocks.append(ImageContentBlock(attachment=saved_att))
+        elif isinstance(block, SessionImageContentBlock):
+            try:
+                att = image_attachment_from_session_block(block)
+            except ValueError as exc:
+                raise RpcError(
+                    ProtocolErrorCode.INVALID_PARAMS, str(exc)
+                ) from exc
+            marker, saved_att = _materialize_image(att, cwd)
+            text_parts.append(marker)
+            display_blocks.append(ImageContentBlock(attachment=saved_att))
+    return "\n\n".join(text_parts), display_blocks
+
+
 def _blocks_of(queued: _Queued) -> list:
+    if queued.blocks:
+        return list(queued.blocks)
     return [TextContentBlock(text=b.text)
             for e in queued.item.entries if isinstance(e, TurnUserInputEntry)
             for b in e.content if isinstance(b, SessionTextContentBlock)]
@@ -638,18 +902,18 @@ def _text_of(blocks) -> str:
                        and b.text)
 
 
-def _queued_text(params: TurnEnqueueParams) -> tuple[str, str | None]:
-    """The user's text and its entry id. Context entries and entries with no
-    text are refused here, so a promoted item always has something to ask."""
+def _queued_input(params: TurnEnqueueParams, cwd: str | None) -> tuple[str, str | None, list]:
+    """The user's text/image markers, entry id, and normalized ContentBlocks."""
     if any(e.role != "user" for e in params.entries):
         raise RpcError(ProtocolErrorCode.INVALID_PARAMS,
                        "Context entries are not supported in OVAT yet.")
     entry = params.user_entry
-    text = _text_of(entry.content) if entry is not None else ""
+    if entry is None:
+        raise RpcError(ProtocolErrorCode.INVALID_PARAMS, "Turn input is empty")
+    text, blocks = _extract_input(entry.content, cwd)
     if not text.strip():
-        raise RpcError(ProtocolErrorCode.INVALID_PARAMS,
-                       "Turn input is empty")
-    return text, entry.entry_id
+        raise RpcError(ProtocolErrorCode.INVALID_PARAMS, "Turn input is empty")
+    return text, entry.entry_id, blocks
 
 
 def _subagent_call(text: str, info: dict) -> tuple[str, str] | None:

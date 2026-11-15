@@ -4,13 +4,15 @@ diagnostics."""
 import asyncio
 
 from ovat.cli import diagnostics
-from ovat.tui.server import views
+from ovat.tui.server import logs, views
 from ovat.tui.server.rpc import Routes
 from ovat.tui.vibe.app_server.models import ConfigIssue
 from ovat.tui.vibe.app_server.protocol import (AgentsListParams,
                                                AgentsListResponse,
                                                DiagnosticsListParams,
                                                DiagnosticsListResponse,
+                                               DiagnosticsLogsReadParams,
+                                               DiagnosticsLogsReadResponse,
                                                RuntimeReadParams,
                                                RuntimeReadResponse,
                                                StatsReadParams,
@@ -66,3 +68,16 @@ async def diagnostics_list(ctx, params: DiagnosticsListParams):
         issues=[ConfigIssue(file=c.name, message=f"{c.status}: {c.detail}")
                 for c in diagnostics.problems(checks)],
         hooks_count=0)
+
+
+@routes.method("diagnostics/logs/read", DiagnosticsLogsReadParams)
+async def diagnostics_logs_read(ctx, params: DiagnosticsLogsReadParams):
+    if params.session_id is not None:
+        ctx.require_session(params.session_id)
+    page = logs.read_logs(
+        ctx._log_handler,
+        ctx.cwd,
+        limit=params.limit,
+        offset=params.offset,
+    )
+    return DiagnosticsLogsReadResponse(logs=page)

@@ -197,14 +197,13 @@ def test_every_setting_is_a_field_the_schema_has():
 # ---- the UI preferences ---------------------------------------------------------
 
 def test_the_theme_and_the_launchers_paths_share_one_file(tmp_path):
-    from ovat.cli.chat_screen import load_prefs, save_prefs
     cwd = str(tmp_path)
-    save_prefs(cwd, "cfg.yml", "models/llm")
+    prefs.update(cwd, config="cfg.yml", model_path="models/llm")
     prefs.update(cwd, theme="nord")
-    # each writer changes only its own keys
-    assert load_prefs(cwd) == {"config": "cfg.yml", "model_path": "models/llm",
+    # Each writer updates only its own keys.
+    assert prefs.load(cwd) == {"config": "cfg.yml", "model_path": "models/llm",
                                "theme": "nord"}
-    save_prefs(cwd, "other.yml", "models/llm")
+    prefs.update(cwd, config="other.yml", model_path="models/llm")
     assert prefs.load(cwd)["theme"] == "nord"
     prefs.update(cwd, theme=None)
     assert "theme" not in prefs.load(cwd)

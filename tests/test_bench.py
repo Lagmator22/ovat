@@ -1,10 +1,5 @@
 # tests/test_bench.py
-"""Tests for the cross-engine benchmark (the AI PC profiling deliverable).
-
-No engine is really built here: build_agent is injected, so the measurement
-logic is tested on its own and the whole file runs in milliseconds on any
-machine with no OVMS.
-"""
+"""Tests for the cross-engine benchmark using injected agent builders."""
 import time
 
 import pytest
@@ -249,9 +244,7 @@ def test_framework_engines_leave_tokens_unknown_without_usage(engine,
 
 
 def test_peak_memory_is_sampled_during_the_run_not_read_after_it():
-    """A single reading taken at the end misses the peak, because Python has
-    usually freed the big allocations by then, and the number exists for the
-    proposal's memory criterion."""
+    """Peak RSS must be sampled concurrently rather than read only at completion."""
     def build(cfg):
         return _Agent(delay=0.15)
 

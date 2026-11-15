@@ -1,19 +1,14 @@
 # ovat/agentic/atomic.py
-"""Write a text file so that a crash leaves the old one, never half of a new one.
+"""Atomic text file writes using exclusive same-directory temporary files and ``os.replace``.
 
-Note to myself: four files are rewritten while the app runs (a saved
-conversation, the UI preferences, the saved permission rules, and the workflow
-that /config edits). All of them go through here: the text is written whole to
-a temporary file next to the target and moved over it with os.replace, which
-is one step on every platform.
-
-`mode` sets the replacement file's permissions. Conversations and rules
-are owner-only, like the A2A token; workflow edits pass the existing mode.
-A fresh exclusive temporary file prevents old files or symlinks from being
-opened as the temporary output.
+Ensures concurrent readers and interrupted writes never observe partially
+written state (saved conversations, preferences, permission rules, workflow edits).
+Defaults file mode to user-only access (``0600`` on POSIX), while callers editing
+existing configs pass the preserved mode.
 """
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -38,3 +33,8 @@ def write_text(path: str | os.PathLike, text: str, *, mode: int = 0o600,
         temp.unlink(missing_ok=True)
         raise
     return target
+
+
+def write_json(path: str | os.PathLike, data, *, mode: int = 0o600) -> Path:
+    """Serialize ``data`` as indented JSON and write it atomically."""
+    return write_text(path, json.dumps(data, indent=2), mode=mode)

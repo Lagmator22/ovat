@@ -13,7 +13,7 @@ Textual widget, and they still come out in brand colours because the
 default theme IS the brand. Pick another theme and they follow it, because
 the variables are the theme's, not ours.
 
-TUI-only, and imported only from tui.py, because textual is an optional
+TUI-only, and imported only from the agent TUI, because textual is an optional
 extra: ui.py cannot import this or `ovat --help` would need textual on a
 CLI-only install (tests/test_tui_isolation.py enforces that).
 """

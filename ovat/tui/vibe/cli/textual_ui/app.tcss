@@ -2305,12 +2305,6 @@ NarratorStatus {
     }
 }
 
-FeedbackBar {
-    width: auto;
-    height: auto;
-    margin-left: 1;
-}
-
 .user-message.rewind-selected {
     .user-message-content {
         text-style: bold reverse;

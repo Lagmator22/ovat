@@ -8,9 +8,8 @@ here, on one page that fits a normal terminal.
     │ 56 %  █████░░ ││ 13 %  █░░░░░░ ││ 328 MB        │
     ┌ source  metric        now   min   max   mean ────────────────────────┐
 
-The sampling is unchanged: ovat.telemetry's Collector and sources, on the
-collector's own thread. What changed from the launcher's page
-(ovat/cli/telemetry_screen.py), each because it was seen on screen:
+The sampling uses ovat.telemetry's Collector and sources on the collector's
+own thread:
 
   * The copied stylesheet makes every Screen transparent and every
     Horizontal auto-height. Inside the agent app the old page showed the
@@ -34,9 +33,33 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Static
 
 from ovat.cli import ui
-from ovat.cli.telemetry_screen import _PREFERRED, _first_clause, _fmt
 from ovat.telemetry.collector import Collector
 from ovat.telemetry.sinks import LiveBufferSink
+
+_PREFERRED = [
+    ("npu.utilization", "NPU", "%"),
+    ("ovms.kv_cache_pct", "KV CACHE", "%"),
+    ("intel.pkg_power_w", "POWER", "W"),
+    ("system.cpu_pct", "SYS CPU", "%"),
+    ("system.ram_used_pct", "SYS RAM", "%"),
+    ("process.rss_mb", "OVAT MEM", "MB"),
+    ("system.proc_cpu_pct", "OVAT CPU", "%"),
+    ("system.threads", "THREADS", ""),
+]
+
+
+def _first_clause(reason: str) -> str:
+    """Return the leading clause of a status reason for one-line display."""
+    return reason.split(". ")[0].split("; ")[0].rstrip(".")
+
+
+def _fmt(value: float) -> str:
+    """Format a metric value appropriately for its scale."""
+    if abs(value) >= 100:
+        return f"{value:,.0f}"
+    if float(value).is_integer():
+        return f"{value:.0f}"
+    return f"{value:.1f}"
 
 REFRESH_S = 0.5
 MAX_TILES = 5

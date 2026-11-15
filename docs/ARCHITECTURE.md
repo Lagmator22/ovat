@@ -283,8 +283,7 @@ reasons behind each one are in [DECISIONS.md](DECISIONS.md).
 **Optional parts stay optional.** The core install runs every command without
 the TUI or any agent framework. `textual` and `pyfiglet` come only with the
 `[tui]` extra, and a module-level `import textual` appears only in the TUI's
-own files (`tui.py`, `chat_screen.py`, `doctor_screen.py`,
-`telemetry_screen.py`, `widgets.py`, `theme.py`, `commands.py`).
+own files (`ovat/tui/` and `cli/theme.py`).
 `tests/test_tui_isolation.py` checks that `main.py` and `shell.py` never import
 it at module level and that every command still works with the TUI missing.
 The same holds for the framework engines: importing the CLI pulls in none of
@@ -374,7 +373,7 @@ What you need depends on what you run. The Python extras come from
 Typer turns each function into a subcommand from its type hints. Twelve
 commands: `run`, `chat`, `index`, `init`, `doctor`, `setup`, `serve`,
 `models`, `bench`, `telemetry`, `tui` and `agent`, plus the `ovat a2a` group
-(`serve`, `card`, `call`, `token`). A bare `ovat` and `ovat tui` open the agent TUI, the same as `ovat agent`; the older launcher runs only with `OVAT_LAUNCHER=classic`.
+(`serve`, `card`, `call`, `token`). A bare `ovat` and `ovat tui` open the agent TUI, the same as `ovat agent`.
 
 **Configuration is strict.** `WorkflowConfig` derives from a `StrictModel` base
 with `extra="forbid"`, so an unknown key is an *error*, not a silent default.
@@ -1493,8 +1492,8 @@ About 1,500 test functions, no server required. `pytest -q` must end green.
 | Mouse selection is driven via `Screen._forward_event` | selection lives there; a test that posts events sees nothing |
 | `monkeypatch`, never a bare attribute assignment | a bare assignment can leak into other tests |
 
-Seams built for mocking: `chat_screen._build_components`,
-`chat_screen._build_engine`, `cli_main.build_agent`, `diagnostics.run_checks`,
+Seams built for mocking: `cli_main.build_agent`, `agent_app.run_agent`,
+`diagnostics.run_checks`,
 `model_server.subprocess.Popen`, `bench.benchmark_engine`.
 
 CI runs the suite on every push across ubuntu-22.04/py3.10 (the oldest
@@ -1516,7 +1515,7 @@ installs and runs.
 | Serving | ✅ complete | `ovat setup` pinned to OVMS 2026.4.1 and version-aware, locator, stall budget, pidfile, identity check |
 | Devices | ✅ complete | device routing; a tool-calling agent run on the NPU, and its 2129-token cap measured |
 | Telemetry | ✅ complete | sources, sinks, JSON Lines, CLI and TUI pages, run trace. NPU busy % reads on Windows (PDH) and Linux (sysfs). No OTLP exporter |
-| Agent2Agent (A2A) | ✅ complete | server, `type: a2a` tool, CLI and TUI use built, tested over a real socket and run on an AI PC. Open: a server opt-in for remote approvals |
+| Agent2Agent (A2A) | ✅ complete | server, `type: a2a` tool, CLI and TUI use built, tested over a real socket and run on an AI PC. Remote approvals are an opt-in (`a2a.server.allow_remote_approvals`, off by default) |
 | Agent TUI, subagents, permissions | ✅ built | `ovat agent`, `delegate`, allow/ask/deny; shown on an AI PC. Open: the full hands-on checklist, real workspace trust |
 
 **Planned or open:**
@@ -1579,10 +1578,9 @@ One line each.
 - `bench.py`, one question, several engines, one process each
 
 **TUI** (the `[tui]` extra)
-- `cli/tui.py`, launcher and masthead
-- `cli/shell.py`, subprocess exec layer, slash templates, `\r` progress sampling
-- `cli/chat_screen.py`, in-process chat: streaming, history, sessions, `/engine`
-- `cli/doctor_screen.py`, `telemetry_screen.py` (Live and Help tabs), `widgets.py`, `editing.py`, `theme.py`, `commands.py`
+- `tui/agent_app.py`, the agent TUI; `tui/server/`, OVAT's app server; `tui/vibe/`, the copied terminal client (Apache-2.0)
+- `cli/shell.py`, subprocess layer for `!` shell and `/serve`, process-tree kill
+- `cli/theme.py`, the palette as a Textual theme
 
 Contributor rules live in [`AGENTS.md`](../AGENTS.md), and the reasons behind
 the design in [`DECISIONS.md`](DECISIONS.md). For a guided walk through this

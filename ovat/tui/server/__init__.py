@@ -86,6 +86,10 @@ class OvatServerHandle:
         """`/workflow`: build the agent from another workflow file."""
         await self._ctx.rebuild(workflow=path)
 
+    def clear_anchors(self) -> None:
+        """drop rewind anchors after replacing the agent's memory."""
+        self._ctx.anchors.clear()
+
     @property
     def running(self) -> bool:
         return not self._server_task.done()

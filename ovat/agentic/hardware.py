@@ -1,14 +1,8 @@
 # ovat/agentic/hardware.py
-"""A tiny live hardware reading for the agent TUI's bottom bar.
+"""Live CPU/GPU/NPU/RAM utilization sampling for interactive status bars.
 
-    CPU 23%  ·  GPU 12%  ·  NPU 41%  ·  RAM 61%
-
-Reuses the telemetry sources (ovat/telemetry/sources.py), which never
-raise and report an unknown number as absent, never as zero. So a Mac
-shows CPU and RAM, and the NPU appears only where a driver reports one
-(Linux sysfs, the Windows PDH counter on an AI PC). The GPU is read the
-same way and, for now, only on Windows. Absent is not zero:
-a missing reading is left out of the line, not shown as 0%.
+Reuses telemetry sources from ``ovat/telemetry/sources.py``, omitting
+unavailable metrics instead of reporting false zeros.
 """
 
 

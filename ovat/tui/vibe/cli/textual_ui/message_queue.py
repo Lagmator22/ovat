@@ -99,7 +99,6 @@ class QueuePorts:
     refresh_session_state: Callable[[], Awaitable[PublicSessionState]]
     turn_has_started: Callable[[str], bool]
     set_loading_queue_count: Callable[[int], None]
-    maybe_show_feedback_bar: Callable[[], Awaitable[None]]
     send_mention_telemetry: Callable[[MentionStats, str | None], None]
     send_skill_telemetry: Callable[[str | None], None]
 
@@ -732,7 +731,6 @@ class QueueController:
         if pending is not None:
             await pending.widget.set_pending(False)
             self._report_prompt(pending.prompt)
-            await self._ports.maybe_show_feedback_bar()
             await self._reset_header_position()
             self._push_loading_queue_count()
             return
@@ -744,7 +742,6 @@ class QueueController:
             self._report_prompt(entry.prompt)
         self._merged = None
         self._clear_atomic_steer()
-        await self._ports.maybe_show_feedback_bar()
         await self._reset_header_position()
         self._push_loading_queue_count()
 

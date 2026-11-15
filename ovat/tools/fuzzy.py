@@ -31,14 +31,15 @@ def _candidates(requested: str, root=None):
     """
     base = str(root) if root is not None else "."
     folder = os.path.dirname(requested)
+    if (folder and root is not None and not os.path.isabs(folder)
+            and os.path.isdir(os.path.join(base, folder))):
+        return _list_files(os.path.join(base, folder))
     if folder and (os.path.isdir(folder) or os.path.isabs(folder)):
         # The model named a folder that exists (or an absolute one): trust it
         # and look nowhere else. A typo in the FILENAME is the case worth
         # rescuing; reaching into some other tree is how a different
         # recording gets swapped in.
         return _list_files(folder)
-    if folder and root is not None and os.path.isdir(os.path.join(base, folder)):
-        return _list_files(os.path.join(base, folder))
     if folder:
         # A relative folder that is not there. Measured on the AI PC: asked
         # for examples/audio-multimodal/sample.wav, Qwen3.5 sent
@@ -97,10 +98,10 @@ def resolve_path(requested: str, root=None) -> tuple[str, str | None]:
         resolved_req, why = resolve_inside(requested, root_path)
         if why is not None:
             return requested, None
-        if os.path.isfile(requested):
-            return requested, None
         if resolved_req is not None and resolved_req.is_file():
             return str(resolved_req), None
+        if os.path.isfile(requested):
+            return requested, None
     elif os.path.isfile(requested):
         return requested, None
     basename = os.path.basename(requested).lower()

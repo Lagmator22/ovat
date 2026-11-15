@@ -10,7 +10,6 @@ Nothing here is decorative-only. The styles below are referenced by name from
 the real command output, so changing a colour in one place restyles the whole
 CLI.
 """
-import re
 import sys
 
 from rich.console import Console
@@ -41,8 +40,7 @@ def enable_windows_utf8() -> None:
     VT sequences, which spawns an entire shell as an import side effect. rich
     already enables VT on Windows itself.
 
-    Never raises. A console we cannot reconfigure is a reason for plainer
-    output, not a reason for the whole CLI to fail to start.
+    Never raises; if the console cannot be reconfigured, fall back to standard output.
     """
     if sys.platform != "win32":
         return
@@ -102,8 +100,8 @@ OVAT_THEME = Theme({
     "ovat.warn": f"bold {PALETTE['warn']}",
     "ovat.fail": f"bold {PALETTE['fail']}",
     "ovat.dim": PALETTE["dim"],
-    # rich cannot combine "bold" with a theme name in one string, so where I
-    # want a bold brand colour I bake the weight into its own named style.
+    # rich cannot combine "bold" with a theme token name dynamically, so bold
+    # brand styles bake both attributes into dedicated named styles.
     "ovat.brand": f"bold {PALETTE['cyan']}",   # the OVAT wordmark
     "ovat.header": f"bold {PALETTE['blue']}",  # table headers
     "green": PALETTE["ok"],
@@ -116,8 +114,7 @@ OVAT_THEME = Theme({
 # A single shared console. Importing this everywhere keeps styling consistent.
 console = Console(theme=OVAT_THEME)
 
-# The glyph + style I show per check status, kept in one place so doctor and any
-# future status output agree on what "ok" looks like.
+# Status glyph and theme style mapping shared across CLI status output.
 STATUS_GLYPH = {
     "ok": ("✓", "ovat.ok"),
     "warn": ("!", "ovat.warn"),
@@ -126,24 +123,11 @@ STATUS_GLYPH = {
 
 
 def esc(value) -> str:
-    """Neutralise rich markup in a value OVAT did not write. Use it on ALL of them.
+    """Escape Rich markup in external or untrusted strings before console output.
 
-    rich reads [something] in a printed string as a style tag, exactly the way
-    printf reads % in its format string. So a value must never BE the format
-    string. In C++ terms: this is printf("%s", data), and rprint(f"...{data}")
-    without it is printf(data), with the same class of consequence.
-
-    Two things went wrong before this existed, both on ordinary output:
-      * a Llama-family model ending its answer with [/INST] crashed `ovat run`
-        with a MarkupError traceback (breaking the "errors are for users" rule),
-      * a model writing [bold] had it silently swallowed as a style tag, so the
-        user was shown text the model never wrote.
-
-    Model answers, exception text, file paths, model folder names, tool names
-    imported from an MCP server and `ovms` subprocess output are all DATA. They
-    come through here on the way to the console. Escaping happens at the output
-    edge, not at the source, so the checks and providers stay free to return
-    plain strings.
+    Prevents brackets in model replies (such as ``[/INST]`` or ``[bold]``),
+    file paths, exception messages, or tool outputs from being parsed as Rich
+    style tags or causing ``MarkupError``.
     """
     return escape(str(value))
 
@@ -223,9 +207,6 @@ def status_text(status: str) -> Text:
 # and it must not import from cli/. Re-exported under the old names so every
 # existing caller keeps working, and so there is still exactly ONE copy.
 from ovat.text import (  # noqa: E402  (re-export, deliberately at the bottom)
-    THINK_BLOCK as _THINK_BLOCK,
-    THINK_CLOSE as _THINK_CLOSE,
-    THINK_OPEN as _THINK_OPEN,
     looks_like_undecoded_tool_call,
     says_nothing,
     strip_thinking,

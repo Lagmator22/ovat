@@ -1,13 +1,8 @@
 # ovat/providers/vlm_genai.py
-"""Layer 4: concrete VLM (vision-language but not video playback yet) plug: image(s) + text -> text.
+"""Local vision-language provider backed by ``openvino_genai.VLMPipeline``.
 
-Fills the VLMProvider socket using openvino_genai.VLMPipeline (Qwen2-VL today;
-Gemma 4(no vid) / Qwen3-VL later once stable). Runs on Mac CPU.
-
-The one new idea vs the text plugs: the model can't read a .jpg file, it needs
-the pixels as a tensor. So _load_image does file -> pixel grid -> ov.Tensor.
-An image is height x width x 3 numbers (R,G,B per pixel); a Tensor is just
-OpenVINO's N-dimensional array (like a multi-dimensional std::vector).
+Converts image files into OpenVINO tensors and evaluates multimodal prompts on
+local devices.
 """
 import numpy as np
 from PIL import Image

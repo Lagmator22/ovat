@@ -1,15 +1,9 @@
 # ovat/agentic/session.py
-"""AgentSession: one interactive agent, driven by any front end.
+"""``AgentSession`` controller for interactive agent execution without UI coupling.
 
-Note to myself: everything slow happens on a worker thread (building the
-agent loads models; a turn waits on OVMS; a `!` command can run for
-minutes), and everything the user should SEE is reported through one
-callback, `sink(event)`, with the small dataclasses below. The TUI's sink
-posts them to its own thread; a test's sink appends them to a list. The
-session never draws anything.
-
-In C++ terms: a controller object that owns the model and a worker thread,
-and publishes immutable messages to one observer.
+Runs blocking agent builds, model turns, and ``!`` shell commands on worker
+threads and emits immutable event dataclasses to a caller-supplied ``sink``
+callback so any front end or test harness can observe state transitions safely.
 """
 import os
 import shlex
@@ -140,9 +134,9 @@ def _context_window(config) -> int:
         return int(m.ovms_max_prompt_len or 4096)
     roots = ([m.model_repository_path] if m.model_repository_path else []) + (
         list(getattr(config, "model_search_paths", None) or []))
-    # `ovms --pull` lays a model out by its source (models/OpenVINO/<name>),
-    # so that path is tried before the bare name.
-    for name in filter(None, (m.source_model, m.name)):
+    # Try the active model name first so /model switches take effect before
+    # falling back to the original source_model path.
+    for name in filter(None, (m.name, m.source_model)):
         window = read_context_window(name, roots)
         if window:
             return window

@@ -1,23 +1,11 @@
 # ovat/tui/server/saved.py
-"""Saved conversations: what the server puts in a record, and back again.
+"""Serialization between live app-server sessions and persisted session records.
 
-Note to myself: a record is one conversation, kept by
-ovat/agentic/sessions.SessionStore (where and how it is written):
-
-    id, title, preview, created_at, updated_at   the session list shows these
-    workflow, engine                             what it ran on
-    history, turns       the transcript, as the copied TUI draws it
-    memory               what the model remembers (native engine), or None
-    anchors              {user entry id: index of its message in memory}
-
-Two lists, because they are two different things: the transcript is what
-the person saw (tool cards, subagent rows, `!` output), the memory is what
-the model is sent. Anchors tie them together for rewind. They do not line
-up one to one: `@name task` and a turn that never started add a user entry
-to the transcript and nothing to the memory, so "the third user entry" is
-not "the third user message".
-
-Everything here runs on the server's event loop.
+Records managed via ``ovat.agentic.sessions.SessionStore`` store session
+metadata, the UI transcript (``history``, ``turns``), underlying LLM message
+memory (``memory``, for native sessions), and ``anchors`` mapping user
+transcript entries to message indices for accurate rewind. Runs on the server
+event loop.
 """
 from __future__ import annotations
 

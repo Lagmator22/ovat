@@ -1,18 +1,13 @@
 # ovat/agentic/models.py
-"""Which models a session can switch to (the /model picker's list).
+"""Model discovery for interactive ``/model`` switching.
 
-Note to myself: the list depends on who runs the model.
+- ``ovms`` provider: queries ``GET <ovms_url>/models`` on the running server so
+  choices reflect models actually served.
+- ``genai`` provider: scans local chat-compatible model folders via
+  ``model_scout.CHAT_KINDS``.
 
-- provider ovms: ONLY what the running server says it serves. OVMS 2026.4.1
-  answers `GET <ovms_url>/models` (the /v3 base) with {"data": [{"id": ...}]};
-  `ovat serve` already waits on the same route. Naming a model the server
-  does not serve would only fail on the next question.
-- provider genai: the model folders on this machine that a chat can use
-  (`model_scout.CHAT_KINDS`), found the way `ovat chat` finds them.
-
-If the list cannot be had (no server, nothing on disk), the picker still
-offers the workflow's own model, and nothing is reported: not being able to
-list is not an error, it only means there is one choice.
+Falls back cleanly to the workflow's currently configured model if discovery
+yields no alternatives.
 """
 import json
 import os

@@ -1,15 +1,9 @@
 # ovat/tui/server/views.py
-"""The read-only pictures the copied TUI asks for at startup and on refresh.
+"""Read-only configuration, runtime, and stats view builders for the TUI protocol.
 
-Note to myself: `runtime/read` wants a config, the agent profiles, the
-tools, the stats and a few counters; `config/read` wants the config again.
-Vibe's config has about thirty fields (voice, narrator, other vendors' models...)
-that mean nothing here. They are filled with plain "off" values in ONE place,
-this file, so nobody has to guess later which of them OVAT really has.
-
-What OVAT really has: a model (named by its folder), a device, an engine,
-tools with permissions, subagents, and one switch, auto-approve (`/yolo`),
-which shows up as the second agent profile.
+Constructs ``ConfigView`` and ``RuntimeSnapshot`` payloads from active agent
+state, supplying explicit defaults for client protocol fields that OVAT does not
+use (such as external accounts or narrator TTS settings).
 """
 from __future__ import annotations
 
@@ -123,7 +117,7 @@ def model_choices(info: dict) -> tuple[list[ModelConfigView], ModelConfigView]:
     if all(m["id"] != current for m in listed):
         listed.insert(0, {"id": current, "label": shown or current})
     models = [ModelConfigView(
-        name=m["id"], alias=m["id"], thinking=thinking, supports_images=False,
+        name=m["id"], alias=m["id"], thinking=thinking, supports_images=True,
         display_name=m["label"], max_context_length=window or None,
         thinking_levels=THINKING_LEVELS) for m in listed]
     return models, next(m for m in models if m.alias == current)
@@ -144,7 +138,7 @@ def config_view(info: dict, workflow: str | None,
     return ConfigView(
         # Pinned when this session runs another model than the file names.
         active_model=active, active_model_pinned=active.alias != default,
-        images_supported=False,
+        images_supported=True,
         default_model_alias=default, default_agent=DEFAULT_PROFILE,
         # "auto" lets the app pick (the OVAT theme); anything else is the
         # theme /theme saved in the UI preferences file.
@@ -192,7 +186,8 @@ def runtime_snapshot(info: dict, workflow: str | None, active: str,
 def mcp_state(info):
     from ovat.tui.vibe.app_server.models import MCPSourceSummary
     return MCPState(sources=[MCPSourceSummary(
-        **source, kind="server", transport="stdio")
+        **{**source, "transport": source.get("transport", "stdio")},
+        kind="server")
         for source in info.get("mcp", ())])
 
 

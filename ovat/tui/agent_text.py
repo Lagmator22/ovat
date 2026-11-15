@@ -15,8 +15,7 @@ from pathlib import Path
 
 from rich.text import Text
 
-from ovat.agentic import commands as ovat_commands
-from ovat.agentic.sessions import sessions_dir
+from ovat.agentic.sessions import safe_name, sessions_dir
 from ovat.cli import ui
 
 ENGINES = ("native", "react", "llamaindex", "openai-agents")
@@ -39,21 +38,6 @@ def tools_markdown(info: dict) -> str:
     return "\n".join(lines)
 
 
-def agents_markdown(info: dict, serving: bool) -> str:
-    lines = ["### Subagents", ""]
-    subs = info.get("subagents", [])
-    lines += ([f"- `{x['name']}` ({x['where']}): {x['description']}"
-               for x in subs] or ["- none (add `subagents:` to the workflow)"])
-    peers = [t for t in info.get("tools", []) if t["kind"] == "a2a"]
-    lines += ["", "### A2A agents used as tools", ""]
-    lines += ([f"- `{p['name']}` ({p['permission']})" for p in peers]
-              or ["- none"])
-    lines += ["", "### This workflow over A2A", "",
-              "- serving (`/serve stop` ends it)" if serving
-              else "- not serving (`/serve` starts it)"]
-    return "\n".join(lines)
-
-
 def trace_markdown(trace: dict) -> str:
     if not trace:
         return "Nothing yet: ask something first."
@@ -73,15 +57,6 @@ def trace_markdown(trace: dict) -> str:
             lines.append(f"  - `{call.get('name')}` "
                          f"{call.get('duration_s')} s")
     return "\n".join(lines)
-
-
-def commands_markdown() -> list[str]:
-    """The `/help` command list (classic app)."""
-    lines = []
-    for c in ovat_commands.COMMANDS:
-        usage = f" {c.usage}" if c.usage else ""
-        lines.append(f"- `/{c.name}{usage}`: {c.help}")
-    return lines
 
 
 # ---- the bottom bar --------------------------------------------------------
@@ -121,7 +96,8 @@ def save_conversation(agent, cwd: str, name: str) -> tuple[str, str]:
     memory = getattr(agent, "session", None)
     if memory is None:
         return "Saving works on the native engine.", "warn"
-    name = name.strip() or time.strftime("agent-%Y%m%d-%H%M%S")
+    # a bare file name only: "/save ../../x" must not write outside the folder.
+    name = safe_name(name.strip()) or time.strftime("agent-%Y%m%d-%H%M%S")
     path = sessions_dir(cwd) / f"{name}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     memory.save(str(path))
@@ -131,7 +107,7 @@ def save_conversation(agent, cwd: str, name: str) -> tuple[str, str]:
 def load_conversation(agent_session, cwd: str, name: str) -> tuple[str, str]:
     """Put a saved conversation into the agent's memory (native engine)."""
     from ovat.agent.session import Session
-    name = name.strip()
+    name = safe_name(name.strip())
     path = sessions_dir(cwd) / f"{name}.json"
     if not name or not path.is_file():
         saved = sorted(p.stem for p in sessions_dir(cwd).glob("*.json"))
@@ -139,6 +115,8 @@ def load_conversation(agent_session, cwd: str, name: str) -> tuple[str, str]:
                 + (", ".join(saved[-8:]) or "none"), "warn")
     if getattr(agent_session.agent, "session", None) is None:
         return "Loading works on the native engine.", "warn"
-    agent_session.agent.session = Session.load(str(path))
+    # restore_memory keeps this workflow's system prompt and drops anything
+    # in the file that is not a plain chat message.
+    agent_session.restore_memory(Session.load(str(path)).messages)
     return (f"Loaded `{name}`. The model remembers it; the transcript above "
             f"is not redrawn.", "info")

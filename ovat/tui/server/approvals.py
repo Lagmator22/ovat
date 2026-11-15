@@ -1,23 +1,19 @@
 # ovat/tui/server/approvals.py
-"""Approvals: the agent's ApprovalBroker, shown as Vibe callbacks.
+"""Tool approval broker mapped to JSON-RPC callback requests.
 
-Note to myself: when a tool needs a person's yes, the agent's worker thread
-BLOCKS inside ApprovalBroker.__call__ until somebody calls
-broker.resolve(id, decision). Vibe calls the same moment a "callback": the
-server sends the client a `callback/call` request carrying a callback entry,
-the person answers, the client sends `callback/result`, and that answer is
-what resolves the broker here.
-
-Vibe's choices map onto the broker's three decisions:
+When a tool requires confirmation, the agent's worker thread blocks inside
+``ApprovalBroker.__call__`` until ``broker.resolve(id, decision)`` is called.
+This adapter translates pending requests into ``callback/call`` notifications
+and maps client ``callback/result`` responses back onto ``ApprovalDecision``:
 
     approve                  -> ONCE
     approve for the session  -> SESSION
-    approve permanently      -> ALWAYS    (saved in ~/.ovat/permissions.json)
+    approve permanently      -> ALWAYS    (persisted in ~/.ovat/permissions.json)
     deny                     -> REFUSE
-    cancel the turn          -> REFUSE, and the turn is interrupted
+    cancel the turn          -> REFUSE, interrupting the active turn
 
-A model-written argument is shown to the person deciding through
-`safe.approval_safe`, so it cannot dress up as part of the panel.
+Model-supplied arguments are sanitized through ``safe.approval_safe`` before
+display.
 """
 from __future__ import annotations
 

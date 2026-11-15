@@ -1,20 +1,11 @@
 # ovat/agent/questions.py
-"""Asking the PERSON a question in the middle of a turn (the ask_user tool).
+"""Interactive user-question broker for the ``ask_user`` tool.
 
-Note to myself: this is ApprovalBroker's sibling (permissions.py) with the
-same shape on purpose. The agent's worker thread calls the broker and
-BLOCKS; the UI shows the question and calls resolve() from its own thread.
-The differences: the answer is text, not yes/no, and "nobody answered" is
-None, which the tool turns into a sentence the model can act on.
-
-Who may ask is decided by the EventBus: `bus.asker` is a QuestionBroker in
-the agent TUI and None everywhere else (`ovat run`, a bench worker, an A2A
-server). With None the tool answers AT ONCE; a headless run must never wait
-for a person who is not there.
-
-Each request has an id and is resolved exactly once. cancel_all() (Esc)
-resolves everything still open as "no answer", so a cancelled turn can never
-leave a worker thread waiting forever.
+Mirrors ``ApprovalBroker`` in ``permissions.py``: the agent worker thread
+blocks in ``request()`` until the UI calls ``resolve()`` with the answer text
+or cancels pending prompts (returning ``None``). Headless contexts without a
+``QuestionBroker`` attached to ``bus.asker`` return immediately so non-interactive
+runs never hang waiting for input.
 """
 import itertools
 import threading

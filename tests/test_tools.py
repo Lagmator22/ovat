@@ -1,10 +1,5 @@
 # tests/test_tools.py
-"""Tests for the two MCP tools, search_docs and transcribe.
-
-Note to myself: I test the plain impl functions directly with fakes, so I do
-not need a running MCP server, a vector database, or the Whisper model loaded.
-This keeps the suite fast and green on my Mac.
-"""
+"""Unit tests for builtin MCP tool implementations (search_docs and transcribe)."""
 import os
 import wave
 
@@ -104,18 +99,17 @@ def test_transcribe_reports_missing_file_clearly():
 
 
 def test_transcribe_reads_audio_and_calls_pipeline(tmp_path):
-    # I write a tiny real WAV so _read_wav has something valid to parse.
+    # Write a minimal valid WAV header and samples for _read_wav to parse.
     path = tmp_path / "clip.wav"
     with wave.open(str(path), "wb") as w:
         w.setnchannels(1)
-        w.setsampwidth(2)          # 2 bytes is 16 bit, what my reader expects
+        w.setsampwidth(2)          # 2 bytes = 16-bit PCM expected by _read_wav
         w.setframerate(16000)
         w.writeframes(np.zeros(1600, dtype=np.int16).tobytes())
 
     class FakePipeline:
         def generate(self, samples, language=None):
-            # I assert my reader handed me floats and the language was passed
-            # through in Whisper's token form, then return a fake transcript.
+            # Verify float32 conversion and Whisper language token forwarding.
             assert samples.dtype == np.float32
             assert language == "<|en|>"
             return "hello world"
@@ -236,12 +230,7 @@ def test_describe_image_follows_the_llm_recommendation(monkeypatch):
 # user error and has to read like one.
 
 def test_a_wrong_transcribe_model_path_says_what_to_fix(tmp_path, monkeypatch):
-    """Measured on the AI PC, 2026-08-16: a `model:` naming a folder that does
-    not exist returned five lines of C++ out of core.cpp, ending in
-    'Could not open the file: "...\\openvino_encoder_model.xml"' -- an internal
-    filename the user never chose, and not one word about the setting that was
-    actually wrong. describe_image already appended the fix; transcribe did not.
-    """
+    """Ensure a missing Whisper model path yields an actionable config error rather than raw C++ exceptions."""
     from ovat.tools import transcribe
 
     monkeypatch.delenv("OVAT_WHISPER_MODEL", raising=False)
@@ -265,8 +254,7 @@ def test_a_wrong_transcribe_model_path_says_what_to_fix(tmp_path, monkeypatch):
 
 
 def test_a_wrong_describe_image_model_path_says_what_to_fix(tmp_path, monkeypatch):
-    """Same guard on the vision half. Its closing sentence was already right;
-    what buried it was the C++ wall openvino_genai raised first."""
+    """Ensure a missing VLM model path yields an actionable config error rather than raw C++ exceptions."""
     from ovat.tools import describe_image
 
     monkeypatch.delenv("OVAT_VLM_MODEL", raising=False)
@@ -590,4 +578,47 @@ def test_describe_image_serializes_concurrent_provider_calls(tmp_path):
     for t in threads:
         t.join(5)
     assert max_active == 1
+
+
+def test_standalone_mcp_describe_image_and_transcribe_fence_to_project_root(
+        tmp_path, monkeypatch):
+    from ovat.tools import describe_image, transcribe
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "secret"
+    outside.mkdir()
+    img = outside / "pic.png"
+    img.write_bytes(b"png")
+    wav = outside / "clip.wav"
+    wav.write_bytes(b"RIFF")
+
+    monkeypatch.chdir(project)
+    out_img = describe_image.describe_image(str(img))
+    out_wav = transcribe.transcribe(str(wav))
+    assert out_img.startswith("Error:") and "outside the project folder" in out_img
+    assert out_wav.startswith("Error:") and "outside the project folder" in out_wav
+
+
+def test_fuzzy_resolve_path_prefers_project_root_over_cwd(tmp_path, monkeypatch):
+    from ovat.tools.fuzzy import resolve_path
+
+    cwd_dir = (tmp_path / "cwd").resolve()
+    root_dir = (tmp_path / "root").resolve()
+    (cwd_dir / "sub").mkdir(parents=True)
+    (root_dir / "sub").mkdir(parents=True)
+    (cwd_dir / "sub" / "target.txt").write_text("from cwd", encoding="utf-8")
+    root_target = root_dir / "sub" / "target.txt"
+    root_target.write_text("from root", encoding="utf-8")
+
+    monkeypatch.chdir(cwd_dir)
+
+    exact, note = resolve_path("sub/target.txt", root=root_dir)
+    assert os.path.samefile(exact, root_target)
+    assert note is None
+
+    fuzzy, note = resolve_path("sub/targt.txt", root=root_dir)
+    assert os.path.samefile(fuzzy, root_target)
+    assert note is not None
+
 

@@ -1,10 +1,9 @@
 # ovat/a2a/protocol.py
-"""OVAT's own description of the A2A protocol: plain Python, no SDK.
+"""OVAT-native A2A protocol types decoupled from ``a2a-sdk``.
 
-Note to myself: the SDK represents these as protobuf messages whose class
-names have already changed once. Everything outside ovat/a2a/sdk/ uses the
-shapes here instead, and sdk/ translates at the border. If the SDK renames
-a class, one translation function changes; nothing here does.
+Types outside ``ovat/a2a/sdk/`` use these plain Python structures while
+``sdk/`` translates to and from SDK protobuf models at the boundary, keeping
+upstream SDK schema changes isolated.
 """
 from dataclasses import dataclass, field
 from enum import Enum

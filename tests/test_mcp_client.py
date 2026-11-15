@@ -1,13 +1,5 @@
 # tests/test_mcp_client.py
-"""Tests for the MCP stdio client: the agent really speaking MCP.
-
-Note to myself: the best possible test server is our OWN search_docs, launched
-exactly the way a user's YAML would launch it (`python -m ovat.tools.search_docs`).
-That finally exercises the `mcp.run()` path AND the client in one go, over a
-real subprocess and a real stdio wire. No retriever is configured in the child
-process, so the tool answers in stub mode; perfect: a deterministic reply
-that proves the round trip without any model on disk.
-"""
+"""Tests for the MCP stdio client using ``ovat.tools.search_docs`` over a real subprocess pipe."""
 import sys
 import time
 import uuid
@@ -428,4 +420,17 @@ def test_mcp_http_and_sse_transports_wire_headers_and_permissions(monkeypatch):
     assert seen[1]["transport"] == "sse"
     assert default_permission("mcp_http", "https://mcp.linear.app/mcp") == "ask"
     assert default_permission("mcp_sse", "http://localhost:8900/sse") == "allow"
+
+
+def test_mcp_http_refuses_credentials_over_non_loopback_http():
+    from ovat.tools.mcp_client import MCPHttpServer
+
+    with pytest.raises(ValueError, match="plain HTTP"):
+        MCPHttpServer("http://mcp.example.com/mcp", token_env="MCP_TOK",
+                      connect_timeout=0.1)
+    with pytest.raises(ValueError, match="plain HTTP"):
+        MCPHttpServer("http://mcp.example.com/mcp",
+                      headers={"Authorization": "Bearer secret"},
+                      connect_timeout=0.1)
+
 

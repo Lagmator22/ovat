@@ -693,8 +693,8 @@ order as ARCHITECTURE.md.
   permissions, tools and A2A are OVAT's own.
 - **Why:** a full-featured terminal client is a large amount of work that is
   not what OVAT is about. The part OVAT is about, the agent, stays ours.
-- **Alternatives considered:** extending OVAT's first TUI. Kept as
-  `OVAT_AGENT_UI=classic` until the AI PC test passes, then to be removed.
+- **Alternatives considered:** extending OVAT's first TUI. It was kept as
+  `OVAT_AGENT_UI=classic` for a while and removed in 2026-11.
 
 ### D56. Trim cloud code that nothing can reach, keep what `/mcp` still uses
 

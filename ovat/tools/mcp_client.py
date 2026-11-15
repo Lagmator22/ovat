@@ -71,8 +71,7 @@ class _MCPClientBase:
         except BaseException:
             self.close()
             raise
-        # Belt and braces: if the owner never calls close(), the interpreter
-        # shutdown does. Closing twice is safe.
+        # Fallback cleanup on interpreter shutdown if close() was never called.
         atexit.register(self.close)
 
     def _start_session(self) -> None:
@@ -273,6 +272,15 @@ class MCPHttpServer(_MCPClientBase):
             if headers else {}
         )
         self.token_env = token_env
+        from ovat.agent.permissions import is_loopback
+        has_creds = bool(token_env) or any(
+            k.lower() == "authorization" for k in self._headers
+        )
+        if url.startswith("http://") and not is_loopback(url) and has_creds:
+            raise ValueError(
+                f"Refusing to send credentials over plain HTTP to {url!r}. "
+                f"Use https://, or a loopback address."
+            )
         super().__init__(label=url, connect_timeout=connect_timeout)
 
     def _request_headers(self) -> dict[str, str] | None:

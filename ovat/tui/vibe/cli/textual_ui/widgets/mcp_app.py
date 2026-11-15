@@ -120,16 +120,6 @@ class MCPApp(Container):
             self.disabled = disabled
             self.tool_name = tool_name
 
-    class ConnectorAuthRequested(Message):
-        def __init__(self, connector_name: str) -> None:
-            super().__init__()
-            self.connector_name = connector_name
-
-    class MCPOAuthRequested(Message):
-        def __init__(self, server_name: str) -> None:
-            super().__init__()
-            self.server_name = server_name
-
     def __init__(
         self,
         state: MCPState,
@@ -495,14 +485,7 @@ class MCPApp(Container):
                 Option(Text(source.error, style="dim"), disabled=True)
             )
             return
-        if source.status is MCPSourceStatus.NEEDS_AUTH:
-            self._set_help_text(_DETAIL_VIEW_HELP_NO_TOOLS)
-            if source.kind is MCPSourceKind.CONNECTOR:
-                self.post_message(self.ConnectorAuthRequested(source.name))
-            else:
-                self.post_message(self.MCPOAuthRequested(source.name))
-            return
-        if source.status is MCPSourceStatus.NEEDS_SETUP:
+        if source.status in (MCPSourceStatus.NEEDS_AUTH, MCPSourceStatus.NEEDS_SETUP):
             self._set_help_text(_DETAIL_VIEW_HELP_NO_TOOLS)
             option_list.add_option(
                 Option(

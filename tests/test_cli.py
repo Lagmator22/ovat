@@ -1,11 +1,5 @@
 # tests/test_cli.py
-"""Tests for the ovat command line.
-
-Note to myself: typer ships a CliRunner that invokes my commands in-process and
-captures their output and exit code, so I can test the CLI without a real shell
-or a running OVMS server. I test the wiring (init writes a usable config,
-dry-run builds the agent) and the error paths (bad config exits non-zero).
-"""
+"""Tests for the ``ovat`` command-line interface via Typer's ``CliRunner``."""
 import pytest
 from typer.testing import CliRunner
 
@@ -570,9 +564,7 @@ def test_every_supported_engine_has_a_banner_label(tmp_path, monkeypatch):
 
 def test_the_trace_peak_is_measured_during_the_run_not_after_it(monkeypatch,
                                                                  tmp_path):
-    """Reading RSS after the run misses the peak: Python has usually freed
-    the big allocations by then, and this number exists for the proposal's
-    memory criterion, so a wrong one is worse than none."""
+    """Peak RSS must be measured while the run executes rather than after completion."""
     from ovat.cli import main as cli_main
 
     sampled = []
@@ -1322,11 +1314,8 @@ def test_an_ordinary_failure_does_not_get_the_timeout_advice(tmp_path,
 def test_setup_command_is_reachable_and_reports_what_it_did(monkeypatch):
     from ovat.core import ovms_installer
 
-    # installed_binary too, not just install(): the command checks for an
-    # existing install FIRST and reports "already installed", so on any machine
-    # that really has OVMS this asserted against the real path. It passed only
-    # where OVMS was absent -- the same works-on-my-machine shape this release
-    # is about, and I wrote it.
+    # Mock installed_binary as well as install() so tests behave deterministically
+    # whether or not OVMS is already installed on the host machine.
     monkeypatch.setattr(ovms_installer, "installed_binary", lambda root=None: None)
     monkeypatch.setattr(ovms_installer, "install",
                         lambda **kw: ("/somewhere/ovms", "installed"))
@@ -1890,10 +1879,7 @@ def test_setup_into_a_custom_folder_says_how_ovat_will_find_it(monkeypatch,
 
 
 def test_a_framework_engine_that_failed_exits_non_zero(monkeypatch, tmp_path):
-    """Measured on the AI PC: the llamaindex step cap printed "Error: I
-    reached my max of 1 steps" and exited 0. `failed` was read only from the
-    native loop's trace totals, and the framework adapters keep no trace, so
-    none of the three could ever fail a run. They flag it themselves now."""
+    """A framework engine that hits its iteration limit must flag failure and exit non-zero."""
     from ovat.cli import main as cli_main
 
     class CappedAdapter:                     # a framework engine: no last_trace
@@ -2046,10 +2032,8 @@ def test_run_telemetry_does_not_claim_a_file_it_could_not_write(monkeypatch,
 
 
 def test_the_thinking_switch_reaches_the_local_chat_model(monkeypatch, tmp_path):
-    """`ovat chat` and the TUI build their own GenAILLMProvider; the config
-    switch has to reach both, or it exists only on the OVMS path."""
+    """`ovat chat` forwards ``enable_thinking`` to ``GenAILLMProvider``."""
     from ovat.agent import factory, rag_chat as rag_chat_mod
-    from ovat.cli import chat_screen
     from ovat.cli import main as cli_main
     from ovat.providers import llm_genai
 
@@ -2071,15 +2055,9 @@ def test_the_thinking_switch_reaches_the_local_chat_model(monkeypatch, tmp_path)
     config.write_text("model:\n  name: m\n  enable_thinking: false\n"
                       "rag:\n  retriever:\n    db_path: ':memory:'\n",
                       encoding="utf-8")
-    runner.invoke(app, ["chat", str(config), "-i", "hi"])
-
-    monkeypatch.setattr(chat_screen, "identify_model", lambda p: ("llm", ""),
-                        raising=False)
-    import ovat.core.model_scout as scout
-    monkeypatch.setattr(scout, "identify_model", lambda p: ("llm", ""))
-    chat_screen._build_components(str(config), "m")
-
-    assert seen == [False, False], seen
+    result = runner.invoke(app, ["chat", str(config), "-i", "hi"])
+    assert result.exit_code == 0, result.output
+    assert seen == [False], seen
 
 
 def test_serve_passes_tool_guided_generation_from_the_config(monkeypatch,
@@ -2089,3 +2067,63 @@ def test_serve_passes_tool_guided_generation_from_the_config(monkeypatch,
         model_yaml="  ovms_tool_guided_generation: true\n")
     assert result.exit_code == 0, result.output
     assert kwargs.get("tool_guided_generation") is True
+
+
+def test_dry_run_closes_built_agent(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from ovat.cli import main as cli_main
+
+    closed = []
+    fake_agent = SimpleNamespace(tools={}, max_iterations=5)
+    monkeypatch.setattr(cli_main, "build_agent",
+                        lambda cfg, skip_rag=False: fake_agent)
+    monkeypatch.setattr(cli_main, "close_agent", closed.append)
+    config = tmp_path / "w.yml"
+    config.write_text("model:\n  name: m\n", encoding="utf-8")
+    result = runner.invoke(app, ["run", str(config), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert closed == [fake_agent]
+
+
+
+def test_init_trusts_the_folder_it_writes_into(tmp_path):
+    """the user wrote that workflow, so bare `ovat` there may load it."""
+    from ovat.agentic import trust
+    assert trust.status(tmp_path) == "untrusted"
+    result = runner.invoke(app, ["init", str(tmp_path / "workflow.yml")])
+    assert result.exit_code == 0
+    assert trust.status(tmp_path) == "trusted"
+
+
+def test_agent_trust_flag_trusts_the_folder_first(tmp_path, monkeypatch):
+    pytest.importorskip("textual")
+    from ovat.agentic import trust
+    import ovat.tui as tui_pkg
+    seen = []
+
+    def fake_runner():
+        return lambda config, **kwargs: seen.append(
+            (config, trust.status(tmp_path)))
+    monkeypatch.setattr(tui_pkg, "runner", fake_runner)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["agent", "--trust"])
+    assert result.exit_code == 0, result.output
+    assert seen == [(None, "trusted")]
+
+
+def test_init_does_not_trust_a_folder_for_someone_elses_workflow(tmp_path):
+    """writing other.yml next to a workflow.yml the user did not write must
+    not make bare `ovat` load that workflow.yml."""
+    from ovat.agentic import trust
+    (tmp_path / "workflow.yml").write_text("model: {name: planted}\n")
+    result = runner.invoke(app, ["init", str(tmp_path / "other.yml")])
+    assert result.exit_code == 0
+    assert trust.status(tmp_path) == "untrusted"
+
+
+def test_init_keeps_a_folder_the_user_declined(tmp_path):
+    from ovat.agentic import trust
+    trust.decide(tmp_path, "decline")
+    result = runner.invoke(app, ["init", str(tmp_path / "workflow.yml")])
+    assert result.exit_code == 0
+    assert trust.status(tmp_path) == "untrusted"

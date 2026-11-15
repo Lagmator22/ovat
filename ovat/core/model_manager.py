@@ -1,11 +1,9 @@
 # ovat/core/model_manager.py
-"""Layer 8: thin Python wrapper over the OVMS model-management CLI.
+"""Thin Python wrapper over the OVMS model-management CLI.
 
-Connects & shell out to the `ovms` binary (which lives on Linux/Windows or inside
-the OVMS Docker container for the typical setup interaction with pull and list_models etc commands).
-On a Mac with no native OVMS these will raise FileNotFoundError,
-which is expected. The point is a clean Python API over the CLI so the rest of
-the toolkit never builds command strings by hand. Basically easy access to the ovms cli.
+Delegates to the ``ovms`` binary (for ``--pull`` and ``--list_models``) so the
+rest of the toolkit never constructs CLI command strings ad hoc. Platforms
+without a native OVMS binary raise ``FileNotFoundError``.
 """
 import subprocess
 from ovat.core.model_server import ovms_env

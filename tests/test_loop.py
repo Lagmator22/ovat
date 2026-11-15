@@ -1,16 +1,11 @@
 # tests/test_loop.py
-"""Tests for AgentLoop, using the FakeLLMProvider so no real model is needed.
-
-Note to myself: I script the fake model to first ask for a tool, then answer
-in words. That exercises the full ASK READ ACT REPORT cycle without a GPU.
-Each test below pins down one behaviour I promised would be robust.
-"""
+"""Tests for ``AgentLoop`` using ``FakeLLMProvider`` without live model inference."""
 from ovat.agent.loop import AgentLoop
 from tests.conftest import FakeLLMProvider, make_tool_call, reply
 
 
 def _weather_tool(calls_log=None):
-    """A tiny dummy tool I can hand to the loop in tests."""
+    """Minimal dummy tool for agent loop unit tests."""
     def get_weather(city: str) -> str:
         if calls_log is not None:
             calls_log.append(city)
@@ -47,7 +42,7 @@ def test_loop_runs_a_tool_then_answers():
     out = agent.run("weather in Tokyo?")
 
     assert out == "It is sunny in Tokyo."
-    assert called == ["Tokyo"]                       # my real function actually ran
+    assert called == ["Tokyo"]                       # underlying Python callable executed
     roles = [m["role"] for m in agent.session.messages]
     assert roles == ["user", "assistant", "tool", "assistant"]
 
@@ -697,4 +692,17 @@ def test_stop_during_streaming_returns_cancelled_text_not_partial_or_empty_error
             "role": "assistant", "content": CANCELLED_TEXT}
         assert loop.last_trace["totals"]["empty_answer"] is False
         assert loop.last_trace["totals"]["failed"] is True
+
+
+def test_loop_treats_non_dict_tool_arguments_as_invalid_json():
+    llm = FakeLLMProvider([
+        reply("tool_calls", tool_calls=[
+            make_tool_call("tc_1", "get_weather", "[1, 2]")]),
+        reply("stop", content="recovered"),
+    ])
+    agent = AgentLoop(llm, tools=_weather_tool())
+    assert agent.run("weather?") == "recovered"
+    tool_msg = next(m for m in agent.session.messages if m["role"] == "tool")
+    assert "not valid JSON" in tool_msg["content"]
+
 

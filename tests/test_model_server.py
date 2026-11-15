@@ -1,12 +1,5 @@
 # tests/test_model_server.py
-"""Tests for the OVMS process lifecycle: start's pidfile, stop's escalation,
-and the pidfile-based stop that `ovat serve --stop` uses.
-
-Note to myself: I never need a real `ovms` binary here. start() is tested by
-monkeypatching subprocess.Popen with a stand-in; stop_from_pidfile() is tested
-against a REAL tiny `python -c sleep` process, because the interesting part
-(os.kill on a pid from a file) should run for real, not against a mock.
-"""
+"""Tests for OVMS process lifecycle management (pidfiles, startup polling, and stop escalation)."""
 import os
 import subprocess
 import sys

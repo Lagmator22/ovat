@@ -1,18 +1,9 @@
 # ovat/providers/retriever_sqlitevec.py
-"""Layer 4: concrete Retriever plug: store vectors, find the closest ones.
+"""Persistent vector retriever backed by SQLite and ``sqlite-vec``.
 
-Fills the RetrieverProvider socket using sqlite-vec (a SQLite extension that
-adds vector search). This is the same idea as OvaSearch's USearch logic, redone
-with sqlite-vec.
-
-Design note: this plug HAS-A embedder (composition). It can't turn text into
-vectors itself, so we hand it an EmbeddingsProvider. Same idea as a C++ class
-that holds a pointer to a helper object it delegates to.
-
-Persistence note: the text chunks (and their source) live in a real SQLite
-table `chunks`, NOT in a Python list. That is what makes a file database
-survive a restart: both the vectors and the text come back from disk, and new
-rowids are derived from the table (MAX(rowid)+1), so there is no collision.
+Composes an ``EmbeddingsProvider`` to compute dense vectors and persists both
+embeddings (in ``vec0``) and chunk text/source metadata (in ``chunks``) in a
+single SQLite database across restarts.
 """
 import sqlite3
 import sys
@@ -89,13 +80,7 @@ class SQLiteVecRetrieverProvider(RetrieverProvider):
         self.db.commit()
 
     def close(self) -> None:
-        """Close the SQLite connection and flush everything to disk.
-
-        Note to myself: __init__ acquires a real OS resource (the connection),
-        so something must release it; Python has no destructor I can rely on
-        the way C++ does. Safe to call twice: closing an already-closed
-        connection is a no-op here because I null the handle after the first.
-        """
+        """Close the SQLite connection and underlying embedder idempotently."""
         with self._write_lock:
             if self.db is not None:
                 self.db.close()

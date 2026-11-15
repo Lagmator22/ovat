@@ -247,7 +247,9 @@ async def session_compact(ctx, params: SessionCompactParams):
         kind="compaction", message="Context compacted",
         details={"summaryLength": len(summary)})
     projector.adopt(projector.session.model_copy(update={"updated_at": stamp}),
-                    [*projector.history, checkpoint], projector.turns)
+                    [*projector.history, checkpoint], projector.turns,
+                    child_sessions=projector.child_sessions,
+                    child_histories=projector.child_histories)
     saved.save(ctx)
     return SessionCompactResponse(
         summary=summary, state=projector.state(),
@@ -414,7 +416,8 @@ async def settings_update(ctx, params: SessionSettingsUpdateParams):
                        "The agent is not ready yet")
     agent = ctx.agent.agent
     if params.max_turns is not None:
-        if not hasattr(agent, "max_iterations"):
+        if (not hasattr(agent, "max_iterations")
+                or getattr(agent, "llm", None) is None):
             raise RpcError(
                 ProtocolErrorCode.NOT_IMPLEMENTED,
                 "not supported in OVAT: max_turns on this engine "

@@ -36,6 +36,7 @@ class MCPSelection:
                     for t in server.tools]
             sources.append({
                 "name": tool.name,
+                "transport": tool.type.removeprefix("mcp_"),
                 "status": ("disabled" if tool.name in self.disabled else
                            "connected" if status.get("connected") else "unavailable"),
                 "error": status.get("error"),

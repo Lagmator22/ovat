@@ -1,12 +1,8 @@
 # ovat/tools/transcribe.py
-"""Deliverable 4: the transcribe MCP tool.
+"""The ``transcribe`` speech-to-text tool and standalone FastMCP server.
 
-Note to myself: this wraps my Whisper speech to text as an MCP tool. An audio
-file path goes in, transcript text comes out. I run on CPU first because the
-proposal says GPU is an optimization, not a requirement, for this stage.
-
-Same design as search_docs: the real work lives in a plain function so I can
-unit test it with a fake pipeline, and the MCP wrapper is a thin layer on top.
+Wraps OpenVINO GenAI ``WhisperPipeline`` behind ``transcribe_impl`` for unit
+testing and exposes the same contract over MCP when run as ``__main__``.
 """
 import os
 import threading
@@ -49,12 +45,11 @@ mcp = FastMCP("transcribe")
 
 
 def _read_wav(path: str):
-    """I read a 16 bit mono 16 kHz WAV into float samples the pipeline expects.
+    """Read a 16-bit mono 16 kHz PCM WAV file into normalized float samples.
 
-    Whisper expects 16 kHz, 16 bit, mono audio. I check those up front and raise
-    a clear ValueError instead of silently reading a stereo or 44.1 kHz file,
-    which would parse without error but transcribe as garbled or sped-up speech.
-    Dividing by 32768 maps the integer samples into minus one to one.
+    Validates channel count, sample width, and sample rate up front so stereo
+    or mismatched-rate audio produces a clear ``ValueError`` rather than garbled
+    transcription. Divides by 32768 to normalize samples into ``[-1.0, 1.0]``.
     """
     with wave.open(path, "rb") as wav:
         channels = wav.getnchannels()
@@ -124,14 +119,10 @@ def _load_cached_pipeline(key):
 def transcribe_impl(path: str, language: str = "en", pipeline=None,
                     model: str | None = None, device: str | None = None,
                     root: str | os.PathLike | None = None) -> str:
-    """The real logic, kept separate so my tests can pass a fake pipeline.
+    """Run speech-to-text transcription with bounded fuzzy path resolution.
 
-    Note to myself: I check the file exists first and return a clear error
-    string instead of letting a missing path blow up the whole agent.
-
-    A misspelt path may be swapped for a near match (ovat/tools/fuzzy.py);
-    when it is, the note saying so leads the result, so the substitution is
-    never silent.
+    Validates file existence before loading the pipeline and prepends an
+    explicit note if ``resolve_path`` substitutes a nearby match.
     """
     from pathlib import Path
     from ovat.tools.fuzzy import resolve_path
@@ -179,8 +170,8 @@ def _transcribe(path: str, language: str, pipeline, model, device) -> str:
         return f"Error transcribing audio: {exc}"
 
 
-# The OpenAI-style tool schema my agent loop shows the model. Co-located with
-# the tool so the model's description and the real function stay in sync.
+# Co-located OpenAI-style tool schema imported by the agent factory so tool
+# descriptions and implementation signatures stay synchronized.
 SCHEMA = {
     "type": "function",
     "function": {
@@ -206,13 +197,13 @@ SCHEMA = {
 def transcribe(path: str, language: str = "en") -> str:
     """Transcribe a spoken audio file into text.
 
-    Use me when the user gives a path to an audio recording and wants the
-    words in it. I take a WAV file path and return the transcript as text.
+    Use when the user gives a path to an audio recording and wants the words in
+    it. Takes a WAV file path and returns the transcript as text.
     """
-    return transcribe_impl(path, language)
+    from ovat.tools.project import project_root
+    return transcribe_impl(path, language, root=project_root())
 
 
 if __name__ == "__main__":
-    # Note to myself: runs transcribe as a standalone MCP server.
-    # My workflow YAML launches me with: python transcribe.py
+    # Standalone MCP server entry point (`python -m ovat.tools.transcribe`).
     mcp.run()

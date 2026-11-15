@@ -1,44 +1,31 @@
 # ovat/providers/base.py
-"""
-Layer 4: Provider Abstraction (the contracts).
+"""Abstract provider contracts for LLMs, embeddings, retrievers, and VLMs.
 
-An ABC (Abstract Base Class) is a *contract*: it says "any LLM provider MUST
-have a .chat() method" without saying HOW. We then write multiple concrete
-implementations (OVMS, GenAI parts of all sockets/contracts) that all honor the contract.
-The YAML config picks one by name, so swapping a backend = changing a string in config, not
-rewriting code. This is the single design idea the whole toolkit leans on. Rest of Layer 4 
-is just to fill in the blanks for each backend.
-
-TLDR:
-Socket + plug = this is the whole toolkit's big idea for ABCs, base.py says "must have chat()"; 
-llm_genai.py does chat() one way (local), and later llm_ovms.py does it another way (server),
-same chat(), same return dict. So the rest of the code can call .chat() without caring which
-engine runs underneath.
+All concrete backends (OVMS, OpenVINO GenAI, SQLite-vec, in-memory) implement
+these interfaces so workflow YAML configuration selects implementations by
+name without changing agent or CLI code.
 """
 
 from abc import ABC, abstractmethod
 
 
 class LLMProvider(ABC):
-    """Contract/Socket for anything that can run an LLM chat completion."""
-    """Any LLM provider in OVAT must have a chat() method, MUST exist"""
-    @abstractmethod # like pure virtual = 0 in cpp 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
-        """Send messages (+ optional tools), return the raw response.
+    """Interface for text/tool-calling LLM chat completion backends."""
 
-        The returned dict MUST expose `finish_reason` and any `tool_calls`.
-        The agent loop (Layer 3) dispatches on the PAYLOAD:
-          - tool_calls present  -> run the tools, append results, loop
-          - tool_calls absent   -> return the content as the answer
-        finish_reason is recorded and used only to diagnose a broken reply
-        ("tool_calls" with none attached, or "length" for a cut-off one),
-        because OVMS documents NPU serving labelling a real call "stop".
+    @abstractmethod
+    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+        """Send messages and optional tool schemas; return normalized response.
+
+        The returned dict must expose ``finish_reason`` and any ``tool_calls``.
+        The agent loop dispatches on payload presence (whether ``tool_calls``
+        are returned) rather than ``finish_reason``, since NPU serving may
+        report ``"stop"`` even when a tool call was decoded.
         """
         ...
 
 
 class EmbeddingsProvider(ABC):
-    """Contract/Socket for turning text into vectors."""
+    """Interface for converting text strings into dense embedding vectors."""
 
     @abstractmethod
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -46,12 +33,11 @@ class EmbeddingsProvider(ABC):
 
 
 class RetrieverProvider(ABC):
-    """Contract/Socket for storing vectors and searching them by similarity."""
+    """Interface for storing text chunks with vectors and running similarity search."""
 
     @abstractmethod
     def add(self, texts: list[str], sources: list[str] | None = None) -> None:
-        """Store these texts. `sources` is optional and lines up by index, so a
-        later retrieve() can say which file each chunk came from (citations)."""
+        """Store texts and optional parallel source labels for citations."""
         ...
 
     @abstractmethod
@@ -59,23 +45,17 @@ class RetrieverProvider(ABC):
         ...
 
     def close(self) -> None:
-        """Release whatever the retriever holds (DB connections, files).
+        """Release any underlying database connections or file handles.
 
-        NOT abstract on purpose: a plain virtual with an empty default body,
-        not pure virtual. In-memory retrievers hold nothing, so they inherit
-        this no-op; sqlite-vec overrides it to close its connection. Callers
-        can always call close() without caring which backend they got.
+        Implemented as an optional no-op default because in-memory backends
+        hold no external resources, while persistent stores such as sqlite-vec
+        override it to close connections cleanly.
         """
         return None
 
 
-class VLMProvider(ABC): # adds the support for multimodality supporting models like gemma 4[OpenVINO formats are experimental] and no video support yet
-    """Contract/Socket for a vision-language model: a text prompt + images -> text.
-
-    This is the multimodal contract/socket (Qwen2-VL today, Gemma 4 / Qwen3-VL later).
-    Concrete plugs handle loading the image files into tensors; callers just
-    pass file paths.
-    """
+class VLMProvider(ABC):
+    """Interface for vision-language models mapping prompt + image paths to text."""
 
     @abstractmethod
     def generate(self, prompt: str, images: list[str]) -> str:

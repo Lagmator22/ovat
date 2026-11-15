@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import os
 import re
+import sys
 import threading
 from functools import partial
 from pathlib import Path
@@ -377,9 +379,6 @@ class OvatAgentApp(VibeApp):
     # code without it. Each does nothing here rather than end in "not
     # supported".
 
-    async def action_toggle_debug_console(self, **kwargs: Any) -> None:
-        """Ctrl+Backslash: the console reads the server's log."""
-
     async def _show_voice_settings(self, **kwargs: Any) -> None:
         manager = self._voice_manager
         manager.apply_enabled(not manager.is_enabled)
@@ -475,6 +474,19 @@ class OvatAgentApp(VibeApp):
             return
         await self._rebuild(self._handle.switch_workflow(path))
 
+    async def _cmd_trust(self, **kwargs: Any) -> None:
+        from ovat.agentic import trust
+        cwd = self.app_server.cwd
+        trust.decide(cwd, "trust_cwd")
+        found = s.find_workflow(cwd)
+        if found is None:
+            await self._note("This folder is trusted. It has no workflow.yml "
+                             "to load.")
+            return
+        await self._note(f"This folder is trusted. Loading "
+                         f"`{os.path.basename(found)}`.")
+        await self._rebuild(self._handle.switch_workflow(found))
+
     async def _rebuild(self, switching) -> None:
         """Run a switch on the server handle; the banner shows the agent is
         loading until the server reports it ready (or says why not)."""
@@ -502,8 +514,11 @@ class OvatAgentApp(VibeApp):
             self._agent.agent, self.app_server.cwd, cmd_args))
 
     async def _cmd_load(self, cmd_args: str = "", **kwargs: Any) -> None:
-        await self._note(*agent_text.load_conversation(
-            self._agent, self.app_server.cwd, cmd_args))
+        msg, kind = agent_text.load_conversation(
+            self._agent, self.app_server.cwd, cmd_args)
+        if kind == "info":
+            self._handle.clear_anchors()
+        await self._note(msg, kind)
 
     async def _cmd_doctor(self, cmd_args: str = "", **kwargs: Any) -> None:
         from ovat.tui.widgets.doctor import DoctorReport
@@ -557,10 +572,32 @@ async def run_agent(workflow: str | None, *, cwd: str | None = None,
         await handle.close()
 
 
+def _trusted_workflow(cwd: str) -> str | None:
+    """./workflow.yml, but only in a folder the user trusts.
+
+    building a workflow starts its mcp_stdio commands, so a cloned
+    repository must not get to run them just because `ovat` was opened in
+    it. naming the file on the command line is an explicit choice and skips
+    this check.
+    """
+    from ovat.agentic import trust
+    found = s.find_workflow(cwd)
+    if found is None or trust.status(cwd) == "trusted":
+        return found
+    print(f"{os.path.basename(found)} in this folder was not loaded: the "
+          f"folder is not trusted, and loading it would start the tools it "
+          f"lists. Use /trust inside OVAT, `ovat agent --trust`, or name it: "
+          f"`ovat agent {os.path.basename(found)}`.",
+          file=sys.stderr)
+    return None
+
+
 def run(workflow: str | None = None, *,
         continue_session: bool = False,
         resume_session_id: str | None = None) -> None:
     """Entry point for `ovat agent`."""
-    asyncio.run(run_agent(workflow or s.find_workflow(),
+    if workflow is None:
+        workflow = _trusted_workflow(os.getcwd())
+    asyncio.run(run_agent(workflow,
                           continue_session=continue_session,
                           resume_session_id=resume_session_id))

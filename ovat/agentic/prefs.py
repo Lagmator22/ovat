@@ -1,16 +1,12 @@
 # ovat/agentic/prefs.py
-"""The one UI preferences file: `.ovat/chat_prefs.json` in the project.
+"""Shared per-project UI preferences stored in ``.ovat/chat_prefs.json``.
 
-Note to myself: the launcher's /chat already keeps the last workflow and model
-folder here, so the agent app's theme goes in the SAME file, never a second
-one. Each writer changes only its own keys and leaves the others as they are
-(`/chat` must not forget the theme, `/theme` must not forget the model path).
+Maintains independent keys with read-modify-write updates so separate UI views
+preserve each other's settings:
 
-    config       the workflow the launcher's /chat used last
-    model_path   the model folder it used last
-    theme        the Textual theme chosen with /theme in the agent app
-
-This file never imports textual.
+    config       last workflow selected by the chat launcher
+    model_path   last local model folder selected
+    theme        selected Textual theme name
 """
 from __future__ import annotations
 

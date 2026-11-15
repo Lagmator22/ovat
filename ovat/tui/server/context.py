@@ -1,16 +1,11 @@
 # ovat/tui/server/context.py
-"""What the method handlers share: the agent session and the public session.
+"""Shared app-server state bridging ``AgentSession`` and JSON-RPC handlers.
 
-Note to myself: one server, one conversation. This object owns
-
-- the AgentSession (OVAT's agent: built on a worker thread, reports through
-  one sink callback from worker threads),
-- the Projector (the session as the copied TUI reads it, numbered events),
-- the turn queue, the open approvals and the running `!` command,
-
-and it is the ONE place a report from a worker thread crosses onto the event
-loop: `_sink` calls `loop.call_soon_threadsafe(dispatch, event)`, and
-everything after that runs on the loop, in the order the session sent it.
+Owns the ``AgentSession`` (executing on worker threads), the ``Projector``
+(numbered public session events for the TUI client), the turn queue, open
+approval/question brokers, and active ``!`` shell runs. Bridges worker-thread
+events onto the asyncio event loop in emission order via
+``loop.call_soon_threadsafe``.
 """
 from __future__ import annotations
 
@@ -27,7 +22,7 @@ from ovat.agent.events import (REMOTE_STATUS, SUBAGENT_DONE, SUBAGENT_EVENT,
                               TOOL_STARTED)
 from ovat.agentic import session as s
 from ovat.agentic import prefs, sessions
-from ovat.tui.server import saved, views
+from ovat.tui.server import logs, saved, views
 from ovat.tui.server.approvals import Approvals
 from ovat.tui.server.projector import Projector, now_ms
 from ovat.tui.server.questions import Questions
@@ -73,6 +68,8 @@ class ServerContext:
         self.shell = ShellRuns(self)
         self.lifecycle = asyncio.Lock()
         self.closed = False
+        self._log_handler = logs.BufferedLogHandler()
+        logs.attach_ovat_log_handler(self._log_handler)
         self._build_thread: threading.Thread | None = None
         # Things in this process that want every report too (OVAT's own app:
         # its banner and bottom bar follow the agent). Called on the loop,
@@ -536,6 +533,7 @@ class ServerContext:
         if self.closed:
             return
         self.closed = True
+        logs.detach_ovat_log_handler(self._log_handler)
         self.turns.close()
         self.shell.close()
         agent, build = self.agent, self._build_thread

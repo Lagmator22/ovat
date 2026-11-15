@@ -1,14 +1,9 @@
 # ovat/cli/diagnostics.py
-"""The real checks behind `ovat doctor`.
+"""Diagnostic check suite powering ``ovat doctor``.
 
-I keep the logic here, separate from the rendering, for one reason: every check
-below actually does something (imports a module, looks on PATH, opens a socket,
-validates a config), and I want to unit test that without printing tables. The
-CLI command turns this list into a coloured report; this file decides pass/fail.
-
-A check never raises. It catches its own trouble and turns it into a clear
-status, because the whole point of doctor is to survive a broken setup and tell
-the user what is wrong.
+Kept separate from CLI table rendering so checks can be unit tested directly
+without terminal formatting. Every check catches its own errors and returns a
+structured ``Check`` result so ``ovat doctor`` can inspect broken setups safely.
 """
 import importlib
 import os
@@ -32,7 +27,7 @@ SEVERITY = {FAIL: 0, WARN: 1, OK: 2}
 
 @dataclass
 class Check:
-    """One diagnostic result: what I looked at, how it went, and the detail."""
+    """Single diagnostic check outcome (component name, status level, detail)."""
 
     name: str
     status: str
@@ -94,7 +89,7 @@ def check_engines() -> list[Check]:
 
 
 def check_devices() -> Check:
-    """Ask OpenVINO what hardware it can see. This is the AI PC routing story."""
+    """Query OpenVINO for available compute devices (CPU/GPU/NPU)."""
     try:
         import openvino as ov
         devices = ov.Core().get_available_devices()
@@ -136,11 +131,10 @@ def check_device_routing(config=None) -> Check:
 
 
 def check_local_genai() -> Check:
-    """Can THIS machine run OpenVINO models locally (no server)?
+    """Verify local ``openvino_genai`` execution availability (no server required).
 
-    This is the answer to "how do I use OVAT on a Mac": openvino_genai runs
-    natively on macOS/Linux/Windows CPU, which powers `ovat chat` and the
-    TUI /chat screen. OVMS is only needed for the agentic tool-calling path.
+    ``openvino_genai`` runs natively on macOS/Linux/Windows CPU for ``ovat chat``
+    and TUI ``/chat``, while OVMS is required for agentic tool-calling workflows.
     """
     try:
         import openvino_genai
@@ -155,12 +149,11 @@ def check_local_genai() -> Check:
 
 
 def check_ovms_serving(config_binary: str | None = None) -> Check:
-    """Is the OVMS serving path available HERE, and if not, why exactly.
+    """Check whether OVMS serving is available on the current platform.
 
-    Platform-aware on purpose: on macOS OVMS simply does not exist, so
-    saying "not on PATH" would send the user hunting for a binary they can
-    never install. Elsewhere the locator's answer (config → OVAT_OVMS →
-    PATH → known folders) tells them precisely how to fix it.
+    Handles macOS explicitly (where native OVMS binaries are unavailable) and
+    resolves OVMS via ``config -> OVAT_OVMS -> PATH -> known install dirs``
+    elsewhere.
     """
     if sys.platform == "darwin":
         return Check("OVMS serving", WARN,
@@ -171,16 +164,11 @@ def check_ovms_serving(config_binary: str | None = None) -> Check:
     from ovat.core.ovms_locator import find_ovms
     path, how = find_ovms(config_binary)
     if path:
-        # Say WHICH install answered. Once `ovat setup` exists a machine can
-        # easily have two -- a managed one and an older manual unpack -- and
-        # "which ovms am I actually running" should not need a filesystem hunt
-        # to answer.
+        # Report whether the resolved binary is managed by `ovat setup` or manual.
         managed = os.path.normcase(os.path.abspath(path)).startswith(
             os.path.normcase(os.path.abspath(DEFAULT_ROOT)))
         origin = "managed by 'ovat setup'" if managed else "manual install"
-        # And which RELEASE: a pin only helps if the running build matches
-        # it. 2026.2.1 is measurably worse than the 2026.4.1 pin (42 vs 56 of
-        # 60 answers on the AI PC), and nothing else would say it is there.
+        # Check whether the installed version matches OVAT's pinned release.
         from ovat.core.ovms_installer import OVMS_VERSION, binary_version
         have = binary_version(path)
         if have and have != OVMS_VERSION:
@@ -236,11 +224,10 @@ def check_ovms_python(config_binary: str | None = None) -> Check | None:
 
 
 def check_config(config_path: str) -> list[Check]:
-    """Validate a workflow file and report what it asks for.
+    """Validate a workflow YAML file and run config-derived checks.
 
-    Returns several checks: the config itself, then config-derived ones (the
-    embeddings model on disk, and whether OVMS looks reachable). I only add the
-    derived checks when the config actually opts into those features.
+    Appends embeddings-directory and OVMS reachability checks only when the
+    workflow opts into those features.
     """
     try:
         cfg = load_workflow(config_path)

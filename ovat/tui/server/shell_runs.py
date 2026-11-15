@@ -1,17 +1,10 @@
 # ovat/tui/server/shell_runs.py
-"""`!command`: the person's own shell command, shown as a tool-call entry.
+"""Interactive ``!command`` shell execution projected as TUI tool-call entries.
 
-Note to myself: the copied TUI sends `session/shellCommand` with an
-operation id and then reads history events for an entry that has that SAME
-id: the entry is added running, its output arrives as appends to
-`/state/outputText`, and it ends completed, failed or cancelled. The request
-itself is answered when the command is over (a second request with
-action "interrupt" stops it).
-
-AgentSession.run_shell does the running: one command at a time, the lines as
-ShellLine, the end as ShellDone. This file turns those into the entry. Lines
-are batched (a command that prints a lot would otherwise send one
-notification per line).
+Handles ``session/shellCommand`` requests by running commands through
+``AgentSession.run_shell``, batching streamed output lines into ``/state/outputText``
+JSON-patch updates under the caller's ``operation_id``, and supporting explicit
+interruption.
 """
 from __future__ import annotations
 

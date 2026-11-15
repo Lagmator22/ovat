@@ -15,7 +15,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from rich.text import Text
-from textual.containers import Horizontal, Vertical, VerticalGroup
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Static
 
 from ovat.cli import ui

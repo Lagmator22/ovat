@@ -1,19 +1,11 @@
 # ovat/agent/rag_chat.py
-"""Local retrieval-augmented chat: retrieve, then answer with a local LLM.
+"""Local retrieval-augmented chat: retrieve context, then generate once via local LLM.
 
-This is the macOS-friendly path the proposal calls the "GenAI fallback for
-macOS dev". OVMS (and therefore tool-calling) is not available on Apple Silicon,
-but openvino_genai runs natively, so I can still do real RAG here: embed the
-question, pull the closest chunks from the index, put them in the prompt, and
-let a local model answer with citations.
-
-It is deliberately NOT the agent loop. There is no tool-calling; I always
-retrieve first and then generate once. That is the classic RAG shape, and it is
-all a non-tool-calling local model can do. The agentic version (the model
-deciding to call search_docs) stays on the OVMS path.
-
-I keep the logic here, free of any model or CLI, so a fake retriever and a fake
-LLM can test the whole flow in milliseconds.
+Designed for direct ``openvino_genai`` execution where an OVMS tool-calling
+server is unavailable (including macOS development environments). Instead of
+running a tool-calling loop, each question embeds once, retrieves top chunks,
+injects them into the prompt with source labels, and generates a single answer.
+Kept free of CLI and model-loading code so unit tests run quickly with fakes.
 """
 from ovat.providers.base import LLMProvider, RetrieverProvider
 
@@ -24,13 +16,9 @@ _DEFAULT_SYSTEM = (
 )
 
 
-#: Added to a workflow's own system prompt on this path. That prompt is
-#: written for the tool-calling agent ("Always call search_docs ..."), but
-#: here the search has already run and there are no tools, so the model tried
-#: to call one anyway. Measured on Qwen3.5-0.8B with the RAG example's prompt:
-#: 1 of 3 answers right, each starting with the literal text "search_docs";
-#: with this note, 3 of 3 and no tool talk. A thinking model (Qwen3.5-4B on
-#: the AI PC) spent its whole token budget arguing about the missing tool.
+#: Reconciles agentic workflow prompts that instruct the model to call
+#: search_docs with this tool-less path where retrieval already ran, preventing
+#: small/reasoning models from wasting tokens trying to invoke missing tools.
 _NO_TOOLS_NOTE = (
     "In this chat the documents have already been searched for you: the "
     "Context in the user's message is the search result. There are no tools "
@@ -51,15 +39,11 @@ def build_context(hits: list) -> str:
 
 
 def retrieval_query(question: str, history: list | None) -> str:
-    """What to search the index with: the new question, plus the previous one.
+    """Build the retrieval query by prepending the most recent user turn.
 
-    A follow-up like "And how is that number measured?" has no topic of its
-    own; "that number" lives in the turn before. Searched alone, it ranked the
-    token-count chunk first and the memory-budget chunk third, and the model
-    answered about token counts (measured on the AI PC, Qwen3-8B). Searched
-    with the previous question in front, the subject is back in the query.
-    Only the ONE previous question, so an old topic cannot keep steering
-    retrieval after the conversation has moved on.
+    Prepending only the single preceding user question keeps follow-ups like
+    "How is that measured?" anchored to the active topic without letting stale
+    earlier topics dominate retrieval.
     """
     previous = next((m.get("content") for m in reversed(history or [])
                      if m.get("role") == "user" and m.get("content")), None)

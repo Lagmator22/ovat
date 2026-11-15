@@ -1,10 +1,5 @@
 # tests/test_factory.py
-"""Tests for the component factory.
-
-Note to myself: building the agent does NOT need a running OVMS, because
-OVMSLLMProvider only constructs a client. So I can fully test that the config
-turns into the right wired-up agent here on the Mac, no server, no GPU.
-"""
+"""Tests for agent component assembly without requiring a running OVMS server."""
 import pytest
 
 from ovat.agent.factory import build_agent, build_tools, build_llm
@@ -109,7 +104,7 @@ def test_build_llm_wires_the_request_timeout_into_the_client():
 def test_build_tools_wires_both_builtins():
     tools = build_tools(_cfg())
     assert set(tools) == {"search_docs", "transcribe"}
-    # each tool must carry the two keys my loop needs
+    # Each built tool entry must expose both schema and callable function.
     for spec in tools.values():
         assert "schema" in spec and "function" in spec
 
@@ -368,7 +363,7 @@ def test_a_missing_embeddings_model_is_a_sentence_not_a_cpp_assertion(tmp_path):
     assert "core.cpp" not in message          # not the C++ assertion
 
 
-# --- declarative tool config (Ravi's asks 3 and 4) --------------------------
+# --- declarative tool config -----------------------------------------------
 #
 # The model path used to come from OVAT_WHISPER_MODEL / OVAT_VLM_MODEL, set by
 # `export` before the run. That made workflow.yml an incomplete description of
@@ -510,3 +505,65 @@ def test_a_named_but_unset_api_key_variable_is_a_sentence(monkeypatch):
     config = _cfg(model={"name": "m", "ovms_api_key_env": "OVAT_TEST_OVMS_KEY"})
     with pytest.raises(ValueError, match="OVAT_TEST_OVMS_KEY"):
         build_llm(config)
+
+
+def test_close_agent_closes_retriever_and_build_agent_avoids_global(monkeypatch):
+    from ovat.agent import factory
+    from ovat.tools import search_docs as sd
+
+    closed = []
+
+    class FakeRetriever:
+        def retrieve(self, query, top_k=5):
+            return []
+
+        def close(self):
+            closed.append("retriever")
+
+    sd.configure(None)
+    monkeypatch.setattr(factory, "build_rag", lambda cfg: FakeRetriever())
+    agent = build_agent(_cfg(), skip_rag=False)
+    assert getattr(agent, "retriever", None) is not None
+    assert sd._retriever is None
+    factory.close_agent(agent)
+    assert closed == ["retriever"]
+
+
+def test_build_agent_cleans_up_partial_resources_on_failure(monkeypatch):
+    from ovat.agent import factory
+
+    closed = []
+
+    class FakeRetriever:
+        def close(self):
+            closed.append("retriever")
+
+    class FakeServer:
+        def close(self):
+            closed.append("server")
+
+    def failing_build_tools(config, retriever=None, servers=None, events=None):
+        servers.append(FakeServer())
+        raise TimeoutError("second server timed out")
+
+    monkeypatch.setattr(factory, "build_rag", lambda cfg: FakeRetriever())
+    monkeypatch.setattr(factory, "build_tools", failing_build_tools)
+    with pytest.raises(TimeoutError, match="second server timed out"):
+        build_agent(_cfg(), skip_rag=False)
+    assert "server" in closed and "retriever" in closed
+
+
+def test_framework_engines_do_not_attach_unused_native_llm(monkeypatch):
+    from ovat.agent import factory
+
+    monkeypatch.setattr(factory, "build_llm",
+                        lambda cfg: (_ for _ in ()).throw(
+                            AssertionError("should not build native llm")))
+    for engine, mod in (("react", "langchain"),
+                        ("llamaindex", "llama_index.core"),
+                        ("openai-agents", "agents")):
+        pytest.importorskip(mod)
+        cfg = WorkflowConfig(model={"name": "m"}, agent={"type": engine})
+        agent = build_agent(cfg, skip_rag=True)
+        assert getattr(agent, "llm", None) is None
+

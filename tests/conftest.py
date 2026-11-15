@@ -1,11 +1,5 @@
 # tests/conftest.py
-"""Shared test helpers for the agent tests.
-
-Note to myself: I do not want my unit tests to need a real LLM or a GPU. So I
-build a FakeLLMProvider that returns replies I script in advance. Because my
-loop only depends on the LLMProvider contract, swapping in this fake tests the
-entire loop logic in milliseconds, on any machine, Mac or AI PC.
-"""
+"""Shared pytest fixtures and deterministic test fakes for OVAT agent tests."""
 import json
 import os
 import shlex
@@ -123,15 +117,14 @@ def project_files(tmp_path, monkeypatch):
         return tmp_path / "project-files" / "prefs_path"
     monkeypatch.setattr(prefs, "prefs_path", path)
     monkeypatch.setattr(userdata, "folder", lambda: tmp_path / "home" / ".ovat")
+    monkeypatch.setenv("OVAT_TUI_HOME", str(tmp_path / "tui-home"))
 
 
 class FakeLLMProvider(LLMProvider):
-    """A stand in for OVMS that hands back replies I prepared in advance."""
+    """Scripted stand-in for OVMS returning preconfigured replies in sequence."""
 
     def __init__(self, scripted_replies: list[dict]):
-        # I hand back one reply per chat() call, in order.
         self._replies = list(scripted_replies)
-        # I record every call so my tests can assert what the loop sent.
         self.calls: list[dict] = []
 
     def chat(self, messages: list[dict], tools=None) -> dict:
@@ -140,12 +133,7 @@ class FakeLLMProvider(LLMProvider):
 
 
 def make_tool_call(call_id: str, name: str, arguments: dict):
-    """I build a fake tool_call shaped exactly like the OpenAI SDK objects.
-
-    Note to myself: the real provider gives me objects with attribute access
-    (call.function.name) and arguments as a JSON string. My fake matches that
-    shape so the loop cannot tell the difference.
-    """
+    """Build a mock tool_call matching OpenAI SDK attribute structure."""
     return SimpleNamespace(
         id=call_id,
         type="function",
@@ -154,7 +142,7 @@ def make_tool_call(call_id: str, name: str, arguments: dict):
 
 
 def reply(finish_reason: str, content=None, tool_calls=None) -> dict:
-    """I build a reply dict shaped like what LLMProvider.chat() returns."""
+    """Build a normalized response dictionary matching ``LLMProvider.chat()``."""
     return {
         "finish_reason": finish_reason,
         "content": content,

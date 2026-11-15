@@ -1,33 +1,18 @@
 # ovat/agent/openai_agents_agent.py
-"""Layer 3 (alternate engine): run the same agent through the OpenAI Agents SDK.
+"""OpenAI Agents SDK engine adapter (``agent.type: openai-agents``).
 
-The proposal names this as the third framework integration, so this is the
-`agent.type: openai-agents` path. Same contract as every other engine:
-.run(text) -> text, so the factory can hand back any of them and the CLI never
-knows the difference.
+Exposes ``.run(text) -> str`` matching ``AgentLoop``. Configures the SDK for a
+local or self-hosted OVMS endpoint rather than ``api.openai.com`` via three
+required settings:
+- Custom ``AsyncOpenAI`` pointed at the OVMS ``/v3`` URL so the SDK does not
+  fall back to cloud OpenAI using ``OPENAI_API_KEY``.
+- ``OpenAIChatCompletionsModel`` rather than the default Responses model, since
+  OVMS serves chat completions only.
+- Tracing disabled so telemetry is never uploaded to OpenAI servers.
 
-The SDK is built for api.openai.com, so pointing it at OVMS takes three
-deliberate steps, and skipping any one of them fails in a way that looks like
-something else:
-
-  * An AsyncOpenAI client with base_url set to the OVMS /v3 endpoint. The SDK
-    otherwise reads OPENAI_API_KEY from the environment and talks to OpenAI,
-    which on a developer machine with that variable set means your local
-    workflow quietly bills a cloud account.
-  * OpenAIChatCompletionsModel, NOT the SDK's default Responses model. OVMS
-    speaks the chat-completions dialect; the Responses API is OpenAI-only, and
-    the failure is a 404 on a path OVMS never claimed to serve.
-  * Tracing disabled. Tracing uploads run data to OpenAI's servers and needs a
-    real OpenAI key, so leaving it on turns a fully local, private run into a
-    network call, which is the exact opposite of the point of running OVMS on
-    your own hardware.
-
-Tools are built as explicit FunctionTool objects rather than with the SDK's
-@function_tool decorator: the decorator infers a schema from a Python
-signature, and OVAT's tools already carry a hand-written SCHEMA that is the
-contract. Inferring a second one is how the two drift apart.
-
-`agents` is imported lazily so `import ovat` stays cheap.
+Tools are registered as explicit ``FunctionTool`` instances from OVAT's own
+``SCHEMA`` definitions to avoid schema drift from decorator inference.
+``agents`` is imported lazily so non-SDK runs avoid its import cost.
 """
 import asyncio
 import inspect
@@ -42,7 +27,7 @@ from ovat.config.workflow import WorkflowConfig
 
 
 def _wrap_tools(tools: dict) -> list:
-    """Turn my {name: {schema, function}} dict into SDK FunctionTools."""
+    """Wrap ``{name: {schema, function}}`` into OpenAI Agents SDK ``FunctionTool`` objects."""
     from agents import FunctionTool
 
     def make(name: str, spec: dict):
@@ -142,7 +127,7 @@ def _trace_parts(run) -> tuple[list, int]:
 
 
 class OpenAIAgentsAgent:
-    """Adapter so an Agents SDK agent looks like my native AgentLoop."""
+    """Adapter presenting an OpenAI Agents SDK agent behind the ``AgentLoop`` interface."""
 
     def __init__(self, agent, tools: dict, max_iterations: int,
                  system_prompt: str | None,
@@ -161,6 +146,19 @@ class OpenAIAgentsAgent:
         self.last_failed = False
         # What the last run() cost, in the native loop's shape.
         self.last_trace: dict = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def _run_loop(self, coro):
+        if self._loop is None or self._loop.is_closed():
+            self._loop = asyncio.new_event_loop()
+        return self._loop.run_until_complete(coro)
+
+    def close(self) -> None:
+        if self._loop is not None and not self._loop.is_closed():
+            try:
+                self._loop.close()
+            except Exception:
+                pass
 
     def run(self, user_message: str) -> str:
         """Run for one message and return the final text.
@@ -186,7 +184,7 @@ class OpenAIAgentsAgent:
         self.last_failed = False
         started = time.monotonic()
         try:
-            result = asyncio.run(Runner.run(
+            result = self._run_loop(Runner.run(
                 self._agent,
                 [*self._input_items, {"role": "user", "content": user_message}],
                 # One "turn" is a model call plus its tool round, which is the

@@ -307,6 +307,8 @@ class FakeSession:
         self.remembered = Session(system_prompt="be brief")
         self.remembered.messages.extend(
             m for m in messages if m.get("role") != "system")
+        if getattr(self.agent, "session", None) is not None:
+            self.agent.session = self.remembered
         return True
 
     def truncate_memory(self, length):
@@ -1460,6 +1462,8 @@ def test_the_quiet_answers_for_account_workspace_and_feedback():
             assert auth.provider_name == "ovms"
             assert auth.api_base is None
             assert await r.feedback.should_show() is False
+            assert (await r.workspace.trust_status()).status == "untrusted"
+            await r.workspace.decide_trust("trust_cwd")
             assert (await r.workspace.trust_status()).status == "trusted"
             assert (await r.workspace.untrusted_config_dirs()).dirs == []
             prepared = await r.workspace.prepare_prompt("read @a.md now")
@@ -2019,7 +2023,9 @@ def test_other_notices_reach_the_client_as_warnings_and_errors():
     run(go())
 
 
-def test_images_are_dropped_with_a_warning_and_the_text_still_runs():
+def test_images_are_materialized_and_attached_to_the_turn(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
     async def go():
         async with served() as (session, handle, fake):
             await session.resources.runtime.wait_until_ready()
@@ -2029,8 +2035,33 @@ def test_images_are_dropped_with_a_warning_and_the_text_still_runs():
             async with aclosing(session.act("look", images=[image])) as gen:
                 async for event in gen:
                     events.append(event)
+            assert not any(isinstance(e, ServerWarning) for e in events)
+            assert len(fake.asked) == 1
+            prompt = fake.asked[0]
+            assert prompt.startswith("look\n\n[Attached image: .ovat/pasted_images/")
+            rel = prompt.split("[Attached image: ", 1)[1].rstrip("]")
+            saved_img = tmp_path / rel
+            assert saved_img.is_file()
+            assert saved_img.read_bytes() == b"x"
+    run(go())
+
+
+def test_resource_blocks_are_dropped_with_a_warning_while_text_runs():
+    from ovat.tui.vibe.user_content import UserTextResource
+
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            events = []
+            async with aclosing(session.act(
+                "look",
+                resources=[UserTextResource(
+                    uri="file:///tmp/x.txt", text="ignored")],
+            )) as gen:
+                async for event in gen:
+                    events.append(event)
             assert any(isinstance(e, ServerWarning)
-                       and "images" in e.params.warning.message
+                       and "not supported in OVAT yet" in e.params.warning.message
                        for e in events)
             assert fake.asked == ["look"]
     run(go())
@@ -2133,9 +2164,7 @@ def test_closing_with_an_approval_open_leaves_nothing_waiting():
 
 
 def test_the_bridge_names_the_session_and_the_turn():
-    from ovat.tui.bridge import Bridge as ClassicBridge
     from ovat.tui.server.bridge import Bridge
-    assert ClassicBridge is Bridge            # the classic app's import path
     bridge = Bridge("s1")
     bridge.turn_id = "t1"
     added = bridge.convert(Event(TOOL_STARTED, {
@@ -2145,7 +2174,7 @@ def test_the_bridge_names_the_session_and_the_turn():
     assert bridge.running("other") is None
     assert bridge.answer("hi").entry.turn_id == "t1"
     assert bridge.reasoning("why").entry.text == "why"
-    plain = Bridge()                          # the classic app's use
+    plain = Bridge()
     assert plain.answer("x").entry.session_id == "ovat"
     assert plain.answer("x").entry.turn_id is None
 
@@ -3531,3 +3560,233 @@ def test_hardware_sampling_skips_overlapping_ticks():
     release.set()
     time.sleep(0.05)
     assert len(calls) == 1, f"overlapping hardware samples ran concurrently: {len(calls)}"
+
+
+def test_subagent_cancelled_status_uses_archived_session_status(tmp_path):
+    from ovat.agent.events import Event, SUBAGENT_DONE, SUBAGENT_STARTED
+    from ovat.tui.vibe.app_server.models import ArchivedSessionStatus
+
+    async def go():
+        async with served(_wf(tmp_path)) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            proj = handle._ctx.projector
+            proj.agent_event(Event(SUBAGENT_STARTED, {
+                "call_id": "c-cancel", "agent": "researcher", "kind": "workflow",
+            }), {})
+            proj.agent_event(Event(SUBAGENT_DONE, {
+                "call_id": "c-cancel", "status": "cancelled", "totals": {},
+            }), {})
+            assert proj.child_sessions["child-c-cancel"].status == ArchivedSessionStatus()
+    run(go())
+
+
+def test_compact_preserves_child_sessions_and_histories(saved_sessions):
+    from ovat.agent.events import Event, SUBAGENT_EVENT, SUBAGENT_STARTED
+
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            await _ask(session, "one")
+            proj = handle._ctx.projector
+            proj.agent_event(Event(SUBAGENT_STARTED, {
+                "call_id": "c-keep", "agent": "researcher", "kind": "workflow",
+            }), {})
+            proj.agent_event(Event(SUBAGENT_EVENT, {
+                "call_id": "c-keep",
+                "agent": "researcher",
+                "event": {"type": "tool_started", "name": "search_docs",
+                          "arguments": {"query": "q"}},
+            }), {"search_docs": "builtin"})
+            assert "child-c-keep" in proj.child_sessions
+            assert proj.child_histories["child-c-keep"]
+            await session.compact("keep")
+            assert "child-c-keep" in handle._ctx.projector.child_sessions
+            assert handle._ctx.projector.child_histories["child-c-keep"]
+    run(go())
+
+
+def test_settings_update_rejects_framework_agent_with_max_iterations_and_no_llm():
+    async def go():
+        async with served(native=False) as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            fake.agent = SimpleNamespace(max_iterations=10, llm=None)
+            with pytest.raises(AppServerResponseError) as err:
+                await session.resources.sessions.update_settings(max_turns=5)
+            assert err.value.error.code is ProtocolErrorCode.NOT_IMPLEMENTED
+            assert fake.agent.max_iterations == 10
+    run(go())
+
+
+def test_workspace_prepare_prompt_attaches_safe_mentions_and_skips_sensitive(
+        tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    notes = tmp_path / "notes.md"
+    notes.write_text("hello from notes", encoding="utf-8")
+    (tmp_path / ".env").write_text("SECRET=1", encoding="utf-8")
+    (tmp_path / ".ovat").mkdir()
+    (tmp_path / ".ovat" / "secret.json").write_text('{"token":"tok"}', encoding="utf-8")
+    (tmp_path / "big.txt").write_bytes(b"a" * (128 * 1024 + 1))
+    (tmp_path / "blob.bin").write_bytes(b"\x00\x01\x02")
+    outside = tmp_path.parent / "outside.txt"
+    outside.write_text("do not read", encoding="utf-8")
+
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            prepared = await session.resources.workspace.prepare_prompt(
+                "check @notes.md, @.env, @.ovat/secret.json, @../outside.txt, "
+                "@big.txt, @blob.bin, and ask @researcher"
+            )
+            assert prepared.display_text.startswith("check @notes.md")
+            assert '<context ref="notes.md">\nhello from notes\n</context>' in prepared.prompt_text
+            assert "SECRET=1" not in prepared.prompt_text
+            assert "tok" not in prepared.prompt_text
+            assert "do not read" not in prepared.prompt_text
+            assert prepared.mentions.count == 1
+            assert prepared.mentions.context_types == {"file": 1}
+            assert prepared.mentions.file_extensions == {".md": 1}
+    run(go())
+
+
+def test_workspace_trust_persists_decisions_and_reports_untrusted_config(
+        tmp_path, monkeypatch):
+    from ovat.agentic import trust
+
+    proj = tmp_path / "repo"
+    sub = proj / "sub"
+    sub.mkdir(parents=True)
+    (proj / ".git").mkdir()
+    (sub / ".ovat").mkdir()
+    (sub / "workflow.yml").write_text("model:\n  name: m\n", encoding="utf-8")
+    monkeypatch.chdir(sub)
+
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            r = session.resources.workspace
+            st = await r.trust_status()
+            assert st.status == "untrusted"
+            assert set(st.details.detected_files) == {".ovat", "workflow.yml"}
+            assert "trust_repo" in st.details.available_decisions
+            untrusted = await r.untrusted_config_dirs()
+            assert untrusted.dirs == [str(sub.resolve())]
+            assert Path(untrusted.settings_path) == trust.trust_path()
+
+            trusted_repo = await r.decide_trust("trust_repo")
+            assert trusted_repo.status == "trusted"
+            assert (await r.untrusted_config_dirs()).dirs == []
+
+            declined = await r.decide_trust("decline")
+            assert declined.status == "untrusted"
+            assert (await r.untrusted_config_dirs()).dirs == [str(sub.resolve())]
+    run(go())
+
+
+def test_diagnostics_logs_read_combines_ovat_and_ovms_logs(tmp_path, monkeypatch):
+    import logging
+
+    monkeypatch.chdir(tmp_path)
+    log_dir = tmp_path / ".ovat"
+    log_dir.mkdir()
+    (log_dir / "ovms.log").write_text(
+        "[2026-01-01 00:00:01] [info] ovms ready\n"
+        "[2026-01-01 00:00:02] [warn] kv pressure high\n",
+        encoding="utf-8",
+    )
+
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            logging.getLogger("ovat.test").warning("handler captured warning")
+            page1 = await session.resources.runtime.read_logs(limit=2, offset=0)
+            assert len(page1.entries) == 2
+            assert page1.has_more is True
+            assert page1.cursor == 2
+            assert page1.entries[0].message == "handler captured warning"
+            assert page1.entries[0].level == "WARNING"
+            assert page1.entries[1].message == "kv pressure high"
+            assert page1.entries[1].level == "WARNING"
+
+            page2 = await session.resources.runtime.read_logs(
+                limit=2, offset=page1.cursor or 0)
+            assert len(page2.entries) == 1
+            assert page2.has_more is False
+            assert page2.cursor is None
+            assert page2.entries[0].message == "ovms ready"
+    run(go())
+
+
+def test_loops_lifecycle_validation_and_firing(monkeypatch):
+    from ovat.tui.server import turns
+
+    monkeypatch.setattr(turns, "MIN_LOOP_SECONDS", 1)
+
+    async def go():
+        async with served() as (session, handle, fake):
+            await session.resources.runtime.wait_until_ready()
+            loops = session.resources.loops
+            assert await loops.list() == []
+
+            for bad_interval, prompt in [("0s", "hi"), ("abc", "hi"), ("5s", "  ")]:
+                with pytest.raises(AppServerResponseError) as err:
+                    await loops.create(bad_interval, prompt)
+                assert err.value.error.code is ProtocolErrorCode.INVALID_PARAMS
+
+            l1 = await loops.create("10s", "check logs")
+            l2 = await loops.create("1s", "ping now")
+            assert l1.interval_seconds == 10
+            assert l2.interval_seconds == 1
+            listed = await loops.list()
+            assert {item.id for item in listed} == {l1.id, l2.id}
+
+            deleted = await loops.delete(l1.id)
+            assert deleted.id == l1.id
+            assert [item.id for item in await loops.list()] == [l2.id]
+
+            await poll(lambda: "ping now" in fake.asked)
+            cleared = await loops.clear()
+            assert cleared == 1
+            assert await loops.list() == []
+    run(go())
+
+
+def test_image_only_turn_pasted_file_and_queued_image(tmp_path, monkeypatch):
+    import tempfile
+    from ovat.tui.vibe.app_server.models import FileImageSource
+
+    monkeypatch.chdir(tmp_path)
+    pasted_root = Path(tempfile.gettempdir()) / "ovat-pasted-images"
+    pasted_root.mkdir(parents=True, exist_ok=True)
+    pasted_img = pasted_root / f"ovat-test-{os.getpid()}.png"
+    pasted_img.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    try:
+        async def go():
+            async with served() as (session, handle, fake):
+                await session.resources.runtime.wait_until_ready()
+                inline = ImageAttachment(source=InlineImageSource(data="eA=="),
+                                         alias="clip.png", mime_type="image/png")
+                async with aclosing(session.act("", images=[inline])) as gen:
+                    async for _ in gen:
+                        pass
+                assert fake.asked[-1].startswith("[Attached image: .ovat/pasted_images/")
+
+                prepared = await session.resources.workspace.prepare_prompt(
+                    f"inspect @{pasted_img}")
+                assert len(prepared.images) == 1
+                async with aclosing(session.act(
+                    prepared.prompt_text, images=prepared.images
+                )) as gen:
+                    async for _ in gen:
+                        pass
+                assert "[Attached image: .ovat/pasted_images/pasted-" in fake.asked[-1]
+
+                await session.enqueue(
+                    "", images=[ImageAttachment(
+                        source=FileImageSource(path=str(pasted_img)),
+                        alias="q.png", mime_type="image/png")])
+                await events_until(session, is_completed)
+                assert "[Attached image: .ovat/pasted_images/pasted-" in fake.asked[-1]
+        run(go())
+    finally:
+        pasted_img.unlink(missing_ok=True)

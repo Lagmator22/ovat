@@ -1,16 +1,9 @@
 # ovat/agent/factory.py
-"""Layer 2: the component factory, config in, ready-to-run agent out.
+"""Component factory wiring a validated ``WorkflowConfig`` into an agent.
 
-Design note: this is where the whole architecture pays off. The factory reads
-a validated WorkflowConfig and builds the real objects: the LLM provider, the
-tools, the optional RAG retriever, and the agent itself, all wired together.
-The user never constructs anything by hand; they write YAML, the factory does
-the rest.
-
-This is also where the ABC bet from base.py cashes in. The config names a
-provider as a STRING (genai vs ovms, sqlite-vec vs a future backend) and the
-factory maps that string to the matching concrete class. Swapping a backend is
-a one-line YAML edit, not a code change.
+Instantiates providers (LLM, embeddings, RAG retriever), tools, and the
+selected agent engine from string configuration keys so backends can be
+swapped cleanly via YAML without code changes.
 """
 import copy
 import logging
@@ -42,9 +35,8 @@ from ovat.tools import transcribe as transcribe_tool
 log = logging.getLogger(__name__)
 
 
-# The schema (the menu the model reads) for each built-in tool. I keep the
-# function-building separate, below, because search_docs needs the retriever
-# bound in while the others do not.
+# Built-in tool JSON schemas shown to the model; callables are bound separately
+# because search_docs closes over the runtime retriever.
 BUILTIN_TOOL_SCHEMAS = {
     "search_docs": search_docs_tool.SCHEMA,
     "transcribe": transcribe_tool.SCHEMA,
@@ -100,17 +92,11 @@ def compose_system_prompt(config: WorkflowConfig, root=None) -> str | None:
 
 
 def build_llm(config: WorkflowConfig) -> LLMProvider:
-    """I build the LLM provider from the model section of the config.
+    """Build the configured ``LLMProvider`` from ``config.model``.
 
-    The return type is the ABC, not a concrete class, and that matters more
-    than it looks. This used to be annotated `-> OVMSLLMProvider` and hardcode
-    that one plug, which meant GenAILLMProvider honoured the contract and was
-    unreachable from build_agent. A factory whose signature names a concrete
-    class has stopped using its own abstraction; the annotation is the tell.
-
-    Design note: constructing either provider does NOT connect or load, it
-    only sets up the client. So this is safe to call without OVMS running,
-    which is why the factory tests pass on the Mac.
+    Returns the abstract ``LLMProvider`` base rather than a concrete class so
+    all configured providers remain interchangeable. Neither provider loads
+    weights or connects on construction, allowing headless validation.
     """
     m = config.model
     if m.provider == "genai":
@@ -140,11 +126,10 @@ def build_llm(config: WorkflowConfig) -> LLMProvider:
 
 
 def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:
-    """Pick and build the embedder named in config.rag.embeddings.provider.
+    """Instantiate the configured ``EmbeddingsProvider`` lazily.
 
-    This is the ABC swap in action: the string decides the class. I import the
-    concrete provider lazily so that merely importing the factory (or running a
-    test that never touches RAG) does not drag in openvino_genai.
+    Lazy imports avoid pulling ``openvino_genai`` into processes that only
+    build non-RAG workflows.
     """
     if config.rag is None:
         # A real exception with a real message, not `assert`. An AssertionError
@@ -162,12 +147,8 @@ def build_embedder(config: WorkflowConfig) -> EmbeddingsProvider:
     emb = config.rag.embeddings
     if emb.provider == "genai":
         from ovat.providers.embeddings_genai import GenAIEmbeddingsProvider
-        # Check for the folder BEFORE handing the path to openvino_genai. A
-        # missing model there surfaces as a C++ assertion out of core.cpp
-        # ("Check 'util::directory_exists...'"), which the CLI then rendered as
-        # a traceback -- while `ovat doctor` was already reporting the same
-        # thing as a polite warn row. Errors are for users: same fact, same
-        # wording, one sentence.
+        # Validate the directory before openvino_genai fails with a low-level
+        # runtime assertion so the user receives actionable setup guidance.
         if not os.path.isdir(emb.model):
             raise RuntimeError(
                 f"embeddings model not found at {emb.model!r}. Export it once "
@@ -388,23 +369,30 @@ def close_agent(agent) -> None:
             close_llm()
         except Exception:
             pass
+    retriever = getattr(agent, "retriever", None)
+    close_retriever = getattr(retriever, "close", None)
+    if callable(close_retriever):
+        try:
+            close_retriever()
+        except Exception:
+            pass
+    close_agent_loop = getattr(agent, "close", None)
+    if callable(close_agent_loop):
+        try:
+            close_agent_loop()
+        except Exception:
+            pass
 
 
 def build_tools(config: WorkflowConfig,
                 retriever: RetrieverProvider | None = None,
                 servers: list | None = None,
                 events: EventBus | None = None) -> dict:
-    """I turn the list of tool configs into the dict my loop expects.
+    """Convert ``config.tools`` into ``{name: {schema, function, kind, permission}}``.
 
-    Two tool types:
-    - builtin: my own tools, called in-process (the fast path).
-    - mcp_stdio: launch `command` as an MCP server subprocess and import
-      EVERY tool it advertises. This is what makes workflow.yml an open
-      socket: any third-party MCP server plugs in with two YAML lines.
-    The loop consumes the same {schema, function} dict either way; it never
-    learns which side of the wire a tool lives on. Each entry also records
-    its `kind` (the config type it came from), which the engines ignore and
-    the A2A server reads to decide what a remote caller may trigger.
+    Supports built-in in-process tools, MCP servers (stdio/http/sse), and A2A
+    peers under one normalized dict interface, recording ``kind`` per entry
+    for remote A2A exposure filtering.
     """
     # Each builder takes the tool's OWN config, so `model:` and `device:` in
     # workflow.yml reach the tool that declared them. search_docs ignores it;
@@ -531,21 +519,12 @@ AGENT_TYPES = ("native", "react", "llamaindex", "openai-agents")
 
 def build_agent(config: WorkflowConfig, skip_rag: bool = False,
                 select_tools=None, events: EventBus | None = None):
-    """I assemble the full agent from a config: the one call the CLI makes.
+    """Assemble and return a configured agent ready for ``.run()``.
 
-    Dispatch on agent.type so the same YAML can pick my native loop or the
-    LangChain front-end. An unknown type fails loudly here instead of silently
-    falling back to the wrong engine.
-
-    skip_rag is for `ovat run --dry-run`: building the real embedder loads a
-    model off disk, which is a heavy backend in the same category as the OVMS
-    server. Dry-run proves the wiring on any machine, so it skips that load and
-    search_docs stays in stub mode for the preview.
-
-    select_tools, when given, takes the built tools dict and returns the
-    subset this agent may use. `ovat a2a serve` passes one, so a tool that
-    is not exposed is not merely left off the Agent Card: the model is
-    never shown it at all, and cannot be talked into calling it.
+    Dispatches on ``config.agent.type``. Set ``skip_rag=True`` for dry runs to
+    keep ``search_docs`` in stub mode without loading local embedding weights.
+    If ``select_tools`` is provided, only the returned tool subset is exposed
+    to the model (used by ``ovat a2a serve``).
     """
     # Build RAG first so the in-process search_docs has its retriever.
     #
@@ -574,62 +553,83 @@ def build_agent(config: WorkflowConfig, skip_rag: bool = False,
         config = config.model_copy(update={
             "agent": config.agent.model_copy(update={"system_prompt": prompt})})
     retriever = None if skip_rag else build_rag(config)
-    if retriever is not None:
-        search_docs_tool.configure(retriever)
-
-    llm = build_llm(config)
-    # Collected so close_agent() can shut the subprocesses down. Without an
-    # owner they survive until the interpreter exits.
+    llm = None
+    # Tracked so close_agent() can terminate spawned subprocesses cleanly.
     mcp_servers: list = []
     # One bus per agent: the TUI and the A2A server subscribe to it, and its
     # `stop` flag is how either of them cancels a run.
     if events is None:
         events = EventBus()
-    tools = build_tools(config, retriever=retriever, servers=mcp_servers,
-                        events=events)
-    if select_tools is not None:
-        tools = select_tools(tools)
-    tools = observe_tools(tools, events)
 
-    subagent_runner = tools.get("delegate", {}).get("runner")
-    agent_type = config.agent.type
-    def _own(agent):
-        """Hand the agent its subprocesses and its event bus."""
-        agent.mcp_servers = mcp_servers
-        agent.events = events
-        if not hasattr(agent, "llm"):
-            agent.llm = llm
-        if subagent_runner is not None:
-            agent.subagent_runner = subagent_runner
-        return agent
+    def _cleanup_partial() -> None:
+        for server in mcp_servers:
+            try:
+                server.close()
+            except Exception:
+                pass
+        if llm is not None and callable(getattr(llm, "close", None)):
+            try:
+                llm.close()
+            except Exception:
+                pass
+        if retriever is not None and callable(getattr(retriever, "close", None)):
+            try:
+                retriever.close()
+            except Exception:
+                pass
 
-    if agent_type == "native":
-        return _own(AgentLoop(
-            llm=llm,
-            tools=tools,
-            system_prompt=config.agent.system_prompt,
-            max_iterations=config.agent.max_iterations,
-            engine_name=agent_type,
-            stop=events.stop,
-            events=events,
-        ))
-    # Each framework is imported INSIDE its branch so the native path never
-    # pays the import cost of a framework it does not use, and so a machine
-    # with only one of them installed still runs the others' configs' errors
-    # as readable text rather than an ImportError at module load.
-    if agent_type == "react":
-        from ovat.agent.langchain_agent import build_react_agent
-        return _own(build_react_agent(config, tools))
+    try:
+        agent_type = config.agent.type
+        llm = build_llm(config) if agent_type == "native" else None
+        tools = build_tools(config, retriever=retriever, servers=mcp_servers,
+                            events=events)
+        if select_tools is not None:
+            tools = select_tools(tools)
+        tools = observe_tools(tools, events)
 
-    if agent_type == "llamaindex":
-        from ovat.agent.llamaindex_agent import build_llamaindex_agent
-        return _own(build_llamaindex_agent(config, tools))
+        subagent_runner = tools.get("delegate", {}).get("runner")
 
-    if agent_type == "openai-agents":
-        from ovat.agent.openai_agents_agent import build_openai_agents_agent
-        return _own(build_openai_agents_agent(config, tools))
+        def _own(agent):
+            """Hand the agent its subprocesses, retriever and its event bus."""
+            agent.mcp_servers = mcp_servers
+            agent.events = events
+            agent.retriever = retriever
+            if llm is not None and not hasattr(agent, "llm"):
+                agent.llm = llm
+            if subagent_runner is not None:
+                agent.subagent_runner = subagent_runner
+            return agent
 
-    raise ValueError(
-        f"Unknown agent type '{agent_type}'. Supported: "
-        f"{', '.join(AGENT_TYPES)}."
-    )
+        if agent_type == "native":
+            return _own(AgentLoop(
+                llm=llm,
+                tools=tools,
+                system_prompt=config.agent.system_prompt,
+                max_iterations=config.agent.max_iterations,
+                engine_name=agent_type,
+                stop=events.stop,
+                events=events,
+            ))
+        # Each framework is imported INSIDE its branch so the native path never
+        # pays the import cost of a framework it does not use, and so a machine
+        # with only one of them installed still runs the others' configs' errors
+        # as readable text rather than an ImportError at module load.
+        if agent_type == "react":
+            from ovat.agent.langchain_agent import build_react_agent
+            return _own(build_react_agent(config, tools))
+
+        if agent_type == "llamaindex":
+            from ovat.agent.llamaindex_agent import build_llamaindex_agent
+            return _own(build_llamaindex_agent(config, tools))
+
+        if agent_type == "openai-agents":
+            from ovat.agent.openai_agents_agent import build_openai_agents_agent
+            return _own(build_openai_agents_agent(config, tools))
+
+        raise ValueError(
+            f"Unknown agent type '{agent_type}'. Supported: "
+            f"{', '.join(AGENT_TYPES)}."
+        )
+    except Exception:
+        _cleanup_partial()
+        raise

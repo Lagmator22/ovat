@@ -147,7 +147,7 @@ Extras, so you install only what you need:
 | --- | --- |
 | *(none)* | the native engine, all built-in tools, MCP, RAG, telemetry |
 | `langchain`, `llamaindex`, `openai-agents` | the matching `agent.type` |
-| `tui` | the agent TUI (`ovat`, `ovat tui` or `ovat agent`), the older launcher (`OVAT_LAUNCHER=classic ovat`) and local voice dictation. On Linux, voice needs the system library `libportaudio2` |
+| `tui` | the agent TUI (`ovat`, `ovat tui` or `ovat agent`) and local voice dictation. On Linux, voice needs the system library `libportaudio2` |
 | `a2a` | the Agent2Agent server and client (`ovat a2a ...`, `type: a2a`) |
 | `convert` | `optimum-cli`, to convert Hugging Face models to OpenVINO format |
 | `all` | everything above except `convert` |
@@ -322,7 +322,7 @@ stops, and Ctrl-C stops it early. `--max-tokens N` sets a cap.
 | `ovat bench <config> -i "..."` | One question through several engines, side by side. `--repeat N` |
 | `ovat telemetry` | Live CPU, memory and Intel hardware numbers. `--once` for one snapshot |
 | `ovat tui` | The agent TUI, same as `ovat agent` and as `ovat` with no arguments |
-| `ovat agent [config]` | The agent TUI: a local coding and research agent with tools, approvals, subagents, saved sessions and voice. `--continue`, `--resume <id>` |
+| `ovat agent [config]` | The agent TUI: a local coding and research agent with tools, approvals, subagents, saved sessions and voice. `--continue`, `--resume <id>`, `--trust` |
 | `ovat a2a serve\|card\|call\|token` | Offer a workflow to other agents over A2A, or ask one |
 
 `ovat <command> --help` lists every option.
@@ -471,23 +471,6 @@ can ask for approval on the machine that serves it. Voice dictation is
 local: the audio never leaves the machine. [`examples/agent/`](examples/agent/)
 and [`examples/coding/`](examples/coding/) have the commands.
 
-### The older launcher
-
-Before `ovat agent` there was a first terminal app, the launcher. It is still
-there for now: run `OVAT_LAUNCHER=classic ovat`. It is to be removed in a later
-release. Answers stream
-in, reasoning folds away, conversations are saved to disk, and `/engine`
-switches between the local model and OVMS-with-tools in the middle of a
-conversation:
-
-<div align="center">
-<img src="docs/assets/screens/tui-chat-tools.png" width="800px" alt="The OVAT terminal UI chat. The local model cannot start because the workflow has no rag: section, so the chat switches to OVMS. One question then uses three tools: transcribe, describe_image and search_docs.">
-</div>
-
-One question, three tools. The workflow had no `rag:` block, so the chat
-switched itself to OVMS, and `search_docs` answered with a `[stub]` result
-(that is what it does without an index).
-
 The TUI is three layers: the terminal client, OVAT's own app server, and
 `AgentSession`, which runs the engine. Every tool call passes one wrapper, and
 its events travel back up to the screen:
@@ -542,6 +525,12 @@ You choose once, for the session, for this project, or deny:
 <img src="docs/assets/screens/agent-tui/agent-approval-local-api.png" width="800px" alt="The approval panel for the local_api subagent: it warns that the task is sent to http://localhost:8000/v3 and offers Allow once, Allow for the remainder of the session, Always allow this tool in this project, and Deny.">
 </div>
 
+- `ovat` loads the folder's `workflow.yml` only once you trust the folder,
+  because loading a workflow starts the tools it lists, and a cloned
+  repository should not get to do that. `ovat init` trusts the folder it
+  writes into. Elsewhere, run `/trust` in the TUI or `ovat agent --trust`, or
+  name the file: `ovat agent workflow.yml`. Trust is kept in
+  `~/.ovat/trusted.json`, never in the project.
 - Sessions are saved. `ovat agent --continue` or `--resume <id>` (or
   `/resume`) brings one back, `Esc Esc` rewinds, `/branch` forks, `/compact`
   summarizes.

@@ -1,20 +1,12 @@
 # ovat/agentic/workflow_edit.py
-"""Editing workflow.yml from the settings screen, without breaking it.
+"""Safe schema-validated edits to ``workflow.yml`` preserving user comments.
 
-Note to myself: the rules of this file are the ones the owner set.
-
-- Only fields OVAT really has. SETTINGS below is the whole list: the model's
-  sampling and device, the engine, a tool's or subagent's permission. Anything
-  else is refused by the caller ("not used by OVAT").
-- The user's comments survive. The file is read and written back with
-  ruamel.yaml in round-trip mode (the plain yaml module drops every comment).
-  ruamel lives in the `tui` extra only; without it a write says so.
-- The WHOLE result is validated with WorkflowConfig BEFORE anything is written.
-  A bad value raises EditError with pydantic's own message and the file is
-  not touched.
-- The write is atomic (ovat/agentic/atomic.py), and the file keeps its mode.
-
-Nothing here imports textual. Reading (`read_settings`) needs only PyYAML.
+- Restricts editable keys to ``SETTINGS`` (sampling, device, engine, and tool/
+  subagent permissions).
+- Uses ``ruamel.yaml`` round-trip parsing (in the ``[tui]`` extra) to preserve
+  formatting and comments; writes fail gracefully if unavailable.
+- Validates the modified YAML through ``WorkflowConfig`` before writing
+  atomically with the original file mode preserved.
 """
 from __future__ import annotations
 

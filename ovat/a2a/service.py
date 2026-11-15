@@ -1,18 +1,14 @@
 # ovat/a2a/service.py
-"""Running remote tasks against built OVAT agents. No SDK in here.
+"""Remote A2A task execution against built OVAT agents (SDK-free).
 
-Note to myself: this is the part of the server that is OVAT's own logic:
-admission, one agent per conversation, one model at a time, cancel,
-timeouts, sources, the audit log. The SDK only moves bytes. So this file
-talks to the outside through `Reporter`, an abstract interface (in C++, a
-pure virtual class) that sdk/server.py implements on top of the SDK's
-TaskUpdater, and that tests implement with a list.
+Handles admission, per-conversation agent pooling, serialized model execution,
+cancellation, timeouts, source extraction, and audit logging. Communicates with
+transport adapters through the ``Reporter`` protocol (implemented by
+``sdk/server.py`` via ``TaskUpdater`` and by fake reporters in tests).
 
-Threads, because the engines are synchronous: each task's agent.run()
-happens on a worker thread (asyncio.to_thread), while the event loop keeps
-serving other callers. A thread from to_thread has no running event loop,
-so the LlamaIndex and Agents SDK engines, which start their own, work there
-unchanged.
+Each synchronous ``agent.run()`` call runs inside ``asyncio.to_thread`` so the
+server event loop stays responsive while worker threads without an active loop
+can safely drive framework engines.
 """
 import asyncio
 import logging

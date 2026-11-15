@@ -142,11 +142,11 @@ def describe_image(image_path: str,
                    prompt: str = "Describe this image in one paragraph.") -> str:
     """Look at an image file and describe what it shows.
 
-    Use me when the user gives a path to a picture and wants to know what is
-    in it. I take the file path (and optionally a specific question) and
-    return the description as text.
+    Use when the user gives a path to a picture and wants to know what is in it.
+    Takes an image file path (and optionally a question) and returns text.
     """
-    return describe_image_impl(image_path, prompt)
+    from ovat.tools.project import project_root
+    return describe_image_impl(image_path, prompt, root=project_root())
 
 
 if __name__ == "__main__":

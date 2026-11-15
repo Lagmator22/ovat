@@ -1,28 +1,10 @@
 # ovat/telemetry/base.py
-"""Layer 7 telemetry contracts: where numbers come FROM, and where they GO.
+"""Telemetry contracts separating metric sources from output sinks.
 
-Telemetry has two independent axes, exactly like the LLM providers did, and
-for exactly the same reason: getting it wrong once already cost this project a
-real bug (four engines each holding their own copy of a setting).
-
-  SOURCE  where a measurement comes from
-          the agent's own run trace, this process's memory, the NPU counter,
-          OVMS's log, Intel's hardware profiler
-
-  SINK    where it goes
-          any sink: a JSON file, the live TUI page. An OTLP exporter would be
-          another sink; none exists yet. Per-request OpenTelemetry spans come
-          only from the optional plano gateway, outside OVAT.
-
-Two sockets, not one, because the two vary independently: any source can feed
-any sink. Wiring N sources to M sinks directly is N*M pieces of code that must
-agree; through a contract it is N+M.
-
-WHERE THIS PATTERN IS *NOT* WORTH IT, since that matters as much: an
-abstraction with a single implementation is indirection you pay for and get
-nothing back from. Both ABCs here already have three real implementations
-between them, which is what earns them. The A2A server, by contrast, has one
-protocol and should stay a plain class until a second appears.
+``TelemetrySource`` defines where measurements originate (agent traces, process
+RSS, hardware counters, OVMS logs), and ``TelemetrySink`` defines where
+snapshots are written (JSON logs, live terminal buffers, fan-out combinators),
+so N sources and M sinks compose independently via N+M implementations.
 """
 from abc import ABC, abstractmethod
 

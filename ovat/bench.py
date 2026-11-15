@@ -1,25 +1,12 @@
 # ovat/bench.py
-"""Run one question through several engines and measure what each one costs.
+"""Engine benchmarking harness comparing multiple agent engines against one config.
 
-This is the proposal's AI PC profiling deliverable. The claim OVAT makes is
-"one YAML, any framework, the same OVMS backend", and the only way to show
-that is worth anything is to run the SAME question through every engine
-against the SAME server and put the numbers side by side.
-
-Kept out of cli/main.py because it is real logic with real edge cases and
-deserves its own tests, not a place inside a typer command body.
-
-Two measurement honesty notes, both of which shape the output:
-
-  * Token counts come from OVMS's usage field, which every engine records
-    in agent.last_trace (the framework adapters read it back from their
-    frameworks; see ovat/agent/usage.py). Where a server sent none, tokens
-    stay explicitly unknown, never zero. A zero would read as "this engine
-    used no tokens", which is false.
-  * Peak RSS is SAMPLED on a background thread, not read once at the end. A
-    single reading after the run misses the peak entirely, because Python has
-    usually already freed the big allocations by then, and the whole point of
-    the number is the proposal's <8 GB memory criterion.
+Measures per-engine latency, build time, sampled peak RSS, and reported token
+counts across repeated runs:
+- Reported tokens stay ``None`` when the server omits usage metadata instead of
+  defaulting to ``0``.
+- Peak RSS is sampled on a background thread during execution because end-of-run
+  readings miss transient allocation spikes.
 """
 import threading
 import time
@@ -149,9 +136,8 @@ def benchmark_engine(config, engine: str, question: str,
                    "the request, so no tool ran. Usually a tool_parser that "
                    "does not match the model.")
     elif looks_like_undecoded_tool_call(row.get("answer") or ""):
-        # The framework engines' version of the flag above: they keep no
-        # trace, so markup left in the answer is the only evidence that the
-        # tool never ran. Measured on the AI PC with openai-agents.
+        # Framework engines omit per-turn undecoded flags, so residual tool
+        # markup in the final text indicates the tool call failed to decode.
         failure = ("the model asked for a tool but the call came back as "
                    "text and was never decoded, so no tool ran.")
     elif getattr(agent, "last_failed", False):
@@ -180,19 +166,11 @@ WORKER_TIMEOUT_S = 600
 
 def _run_isolated(config_path: str, engine: str, question: str,
                   timeout: float = WORKER_TIMEOUT_S) -> dict:
-    """Measure one engine in a FRESH PROCESS, and return its row.
+    """Measure one engine in a fresh worker subprocess and return its result row.
 
-    This is what makes Peak MB mean anything. Every engine used to run in one
-    process, and RSS is a whole-process number, so each engine inherited
-    everything its predecessors had allocated. Measured on the AI PC against
-    live OVMS: native read 465.8 MB running first and 1155.6 MB running last,
-    against an isolated figure of 466 MB. The lightest engine was reported as
-    the heaviest, purely by list position, and reversing the order reversed
-    the conclusion. A benchmark that changes its answer when you reorder the
-    inputs is not measuring the inputs.
-
-    The child times its OWN build and answer, so interpreter startup and
-    import cost land in neither: they are the harness, not the engine.
+    Running each engine in an isolated process prevents prior engines' retained
+    allocations from skewing process-level peak RSS measurements, while timing
+    excludes interpreter and harness startup outside the worker.
     """
     import json
     import subprocess
@@ -211,8 +189,7 @@ def _run_isolated(config_path: str, engine: str, question: str,
                 "peak_rss_mb": None, "prompt_tokens": None,
                 "completion_tokens": None, "tool_calls": None}
 
-    # The child prints exactly one JSON object on stdout. Anything else means
-    # it died before it could, and its stderr is the only clue we have.
+    # Worker prints a single JSON result on stdout; non-JSON failure leaves stderr as diagnostics.
     for line in reversed(finished.stdout.splitlines()):
         line = line.strip()
         if line.startswith("{"):
@@ -273,17 +250,11 @@ def _aggregate(engine: str, attempts: list) -> dict:
 
 def benchmark(config, question: str, engines, build_agent=None,
               config_path: str | None = None, repeat: int = 1) -> dict:
-    """Run the question through each engine and return a report dict.
+    """Run ``question`` across ``engines`` and aggregate per-engine metrics.
 
-    With `config_path`, each engine is measured in its own process, which is
-    the only way Peak MB is comparable between rows. Without it the engines
-    share this process, which tests want (they inject a fake build_agent) and
-    which is why the CLI always passes the path.
-
-    repeat > 1 runs every engine that many times, each in a fresh process
-    when isolated, and reports a success RATE. Measured on the AI PC, the
-    same prompt at temperature 0.0 called its tool 1 run in 5 on one engine
-    and 5 in 5 on another; a single run cannot tell those apart.
+    When ``config_path`` is given without an injected ``build_agent``, each
+    run executes in an isolated subprocess so peak RSS measurements remain
+    comparable. ``repeat > 1`` measures reliability across independent attempts.
     """
     if repeat < 1:
         raise ValueError("repeat must be at least 1")

@@ -1,27 +1,25 @@
 # ovat/a2a/exposure.py
-"""Which of a workflow's tools a REMOTE caller may trigger.
+"""Tool exposure policy for remote A2A callers.
 
-Note to myself: a local user chose their own tools. A remote caller did
-not, and can phrase a request to make the model call anything it is shown.
-So a served agent is BUILT with the exposed tools only (build_agent's
-select_tools); the rest are not just missing from the card, the model never
-sees them.
+Unlike local workflows where a user selects tools directly, remote callers can
+craft prompts to invoke any exposed tool. Served agents are therefore built
+with only the exposed subset (via ``build_agent(..., select_tools=...)``) so
+hidden tools are absent from both the Agent Card and the model's tool menu.
 
-Default rules, safest first:
-- builtin tools that take a FILE PATH (transcribe, describe_image) are
-  hidden: "transcribe C:\\Users\\me\\board-call.wav" would read any file.
-- mcp_stdio tools are hidden: OVAT cannot know what a third-party server's
-  tools touch.
-- a2a tools and `delegate` (subagents) are hidden: a remote caller could
-  otherwise make this machine send work on to a third agent or a cloud API.
-- the coding tools (read_file, write_file, edit, grep, shell), the web
-  tools (web_fetch, web_search) and ask_user are NEVER offered, not even
-  through `expose_tools`: they read and change this machine's files, run
-  commands, send requests out or interrupt its user, and no owner line
-  should hand that to a remote caller.
-- everything else (today: search_docs) is exposed.
-`expose_tools` overrides all of this with an explicit list, which is a
-line the owner wrote on purpose.
+Default exposure rules (restrictive by default):
+- File-path builtins (``transcribe``, ``describe_image``) are hidden so remote
+  requests cannot reference arbitrary local files.
+- ``mcp_stdio`` tools are hidden because third-party servers execute arbitrary
+  local behavior.
+- ``a2a`` tools and ``delegate`` (subagents) are hidden to prevent unapproved
+  relaying to downstream agents or cloud APIs.
+- Coding tools (``read_file``, ``write_file``, ``edit``, ``grep``, ``shell``),
+  web tools (``web_fetch``, ``web_search``), and ``ask_user`` are never exposed
+  remotely, even when listed in ``expose_tools``.
+- Safe local tools (such as ``search_docs``) are exposed unless restricted.
+
+Setting ``expose_tools`` explicitly overrides the default deny rules (except
+for permanently blocked local/interactive tools).
 """
 from dataclasses import dataclass, field
 
