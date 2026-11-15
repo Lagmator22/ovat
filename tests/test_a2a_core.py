@@ -422,7 +422,8 @@ class AsksFirst(FakeAgent):
 def test_a_task_waiting_for_a_person_does_not_hold_the_model():
     """The worker held the one-model lock while it waited for the caller's
     approval, so every other caller waited too, up to task_timeout_s."""
-    svc, built = _service(AsksFirst, task_timeout_s=5)
+    svc, built = _service(AsksFirst, allow_remote_approvals=True,
+                          task_timeout_s=5)
 
     async def scenario():
         waiting = ApprovalRecorder()
@@ -442,7 +443,8 @@ def test_the_same_conversation_waits_while_its_run_is_paused():
     """Giving the model gate away during an approval must not let a second
     message in the SAME conversation run on the same agent meanwhile: one
     agent, one memory, one run at a time."""
-    svc, built = _service(AsksFirst, task_timeout_s=5)
+    svc, built = _service(AsksFirst, allow_remote_approvals=True,
+                          task_timeout_s=5)
 
     async def scenario():
         paused = ApprovalRecorder()
@@ -467,7 +469,8 @@ def test_an_approval_nobody_answers_ends_the_task_and_is_forgotten():
     """With no answer the tool is refused and the run goes on, but nothing
     awaited it any more: the task stayed in the running table for good and
     status() counted it as active forever."""
-    svc, built = _service(AsksFirst, task_timeout_s=0.3)
+    svc, built = _service(AsksFirst, allow_remote_approvals=True,
+                          task_timeout_s=0.3)
 
     async def scenario():
         rec = ApprovalRecorder()
@@ -485,7 +488,8 @@ def test_an_approval_nobody_answers_ends_the_task_and_is_forgotten():
 
 
 def test_only_a_matching_proceed_allows_and_a_closed_request_is_refused():
-    svc, built = _service(AsksFirst, task_timeout_s=5)
+    svc, built = _service(AsksFirst, allow_remote_approvals=True,
+                          task_timeout_s=5)
 
     async def ask_and_answer(task_id, answer):
         first = ApprovalRecorder()
@@ -857,6 +861,18 @@ def test_pool_full_is_reported_as_rejected_not_internal_failure():
     assert "max_contexts" in second.calls[-1][1]
     assert svc.stats["rejected"] == 1
     assert svc.stats["failed"] == 0
+
+
+def test_remote_approvals_are_off_unless_the_server_opts_in():
+    """a caller that says it can approve must not approve `ask` tools on
+    this machine unless the operator turned that on."""
+    assert A2AServerConfig().allow_remote_approvals is False
+    svc, built = _service(AsksFirst)
+    rec = ApprovalRecorder()
+    asyncio.run(
+        svc.run(_task("deploy it", task_id="t1", approval_capable=True), rec)
+    )
+    assert "input_required" not in rec.kinds()
 
 
 def test_allow_remote_approvals_false_refuses_remote_approver():

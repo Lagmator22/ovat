@@ -1516,7 +1516,7 @@ installs and runs.
 | Serving | ✅ complete | `ovat setup` pinned to OVMS 2026.4.1 and version-aware, locator, stall budget, pidfile, identity check |
 | Devices | ✅ complete | device routing; a tool-calling agent run on the NPU, and its 2129-token cap measured |
 | Telemetry | ✅ complete | sources, sinks, JSON Lines, CLI and TUI pages, run trace. NPU busy % reads on Windows (PDH) and Linux (sysfs). No OTLP exporter |
-| Agent2Agent (A2A) | ✅ complete | server, `type: a2a` tool, CLI and TUI use built, tested over a real socket and run on an AI PC. Open: a server opt-in for remote approvals |
+| Agent2Agent (A2A) | ✅ complete | server, `type: a2a` tool, CLI and TUI use built, tested over a real socket and run on an AI PC. Remote approvals are an opt-in (`a2a.server.allow_remote_approvals`, off by default) |
 | Agent TUI, subagents, permissions | ✅ built | `ovat agent`, `delegate`, allow/ask/deny; shown on an AI PC. Open: the full hands-on checklist, real workspace trust |
 
 **Planned or open:**
