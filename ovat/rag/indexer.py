@@ -1,36 +1,25 @@
 # ovat/rag/indexer.py
-"""Read documents off disk, slice them into chunks, hand them to a retriever.
+"""Read text documents from disk, split them into overlapping chunks, and store
+them in a ``RetrieverProvider``.
 
-Why chunk at all: an embedding model squeezes a whole input into one fixed-size
-vector. Feed it a 50-page file and the meaning blurs into mush. Feed it a
-paragraph and the vector actually captures that paragraph. So I cut each file
-into overlapping windows, embed those, and store them. At query time the search
-returns the handful of windows closest in meaning, not the whole file.
-
-The retriever argument is any RetrieverProvider. I never name a concrete class
-here, so the same indexer works whether the vectors land in sqlite-vec today or
-some other backend tomorrow.
+Documents are sliced into overlapping character windows so dense embeddings
+preserve local context across chunk boundaries without requiring a tokenizer.
+Depends only on the ``RetrieverProvider`` contract.
 """
 import os
 from pathlib import Path
 
 from ovat.providers.base import RetrieverProvider
 
-# The file types I treat as plain text. Keeping this small and explicit means I
-# never try to embed a PDF or an image as if it were UTF-8 text.
+# Plain-text extensions indexed; binary formats (PDFs, images) are skipped.
 TEXT_SUFFIXES = {".txt", ".md", ".markdown", ".rst"}
 
 
 def chunk_text(text: str, size: int = 512, overlap: int = 64) -> list[str]:
-    """Slice text into overlapping windows of `size` characters.
+    """Split text into overlapping character windows of ``size`` characters.
 
-    The overlap matters: if I cut on an exact boundary I can split a sentence
-    so neither half carries its full meaning. Sharing `overlap` characters with
-    the next window keeps ideas that straddle a cut findable from both sides.
-
-    I work in characters, not tokens, on purpose. It needs no tokenizer, it is
-    deterministic, and for a demo-scale corpus the difference is not worth a
-    heavier dependency.
+    Sharing ``overlap`` characters across consecutive windows preserves context
+    around sentence boundaries without requiring a tokenizer dependency.
     """
     if size <= 0:
         raise ValueError("chunk size must be positive")
@@ -54,11 +43,7 @@ def chunk_text(text: str, size: int = 512, overlap: int = 64) -> list[str]:
 
 
 def iter_text_files(folder: str):
-    """Yield every readable text file under `folder`, recursively.
-
-    I sort the paths so indexing the same folder twice processes files in the
-    same order. Reproducible runs are easier to reason about and to test.
-    """
+    """Yield every readable text file under ``folder`` in deterministic sorted order."""
     root = Path(folder)
     if not root.exists():
         raise FileNotFoundError(f"No such folder to index: {folder}")
@@ -70,24 +55,13 @@ def iter_text_files(folder: str):
 def index_folder(folder: str, retriever: RetrieverProvider,
                  size: int = 512, overlap: int = 64,
                  on_progress=None) -> dict:
-    """Index every text file under `folder` into `retriever`.
+    """Index every text file under ``folder`` into ``retriever``.
 
-    Returns a small summary dict so the CLI can print something honest like
-    "indexed 12 chunks from 3 files" instead of a silent success.
-
-    The source I store is the file path. That is what lets search_docs answer
-    "where did this come from", which is the citation half of RAG.
-
-    `on_progress(done, total, path)` is called once per file, after that file
-    has been embedded and stored. It exists because embedding is slow enough
-    to look like a hang: a few hundred files is minutes of an unmoving cursor,
-    and there was previously NO way to tell indexing from a crash. Reporting
-    after the work, not before, means the count never claims a file is done
-    while its vectors are still being computed.
-
-    Note the deliberate cost: the file list is materialised up front so a
-    total exists. A progress bar without a denominator is just a spinner, and
-    walking the tree twice is far cheaper than embedding anything.
+    Returns a summary dictionary of processed files and stored chunks, with each
+    chunk carrying its source file path for citations. ``on_progress(done,
+    total, path)`` fires once per file after its embeddings have been persisted;
+    the file list is materialised up front so callers can render accurate
+    progress denominators.
     """
     paths = list(iter_text_files(folder))
     total = len(paths)

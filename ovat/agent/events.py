@@ -1,31 +1,21 @@
 # ovat/agent/events.py
-"""Layer 3.5: what an agent is DOING, told to whoever wants to know.
+"""In-process agent event bus and uniform tool observation wrapper.
 
-Note to myself: `run(text) -> text` tells the caller what the agent ended
-with, never what it did on the way. A UI that wants a live "calling
-search_docs" card, and an A2A server that wants to stream progress to a
-remote caller, both need the in-between. This file is that channel.
+Provides real-time execution visibility (tool calls, status updates, sources)
+for front ends and A2A servers without changing engine implementations.
 
-Two pieces:
+Components:
+- ``EventBus``: Thread-safe observer list plus shared cancellation flag
+  (``stop``) and per-run ``context`` metadata (such as A2A hop counts).
+- ``observed()``: Wraps ``tools[name]["function"]`` uniformly across all four
+  engines (native, LangChain, LlamaIndex, OpenAI Agents SDK) to emit
+  ``tool_started`` / ``tool_ended`` events, check permissions, and respect ``stop``.
 
-- EventBus: one per built agent. Listeners subscribe; the agent's code
-  emits. It is the observer pattern, and in C++ terms the bus is a vector of
-  std::function callbacks plus a mutex. It also carries the cancel flag
-  (`stop`) and a small `context` dict for facts about the run in progress
-  (the A2A hop count), because every tool call already passes through here.
-
-- observed(): wraps ONE tool function. All four engines call the same
-  `tools[name]["function"]` (native loop, LangChain, LlamaIndex, Agents SDK),
-  so wrapping it once in factory.build_tools() gives every engine tool
-  events and a cancel check without touching any engine file.
-
-Rules that keep this safe:
-- stdlib only. The CLI, the TUI and the A2A server all import it; none of
-  them may pull a framework or textual in through here (isolation, rule 4).
-- A listener that raises never breaks the agent: events are best effort.
-- Listeners run on the agent's thread. A UI must hand the event to its own
-  thread (Textual: post_message) instead of drawing from here.
-- With no listener the agent behaves exactly as it did before this existed.
+Invariants:
+- Standard library only so CLI, TUI, and A2A code do not pull in optional deps.
+- Listener exceptions are suppressed so observers never break agent execution.
+- Listeners run on the agent worker thread; UI consumers must marshal updates
+  to their own event loop (for example via ``post_message`` in Textual).
 """
 import contextvars
 import functools

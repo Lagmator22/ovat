@@ -22,8 +22,7 @@ log = logging.getLogger(__name__)
 class AuditLog:
     def __init__(self, path: str | Path):
         self.path = Path(path)
-        # The log holds every question and answer: owner-only. A folder that
-        # already exists is the owner's choice and is not touched.
+        # Restrict newly created log directories to the current user; preserve existing modes.
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         # Creating it proves it is writable now. 0600 applies only to a NEW
         # file; one that already exists keeps its mode.

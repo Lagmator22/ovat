@@ -1,10 +1,5 @@
 # tests/test_factory.py
-"""Tests for the component factory.
-
-Note to myself: building the agent does NOT need a running OVMS, because
-OVMSLLMProvider only constructs a client. So I can fully test that the config
-turns into the right wired-up agent here on the Mac, no server, no GPU.
-"""
+"""Tests for agent component assembly without requiring a running OVMS server."""
 import pytest
 
 from ovat.agent.factory import build_agent, build_tools, build_llm
@@ -109,7 +104,7 @@ def test_build_llm_wires_the_request_timeout_into_the_client():
 def test_build_tools_wires_both_builtins():
     tools = build_tools(_cfg())
     assert set(tools) == {"search_docs", "transcribe"}
-    # each tool must carry the two keys my loop needs
+    # Each built tool entry must expose both schema and callable function.
     for spec in tools.values():
         assert "schema" in spec and "function" in spec
 
@@ -368,7 +363,7 @@ def test_a_missing_embeddings_model_is_a_sentence_not_a_cpp_assertion(tmp_path):
     assert "core.cpp" not in message          # not the C++ assertion
 
 
-# --- declarative tool config (Ravi's asks 3 and 4) --------------------------
+# --- declarative tool config -----------------------------------------------
 #
 # The model path used to come from OVAT_WHISPER_MODEL / OVAT_VLM_MODEL, set by
 # `export` before the run. That made workflow.yml an incomplete description of

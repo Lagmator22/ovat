@@ -1,29 +1,8 @@
 # ovat/config/workflow.py
-"""Layer 1: the workflow config, my whole project in one YAML file.
+"""Strict Pydantic schema and loader for OVAT ``workflow.yml`` files.
 
-Note: this is the heart of OVAT's promise, "one YAML + one command".
-A user writes a small workflow.yml describing which model, which tools, and
-how the agent should behave. This file turns that YAML into a VALIDATED Python
-object, so the rest of my code never reads raw dicts or worries about typos.
-
-I use pydantic for validation. A pydantic BaseModel is like a struct with a
-built-in contract: if the YAML is missing a field or has the wrong type,
-pydantic raises a clear error instead of letting a bad value sneak deep into
-my code and crash later somewhere confusing.
-
-The YAML I am parsing looks like this:
-
-    model:
-      name: Qwen3-8B-int4-ov
-      device: GPU
-      ovms_url: http://localhost:8000/v3
-      tool_parser: hermes3
-    tools:
-      - name: search_docs
-        type: builtin
-    agent:
-      type: native
-      max_iterations: 10
+Validates model configuration, tools, agent runtime selection, RAG settings,
+subagents, and A2A serving options into a typed ``WorkflowConfig`` instance.
 """
 import os
 import re
@@ -64,25 +43,20 @@ class ModelConfig(StrictModel):
     #           local path; this exists so the contract is honest.
     provider: str = "ovms"
     device: str = "CPU"                         # CPU, GPU, or NPU
-    ovms_url: str = "http://localhost:8000/v3"  # where my OVMS server listens
+    ovms_url: str = "http://localhost:8000/v3"  # OVMS OpenAI-compatible endpoint
     # Port for OVMS to bind to when running via `ovat serve`
     ovms_port: int = 8000
     # How OVMS decodes tool calls. None means "derive it from the model name"
     # (see _derive_tool_parser below); an explicit value always wins.
     tool_parser: str | None = None
-    # reasoning_parser is for thinking models like the Qwen3 30B variant. It
-    # stays None for normal models, which is why I default it to None.
+    # reasoning_parser enables structured reasoning separation for models that
+    # emit dedicated reasoning tags; leave None for standard chat/instruct models.
     reasoning_parser: str | None = None
-    # Turn a thinking model's reasoning on or off, through the chat template's
-    # own `enable_thinking` switch (what the Qwen3.5 card documents). None
-    # leaves the template's default. Sent to OVMS as chat_template_kwargs and
-    # to openvino_genai as ChatHistory extra context. Measured on the AI PC:
-    # with thinking on, Qwen3.5 spent the whole 1024-token /chat budget on
-    # reasoning and the answer never started.
+    # Turn a thinking model's reasoning on or off via the chat template's
+    # `enable_thinking` flag. None preserves the template default; sent to
+    # OVMS via chat_template_kwargs and to openvino_genai via ChatHistory context.
     enable_thinking: bool | None = None
-    # These two only matter for `ovat serve`, which starts OVMS for me. They
-    # tell OVMS where to find (or download) the model. Without them, serve points
-    # OVMS at a relative "models" folder with nothing in it, so it cannot start.
+    # Used by `ovat serve` to locate or pull the model repository on disk.
     source_model: str | None = None             # HF id, e.g. OpenVINO/Qwen3-8B-int4-ov
     model_repository_path: str = "models"       # folder on disk where models live
     # Cap on ONE HTTP request to OVMS. Without any cap the OpenAI SDK waits
@@ -348,10 +322,10 @@ class ModelConfig(StrictModel):
 class ToolConfig(StrictModel):
     """One tool the agent is allowed to use."""
 
-    name: str                       # must match a tool I know how to build
-    # "builtin" = one of my own tools (search_docs, transcribe), in-process.
-    # "mcp_stdio" = launch `command` as an MCP server subprocess and import
-    # every tool it advertises; ANY MCP server plugs in this way.
+    name: str                       # Must match a supported builtin or custom tool
+    # "builtin" runs an in-process OVAT tool (e.g. search_docs, transcribe).
+    # "mcp_stdio" launches `command` as an MCP server subprocess and imports
+    # every tool it advertises.
     type: str = "builtin"
     command: list[str] | None = None  # the mcp_stdio server launch command
     # Extra environment for an mcp_stdio server. The mcp SDK starts a server
@@ -459,16 +433,15 @@ class ToolConfig(StrictModel):
 class AgentConfig(StrictModel):
     """How the agent loop behaves."""
 
-    # Which engine runs the loop. "native" is my own loop.py; the rest hand
-    # the same job to a framework:
+    # Execution engine running the agent loop. "native" uses ovat.agent.loop;
+    # framework adapters delegate to optional extras:
     #   react          LangChain      (pip install 'ovat[langchain]')
     #   llamaindex     LlamaIndex     (pip install 'ovat[llamaindex]')
     #   openai-agents  OpenAI Agents  (pip install 'ovat[openai-agents]')
-    # Not a Literal on purpose: an unknown value must fail in the factory,
-    # where the message can name every supported engine and the extra that
-    # installs it, rather than as a pydantic type error at parse time.
+    # Kept as str instead of Literal so unknown engines produce an actionable
+    # error naming every supported engine and extra in factory.py.
     type: str = "native"
-    max_iterations: int = 10            # the safety cap from my loop
+    max_iterations: int = 10            # Safety cap on model-tool iterations
     system_prompt: str | None = None    # optional persona for the agent
     # Add the project folder's AGENTS.md (and OVAT.md) to the system prompt
     # when the agent is built. Off by default: an existing workflow must not
@@ -687,25 +660,15 @@ class WorkflowConfig(StrictModel):
     """The whole workflow: one model, some tools, one agent, optional RAG."""
 
     model: ModelConfig
-    # default_factory=list gives each config its own empty list. I never share
-    # one list between objects, which is a classic mutable-default bug in Python.
+    # Separate empty list per instance via default_factory.
     tools: list[ToolConfig] = Field(default_factory=list)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     # None means "no RAG configured" -> search_docs stays in stub mode.
     rag: RagConfig | None = None
 
-    # Extra folders to search for local OpenVINO model exports, searched
-    # BEFORE ./models and ~/models.
-    #
-    # Ravi's ask 5, and the same argument as the tool `model:` fields above:
-    # this was OVAT_MODELS, an env var, so a workflow that depended on models
-    # living somewhere unusual could not say so. `ovat chat` on a machine that
-    # keeps its exports on another drive needed a shell variable the config
-    # file never mentioned.
-    #
-    # A list, because a machine can reasonably have more than one: a fast
-    # local drive and a shared network folder. OVAT_MODELS still works and is
-    # appended after these, so nothing that works today stops working.
+    # Extra directories searched for local OpenVINO model exports before
+    # ./models, ~/models, and OVAT_MODELS, keeping workflows self-contained
+    # when models live on separate drives or shared storage.
     model_search_paths: list[str] = Field(default_factory=list)
 
     # Agent2Agent: how `ovat a2a serve` exposes this workflow. None: the
@@ -726,12 +689,10 @@ class WorkflowConfig(StrictModel):
 
 
 def load_workflow(path: str) -> WorkflowConfig:
-    """I read a YAML file from disk and validate it into a WorkflowConfig.
+    """Read a YAML file from disk and validate it into a WorkflowConfig.
 
-    How it works: yaml.safe_load turns the file into plain dicts and lists.
-    Then WorkflowConfig(**data) hands those to pydantic, which checks every
-    field and raises a readable error if something is wrong. Two steps: parse
-    the text, then validate the shape.
+    Parses text with ``yaml.safe_load`` and validates the resulting mapping via
+    Pydantic so schema errors surface immediately with clear field names.
     """
     with open(path, "r", encoding="utf-8") as f:
         # `or {}` because yaml.safe_load returns None for a file that is empty

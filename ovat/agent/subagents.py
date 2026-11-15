@@ -1,26 +1,15 @@
 # ovat/agent/subagents.py
-"""Running a delegated task on a subagent: local workflow, cloud API, A2A.
+"""Subagent delegation across local workflows, OpenAI-compatible APIs, and A2A peers.
 
-Note to myself: a subagent is another agent with its OWN context. The main
-agent sends it one self-contained task and reads one answer back, so a long
-research job does not fill the main conversation, and a big cloud model can
-be used for one hard step without the whole chat leaving the machine.
+Each delegated task runs in an isolated context and returns one summary answer:
+- ``workflow``: In-process OVAT workflow built fresh per call with ``delegate``
+  stripped to enforce a single-level delegation depth limit.
+- ``api``: Any OpenAI-compatible HTTP endpoint via ``OVMSLLMProvider``.
+- ``a2a``: A remote A2A agent via the same peer client used by ``type: a2a``.
 
-Three places a subagent can run:
-- workflow  another OVAT workflow, built in this process, fresh per task.
-            Its own `delegate` tool is removed: one level deep only, so two
-            workflows cannot delegate to each other forever.
-- api       any OpenAI-compatible API (a cloud provider, a remote OVMS,
-            vLLM). Reuses OVMSLLMProvider, which already speaks that
-            protocol; the key comes from an environment variable.
-- a2a       another agent over A2A, through the same client as `type: a2a`.
-
-Everything goes through the parent's EventBus: the permission check (an
-`api` subagent asks first by default, because its data leaves), the cancel
-flag (Esc stops the subagent too), and progress lines (subagent_status),
-which the agent TUI draws as a live card.
-
-Never raises. Every failure is one "Error: ..." sentence for the model.
+Execution inherits the parent ``EventBus`` permission checks, cancellation flag,
+and progress events (``subagent_status``). Failures return readable ``Error: ...``
+strings rather than raising exceptions.
 """
 import os
 import threading

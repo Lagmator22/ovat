@@ -1,11 +1,5 @@
 # tests/test_doctor.py
-"""Tests for `ovat doctor` and the diagnostics behind it.
-
-Note to myself: these checks are about MY environment logic, not about a perfect
-machine. I assert the things that are true wherever the test suite runs (Python
-is new enough, the core deps import because they are installed for the tests),
-and I assert the config logic with temp files I control.
-"""
+"""Tests for `ovat doctor` environment and configuration diagnostics."""
 from typer.testing import CliRunner
 
 from ovat.cli import diagnostics
@@ -61,7 +55,7 @@ def test_doctor_reports_on_every_engine_the_factory_offers():
 
 
 def test_local_genai_check_confirms_the_no_server_path():
-    # This row is the "how do I use OVAT on a Mac" answer, in the tool itself.
+    # Verifies the local no-server GenAI check reports OK when installed.
     from ovat.cli.diagnostics import check_local_genai
     check = check_local_genai()
     assert check.status == OK                     # installed for the tests

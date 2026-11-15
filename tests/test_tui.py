@@ -20,7 +20,7 @@ from textual.containers import Horizontal
 from textual.widgets import Input, OptionList, RichLog, Static
 
 from ovat.cli import tui as tui_module
-from ovat.cli.tui import OvatTUI, _StartupIntelAnimation, _secondary_wordmark
+from ovat.cli.tui import OvatTUI, _StartupIntelAnimation
 from tests.conftest import py_command
 
 
@@ -39,13 +39,6 @@ def test_launcher_has_isolated_three_panel_startup_header():
             assert app.query_one("#intel-animation", _StartupIntelAnimation)
             assert "/doctor" not in app.query_one("#updates-panel", Static).render().plain
     _run(scenario())
-
-
-def test_secondary_startup_labels_reuse_the_real_ovat_wordmark_face():
-    """Sub-brands and Updates use ANSI Shadow rather than a generic block font."""
-    label = _secondary_wordmark("Updates", color="#8F5CFF")
-    assert label.plain.count("\n") == 6
-    assert "█" in label.plain
 
 
 def test_startup_mark_plays_gif_then_three_cached_phases_and_settles(tmp_path):

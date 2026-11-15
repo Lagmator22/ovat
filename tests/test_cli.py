@@ -1,11 +1,5 @@
 # tests/test_cli.py
-"""Tests for the ovat command line.
-
-Note to myself: typer ships a CliRunner that invokes my commands in-process and
-captures their output and exit code, so I can test the CLI without a real shell
-or a running OVMS server. I test the wiring (init writes a usable config,
-dry-run builds the agent) and the error paths (bad config exits non-zero).
-"""
+"""Tests for the ``ovat`` command-line interface via Typer's ``CliRunner``."""
 import pytest
 from typer.testing import CliRunner
 
@@ -570,9 +564,7 @@ def test_every_supported_engine_has_a_banner_label(tmp_path, monkeypatch):
 
 def test_the_trace_peak_is_measured_during_the_run_not_after_it(monkeypatch,
                                                                  tmp_path):
-    """Reading RSS after the run misses the peak: Python has usually freed
-    the big allocations by then, and this number exists for the proposal's
-    memory criterion, so a wrong one is worse than none."""
+    """Peak RSS must be measured while the run executes rather than after completion."""
     from ovat.cli import main as cli_main
 
     sampled = []
@@ -1322,11 +1314,8 @@ def test_an_ordinary_failure_does_not_get_the_timeout_advice(tmp_path,
 def test_setup_command_is_reachable_and_reports_what_it_did(monkeypatch):
     from ovat.core import ovms_installer
 
-    # installed_binary too, not just install(): the command checks for an
-    # existing install FIRST and reports "already installed", so on any machine
-    # that really has OVMS this asserted against the real path. It passed only
-    # where OVMS was absent -- the same works-on-my-machine shape this release
-    # is about, and I wrote it.
+    # Mock installed_binary as well as install() so tests behave deterministically
+    # whether or not OVMS is already installed on the host machine.
     monkeypatch.setattr(ovms_installer, "installed_binary", lambda root=None: None)
     monkeypatch.setattr(ovms_installer, "install",
                         lambda **kw: ("/somewhere/ovms", "installed"))
@@ -1890,10 +1879,7 @@ def test_setup_into_a_custom_folder_says_how_ovat_will_find_it(monkeypatch,
 
 
 def test_a_framework_engine_that_failed_exits_non_zero(monkeypatch, tmp_path):
-    """Measured on the AI PC: the llamaindex step cap printed "Error: I
-    reached my max of 1 steps" and exited 0. `failed` was read only from the
-    native loop's trace totals, and the framework adapters keep no trace, so
-    none of the three could ever fail a run. They flag it themselves now."""
+    """A framework engine that hits its iteration limit must flag failure and exit non-zero."""
     from ovat.cli import main as cli_main
 
     class CappedAdapter:                     # a framework engine: no last_trace

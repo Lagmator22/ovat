@@ -6,11 +6,10 @@ loopback port, and so can a web page open in the user's browser (DNS
 rebinding). The token is what stops both.
 
 Two ways to configure callers:
-- nothing in the YAML: one random token is generated for the project, for a
-  caller named "local". It is kept in the person's own folder
-  (~/.ovat/a2a/<project id>.token, owner-only on POSIX), never in the
-  project: a repository could ship a token file there and its author would
-  then hold a working token for whoever serves that project;
+- When omitted from config, one random token is generated for the project
+  under a ``local`` caller ID and stored in the user's home directory
+  (``~/.ovat/a2a/<project id>.token``, ``0600`` on POSIX), outside the project
+  tree so checked-in files cannot supply tokens.
 - a2a.server.tokens: {planner: OVAT_A2A_PLANNER}: one caller per entry,
   each token read from the NAMED environment variable. One name per token
   is what lets the server keep each caller's tasks apart (spec 13.1) and

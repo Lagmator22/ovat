@@ -1,14 +1,10 @@
 # ovat/core/model_server.py
-"""Layer 8: manages the OVMS process lifecycle: start, health-check, stop.
+"""OVMS process lifecycle management: start, health-check, and stop.
 
-It's "process lifecycle management", which kinda sounds fancy but is just
-subprocess.Popen + polling a health URL. Key proposal point: switching models
-= stop() then start() (a fresh restart), NOT an in-process swap; that's the
-mitigation for the memory-leak risk even though in future we can get it to 
-continue even with a new model.
-
-Uses urllib (standard library) for health checks, so there's no extra
-dependency. Needs the `ovms` binary to actually start (Linux/Windows/Docker).
+Manages the OpenVINO Model Server subprocess (``subprocess.Popen``), polls
+health/readiness endpoints over standard-library ``urllib``, and supports
+clean model switching via ``stop()`` followed by ``start()`` so prior process
+state and memory allocations are reclaimed cleanly.
 """
 import ipaddress
 import json
@@ -242,17 +238,15 @@ class ModelServer:
                  api_key: str | None = None,
                  binary: str = "ovms"):
         self.model_name = model_name
-        # Note to myself: source_model is the Hugging Face id OVMS downloads if
-        # the model is not already on disk, for example OpenVINO/Qwen3-8B-int4-ov.
+        # HF repository ID OVMS downloads when the model is not already on disk.
         self.source_model = source_model
-        # The folder on disk where models live. OVMS needs this to have anything
-        # to serve. Leaving it out is exactly why the server used to exit at once.
+        # Local folder containing model weights for OVMS to serve.
         self.model_repository_path = model_repository_path
         self.device = device
         self.port = port
         self.tool_parser = tool_parser
         self.reasoning_parser = reasoning_parser
-        # task text_generation is what turns on the chat endpoints I call.
+        # The text_generation task enables OpenAI-compatible chat endpoints.
         self.task = task
         self.enable_prefix_caching = enable_prefix_caching
         self.cache_size_gb = cache_size_gb
@@ -326,11 +320,9 @@ class ModelServer:
 
     def start(self, log_path: str = "ovms.log",
               pid_path: str = DEFAULT_PID_PATH) -> None:
-        """Launch OVMS in the background. (Flags illustrative -> match them to
-        our OVMS version / the demo README.)"""
-        # Note to myself: the three flags that matter most here are
-        # model_repository_path, source_model and task. Without a model to load,
-        # OVMS starts and exits in under a second because it has nothing to do.
+        """Launch OVMS in the background with configured serving flags."""
+        # model_repository_path, source_model, and task are essential; without a
+        # resolvable model, OVMS exits immediately after startup.
         cmd = [
             self.binary,
             "--rest_port", str(self.port),
@@ -374,16 +366,13 @@ class ModelServer:
             cmd += ["--enable_tool_guided_generation", "true"]
         if self.reasoning_parser:
             cmd += ["--reasoning_parser", self.reasoning_parser]
-        # I only add source_model when I have one. On the first run OVMS uses it
-        # to download the model, about 5 GB, then later runs see it on disk.
+        # Only pass --source_model when configured so offline local models work.
         if self.source_model:
             cmd += ["--source_model", self.source_model]
         if self.api_key:
             cmd += ["--api_key_file", self._write_api_key_file()]
-        # Note: send OVMS logs to a FILE, not subprocess.PIPE. Piping without
-        # ever draining the pipe deadlocks OVMS once its output fills the ~64KB
-        # OS pipe buffer. A file has no such limit, and it lets me show the real
-        # error if OVMS fails to start.
+        # Send OVMS logs to a file rather than subprocess.PIPE to avoid
+        # deadlocking OVMS once the OS pipe buffer (~64 KB) fills up.
         self.log_path = log_path
         self._log_file = open(log_path, "w", encoding="utf-8")
         try:

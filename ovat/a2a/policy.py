@@ -1,13 +1,9 @@
 # ovat/a2a/policy.py
-"""Admission: whether the server takes on a task at all.
+"""Admission control for incoming A2A requests.
 
-Every refusal is one plain sentence naming the limit and its value, sent
-back as a REJECTED task, so the calling agent (and the person behind it)
-knows what to change. Nothing here touches the model: a refusal costs the
-server microseconds, which is the point of checking first.
-
-Note to myself: one OVMS on one iGPU serves every caller, so a request
-that is refused late has already cost everyone else seconds of GPU time.
+Refusals return a plain-text explanation naming the violated limit and threshold
+as a REJECTED task without invoking the model, avoiding wasted GPU/CPU compute
+on invalid or overloaded requests.
 """
 import threading
 import time

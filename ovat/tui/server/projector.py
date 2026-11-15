@@ -1,23 +1,12 @@
 # ovat/tui/server/projector.py
-"""AgentSession reports -> the public session the copied TUI reads.
+"""Project ``AgentSession`` events into sequenced JSON-RPC state updates.
 
-Note to myself: Vibe's client keeps a mirror of the server's session
-(history entries, turns, the queue, callbacks) and rebuilds it from
-notifications. Each notification carries an `eventId`; the client accepts
-only the next number and asks for a fresh read when one is missing. So the
-server must keep the TRUE session itself and number every change it
-publishes. That is this class: the true state, plus one `_emit` that numbers
-and sends.
-
-It is plain synchronous code that runs on the server's event loop. The
-session reports from worker threads; ovat/tui/server/context.py hops each
-report onto the loop before it gets here, so nothing in this file needs a
-lock.
-
-A history entry is never rewritten in place on the wire. Like Vibe's server,
-a change is a small JSON patch (append to the answer, replace the state of a
-tool call), and an entry that is COMPLETED is frozen: the client refuses a
-patch to one.
+Maintains the server's authoritative public session state (history entries,
+turns, queue, and callbacks) and emits monotonically numbered ``eventId``
+notifications so the TUI client can apply incremental JSON patches and trigger
+resynchronization if an event is missed. All mutations run on the server event
+loop via ``ovat/tui/server/context.py``, requiring no internal locks. Completed
+history entries are immutable on the wire.
 """
 from __future__ import annotations
 

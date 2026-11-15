@@ -1,21 +1,15 @@
 # ovat/agent/loop.py
-"""Layer 3: the agent loop, the part that gives the LLM hands.
+"""Native tool-calling agent loop.
 
-Note to myself: the model on its own can only write text. It cannot run my
-Python functions. The loop is the cycle that turns its written request
-(please call search_docs) into a real function call, feeds the result back,
-and asks again, until the model is happy and answers in plain words.
+Implements the four-step execution cycle per turn:
+  1. ASK: send conversation history and tool schemas to the LLM provider.
+  2. READ: inspect whether the response payload carries ``tool_calls``.
+  3. ACT: execute requested Python/MCP tools.
+  4. REPORT: append tool results to history and continue until no calls remain.
 
-The four beats every turn:
-  1. ASK    I send the whole history plus my tool menu to the model.
-  2. READ   I look at whether the reply CARRIES tool calls.
-  3. ACT    If it wants tools, I run those Python functions myself.
-  4. REPORT I append each result as a tool message, then loop back to 1.
-
-Exit when a reply carries no tool calls. Deliberately not "when finish_reason
-is stop": OVMS documents that NPU serving always reports "stop" even when it
-has decoded a tool call, so the label is a description and the payload is the
-fact. A max_iterations guard makes sure I can never spin forever.
+Dispatching checks ``tool_calls`` in the payload rather than ``finish_reason``
+because some backends (including OVMS on NPU) report ``finish_reason="stop"``
+even when returning decoded tool calls. Bounded by ``max_iterations``.
 """
 import inspect
 import json
@@ -51,13 +45,11 @@ def _accepts_on_token(fn) -> bool:
 
 
 def _parse_args(arguments: str) -> dict | None:
-    """The model sends tool arguments as a JSON string. I turn it into a dict.
+    """Parse a JSON tool-arguments string into a dict, returning ``None`` on invalid JSON.
 
-    Note to myself: a no argument tool can send an empty string (fine, empty
-    dict), but a small model can also send BROKEN JSON. That used to become {}
-    silently, so the tool ran with missing arguments and the model never
-    learned why it failed. Now broken JSON returns None and the loop tells the
-    model exactly what was wrong, so it can fix its own call next turn.
+    Empty strings normalize to ``{}`` for zero-argument tools, while malformed
+    JSON returns ``None`` so the caller can feed a structured error back to the
+    model instead of silently running with empty arguments.
     """
     if not arguments:
         return {}
@@ -72,13 +64,7 @@ def _parse_args(arguments: str) -> dict | None:
 
 
 def _serialize_tool_calls(tool_calls) -> list[dict]:
-    """I convert the SDK tool_call objects into plain dicts.
-
-    Note to myself: OVMSLLMProvider hands me OpenAI SDK objects (attribute
-    access like call.function.name). But when I store the assistant turn back
-    into the history and resend it, OVMS expects plain JSON dicts. If I forget
-    this step, the next request is malformed and OVMS rejects it.
-    """
+    """Serialize OpenAI SDK ``tool_call`` objects into plain JSON-safe dicts for history replay."""
     serialized = []
     for call in tool_calls:
         serialized.append({
@@ -124,9 +110,8 @@ class AgentLoop:
         # lock, at the moment the loop decides it is done, so a message is
         # either taken or refused, never accepted and then silently dropped.
         self._steering_open = False
-        # Layer 7 (telemetry): after every run() this holds what happened:
-        # per-turn latency, token usage (OVMS reports it on each response),
-        # and every tool call with its duration. `ovat run --trace` dumps it.
+        # Telemetry trace for the most recent run: per-turn latency, reported
+        # token usage, and executed tool calls (dumped by `ovat run --trace`).
         self.last_trace: dict = {}
 
     def steer(self, text: str) -> bool:
@@ -152,7 +137,7 @@ class AgentLoop:
                 self.events.emit(STEER_TAKEN, text=text, index=index)
 
     def _menu(self) -> list[dict] | None:
-        """The list of tool schemas I show the model. None if I have no tools."""
+        """Return tool schemas exposed to the model, or ``None`` if no tools exist."""
         menu = [tool["schema"] for tool in self.tools.values()]
         return menu or None
 
@@ -220,15 +205,10 @@ class AgentLoop:
         return found
 
     def _execute(self, name: str, args: dict) -> str:
-        """I run one tool by name and always return a string for the model.
+        """Run one tool by name and always return a string result for the model.
 
-        Note to myself: three things can go wrong and none of them should
-        crash the agent:
-          1. the model names a tool I do not have,
-          2. the tool raises an exception,
-          3. the tool returns something that is not a string.
-        In every case I hand back a clear string so the model can read it and
-        recover on the next turn.
+        Missing tools, runtime exceptions, and non-string outputs are converted
+        into readable messages so the model can recover on the next turn.
         """
         if name not in self.tools:
             import difflib
@@ -256,8 +236,7 @@ class AgentLoop:
             self._steering_open = True
         self.session.add_user(user_message)
 
-        # The run trace (Layer 7). Built as the loop works; every exit path
-        # goes through _finish so the totals are always filled in.
+        # Telemetry trace for the run (latency, token usage, tool calls).
         run_started = time.monotonic()
         turns: list[dict] = []
         # A one-element list so the nested _finish closure can set it without
@@ -300,12 +279,8 @@ class AgentLoop:
                 # this, the only visible symptom is the parser one.
                 "truncated": any(t["finish_reason"] == "length"
                                  for t in turns),
-                # The run did not produce a usable answer. Every "Error: ..."
-                # string this loop returns is delivered AS the answer, because
-                # the model has to be able to read it -- but `ovat run` then
-                # printed it and exited 0, so a failed run was indistinguishable
-                # from a good one to any script, CI job or benchmark. Measured
-                # on an AI PC: four consecutive failures, all exit 0.
+                # Flag failed runs ("Error: ...") so CLI exit codes and callers
+                # can distinguish failure from successful plain-text answers.
                 "failed": bool(undecoded[0] or empty[0]
                                or answer.startswith("Error: ")),
             }
@@ -358,9 +333,7 @@ class AgentLoop:
                     "Error: the model reported tool_calls but sent none."
                 ))
 
-            # Nothing was asked for, so the model answered in words: record it
-            # and I am done. `or ""` because a server can send content=None;
-            # the CLI would print literal "None".
+            # Final text answer; normalize None content to "" so CLI output never prints "None".
             if not tool_calls:
                 if self.stop is not None and self.stop.is_set():
                     self.session.add_assistant(content=CANCELLED_TEXT)
@@ -468,17 +441,14 @@ class AgentLoop:
                         "contained only reasoning, or nothing at all." + hint)
                 return _finish(content)
 
-            # The model wants one or more tools.
-            # I record its request, serialized into plain dicts, so the
-            # history stays valid.
+            # Record the assistant's tool requests serialized as plain JSON dicts.
             self.session.add_assistant(
                 content=reply["content"],
                 tool_calls=_serialize_tool_calls(tool_calls),
             )
 
-            # BEAT 3 and 4, ACT and REPORT. A single reply can ask for several
-            # tools at once, so I run each one and append each result before I
-            # loop back and ask again. Each call is timed for the trace.
+            # ACT and REPORT: execute each requested tool and append its output
+            # before starting the next model turn.
             for call in tool_calls:
                 name = call.function.name
                 args = _parse_args(call.function.arguments)
@@ -514,7 +484,7 @@ class AgentLoop:
                 turn["tool_calls"].append(entry)
                 self.session.add_tool_result(call.id, result)
 
-        # If I fall out of the loop I hit my safety cap without a final answer.
+        # Exhausted max_iterations without reaching a final text response.
         msg = (f"Error: I reached my max of {self.max_iterations} "
                f"steps without a final answer.")
         self.session.add_assistant(content=msg)

@@ -1,11 +1,5 @@
 # tests/test_coding_tools.py
-"""The five coding tools: read_file, write_file, edit, grep, shell.
-
-Note to myself: every tool is a plain function taking the project folder
-(`root`), so these tests hand it a tmp_path and never touch the real
-working directory. The engine-level tests go through build_tools, which is
-where the working directory is read.
-"""
+"""Unit tests for coding tools (`read_file`, `write_file`, `edit`, `grep`, `shell`)."""
 import os
 import sys
 import threading

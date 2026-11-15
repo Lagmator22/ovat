@@ -1,30 +1,13 @@
 # ovat/tui/server/rpc.py
-"""The JSON-RPC loop of OVAT's app server.
+"""JSON-RPC 2.0 request/notification loop for OVAT's embedded app server.
 
-Note to myself: the copied TUI is a CLIENT. It sends JSON-RPC requests over a
-transport and reads notifications back. This file is the other end of that
-wire, and it knows nothing about agents: it reads a message, finds the
-handler for its method, checks the params with the protocol model, and
-writes the answer. The handlers live in ovat/tui/server/methods/.
-
-What goes on the wire follows what the copied client expects (checked in
-client.py, connection.py and session.py, and against Vibe's own server for
-the framing, which is only read, never imported):
-
-- a request gets exactly one response, `{"jsonrpc","id","result"}` or
-  `{"jsonrpc","id","error":{"code","message","data"}}`; the code is a
-  ProtocolErrorCode string ("method_not_found", ...)
-- results and notification params are dumped by alias (camelCase), the way
-  the client reads them
-- the server can ask the client something (`callback/call`). Those requests
-  carry integer ids; the client's own requests carry string ids
-- every message leaves through ONE outbox in the order it was queued, so a
-  response is never overtaken by the notifications queued after it
-
-Requests run as tasks, because some are long (`session/ready/wait` waits for
-the model, `session/shellCommand` for the command). `initialize` is the one
-that runs inline: the `initialized` notification right behind it must see it
-done.
+Reads client JSON-RPC requests, validates payloads against the wire schema,
+dispatches handlers registered in ``ovat/tui/server/methods/``, and serializes
+camelCase responses and server-to-client notifications through a single ordered
+outbox. Most requests execute asynchronously as tasks so long operations
+(model loading, ``!`` commands) do not stall the transport, while
+``initialize`` runs inline so the subsequent ``initialized`` notification observes
+completed setup.
 """
 from __future__ import annotations
 

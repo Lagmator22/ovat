@@ -1,9 +1,5 @@
 # tests/test_session.py
-"""Tests for Session, the conversation memory.
-
-Note to myself: the headline test is the save then load round trip. If that
-passes, I know a chat can survive a restart with its history intact.
-"""
+"""Tests for Session conversation memory and save/load persistence."""
 from ovat.agent.session import Session
 
 

@@ -1,14 +1,9 @@
 # ovat/userdata.py
-"""The person's own OVAT folder, ~/.ovat, for what a project must not set.
+"""Per-user state directory (``~/.ovat``) separated from project repositories.
 
-Note to myself: some state belongs to the PERSON, not to the project they
-opened: the "always allow" grants and the A2A server's generated token. A
-project folder is whatever a repository shipped, so a file there could grant
-a tool or hand its author a working token. Both live here instead, keyed by
-the project's full path.
-
-Top level because both ovat/agentic/ and ovat/a2a/ need it and neither may
-import the other. Tests point folder() at a temporary one (conftest).
+Stores user-owned trust/auth state such as permanent tool grants and generated
+A2A bearer tokens, keyed by project path so untrusted repositories cannot
+pre-populate sensitive state under ``.ovat/``. Tests redirect ``folder()``.
 """
 import hashlib
 import os

@@ -25,11 +25,11 @@ LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
 
 def check_listen_address(host: str, public_url: str | None, tls: bool,
                          allow_plain_http: bool) -> None:
-    """Raise ValueError, with the fix, if this address is unsafe.
+    """Validate that binding on a non-loopback address is explicitly safe.
 
-    Off this machine: callers need a URL to put on the card (public_url),
-    and the token must not cross the network in clear text unless the owner
-    said so out loud. The spec requires HTTPS in production (section 7.1).
+    Non-loopback binds require ``public_url`` for the Agent Card and either TLS
+    or explicit ``allow_plain_http`` opt-in so bearer tokens are not exposed
+    over unencrypted connections unintentionally.
     """
     if host in LOOPBACK:
         return

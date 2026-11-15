@@ -1,25 +1,17 @@
 # ovat/agent/permissions.py
-"""Whether a tool (or a subagent) may run: allow, ask, or deny.
+"""Tool and subagent execution permission gating (``allow``, ``ask``, ``deny``).
 
-Note to myself: a local tool that reads my own index is one thing; a call
-that sends my words to a cloud API or another machine is another. The
-second kind should not happen without a person saying yes, at least the
-first time. So every tool has a permission:
+Tools that read external sources, mutate files, or call remote APIs can
+require interactive approval:
 
-    allow  run it
-    ask    ask the person first; with no person present, do NOT run it
-    deny   never run it
+    allow  execute immediately
+    ask    require interactive approval; deny in headless/non-interactive runs
+    deny   never execute
 
-"No person present" is the important case. `ovat run`, a bench worker and
-an A2A server have no one to ask, so `ask` means no there, and the model
-reads a sentence saying why. Only an interactive front end (the agent TUI)
-sets an approver on the event bus.
-
-The broker is the interactive half: the agent's worker thread calls
-request() and BLOCKS; the UI shows a prompt and calls resolve(). Each
-request has an id and is resolved exactly once; cancel_all() (Esc) resolves
-everything still open as "deny", so a cancelled turn can never leave a
-worker thread waiting forever.
+In non-interactive modes (``ovat run``, benchmarks, A2A servers) no approver
+is attached to the event bus, so ``ask`` evaluates to denial with an explanatory
+message. In interactive sessions, ``ApprovalBroker.request()`` blocks the agent
+worker thread until the UI resolves or cancels pending requests.
 """
 import ipaddress
 import itertools
@@ -176,7 +168,7 @@ class ApprovalBroker:
                 try:
                     self.on_always(tool)
                 except Exception:
-                    pass        # the owner of on_always tells the person
+                    pass        # Caller's on_always callback handles any user notification.
         return request.decision in (ONCE, SESSION, ALWAYS)
 
     def resolve(self, request_id: int, decision: str) -> bool:

@@ -17,7 +17,6 @@ Three things are load-bearing here, each a bug avoided:
   * Every colour comes from ovat.cli.ui. This screen owns no palette.
 """
 from rich.text import Text
-from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -34,9 +33,7 @@ from ovat.telemetry.sources import (IntelHardwareSource, NPUSource,
                                     OVMSLogSource, ProcessMemorySource,
                                     SystemSource)
 
-# How often the page redraws. 2/second is enough to look live without making
-# a terminal over SSH repaint faster than the link can carry, which is how
-# the AI PC is actually driven.
+# Refresh at 2 Hz to keep remote SSH sessions responsive without redraw churn.
 REFRESH_HZ = 2.0
 
 # The metrics given their own big-number readout, in order. Anything else a
@@ -50,10 +47,8 @@ REFRESH_HZ = 2.0
 # RAM in those slots instead of three boxes reading "---" forever. A fixed
 # list was the reason the page looked broken rather than merely limited.
 _PREFERRED = [
-    # npu.* comes from the driver's own busy counter and is a real percentage.
-    # intel.* comes from UT, whose continuous mode on the AI PC reports power,
-    # NPU bandwidth and GPU frequency but no utilisation percentage, so the
-    # driver's figure stays first for the NPU card.
+    # Driver counter provides true NPU busy percentage; Intel UT continuous mode
+    # reports package power, NPU bandwidth, and GPU frequency without busy %.
     ("npu.utilization", "NPU", "%"),
     # The cache figure earns a headline slot because it is the one number that
     # predicts the undecoded-tool-call failure before it happens.
@@ -73,11 +68,7 @@ MAX_CARDS = 5
 #: the rest give it a scale, which is the job the sparkline used to do badly.
 _COLUMNS = ("now", "min", "max", "mean")
 
-# ONE short help, on its own scrollable tab. The page used to carry three
-# long ones (Sources, Intel, Plano) that did not scroll, so the end of each
-# was unreadable without zooming the terminal out, and four tabs left the
-# owner unsure which one mattered. The plano walkthrough lives in
-# examples/plano/README.md, where it can be followed step by step.
+# Scrollable Help tab summarizing telemetry sources; the plano guide lives in examples/plano/README.md.
 _HELP = """
 [b]What the numbers are[/b]
   [cyan]system[/cyan]   this computer: CPU per core, RAM, clock
@@ -178,8 +169,7 @@ class TelemetryScreen(Screen):
         # every time you looked at a different one.
         with TabbedContent(id="tel-tabs"):
             with TabPane("Live", id="tab-live"):
-                # Cards are mounted once we know which metrics have data; an
-                # empty row now beats five boxes reading "---" forever.
+                # Cards are mounted once active metrics appear to avoid empty placeholder boxes.
                 yield Horizontal(id="tel-numbers")
                 yield Rule(id="tel-rule")
                 # A TABLE OF NUMBERS, not a wall of sparklines. Every core and
@@ -192,11 +182,8 @@ class TelemetryScreen(Screen):
                                   zebra_stripes=True)
                 table.border_title = "live numbers"
                 yield table
-                # Where each number comes from, refreshed every tick. It used
-                # to be a table on its own tab, filled ONCE before any source
-                # had started: on the AI PC it said "intel live, sampling"
-                # while UT produced nothing, so the page hid the one fact
-                # that explained the missing rows.
+                # Per-source status footer refreshed every tick so silent or
+                # unavailable sources show live diagnostics.
                 yield Static("", id="tel-sources")
             with TabPane("Help", id="tab-help"):
                 with VerticalScroll(id="tel-help-scroll"):
@@ -265,15 +252,11 @@ class TelemetryScreen(Screen):
         self._redraw_numbers()
 
     async def _sync_cards(self) -> None:
-        """Show cards for the best-ranked metrics that have data, in order.
+        """Render headline cards for the top-ranked active metrics.
 
-        Done here rather than in compose because which metrics exist depends
-        on which SOURCES work on this machine, and that is not known until
-        the collector has ticked at least once. And it is re-checked every
-        tick, not filled once: Intel UT's first reading lands seconds after
-        the rest, by which time five lower-ranked cards had taken every slot
-        and POWER never appeared (AI PC). When the ranking changes, the row
-        is rebuilt in the new order.
+        Deferred until after initial collector samples arrive (and re-evaluated on
+        each tick) so late-arriving metrics like Intel UT ``intel.pkg_power_w``
+        promote into the headline row automatically.
         """
         try:
             await self._rebuild_cards()

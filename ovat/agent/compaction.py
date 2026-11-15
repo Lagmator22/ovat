@@ -1,18 +1,11 @@
 # ovat/agent/compaction.py
-"""Compacting the model's memory: the summary prompt and the new history.
+"""Conversation compaction: summary prompting and compacted history reconstruction.
 
-Note to myself: this mirrors Mistral Vibe's compaction (Apache-2.0):
-vibe/core/prompts/compact.md + compact_system.md (the prompts),
-vibe/core/compaction/context.py (render_compaction_context,
-collect_prior_user_messages) and vibe/core/compaction/manager.py
-(_render_transcript, the no-tools summarizer call, CompactionFailedError).
-What is different here: no retry that drops the oldest round (OVAT's
-failure is one plain sentence and the memory stays as it was), and a
-character budget instead of a token count (there is no tokenizer to hand).
-
-The summary is asked for as ONE message holding the whole conversation as
-text, with no tools. That is Vibe's own fallback shape, and it also means a
-tool call and its result can never be cut apart: both are just text.
+Follows a single-message no-tools summarization flow: the conversation is
+rendered into text, summarized under a character budget (to avoid requiring a
+local tokenizer), and failed compactions return an error string while leaving
+the existing session history untouched. Because the entire transcript is sent as
+plain text, tool calls and their results cannot be torn apart across turns.
 """
 import re
 

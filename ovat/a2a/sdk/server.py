@@ -6,12 +6,12 @@ What lives here and nowhere else:
 - the ASGI app: the card route, the JSON-RPC route, and in front of them
   the host check, the body-size cap and the bearer-token check.
 
-Facts this relies on, each seen by running a2a-sdk 1.2.2 (see the A2A
-design notes): an exception that escapes execute() reaches the caller as
-an InternalError carrying the raw exception text, so service.run never
-lets one out; TaskUpdater raises once a task is terminal, so every update
-here tolerates that; and the SDK scopes tasks by the Starlette user name,
-so one user per token keeps callers apart.
+Runtime behavior relied upon (verified with ``a2a-sdk`` 1.2.2): exceptions escaping
+``execute()`` reach callers as an ``InternalError`` containing raw exception
+text, so ``service.run`` catches all exceptions; ``TaskUpdater`` raises once
+a task is terminal, so updates tolerate terminal states; and the SDK scopes
+tasks by Starlette username, so assigning one username per token isolates
+callers.
 """
 import contextlib
 import hmac

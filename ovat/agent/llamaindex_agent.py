@@ -1,29 +1,16 @@
 # ovat/agent/llamaindex_agent.py
-"""Layer 3 (alternate engine): run the same agent through LlamaIndex.
+"""LlamaIndex ``FunctionAgent`` engine adapter (``agent.type: llamaindex``).
 
-The proposal names LlamaIndex as the second framework integration, so this is
-the `agent.type: llamaindex` path. As with the LangChain engine, the rest of
-OVAT must not care which engine runs: AgentLoop exposes .run(text) -> text, so
-does LangChainAgent, and so does LlamaIndexAgent below. The factory hands back
-one of the three and the CLI calls .run() either way.
+Exposes ``.run(text) -> str`` matching ``AgentLoop``. Uses ``OpenAILike``
+pointed at OVMS ``/v3`` with two required flags:
+- ``is_chat_model=True`` so LlamaIndex uses chat completions instead of legacy completions.
+- ``is_function_calling_model=True`` so ``FunctionAgent`` emits tool calls rather
+  than degrading to plain chat.
 
-Under the hood this is LlamaIndex's FunctionAgent driven by an OpenAILike LLM
-pointed at the OVMS /v3 endpoint. OpenAILike exists precisely for
-OpenAI-compatible servers that are not OpenAI, which is exactly what OVMS is.
-Two flags on it matter and are easy to get wrong:
-
-  * is_chat_model=True, or LlamaIndex calls the legacy completions endpoint
-    that OVMS does not serve for these models.
-  * is_function_calling_model=True, or FunctionAgent decides the model cannot
-    call tools and silently degrades to plain chat, which looks like the
-    tools were never configured.
-
-FunctionAgent is async, and OVAT's .run() is synchronous everywhere else, so
-this adapter owns the event loop. It refuses to run inside an existing loop
-rather than corrupting one: see run().
-
-llama_index is imported lazily inside the build function so `import ovat` stays
-cheap and someone using only the native loop never pays for the install.
+Because ``FunctionAgent`` is async and OVAT engines expose synchronous
+``.run()``, this adapter drives coroutines on a dedicated background event loop
+and rejects nested calls from an already-running loop. ``llama_index`` is
+imported lazily so non-LlamaIndex paths avoid its import cost.
 """
 import asyncio
 import time
@@ -35,11 +22,10 @@ from ovat.config.workflow import WorkflowConfig
 
 
 def _wrap_tools(tools: dict) -> list:
-    """Turn my {name: {schema, function}} dict into LlamaIndex FunctionTools.
+    """Wrap the ``{name: {schema, function}}`` map into LlamaIndex ``FunctionTool``s.
 
-    Each wrapped tool reuses the exact same callable the native loop runs, so
-    a tool behaves identically no matter which engine called it. The retriever
-    bound into search_docs by the factory is already inside that callable.
+    Each tool reuses the underlying callable (including any bound retriever) so
+    behavior matches the native engine.
     """
     from llama_index.core.tools import FunctionTool
 
@@ -100,7 +86,7 @@ def _usage_of(raw) -> tuple:
 
 
 class LlamaIndexAgent:
-    """Adapter so a LlamaIndex FunctionAgent looks like my native AgentLoop."""
+    """Adapter exposing a LlamaIndex ``FunctionAgent`` behind the ``AgentLoop`` API."""
 
     def __init__(self, agent, tools: dict, max_iterations: int,
                  system_prompt: str | None, engine_name: str = "llamaindex"):
@@ -138,14 +124,10 @@ class LlamaIndexAgent:
                 pass
 
     def run(self, user_message: str) -> str:
-        """Run the agent for one message and return the final text.
+        """Execute one synchronous turn on the adapter's background event loop.
 
-        FunctionAgent is async and everything else in OVAT is not, so the
-        event loop is owned here. asyncio.run REFUSES to nest, and that
-        refusal is deliberately not worked around: a running loop means we are
-        being called from async code (the TUI's worker, say), and quietly
-        spawning a second loop there is how you get a deadlock that only
-        shows up on someone else's machine.
+        Raises ``RuntimeError`` if invoked from an already-running event loop to
+        prevent nested-loop deadlocks.
         """
         try:
             asyncio.get_running_loop()

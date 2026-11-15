@@ -1,21 +1,9 @@
 # ovat/tui/server/questions.py
-"""Questions: the ask_user tool's QuestionBroker, shown as Vibe's question
-callback.
+"""Interactive user questions mapped to ``user_input`` JSON-RPC callbacks.
 
-Note to myself: the same dance as approvals.py. The agent's worker thread
-BLOCKS inside QuestionBroker.__call__ until somebody calls
-broker.resolve(id, answer). Vibe calls the moment a "user_input" callback:
-the server sends `callback/call` with a callback entry whose detail is a
-UserQuestionRequest, the person answers in the copied question widget, the
-client sends `callback/result` with a UserQuestionResult, and that resolves
-the broker here.
-
-    answered           -> the answer text
-    cancelled (Esc)    -> None ("no answer"; the tool tells the model)
-    client cannot ask  -> None, and a warning in the transcript
-
-The question itself is built by bridge.question_request (Vibe wants at
-least two options and pads the rest with "Not sure" / "Skip").
+When ``ask_user`` invokes ``QuestionBroker``, the agent worker thread blocks
+until the TUI returns a ``callback/result`` containing a ``UserQuestionResult``
+(or cancels cleanly on Esc).
 """
 from __future__ import annotations
 

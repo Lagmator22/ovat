@@ -1,13 +1,11 @@
 # tests/test_tui_isolation.py
 """The isolation contract: the CLI must fully work WITHOUT the TUI installed.
 
-The TUI is an optional front-end (`pip install 'ovat[tui]'`) that can be taken
-back out at any time. These tests simulate an install without the extra by
-poisoning the module cache; putting None in sys.modules makes any
-`import ovat.cli.tui` raise ImportError, exactly what a missing textual does.
+The TUI is an optional front-end (`pip install 'ovat[tui]'`). These tests
+simulate an install without the extra by poisoning sys.modules with None so any
+`import ovat.cli.tui` raises ImportError.
 
-Note to myself: this file must never import textual (directly or indirectly),
-or it would defeat its own purpose on a machine without the extra.
+This file must never import textual directly or indirectly.
 """
 import sys
 

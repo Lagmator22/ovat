@@ -1,13 +1,8 @@
 # ovat/cli/main.py
-"""Layer 1 (entry point): the ovat command line, one YAML + one command.
+"""OVAT command-line entry point (`ovat = 'ovat.cli.main:app'`).
 
-This is the face of the whole toolkit. pyproject.toml points the `ovat` command
-here (ovat = "ovat.cli.main:app"). typer turns each function below into a
-subcommand automatically, using the type hints to parse arguments, so
-`def run(config: str, ...)` becomes `ovat run <config> ...` for free.
-
-The headline command is `run`: load a workflow YAML, build the agent, ask it
-my question, print the answer. That single line is the midterm demo.
+Defines subcommands built with Typer, headed by `run` (loads a workflow YAML,
+constructs the agent, executes a prompt, and prints the response).
 """
 import os
 import sys
@@ -83,12 +78,7 @@ def _entry(
                                  callback=_version_callback, is_eager=True,
                                  help="Show the installed OVAT version and exit."),
 ):
-    """Open the TUI when `ovat` is run with no subcommand.
-
-    typer runs this before any command. If the user typed a subcommand I get out
-    of the way; if they typed just `ovat`, I open the agent TUI (the same one
-    as `ovat agent`).
-    """
+    """Open the agent TUI when ``ovat`` is invoked without a subcommand."""
     if ctx.invoked_subcommand is not None:
         return
     # Recursion guard: the TUI stamps OVAT_TUI=1 into every child's env (the
@@ -305,7 +295,7 @@ def run(
         rprint(f"[red]Could not build the agent:[/red] {esc(exc)}")
         raise typer.Exit(code=1)
 
-    # dry-run lets me prove the wiring on any machine, even with no OVMS server.
+    # Dry-run validates wiring without requiring a running OVMS server.
     if dry_run:
         try:
             # Tool names can come from an MCP server, so they are data too.
@@ -527,17 +517,9 @@ def _exit_is_a_folder(path: str):
     raise typer.Exit(code=1)
 
 
-# How each engine is announced on screen. Presentation only: the list of
-# engines that actually EXIST is factory.AGENT_TYPES, and this must not become
-# a second copy of it.
-#
-# This line used to be
-#     "LangChain (react)" if cfg.agent.type == "react" else "native loop"
-# which was true while there were two engines and became a lie the moment
-# there were four: a llamaindex run announced itself as the native loop. The
-# trace had the identical defect and was fixed; this, the line a demo actually
-# points at, was not, so the screen and the JSON disagreed about one run.
-#
+# How each engine is displayed on screen. The authoritative list of
+# supported engines is `factory.AGENT_TYPES`; this mapping provides human
+# labels rather than duplicating engine registration logic.
 # The .get() fallback is the part that matters. An engine added to the factory
 # and forgotten here prints its own bare name, which is terse but TRUE. There
 # is no branch left that can attribute a run to the wrong engine.
@@ -716,23 +698,12 @@ def _brief_error(message: str | None, limit: int = 34) -> str:
 
 def _write_trace(path: str, cfg, agent, peak_rss_mb=None,
                  error: str | None = None) -> None:
-    """Dump the run trace (Layer 7) as JSON: what the run cost, measured.
+    """Write the run trace summary to JSON.
 
-    The native loop fills agent.last_trace turn by turn; the framework
-    engines fill its totals when a run ends (ovat/agent/usage.py). A run
-    that raised before any totals existed says so rather than writing empty
-    numbers.
-
-    The engine name comes from the CONFIG, not from a literal. It used to be
-    hardcoded "react", which was true when react was the only framework
-    engine and became a lie the moment there were three: a llamaindex run
-    wrote a trace file claiming it was react. A measurement that misreports
-    what produced it is worse than no measurement.
-
-    peak_rss_mb is passed IN because it has to be sampled while the run is
-    happening. Reading it here, after the run, misses the peak entirely:
-    Python has usually freed the big allocations by then, and this number
-    exists for the proposal's <8 GB memory criterion.
+    The native loop populates ``agent.last_trace`` turn by turn, while framework
+    engines populate run totals when execution finishes. Engine attribution is
+    read from ``cfg.agent.type`` and ``peak_rss_mb`` is sampled concurrently so
+    transient allocations during execution are captured accurately.
     """
     import json
 
@@ -1895,13 +1866,7 @@ def bench(
                                     "report how many runs succeeded. Medians "
                                     "are shown; --out keeps every run."),
 ):
-    """Run one question through several engines and compare what each costs.
-
-    This is the AI PC profiling deliverable: the claim is "one YAML, any
-    framework, the same OVMS backend", and the only way to make that claim
-    mean anything is the same question through every engine against the same
-    server, side by side.
-    """
+    """Run a prompt across multiple engines and compare cost, tokens, and latency."""
     import json
 
     from ovat.bench import benchmark

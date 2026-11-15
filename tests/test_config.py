@@ -1,10 +1,5 @@
 # tests/test_config.py
-"""Tests for the workflow config layer.
-
-Note to myself: I test two things. First, that good YAML loads and the
-defaults fill in correctly. Second, that BAD config is rejected loudly by
-pydantic, because catching a bad config early is the whole point of validation.
-"""
+"""Tests for ``WorkflowConfig`` YAML parsing and strict validation."""
 import pytest
 from pydantic import ValidationError
 
@@ -89,7 +84,7 @@ def test_wrong_type_is_rejected():
 
 
 def test_load_workflow_reads_the_example_file(tmp_path):
-    # I write a small YAML to a temp file and load it end to end.
+    # Write a sample workflow YAML to a temporary file and load it end to end.
     yml = tmp_path / "wf.yml"
     yml.write_text(
         "model:\n"
@@ -234,9 +229,7 @@ def test_every_documented_use_case_has_a_runnable_example():
 
 
 def test_the_document_qa_sample_has_what_it_claims():
-    """The sample agent is the proposal's Document Q&A deliverable, so the
-    parts that make it that (retrieval, citations, a grounding prompt) are
-    the parts worth asserting."""
+    """Verify the document-qa sample workflow defines RAG retrieval, tools, and grounding instructions."""
     from ovat.config.workflow import load_workflow
 
     cfg = load_workflow("examples/document-qa.yml")

@@ -1,19 +1,10 @@
 # ovat/agent/langchain_agent.py
-"""Layer 3 (alternate engine): run the same agent through LangChain.
+"""LangChain ``react`` agent engine adapter.
 
-The proposal names LangChain as the primary framework integration, so this is
-the `agent.type: react` path. The trick is that the rest of OVAT must not care
-which engine runs. AgentLoop exposes .run(text) -> text; so does LangChainAgent
-below. The factory hands back one or the other, and the CLI calls .run() either
-way. That is the same polymorphism the providers use, applied one layer up.
-
-Under the hood I use LangChain's create_agent (its v1 tool-calling agent) with
-a ChatOpenAI model pointed at the OVMS /v3 endpoint. OVMS is OpenAI-compatible
-and decodes tool calls with --tool_parser, so LangChain's native tool calling
-works against it without any special glue.
-
-I import langchain lazily inside the build function. That keeps `import ovat`
-cheap and lets someone who only uses the native loop skip the heavy install.
+Implements the same ``.run(text) -> str`` interface as ``AgentLoop`` so callers
+and factories can swap engines transparently. Uses LangChain's v1
+``create_agent`` graph with ``ChatOpenAI`` pointed at OVMS ``/v3``, importing
+``langchain`` lazily so native-only users avoid that dependency cost.
 """
 import time
 
@@ -24,11 +15,10 @@ from ovat.config.workflow import WorkflowConfig
 
 
 def _wrap_tools(tools: dict) -> list:
-    """Turn my {name: {schema, function}} dict into LangChain StructuredTools.
+    """Wrap the normalized ``{name: {schema, function}}`` map into LangChain ``StructuredTool``s.
 
-    Each wrapped tool reuses the exact same callable my native loop runs, so a
-    tool behaves identically no matter which engine called it. The retriever I
-    bound into search_docs in the factory is already inside that callable.
+    Each wrapped tool reuses the underlying callable (and any bound retriever)
+    directly so tool behavior matches the native loop.
     """
     from langchain_core.tools import StructuredTool
 
@@ -75,27 +65,20 @@ def _build_chat_model(config: WorkflowConfig):
 
 
 class LangChainAgent:
-    """Adapter so a LangChain agent looks exactly like my native AgentLoop."""
+    """Adapter presenting a LangChain agent behind the ``AgentLoop`` interface."""
 
     def __init__(self, graph, tools: dict, max_iterations: int,
                  system_prompt: str | None, engine_name: str = "react"):
         self._graph = graph
         self.engine_name = engine_name
-        # I keep the original tools dict so `ovat run --dry-run` can print the
-        # tool names the same way it does for the native loop.
+        # Keep the original tools dict so dry-run inspection matches AgentLoop.
         self.tools = tools
         self.max_iterations = max_iterations
         self.system_prompt = system_prompt
-        # Conversation memory, the same contract the native loop's Session
-        # gives: run() number 5 must remember run() number 1. The graph is
-        # stateless per invoke (no checkpointer), so the adapter carries the
-        # history and resends it, exactly as the native loop resends its
-        # Session. The list holds LangChain message objects as the graph
-        # returns them, tool calls included, so nothing is lost in replay.
+        # Conversation memory mirroring Session: run() resends accumulated
+        # LangChain messages because the graph has no checkpointer.
         self._messages: list = []
-        # langgraph counts each node visit, and one tool round is roughly two
-        # visits plus the final answer. This keeps my cap close in meaning to
-        # the native loop's max_iterations.
+        # langgraph counts graph node visits (~2 visits per tool round plus answer).
         self._recursion_limit = max_iterations * 2 + 1
         # True when the last run() could not answer. The framework engines
         # keep no per-turn flags, so this is how `ovat run` and bench learn
@@ -145,10 +128,10 @@ class LangChainAgent:
 
 def build_react_agent(config: WorkflowConfig, tools: dict,
                       llm=None) -> LangChainAgent:
-    """Build the LangChain react agent. `llm` is injectable for testing.
+    """Build the LangChain react agent. ``llm`` is injectable for testing.
 
-    In production I build a ChatOpenAI against OVMS. In tests I pass a fake chat
-    model so the whole tool-calling loop runs on any machine with no server.
+    Production callers build a ``ChatOpenAI`` pointed at OVMS; unit tests inject
+    a fake chat model to exercise tool calling without a live server.
     """
     try:
         from langchain.agents import create_agent

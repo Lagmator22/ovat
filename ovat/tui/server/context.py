@@ -1,16 +1,11 @@
 # ovat/tui/server/context.py
-"""What the method handlers share: the agent session and the public session.
+"""Shared app-server state bridging ``AgentSession`` and JSON-RPC handlers.
 
-Note to myself: one server, one conversation. This object owns
-
-- the AgentSession (OVAT's agent: built on a worker thread, reports through
-  one sink callback from worker threads),
-- the Projector (the session as the copied TUI reads it, numbered events),
-- the turn queue, the open approvals and the running `!` command,
-
-and it is the ONE place a report from a worker thread crosses onto the event
-loop: `_sink` calls `loop.call_soon_threadsafe(dispatch, event)`, and
-everything after that runs on the loop, in the order the session sent it.
+Owns the ``AgentSession`` (executing on worker threads), the ``Projector``
+(numbered public session events for the TUI client), the turn queue, open
+approval/question brokers, and active ``!`` shell runs. Bridges worker-thread
+events onto the asyncio event loop in emission order via
+``loop.call_soon_threadsafe``.
 """
 from __future__ import annotations
 

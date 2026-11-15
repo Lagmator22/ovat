@@ -1,12 +1,5 @@
 # tests/test_model_scout.py
-"""Tests for model discovery + identification.
-
-Note to myself: the fake folders below copy the REAL file signatures I
-verified on disk; a Qwen2-VL export has openvino_language_model.xml and
-vision parts (no plain openvino_model.xml); a Llama export has
-openvino_model.xml + LlamaForCausalLM in config.json; whisper has
-encoder+decoder; bge has model_type bert. No real model loads here.
-"""
+"""Tests for local OpenVINO model discovery and layout classification."""
 import json
 import os
 
@@ -332,7 +325,7 @@ def test_an_unreadable_folder_is_skipped_not_fatal(only_these_models, tmp_path, 
     assert model_scout.find_models() == []      # empty, but no exception
 
 
-# --- model_search_paths (Ravi's ask 5) --------------------------------------
+# --- model_search_paths -----------------------------------------------------
 
 def test_config_search_paths_come_before_the_env_var(monkeypatch):
     """A workflow that states where its models live should not be overruled by

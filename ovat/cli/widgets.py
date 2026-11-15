@@ -125,15 +125,7 @@ class SelectableRichLog(RichLog):
 
 
 class Footer(_TextualFooter):
-    """Textual's Footer, minus the hover tooltips it puts on its keys.
-
-    The project rule is no tooltips anywhere (AGENTS.md): Textual draws one as
-    an unstyled block over whatever is under the pointer. The footer adds
-    them itself, from each binding's tooltip, so "^p palette" grew an "Open
-    the command palette" box on the AI PC. The existing no-tooltip test never
-    saw it because Textual's run_test() switches tooltips off by default.
-    Named Footer so the screens' `Footer { ... }` CSS still applies.
-    """
+    """Textual's ``Footer`` with hover tooltips disabled for clean terminal layout."""
 
     def compose(self):
         for widget in super().compose():

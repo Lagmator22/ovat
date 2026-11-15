@@ -1,13 +1,5 @@
 # tests/test_mcp_client.py
-"""Tests for the MCP stdio client: the agent really speaking MCP.
-
-Note to myself: the best possible test server is our OWN search_docs, launched
-exactly the way a user's YAML would launch it (`python -m ovat.tools.search_docs`).
-That finally exercises the `mcp.run()` path AND the client in one go, over a
-real subprocess and a real stdio wire. No retriever is configured in the child
-process, so the tool answers in stub mode; perfect: a deterministic reply
-that proves the round trip without any model on disk.
-"""
+"""Tests for the MCP stdio client using ``ovat.tools.search_docs`` over a real subprocess pipe."""
 import sys
 import time
 import uuid

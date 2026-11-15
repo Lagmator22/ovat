@@ -1,10 +1,5 @@
 # tests/test_shell.py
-"""Tests for the shell-execution layer behind the TUI.
-
-Note to myself: this proves the TUI actually runs real commands. I use trivial
-commands (echo, exit, pwd) so the tests are fast and deterministic, and I never
-need a terminal or Textual here.
-"""
+"""Unit tests for the headless shell-execution helper (ovat/cli/shell.py)."""
 import os
 import sys
 
@@ -48,7 +43,7 @@ def test_run_command_runs_in_the_given_directory(tmp_path):
     lines = []
     shell.run_command(py_command("import os;print(os.getcwd())"),
                       str(tmp_path), lines.append)
-    # macOS may resolve /tmp to /private/tmp, so I match the leaf directory name.
+    # macOS may resolve /tmp to /private/tmp, so match the leaf directory name.
     assert any(tmp_path.name in ln for ln in lines)
 
 

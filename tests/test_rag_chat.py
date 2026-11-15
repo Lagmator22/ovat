@@ -1,10 +1,5 @@
 # tests/test_rag_chat.py
-"""Tests for local RAG chat (retrieve -> answer), with fakes.
-
-Note to myself: no model and no OVMS here. A fake retriever returns canned hits
-and a fake LLM records what prompt it was handed, so I can prove the context and
-sources are wired correctly in milliseconds.
-"""
+"""Unit tests for local RAG chat (retrieve -> answer) using fake providers."""
 from ovat.agent.rag_chat import build_context, rag_chat
 
 

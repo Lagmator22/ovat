@@ -428,16 +428,6 @@ def _wordmark_from_lines(lines: Sequence[str], *, top: tuple[int, int, int],
     return text
 
 
-def _secondary_wordmark(label: str, *, color: str,
-                        font: str = "ansi_shadow") -> Text:
-    """A masthead label in a real FIGlet face, in one flat colour."""
-    lines = _figlet_lines(label, font=font)
-    if not lines:
-        return Text(label, style=f"bold {color}")
-    rgb = tuple(int(color[index:index + 2], 16) for index in (1, 3, 5))
-    return _wordmark_from_lines(lines, top=rgb, bottom=rgb)
-
-
 # Mid-size faces for the attribution marks, best first. "pagga" is the one
 # that belongs here: three rows to OVAT's six, and drawn with the SAME solid
 # block glyphs, so it reads as the same family one size down. The line-art
@@ -737,28 +727,6 @@ class OvatTUI(App):
         self._busy = False
         self._last_quit_press = 0.0    # when Ctrl-C was last pressed while idle
         self._history = InputHistory() # Up/Down recall, like the shell it wraps
-        self._last_agent = None
-
-    @property
-    def last_agent(self):
-        if self._last_agent is not None:
-            return self._last_agent
-        try:
-            screens = list(getattr(self, "screen_stack", []))
-            if hasattr(self, "screen") and self.screen not in screens:
-                screens.append(self.screen)
-            for scr in reversed(screens):
-                engine = getattr(scr, "_engine", None)
-                agent = getattr(engine, "agent", None)
-                if agent is not None:
-                    return agent
-        except Exception:
-            pass
-        return None
-
-    @last_agent.setter
-    def last_agent(self, value):
-        self._last_agent = value
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="masthead"):

@@ -1,23 +1,12 @@
 # ovat/tui/server/turns.py
-"""Turns: starting one, the queue behind it, and how one ends.
+"""Turn lifecycle and prompt queue management for the app server.
 
-Note to myself: the agent runs ONE turn at a time (AgentSession.ask refuses
-a second). Vibe's TUI sends every prompt through a queue (`session/turn/
-enqueue`): an idle server promotes the item at once, a busy one keeps it. So
-this file owns both halves:
-
-- the turn that is running (`active`), from the request to the moment the
-  session reports TurnDone (or the moment it could never start), and
-- the queue of prompts that came in while it ran.
-
-The order of events matches Vibe's server, which the client's bookkeeping
-depends on: the response first, then queueUpdated (the item is there), then
-queueUpdated (it was promoted), then turn/started, the user's message, the
-agent's entries, the stats, and turn/completed last.
-
-A prompt that arrives before the agent has finished building (loading a model
-takes a while) is accepted: the turn starts, waits for the build, and then
-asks. If the build failed the turn fails with that sentence.
+Serializes execution against ``AgentSession`` (one active turn at a time),
+queues prompts arriving while busy via ``session/turn/enqueue``, and emits
+ordered protocol notifications (response -> queue updates -> ``turn/started`` ->
+history entries -> stats -> ``turn/completed``). Prompts submitted while the
+agent is still initializing are queued and execute once ready or fail cleanly if
+agent construction fails.
 """
 from __future__ import annotations
 

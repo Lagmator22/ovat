@@ -1,16 +1,12 @@
 # ovat/agentic/__init__.py
-"""The agentic layer: what an interactive agent session needs, with no UI.
+"""Headless interactive session orchestration decoupled from any terminal UI.
 
-Note to myself: the TUI should only DRAW. Everything it shows comes from
-here, as plain events, so the same session can later drive another front
-end (an editor, a web page) and every rule here is testable without a
-terminal. No textual import anywhere in this package; a test enforces it.
-Permissions (allow | ask | deny, and the broker that asks a person) live
-one layer down in ovat/agent/permissions.py, next to the tool wrapper that
-enforces them.
+Emits structured event dataclasses to a UI/test sink so front ends and tests
+can drive interactive sessions without importing ``textual`` (enforced by
+``tests/test_tui_isolation.py``). Tool permission enforcement and brokers live
+in ``ovat/agent/permissions.py``.
 
-    subagents.py     delegating a task to a local workflow, a cloud API
-                     model, or a remote A2A agent
-    commands.py      the slash-command registry and its fuzzy matcher
-    session.py       AgentSession: build, run turns, cancel, `!` shell
+    subagents.py     task delegation to local workflows, APIs, or A2A peers
+    commands.py      slash-command registry and matching
+    session.py       AgentSession lifecycle, worker turns, cancellation, `!` shell
 """

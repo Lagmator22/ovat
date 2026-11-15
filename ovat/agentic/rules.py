@@ -1,23 +1,16 @@
 # ovat/agentic/rules.py
-"""The tools a person said "always allow" to, per project.
+"""Per-user, per-project permanent tool grants stored in ``~/.ovat/permissions.json``.
 
-Note to myself: a workflow decides what a tool may do (permission: allow, ask
-or deny). "Always allow" in the approval panel is a person's decision about
-ONE project. It is kept in the person's OWN folder, keyed by the project's
-full path, never in the project: a repository could otherwise ship a
-.ovat/permissions.json granting shell and write_file, and whoever opened it
-would have them run without being asked.
+Keeping permanent grants in the user's home directory keyed by canonical project
+path prevents untrusted repositories from shipping pre-approved ``.ovat/`` tool
+grants:
 
     ~/.ovat/permissions.json
-    {"format": 2, "projects": {"C:\\\\Users\\\\me\\\\proj": ["describe_image"]}}
+    {"format": 2, "projects": {"/path/to/project": ["describe_image"]}}
 
-Who reads it: only the ApprovalBroker of an interactive session
-(ovat/agentic/session.py hands the list to it). `ovat run`, a bench worker
-and an A2A server have no broker, so a grant here never makes them send
-anything out unasked: with no one to ask, `ask` stays no.
-
-To take a tool back, delete it from the list, or delete the file.
-Owner-only (0600) like the A2A token. This file never imports textual.
+Only interactive sessions wire saved grants into ``ApprovalBroker``; headless
+entry points (``ovat run``, benchmarks, A2A) ignore them. Stored with user-only
+permissions (``0600`` on POSIX).
 """
 from __future__ import annotations
 

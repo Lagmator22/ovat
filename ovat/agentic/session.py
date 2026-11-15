@@ -1,15 +1,9 @@
 # ovat/agentic/session.py
-"""AgentSession: one interactive agent, driven by any front end.
+"""``AgentSession`` controller for interactive agent execution without UI coupling.
 
-Note to myself: everything slow happens on a worker thread (building the
-agent loads models; a turn waits on OVMS; a `!` command can run for
-minutes), and everything the user should SEE is reported through one
-callback, `sink(event)`, with the small dataclasses below. The TUI's sink
-posts them to its own thread; a test's sink appends them to a list. The
-session never draws anything.
-
-In C++ terms: a controller object that owns the model and a worker thread,
-and publishes immutable messages to one observer.
+Runs blocking agent builds, model turns, and ``!`` shell commands on worker
+threads and emits immutable event dataclasses to a caller-supplied ``sink``
+callback so any front end or test harness can observe state transitions safely.
 """
 import os
 import shlex

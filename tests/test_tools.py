@@ -1,10 +1,5 @@
 # tests/test_tools.py
-"""Tests for the two MCP tools, search_docs and transcribe.
-
-Note to myself: I test the plain impl functions directly with fakes, so I do
-not need a running MCP server, a vector database, or the Whisper model loaded.
-This keeps the suite fast and green on my Mac.
-"""
+"""Unit tests for builtin MCP tool implementations (search_docs and transcribe)."""
 import os
 import wave
 
@@ -104,18 +99,17 @@ def test_transcribe_reports_missing_file_clearly():
 
 
 def test_transcribe_reads_audio_and_calls_pipeline(tmp_path):
-    # I write a tiny real WAV so _read_wav has something valid to parse.
+    # Write a minimal valid WAV header and samples for _read_wav to parse.
     path = tmp_path / "clip.wav"
     with wave.open(str(path), "wb") as w:
         w.setnchannels(1)
-        w.setsampwidth(2)          # 2 bytes is 16 bit, what my reader expects
+        w.setsampwidth(2)          # 2 bytes = 16-bit PCM expected by _read_wav
         w.setframerate(16000)
         w.writeframes(np.zeros(1600, dtype=np.int16).tobytes())
 
     class FakePipeline:
         def generate(self, samples, language=None):
-            # I assert my reader handed me floats and the language was passed
-            # through in Whisper's token form, then return a fake transcript.
+            # Verify float32 conversion and Whisper language token forwarding.
             assert samples.dtype == np.float32
             assert language == "<|en|>"
             return "hello world"
@@ -236,12 +230,7 @@ def test_describe_image_follows_the_llm_recommendation(monkeypatch):
 # user error and has to read like one.
 
 def test_a_wrong_transcribe_model_path_says_what_to_fix(tmp_path, monkeypatch):
-    """Measured on the AI PC, 2026-08-16: a `model:` naming a folder that does
-    not exist returned five lines of C++ out of core.cpp, ending in
-    'Could not open the file: "...\\openvino_encoder_model.xml"' -- an internal
-    filename the user never chose, and not one word about the setting that was
-    actually wrong. describe_image already appended the fix; transcribe did not.
-    """
+    """Ensure a missing Whisper model path yields an actionable config error rather than raw C++ exceptions."""
     from ovat.tools import transcribe
 
     monkeypatch.delenv("OVAT_WHISPER_MODEL", raising=False)
@@ -265,8 +254,7 @@ def test_a_wrong_transcribe_model_path_says_what_to_fix(tmp_path, monkeypatch):
 
 
 def test_a_wrong_describe_image_model_path_says_what_to_fix(tmp_path, monkeypatch):
-    """Same guard on the vision half. Its closing sentence was already right;
-    what buried it was the C++ wall openvino_genai raised first."""
+    """Ensure a missing VLM model path yields an actionable config error rather than raw C++ exceptions."""
     from ovat.tools import describe_image
 
     monkeypatch.delenv("OVAT_VLM_MODEL", raising=False)

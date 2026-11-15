@@ -8,7 +8,7 @@ single-child cancellation via 'x'.
 import time
 from rich.text import Text
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import DataTable, Static
 

@@ -1,12 +1,9 @@
 # ovat/providers/llm_ovms.py
-"""Layer 4: concrete LLM plug that talks to the OVMS server.
+"""LLM provider backed by OVMS OpenAI-compatible ``/v3`` endpoints.
 
-Fills the LLMProvider socket by calling OVMS's OpenAI-compatible /v3 endpoint
-with the OpenAI SDK. Unlike GenAILLMProvider (which runs a local pipeline),
-this one needs an OVMS server running (locally via Docker, or on the Intel AI
-PC). Because OVMS supports --tool_parser, THIS plug is the one that does real
-tool calling and so chat() can return finish_reason="tool_calls". So this is the 
-server path for llms.
+Uses the OpenAI Python SDK to call OVMS chat completions with server-side tool
+call decoding (``--tool_parser``) and returns normalized responses including
+token usage.
 """
 from dataclasses import dataclass
 
@@ -173,8 +170,7 @@ class OVMSLLMProvider(LLMProvider):
             **extra,
         )
         choice = response.choices[0]
-        # OVMS reports token usage on every response; keep it instead of
-        # dropping it; the agent loop turns it into the run trace (Layer 7).
+        # Retain token usage reported by OVMS so the agent loop can record it.
         usage = getattr(response, "usage", None)
         return {
             "finish_reason": choice.finish_reason,    # "stop" or "tool_calls"

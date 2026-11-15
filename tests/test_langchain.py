@@ -1,11 +1,8 @@
 # tests/test_langchain.py
-"""Tests for the LangChain react engine (agent.type: react).
+"""Tests for the LangChain ReAct engine (``agent.type: react``).
 
-Note to myself: I do NOT need OVMS for these. I inject a fake chat model that
-replays scripted replies, so the real LangChain agent graph runs the full
-tool-calling loop (model -> tool -> model -> answer) on any machine. The only
-thing this cannot exercise is the live OVMS round trip, which is a live test on
-the AI PC. If LangChain is not installed, the whole file skips cleanly.
+Uses an injected fake chat model that replays scripted tool calls and replies so
+the LangChain graph executes end to end without a running OVMS server.
 """
 import pytest
 
@@ -21,12 +18,7 @@ from ovat.config.workflow import WorkflowConfig
 
 
 class FakeToolModel(GenericFakeChatModel):
-    """A fake chat model that supports tool binding.
-
-    create_agent calls model.bind_tools(...). The stock fake raises
-    NotImplementedError, so I override bind_tools to ignore the tools and just
-    keep replaying my scripted messages. That is enough to drive the graph.
-    """
+    """Fake chat model with no-op ``bind_tools`` supporting scripted graph runs."""
 
     def bind_tools(self, tools, **kwargs):
         return self
@@ -58,11 +50,9 @@ def test_react_agent_runs_full_tool_loop():
 
 
 def test_react_agent_caps_runaway_with_friendly_message():
-    # When the graph blows past its recursion limit, langgraph raises
-    # GraphRecursionError. My adapter must catch it and return the same wording
-    # the native loop uses, instead of letting the raw error escape. I drive
-    # that path directly with a graph that raises, so the test is about MY
-    # handling, not langgraph's internal step counting.
+    # When the graph exceeds its recursion limit, LangGraph raises
+    # GraphRecursionError; the adapter must catch it and return the standard
+    # iteration-limit error message instead of propagating a raw traceback.
     from langgraph.errors import GraphRecursionError
 
     class _RunawayGraph:

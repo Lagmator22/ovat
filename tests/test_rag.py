@@ -1,13 +1,5 @@
 # tests/test_rag.py
-"""Tests for the RAG path: chunking, indexing, retrieval, and provider choice.
-
-Note to myself: I never load a real embedding model here. I inject a tiny
-FakeEmbedder that maps text to a deterministic vector. That is enough to prove
-the whole pipeline (chunk -> store -> nearest-neighbour -> citation) works,
-and it runs in milliseconds on the Mac with nothing downloaded. The only piece
-this cannot cover is building the real genai embedder, which is a live test on
-the AI PC.
-"""
+"""Tests for the RAG pipeline (chunking, indexing, retrieval, and provider wiring) using fake embedders."""
 import pytest
 
 from ovat.agent.factory import build_embedder, build_rag, build_retriever
@@ -70,12 +62,7 @@ def test_a_python_without_extension_support_gets_a_sentence_not_a_traceback(
 
 
 class FakeEmbedder:
-    """Deterministic stand-in for a real embedder.
-
-    Same text in -> same vector out, and different text -> a different vector.
-    That is all the retriever needs: an exact-match query lands distance 0 on
-    the chunk it came from, so I can assert which chunk (and source) comes back.
-    """
+    """Deterministic embedder returning unique repeatable vectors per distinct input."""
 
     def embed(self, texts):
         vectors = []
@@ -121,7 +108,7 @@ def test_chunk_text_rejects_non_positive_size():
 def test_index_folder_then_search_returns_chunk_with_citation(tmp_path):
     (tmp_path / "a.md").write_text("python is great for ai", encoding="utf-8")
     (tmp_path / "b.txt").write_text("rust is fast and safe", encoding="utf-8")
-    # A file type I do not index, to prove the filter works.
+    # Unsupported extension filtered out by the indexer.
     (tmp_path / "ignore.bin").write_text("binary junk", encoding="utf-8")
 
     retriever = SQLiteVecRetrieverProvider(FakeEmbedder(), dim=384, db_path=":memory:")

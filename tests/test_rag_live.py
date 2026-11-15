@@ -1,14 +1,8 @@
 # tests/test_rag_live.py
-"""Real-model RAG test: the actual bge-small embedder, not a fake.
+"""Integration test for RAG retrieval with the local bge-small embedder.
 
-Note to myself: this needs the OpenVINO bge-small model exported to disk under
-models/bge-small-en-v1.5 (the same folder examples/workflow.yml points at). If
-that folder is missing, the test skips, so CI and a fresh clone stay green. On
-my Mac and on the AI PC, where the model exists, it runs for real.
-
-What it proves that the fake-embedder tests cannot: the genai embedder loads,
-produces vectors whose distances are meaningful, and retrieval ranks documents
-by MEANING. Each query below uses words the matching document does not contain.
+Skips cleanly when models/bge-small-en-v1.5 is absent on disk; when present,
+verifies that real embedding vectors rank documents by semantic similarity.
 """
 import os
 

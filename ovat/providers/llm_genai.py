@@ -1,47 +1,32 @@
 # ovat/providers/llm_genai.py
-"""Layer 4: concrete LLM plug that runs a text model on this machine.
+"""Local LLM provider backed by ``openvino_genai``.
 
-GenAILLMProvider fills the LLMProvider socket using openvino_genai.LLMPipeline.
-No server needed. Runs natively on Mac CPU. This is the "GenAI fallback"
-for local dev (the OVMS plug, OVMSLLMProvider, comes later for the server path).
-
-Limitation: since direct GenAI/LLMs does NOT do OVMS-style tool calling, so chat()
-here always returns finish_reason="stop" and tool_calls=None. It's for real
-text generation + wiring; true tool-calling agents use the OVMS plug.
+Runs inference in-process on the target OpenVINO device (defaulting to CPU)
+without an OVMS server. ``chat()`` always returns ``finish_reason="stop"`` and
+``tool_calls=None`` because direct GenAI pipelines do not emit OVMS-style tool
+calls.
 """
 import openvino_genai as ov_genai
 
 from ovat.providers.base import LLMProvider
 
 
-class GenAILLMProvider(LLMProvider): # obey the LLMprovider rulebook
-    """Runs a local text LLM via openvino_genai.LLMPipeline."""
+class GenAILLMProvider(LLMProvider):
+    """Runs a local text LLM or unified multimodal export via openvino_genai."""
 
     def __init__(self, model_path: str, device: str = "CPU",
                  max_new_tokens: int | None = 256,
                  enable_thinking: bool | None = None):
-        """
-        init (Constructor) runs once here to load the converted model onto a device.
-        This is the same call made in [PoC] OvaSearch's C++:
-        ov::genai::LLMPipeline pipe(path, "CPU"). CPU is default path.
-        'self' in Python == 'this' keyword in C++
+        """Load the OpenVINO GenAI pipeline for ``model_path`` onto ``device``.
 
-        max_new_tokens=None means "no cap": generate until the model emits its
-        end-of-sequence token. That is opt-in rather than the default on
-        purpose. openvino_genai's own default is 2**64-1 tokens, so a model
-        that never emits EOS (a base rather than instruct model, or a bad chat
-        template) would generate until it exhausts the context window, which on
-        CPU is minutes with the UI frozen and only Esc to get out. A cap you
-        can raise beats an unbounded default you have to discover.
+        ``max_new_tokens=None`` disables the generation cap (stopping only on
+        EOS), while the default of 256 prevents runaway generation if a base
+        model or misconfigured template fails to emit EOS.
 
-        Which pipeline: a UNIFIED multimodal export (Qwen3.5) is a perfectly
-        good text LLM, but it will not load as one. Measured on the real
-        OpenVINO/Qwen3.5-0.8B-int4-ov: LLMPipeline CONSTRUCTS fine, taking
-        24.6s, and then dies on the first generate() with "Port for tensor
-        name input_ids was not found". VLMPipeline answers the same prompt in
-        1.3s and honours the same streamer contract. Constructing without
-        error is therefore not evidence the pipeline is the right one, so the
-        choice is made from the export's own layout instead.
+        Unified multimodal exports (e.g., Qwen3.5) require ``VLMPipeline`` even
+        for text-only prompts: constructing ``LLMPipeline`` succeeds but fails
+        at generation with a missing ``input_ids`` tensor port error, so the
+        pipeline class is selected from ``identify_model(model_path)``.
         """
         # model_scout is the single source of truth for "what kind is this".
         from ovat.core.model_scout import identify_model

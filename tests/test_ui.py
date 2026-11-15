@@ -1,10 +1,7 @@
 # tests/test_ui.py
 """Tests for the shared look and feel (ovat/cli/ui.py).
 
-Note to myself: rendering is hard to eyeball in tests, so I test the CONTRACT:
-the theme derives from the one PALETTE dict (single source of truth), the
-generic colour names commands already use are remapped into the brand palette,
-and the helpers produce the glyphs doctor relies on.
+Verifies the palette-to-theme derivation, color remapping, and status glyphs.
 """
 from rich.style import Style
 

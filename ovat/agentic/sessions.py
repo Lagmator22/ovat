@@ -1,21 +1,11 @@
 # ovat/agentic/sessions.py
-"""Saved conversations on disk: where they live, and the agent app's store.
+"""Disk storage layout for saved conversations and structured agent sessions.
 
-Note to myself: three things save conversations, and they must agree on the
-folder or `/resume` and `/load` would each see half of them:
+Centralizes directory conventions so chat and agent UIs share one location:
+    .ovat/sessions/<name>.json        plain message lists (`/save` / `/load`)
+    .ovat/sessions/agent/<id>.json    structured agent records (``SessionStore``)
 
-    .ovat/sessions/<name>.json        the launcher's /chat, and /save in the
-                                      agent apps (a plain list of messages)
-    .ovat/sessions/agent/<id>.json    `ovat agent` conversations (a record,
-                                      see SessionStore)
-
-So the folder is decided here, once. This file never imports textual: the
-launcher's chat screen and the agent app server both use it.
-
-A record is plain JSON (a dict), written whole to a temporary file and moved
-over the old one, so a crash mid-write leaves the previous save, never half
-of one. What goes into a record is the server's business; this file only
-keeps them.
+Record writes go through ``atomic.write_text`` so crashes leave intact saves.
 """
 from __future__ import annotations
 
@@ -55,8 +45,7 @@ class SessionStore:
     def save(self, record: dict) -> Path:
         """Write `record` (it carries its own "id"). Raises OSError when the
         disk says no: the caller decides how to tell the person."""
-        # Owner-only, like the A2A token: a conversation holds the person's
-        # documents and every tool's output.
+        # Write with 0600 permissions because saved sessions may hold user data.
         return atomic.write_text(
             self.path(record["id"]),
             json.dumps({**record, "format": FORMAT}, indent=1))

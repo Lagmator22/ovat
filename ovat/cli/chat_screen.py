@@ -64,14 +64,10 @@ CHAT_COMMANDS = [
 # project's chats and preferences stay with that project.
 # None: each engine's own default, not one number for both.
 #
-# History: 256 cut real answers off mid-sentence, so it became 1024, and 1024
-# did the same to a thinking model. On the AI PC Qwen3.5 spent all 1024 tokens
-# reasoning and the answer stopped at "Final Check: Did". A cap on a chat you
-# are WATCHING protects nothing: the answer streams, and Esc stops it. So:
-#   local  no cap; the model finishes, or you press Esc.
-#   ovms   the config's model.max_tokens (4096 by default). That one stays:
-#          the generation runs inside the server, a cancelled request does not
-#          stop it, and an uncapped runaway once held the server for 20 min.
+# Generation token caps differ per engine: local streaming chat is uncapped
+# because the user can cancel mid-stream with Esc, whereas OVMS server turns
+# keep model.max_tokens (default 4096) to prevent runaway server-side jobs.
+# Reasoning models can easily exceed 1024 tokens during thinking alone.
 # /tokens N still sets a cap on either.
 DEFAULT_MAX_TOKENS = None
 
@@ -242,15 +238,13 @@ def _build_components(config_path: str, model_path: str,
         raise ValueError(
             "this workflow has no rag: section; add one and run `ovat index` first"
         )
-    # Identify BEFORE the 30-second load. A vision/whisper/embedding folder
-    # used to load "fine" and then explode at generate time with a C++
-    # traceback about tensor ports; now it is one readable sentence.
+    # Identify model kind before loading so vision/whisper/embedding paths fail
+    # fast with a clear message instead of failing later on mismatched tensor ports.
     kind, why = identify_model(model_path)
     if kind not in CHAT_KINDS:
         _, llms = pick_chat_llm()
-        # Paths, not just names: the name alone cannot be typed into /chat,
-        # and two folders can share one (the AI PC had Qwen3-8B-int4-ov in
-        # both ./models and ~/models, listed twice and indistinguishable).
+        # Include full paths alongside names so duplicate model names across
+        # search directories remain unambiguous.
         suggestion = ("\nText models found here:\n" + "\n".join(
             f"  {m['name']}  {m['path']}" for m in llms) if llms else "")
         if not os.path.isdir(model_path):
@@ -318,9 +312,8 @@ class OVMSEngine:
     name = "ovms"
     footnote_label = "tools used"
 
-    def __init__(self, cfg, agent, max_tokens=None, app=None):
+    def __init__(self, cfg, agent, max_tokens=None):
         self.cfg, self.agent = cfg, agent
-        self._app = app
         if max_tokens is not None:
             self.max_new_tokens = max_tokens
 
@@ -362,15 +355,6 @@ class OVMSEngine:
         # history is ignored on purpose: AgentLoop keeps its own Session, and
         # replaying ours on top would duplicate every turn in the prompt.
         answer = self.agent.run(question)
-        # Publish here as well as at build time. At build time last_trace is
-        # still {} so the telemetry page has nothing to show; after a real
-        # answer it has turns and token counts. Belt and braces, because the
-        # build-time publish runs on a worker thread and a failed engine swap
-        # can skip it entirely.
-        try:
-            self._app.last_agent = self.agent
-        except Exception:
-            pass
         trace = getattr(self.agent, "last_trace", {}) or {}
         used = [call["name"] for turn in trace.get("turns", [])
                 for call in turn.get("tool_calls", [])]
@@ -450,16 +434,11 @@ class TranscriptLine(Static):
 
 
 class Reasoning(Collapsible):
-    """A model's <think> narration, folded away behind a title.
+    """Collapsible widget displaying a model's ``<think>`` reasoning block.
 
-    /thinking on used to dump fifteen lines of narration above every answer,
-    which solved "I cannot see it" by creating "I cannot see past it". A
-    Collapsible keeps it one keypress away and out of the way until asked
-    for, so showing reasoning no longer costs you the conversation.
-
-    The body is a Static, not a Markdown widget: markdown reads <think> as
-    an HTML tag and drops the whole block, so rendering it would show
-    nothing at all.
+    Keeps verbose reasoning collapsed behind a toggle so transcripts remain
+    readable. Uses ``Static`` rather than ``Markdown`` because Markdown strips
+    raw ``<think>`` HTML-like blocks.
     """
 
     def __init__(self, text: str) -> None:
@@ -800,22 +779,6 @@ class ChatScreen(Screen):
         try:
             engine = _build_engine(self._config_path, self._model_path,
                                    self._engine_name)
-            # Publish the agent so the telemetry page can report on it. That
-            # page has no config and cannot build one itself, and loading a
-            # model just to draw a graph would be absurd, so the app is where
-            # the two screens meet. Without this the telemetry page said "no
-            # agent has run yet" even while a chat was answering.
-            # Hand the engine a way back to the app, so it can republish
-            # after each answer when last_trace actually has numbers in it.
-            try:
-                engine._app = self.app
-            except Exception:
-                pass
-            agent = getattr(engine, "agent", None)
-            if agent is not None:
-                def _publish_agent(a=agent):
-                    self.app.last_agent = a
-                self.app.call_from_thread(_publish_agent)
         except Exception as exc:
             # The spinner has to stop on the FAILURE path too, or a bad config
             # leaves the transcript spinning forever behind the error message.
@@ -1153,13 +1116,7 @@ class ChatScreen(Screen):
         return ""
 
     def _copy(self, what: str) -> None:
-        """/copy [me|all]: the last answer, your last question, or everything.
-
-        A terminal's own selection is awkward for a long streamed answer that
-        wrapped over dozens of lines, which is exactly the output worth
-        keeping. The transcript already holds every turn, so copying from it
-        beats dragging a mouse across a scrollback.
-        """
+        """``/copy [me|all]``: copy the last answer, last prompt, or full transcript from memory."""
         # Copying follows what is ON SCREEN, so with reasoning hidden you get
         # the answer, and /thinking on then /copy gets the reasoning too.
         if what in ("", "last", "answer", "it"):

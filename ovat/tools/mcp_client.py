@@ -71,8 +71,7 @@ class _MCPClientBase:
         except BaseException:
             self.close()
             raise
-        # Belt and braces: if the owner never calls close(), the interpreter
-        # shutdown does. Closing twice is safe.
+        # Fallback cleanup on interpreter shutdown if close() was never called.
         atexit.register(self.close)
 
     def _start_session(self) -> None:

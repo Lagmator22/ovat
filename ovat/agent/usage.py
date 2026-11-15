@@ -11,11 +11,9 @@ import time
 
 
 def sum_known(values):
-    """Sum the values that were reported, or None if none was.
+    """Sum reported values, returning ``None`` if every entry is absent.
 
-    Absent is not zero. A server that sends no usage block would otherwise
-    produce "prompt_tokens": 0, which reads as "this run used no tokens"
-    rather than "nobody told us".
+    Keeps missing server usage distinct from zero tokens.
     """
     known = [v for v in values if v is not None]
     return sum(known) if known else None

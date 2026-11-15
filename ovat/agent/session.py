@@ -1,13 +1,9 @@
 # ovat/agent/session.py
-"""Layer 3: Session, the agent's memory of one conversation.
+"""In-memory and serializable conversation history (``Session``).
 
-Note to myself: an LLM is stateless. Every time I call OVMS it forgets the
-previous turn completely. So if I want turn 5 to remember turn 1, I have to
-resend the whole conversation every single time. This class is just that
-growing list of messages, plus save and load so a chat can survive a restart.
-
-The message shapes follow the OpenAI chat format, because OVMS speaks that
-format. The four roles I will ever store are: system, user, assistant, tool.
+Stores an ordered list of OpenAI-compatible chat messages (``system``,
+``user``, ``assistant``, ``tool``) so stateless inference requests receive the
+full prior context, and supports thread-safe JSON persistence.
 """
 import json
 import threading
@@ -17,22 +13,17 @@ class Session:
     """Holds the full ordered message history for one conversation."""
 
     def __init__(self, system_prompt: str | None = None):
-        # I keep every message in order in this one list. Order matters,
-        # the model reads it top to bottom like a script.
+        # Ordered message sequence passed verbatim on each model turn.
         self.messages: list[dict] = []
-        # The TUI streams an answer on a worker thread and saves from there,
-        # while the main thread can swap or mutate the session (/load, /clear)
-        # at any moment. json.dump iterating a list that another thread is
-        # appending to writes a truncated file -- and the file it truncates is
-        # the user's saved conversation. Appends and the save share this lock so
-        # a save always sees one consistent snapshot.
+        # Synchronizes appends during streaming against concurrent UI saves,
+        # loads, or clears so snapshots stay consistent.
         self._lock = threading.Lock()
-        # The system prompt is optional. If I pass one, it always goes first.
+        # Prepend optional system prompt at index 0.
         if system_prompt is not None:
             self.messages.append({"role": "system", "content": system_prompt})
 
     def add_user(self, content: str) -> None:
-        """I call this when the human says something."""
+        """Append a user message to the history."""
         with self._lock:
             self.messages.append({"role": "user", "content": content})
 
@@ -40,17 +31,11 @@ class Session:
                       tool_calls: list[dict] | None = None,
                       sources: list[str] | None = None,
                       sources_label: str | None = None) -> None:
-        """I call this to record what the model replied.
+        """Record an assistant reply, optional tool calls, and citation metadata.
 
-        Note to myself: when the model wants a tool, content is usually None
-        and tool_calls holds the request. I only attach tool_calls if there
-        are any, so a plain text reply stays a clean two key message.
-
-        sources (and the label the screen showed them under, "sources" or
-        "tools used") ride along so a redrawn transcript can show them again:
-        /thinking and /load rebuild from these messages, and without them the
-        footer line vanished. Models never see them; every provider sends
-        only role and content.
+        Attaches ``tool_calls`` only when non-empty so text replies stay compact.
+        ``sources`` and ``sources_label`` are stored for UI transcript redraws
+        on reload or toggle, and stripped before sending messages to providers.
         """
         message: dict = {"role": "assistant", "content": content}
         if tool_calls:
@@ -63,12 +48,7 @@ class Session:
             self.messages.append(message)
 
     def add_tool_result(self, tool_call_id: str, content: str) -> None:
-        """I call this after I run a tool, to feed its output back to the model.
-
-        Note to myself: tool_call_id is the join key. It must match the id of
-        the exact tool_call the model asked for, otherwise the model cannot
-        tell which answer belongs to which question.
-        """
+        """Append a tool execution output correlated by ``tool_call_id``."""
         with self._lock:
             self.messages.append({
                 "role": "tool",
@@ -82,12 +62,10 @@ class Session:
             return list(self.messages)
 
     def truncate(self, length: int) -> None:
-        """Forget everything from message `length` on (a rewind).
+        """Rewind conversation history from index ``length`` onward.
 
-        Note to myself: the cut must land right before a user message, or at
-        the very end. Anywhere else can split an assistant's tool_calls from
-        the tool results that answer them, and OVMS refuses a history like
-        that on the next request.
+        ``length`` must sit on a user message boundary (or ``len(messages)``)
+        so an assistant ``tool_calls`` turn is never severed from its tool results.
         """
         with self._lock:
             if not 0 <= length <= len(self.messages):
@@ -98,10 +76,9 @@ class Session:
             del self.messages[length:]
 
     def save(self, path: str) -> None:
-        """I dump the whole history to a JSON file so I can resume later."""
-        # A copy inside the lock, dumped outside it: json.dumps and file I/O
-        # happen outside the lock so the answer stream is not blocked, and
-        # write_text writes a temp file first so a failure never truncates path.
+        """Serialize message history atomically to a JSON file."""
+        # Snapshot under the lock and perform JSON encoding/I/O outside so
+        # streaming appends are not blocked.
         from pathlib import Path
         from ovat.agentic.atomic import write_text
         snapshot = self.snapshot()
@@ -109,7 +86,7 @@ class Session:
 
     @classmethod
     def load(cls, path: str) -> "Session":
-        """I rebuild a Session from a JSON file I saved earlier."""
+        """Restore a ``Session`` from a previously saved JSON file."""
         session = cls()
         with open(path, "r", encoding="utf-8") as f:
             session.messages = json.load(f)
