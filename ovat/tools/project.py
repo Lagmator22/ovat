@@ -118,9 +118,9 @@ def _names_sensitive(raw: str | None, for_read: bool) -> bool:
     text = (raw or "").strip().replace("\\", "/")
     if not text:
         return False
-    # windows ignores trailing dots and spaces in a name: ".git./config"
-    # opens .git/config there.
-    parts = [p.lower().rstrip(" .") for p in Path(text).parts
+    # windows ignores trailing dots and spaces in a name (".git./config"
+    # opens .git/config) and ".env::$DATA" is .env's own data stream.
+    parts = [p.lower().split(":", 1)[0].rstrip(" .") for p in Path(text).parts
              if p not in ("", ".", "/")]
     parts = [p for p in parts if p]
     if not parts:

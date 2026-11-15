@@ -93,8 +93,10 @@ def _walk(target: Path, root: Path, regex, glob, limit: int):
 
 
 def _ripgrep(rg: str, pattern: str, target: Path, root: Path, glob, limit):
+    # --null ends each file name with a NUL, so a ':' inside a folder name
+    # cannot shift where the path stops.
     cmd = [rg, "--no-config", "--no-follow", "--line-number", "--no-heading",
-           "--with-filename", "--no-binary", "--max-columns",
+           "--with-filename", "--null", "--no-binary", "--max-columns",
            str(MAX_LINE_CHARS)]
     if _smart_case(pattern):
         cmd.append("--ignore-case")
@@ -114,12 +116,13 @@ def _ripgrep(rg: str, pattern: str, target: Path, root: Path, glob, limit):
         for raw in proc.stdout:
             line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
             # Searching "." makes ripgrep print "./a.py" (".\\a.py" on Windows).
-            line = line[2:] if line[:2] in ("./", ".\\") else line
+            name, _, rest = line.partition("\0")
+            name = name[2:] if name[:2] in ("./", ".\\") else name
             # .env and friends are files, so the folder globs above miss
             # them; read_file would ask first, so grep leaves them out.
-            if is_sensitive_path(line.split(":", 1)[0], for_read=True):
+            if is_sensitive_path(name, for_read=True):
                 continue
-            lines.append(line)
+            lines.append(f"{name}:{rest}")
             if len(lines) > limit:
                 break               # enough: do not read a whole monorepo
     finally:

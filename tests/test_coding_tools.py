@@ -661,6 +661,16 @@ def test_grep_does_not_search_secret_files_with_or_without_rg(
         assert "hush1" not in str(out), how
 
 
+@pytest.mark.skipif(os.name == "nt", reason="':' is not allowed in a name")
+def test_a_colon_in_a_folder_name_does_not_hide_a_secret_file(
+        root, monkeypatch):
+    (root / "a:b").mkdir()
+    (root / "a:b" / ".env").write_text("TOKEN=hush5\n")
+    for how, out in _grep_both_ways(monkeypatch, "TOKEN", root,
+                                    path="a:b/.env").items():
+        assert "hush5" not in str(out), how
+
+
 def test_a_symlink_to_a_secret_file_is_still_sensitive(root, monkeypatch):
     """The gate looks at where the path leads, not only at its name."""
     from ovat.tools.project import is_sensitive_path
@@ -678,5 +688,6 @@ def test_windows_trailing_dots_and_spaces_do_not_hide_a_secret_file():
     """Windows drops trailing dots and spaces when it opens a file, so
     ".env " and ".git./config" name the real files there."""
     from ovat.tools.project import is_sensitive_path
-    for p in (".env ", ".env.", ".git./config", ".ovat /x.json", "workflow.yml."):
+    for p in (".env ", ".env.", ".git./config", ".ovat /x.json", "workflow.yml.",
+              ".env::$DATA", "sub/.env:stream"):
         assert is_sensitive_path(p) is True, p
