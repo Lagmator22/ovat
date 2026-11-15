@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 360" width="880" height="360" role="img" aria-labelledby="tplano dplano">
+<title id="tplano">The plano request path</title><desc id="dplano">ovat run points ovms_url at :8000/v1, where plano (Envoy) listens and records OpenTelemetry spans. Requests pass through ovms_id_bridge.py on :8001 to OVMS on :8002/v3, the port in model.ovms_port. planoai obs shows latency, time to first token and tokens.</desc>
+<defs><radialGradient id="bgplano" cx="0.12" cy="0" r="1.1"><stop offset="0" stop-color="#1f2236"/><stop offset="0.7" stop-color="#161826"/></radialGradient><linearGradient id="ruleplano" x1="0" x2="1"><stop offset="0" stop-color="#3f424d" stop-opacity="0"/><stop offset="0.08" stop-color="#3f424d"/><stop offset="0.92" stop-color="#3f424d"/><stop offset="1" stop-color="#3f424d" stop-opacity="0"/></linearGradient><pattern id="dpplano" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#262836"/></pattern><marker id="ahplano" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="#75798c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>@keyframes k0{0%{stroke-dashoffset:50;opacity:1}17.442%{stroke-dashoffset:50;opacity:1}21.802%{stroke-dashoffset:0}98.256%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr0{animation:k0 17.2s linear infinite}
+@keyframes k1{0%{stroke-dashoffset:30;opacity:0}17.442%{stroke-dashoffset:30;opacity:0}17.558%{opacity:1}21.802%{stroke-dashoffset:-50;opacity:1}22.093%{stroke-dashoffset:-50;opacity:0}100%{stroke-dashoffset:-50;opacity:0}}.cm0{animation:k1 17.2s linear infinite}
+@keyframes k2{0%{stroke-dashoffset:50;opacity:1}34.884%{stroke-dashoffset:50;opacity:1}39.244%{stroke-dashoffset:0}98.256%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr1{animation:k2 17.2s linear infinite}
+@keyframes k3{0%{stroke-dashoffset:30;opacity:0}34.884%{stroke-dashoffset:30;opacity:0}35.000%{opacity:1}39.244%{stroke-dashoffset:-50;opacity:1}39.535%{stroke-dashoffset:-50;opacity:0}100%{stroke-dashoffset:-50;opacity:0}}.cm1{animation:k3 17.2s linear infinite}
+@keyframes k4{0%{stroke-dashoffset:50;opacity:1}52.326%{stroke-dashoffset:50;opacity:1}56.686%{stroke-dashoffset:0}98.256%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr2{animation:k4 17.2s linear infinite}
+@keyframes k5{0%{stroke-dashoffset:30;opacity:0}52.326%{stroke-dashoffset:30;opacity:0}52.442%{opacity:1}56.686%{stroke-dashoffset:-50;opacity:1}56.977%{stroke-dashoffset:-50;opacity:0}100%{stroke-dashoffset:-50;opacity:0}}.cm2{animation:k5 17.2s linear infinite}
+@keyframes k6{0%{stroke-dashoffset:48;opacity:1}69.767%{stroke-dashoffset:48;opacity:1}74.128%{stroke-dashoffset:0}98.256%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr3{animation:k6 17.2s linear infinite}
+@keyframes k7{0%{stroke-dashoffset:28.8;opacity:0}69.767%{stroke-dashoffset:28.8;opacity:0}69.884%{opacity:1}74.128%{stroke-dashoffset:-48;opacity:1}74.419%{stroke-dashoffset:-48;opacity:0}100%{stroke-dashoffset:-48;opacity:0}}.cm3{animation:k7 17.2s linear infinite}
+@keyframes k8{0%{opacity:0}0.000%{opacity:0}1.744%{opacity:1}98.256%{opacity:1}100%{opacity:0}}.vo{animation:k8 17.2s linear infinite}
+@keyframes k9{0%{opacity:0}0.000%{opacity:0}1.744%{opacity:1}15.698%{opacity:1}17.442%{opacity:0}100%{opacity:0}}.ao{animation:k9 17.2s linear infinite}
+@keyframes k10{0%{opacity:0}20.930%{opacity:0}22.674%{opacity:1}98.256%{opacity:1}100%{opacity:0}}.vp{animation:k10 17.2s linear infinite}
+@keyframes k11{0%{opacity:0}20.930%{opacity:0}22.674%{opacity:1}33.140%{opacity:1}34.884%{opacity:0}100%{opacity:0}}.ap{animation:k11 17.2s linear infinite}
+@keyframes k12{0%{opacity:0}38.372%{opacity:0}40.116%{opacity:1}98.256%{opacity:1}100%{opacity:0}}.vb{animation:k12 17.2s linear infinite}
+@keyframes k13{0%{opacity:0}38.372%{opacity:0}40.116%{opacity:1}50.581%{opacity:1}52.326%{opacity:0}100%{opacity:0}}.ab{animation:k13 17.2s linear infinite}
+@keyframes k14{0%{opacity:0}55.814%{opacity:0}57.558%{opacity:1}98.256%{opacity:1}100%{opacity:0}}.vv{animation:k14 17.2s linear infinite}
+@keyframes k15{0%{opacity:0}55.814%{opacity:0}57.558%{opacity:1}68.023%{opacity:1}69.767%{opacity:0}100%{opacity:0}}.av{animation:k15 17.2s linear infinite}
+@keyframes k16{0%{opacity:0}73.256%{opacity:0}75.000%{opacity:1}98.256%{opacity:1}100%{opacity:0}}.vobs{animation:k16 17.2s linear infinite}
+@keyframes k17{0%{opacity:0}73.256%{opacity:0}75.000%{opacity:1}96.512%{opacity:1}98.256%{opacity:0}100%{opacity:0}}.aobs{animation:k17 17.2s linear infinite}
+@keyframes k18{0%{opacity:0}0.000%{opacity:0}1.744%{opacity:1}15.698%{opacity:1}17.442%{opacity:0}100%{opacity:0}}.tk0{animation:k18 17.2s linear infinite}
+@keyframes k19{0%{opacity:0}0.000%{opacity:0}1.744%{opacity:1}15.698%{opacity:1}17.442%{opacity:0}100%{opacity:0}}.cp0{animation:k19 17.2s linear infinite}
+@keyframes k20{0%{opacity:0}17.442%{opacity:0}19.186%{opacity:1}33.140%{opacity:1}34.884%{opacity:0}100%{opacity:0}}.tk1{animation:k20 17.2s linear infinite}
+@keyframes k21{0%{opacity:0}17.442%{opacity:0}19.186%{opacity:1}33.140%{opacity:1}34.884%{opacity:0}100%{opacity:0}}.cp1{animation:k21 17.2s linear infinite}
+@keyframes k22{0%{opacity:0}34.884%{opacity:0}36.628%{opacity:1}50.581%{opacity:1}52.326%{opacity:0}100%{opacity:0}}.tk2{animation:k22 17.2s linear infinite}
+@keyframes k23{0%{opacity:0}34.884%{opacity:0}36.628%{opacity:1}50.581%{opacity:1}52.326%{opacity:0}100%{opacity:0}}.cp2{animation:k23 17.2s linear infinite}
+@keyframes k24{0%{opacity:0}52.326%{opacity:0}54.070%{opacity:1}68.023%{opacity:1}69.767%{opacity:0}100%{opacity:0}}.tk3{animation:k24 17.2s linear infinite}
+@keyframes k25{0%{opacity:0}52.326%{opacity:0}54.070%{opacity:1}68.023%{opacity:1}69.767%{opacity:0}100%{opacity:0}}.cp3{animation:k25 17.2s linear infinite}
+@keyframes k26{0%{opacity:0}69.767%{opacity:0}71.512%{opacity:1}98.256%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.tk4{animation:k26 17.2s linear infinite}
+@keyframes k27{0%{opacity:0}69.767%{opacity:0}71.512%{opacity:1}98.256%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.cp4{animation:k27 17.2s linear infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}.v{opacity:1!important}.cap,.cmt{opacity:0!important}.sum{opacity:1!important}.tr{stroke-dashoffset:0!important}}</style>
+<rect x="0.5" y="0.5" width="879" height="359" rx="8" fill="url(#bgplano)" stroke="#292b31"/>
+<rect x="12" y="48" width="856" height="252" fill="url(#dpplano)"/>
+<text x="28" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#9184d9">OVAT</text>
+<text x="72" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#b2b6ca">THE PLANO REQUEST PATH</text>
+<path d="M194 130 L240 130" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahplano)"/>
+<path d="M420 130 L466 130" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahplano)"/>
+<path d="M646 130 L692 130" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahplano)"/>
+<path d="M330 170 L330 214" fill="none" stroke="#75798c" stroke-width="1.3" stroke-dasharray="3 4" marker-end="url(#ahplano)"/>
+<path class="tr tr0" d="M194 130 L240 130" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="50 50" stroke-dashoffset="50"/>
+<path class="cmt cm0" d="M194 130 L240 130" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="30 100" stroke-dashoffset="30" opacity="0"/>
+<path class="tr tr1" d="M420 130 L466 130" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="50 50" stroke-dashoffset="50"/>
+<path class="cmt cm1" d="M420 130 L466 130" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="30 100" stroke-dashoffset="30" opacity="0"/>
+<path class="tr tr2" d="M646 130 L692 130" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="50 50" stroke-dashoffset="50"/>
+<path class="cmt cm2" d="M646 130 L692 130" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="30 100" stroke-dashoffset="30" opacity="0"/>
+<path class="tr tr3" d="M330 170 L330 214" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="48 48" stroke-dashoffset="48"/>
+<path class="cmt cm3" d="M330 170 L330 214" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="28.8 96.8" stroke-dashoffset="28.8" opacity="0"/>
+<g>
+<rect x="24" y="90" width="170" height="80" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vo" x="24" y="90" width="170" height="80" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ao" opacity="0"><rect x="24" y="90" width="170" height="80" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M24 104 V96 Q24 90 30 90 H40" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="38" y="125.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">ovat run</text>
+<text x="38" y="144.38" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">ovms_url :8000/v1</text>
+</g>
+<g>
+<rect x="240" y="90" width="180" height="80" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vp" x="240" y="90" width="180" height="80" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ap" opacity="0"><rect x="240" y="90" width="180" height="80" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M240 104 V96 Q240 90 246 90 H256" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="254" y="125.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">plano (Envoy)</text>
+<text x="254" y="144.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">:8000, OTel spans</text>
+</g>
+<g>
+<rect x="466" y="90" width="180" height="80" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vb" x="466" y="90" width="180" height="80" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ab" opacity="0"><rect x="466" y="90" width="180" height="80" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M466 104 V96 Q466 90 472 90 H482" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="480" y="125.19" style="font:500 12.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">ovms_id_bridge.py</text>
+<text x="480" y="144.19" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">:8001</text>
+</g>
+<g>
+<rect x="692" y="90" width="168" height="80" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vv" x="692" y="90" width="168" height="80" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="av" opacity="0"><rect x="692" y="90" width="168" height="80" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M692 104 V96 Q692 90 698 90 H708" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="706" y="117.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#d2cefd">OVMS</text>
+<text x="706" y="136.75" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">:8002/v3</text>
+<text x="706" y="152.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">model.ovms_port</text>
+<circle cx="844" cy="106" r="8" fill="none" stroke="#9184d9" stroke-width="1"/>
+<path d="M840.5 106 L843 108.6 L847.6 103.4" fill="none" stroke="#9184d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g>
+<rect x="240" y="214" width="180" height="66" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vobs" x="240" y="214" width="180" height="66" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aobs" opacity="0"><rect x="240" y="214" width="180" height="66" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M240 228 V220 Q240 214 246 214 H256" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="254" y="242.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">planoai obs</text>
+<text x="254" y="261.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">latency, TTFT, tokens</text>
+</g>
+<rect x="28" y="306" width="824" height="1" fill="url(#ruleplano)"/>
+<rect x="776" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk0" x="776" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp0" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">01 / 05</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">ovat run points ovms_url at :8000/v1, where plano listens.</text></g>
+<rect x="792" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk1" x="792" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp1" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">02 / 05</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">plano, built on Envoy, records an OpenTelemetry span for each request.</text></g>
+<rect x="808" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk2" x="808" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp2" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">03 / 05</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">ovms_id_bridge.py on :8001 passes the request on.</text></g>
+<rect x="824" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk3" x="824" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp3" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">04 / 05</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">OVMS answers on :8002/v3, the port set in model.ovms_port.</text></g>
+<rect x="840" y="330" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk4" x="840" y="330" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp4" opacity="0"><text x="28" y="334" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">05 / 05</text><text x="92" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">planoai obs shows latency, time to first token and tokens.</text></g>
+<text class="sum" x="28" y="334" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed" opacity="0">ovat to plano :8000 to the bridge :8001 to OVMS :8002. planoai obs reads the spans.</text>
+</svg>

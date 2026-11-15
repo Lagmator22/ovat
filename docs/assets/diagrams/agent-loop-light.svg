@@ -1,25 +1,152 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 396" width="880" height="396" role="img" aria-labelledby="t d"><title id="t">The agent loop</title><desc id="d">Your question goes to the model. If its reply asks for a tool, the tool runs, after a permission check, as plain Python on your machine (or the task goes to a subagent) and its result joins the chat, and the model is asked again. A reply with no tool call is the answer, returned with its sources. The loop stops after max_iterations rounds, 10 by default.</desc><style>
-svg{--text:#1F2328;--sub:#57606A;--card:#FFFFFF;--card2:#F6F8FA;--border:#D0D7DE;--line:#8C959F;--accent:#0068B5;--soft:rgba(0,104,181,0.08);--purple:#8F5CFF;--ok:#3DD68C;--oktext:#1A7F37;--warn:#FFC107;--warntext:#9A6700;--halo:rgba(0,104,181,0.22);--mono:#0068B5}
-text{font-family:"Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;fill:var(--text)}
-.title{font-weight:650}
-.mono-title,.mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace}
-.mono{fill:var(--mono);font-size:13px}
-.sub{fill:var(--sub);font-size:12.5px}
-.small{fill:var(--sub);font-size:11.5px}
-.cap{font-size:13px;font-weight:600;fill:var(--text)}
-.num{fill:#fff;font-size:11.5px;font-weight:700;text-anchor:middle}
-.box{fill:var(--card);stroke:var(--border);stroke-width:1.2}
-.box2{fill:var(--card2);stroke:var(--border);stroke-width:1.2}
-.group{fill:none;stroke:var(--line);stroke-width:1.2;stroke-dasharray:4 5}
-.link{fill:none;stroke:var(--line);stroke-width:1.6;stroke-dasharray:6 5;animation:flow 1.1s linear infinite}
-.link-ok{fill:none;stroke:var(--ok);stroke-width:1.6;stroke-dasharray:6 5;animation:flow 1.1s linear infinite}
-.link-purple{fill:none;stroke:var(--purple);stroke-width:1.6;stroke-dasharray:6 5;animation:flow 1.1s linear infinite}
-.solid{fill:none;stroke:var(--line);stroke-width:1.6}
-.hl{fill:var(--soft);stroke:url(#brand);stroke-width:4}
-.page{fill:var(--card);stroke:var(--accent);stroke-width:1.5}
-.pagelines{stroke:var(--accent);stroke-width:1.2;fill:none}
-.arrowhead{fill:var(--line)}
-@keyframes flow{to{stroke-dashoffset:-22}}
-@keyframes q{0.00%{opacity:0} 1.00%{opacity:1} 10.00%{opacity:1} 12.50%{opacity:0} 100.00%{opacity:0}}.q{animation:q 10s linear infinite}@keyframes m1{0.00%{opacity:0} 8.50%{opacity:0} 11.00%{opacity:1} 20.00%{opacity:1} 22.50%{opacity:0} 100.00%{opacity:0}}.m1{animation:m1 10s linear infinite}@keyframes t{0.00%{opacity:0} 29.50%{opacity:0} 32.00%{opacity:1} 42.00%{opacity:1} 44.50%{opacity:0} 100.00%{opacity:0}}.t{animation:t 10s linear infinite}@keyframes a{0.00%{opacity:0} 75.50%{opacity:0} 78.00%{opacity:1} 90.00%{opacity:1} 92.50%{opacity:0} 100.00%{opacity:0}}.a{animation:a 10s linear infinite}@keyframes m2{0.00%{opacity:0} 54.50%{opacity:0} 57.00%{opacity:1} 66.00%{opacity:1} 68.50%{opacity:0} 100.00%{opacity:0}}.m2{animation:m2 10s linear infinite}
-@media (prefers-reduced-motion: reduce){.fx{display:none}*{animation:none!important}}
-</style><defs><linearGradient id="brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0068B5"/><stop offset="0.55" stop-color="#00C7FD"/><stop offset="1" stop-color="#8F5CFF"/></linearGradient><marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="arrowhead"/></marker></defs><rect x="268.5" y="108.5" width="183" height="143" rx="13.5" class="hl m2" opacity="0"/><rect x="18.5" y="270.5" width="173" height="87" rx="13.5" class="hl a" opacity="0"/><rect x="638.5" y="108.5" width="223" height="143" rx="13.5" class="hl t" opacity="0"/><rect x="268.5" y="108.5" width="183" height="143" rx="13.5" class="hl m1" opacity="0"/><rect x="18.5" y="108.5" width="173" height="87" rx="13.5" class="hl q" opacity="0"/><text x="20" y="30" class="mono">$ ovat run workflow.yml -i "what is said in sample.wav?"</text><path d="M450 140C510 50 580 50 636 136" class="link-purple" marker-end="url(#arrow)"/><path d="M640 222C580 310 510 310 454 226" class="link-ok" marker-end="url(#arrow)"/><path d="M190 152L266 168" class="link" marker-end="url(#arrow)"/><path d="M270 236L196 290" class="link" marker-end="url(#arrow)"/><text x="545" y="46" class="small" text-anchor="middle">the reply asks for a tool</text><text x="545" y="63" class="mono" text-anchor="middle" style="fill:var(--purple);font-size:12.5px">transcribe(path="sample.wav")</text><text x="545" y="312" class="small" text-anchor="middle">the result joins the chat,</text><text x="545" y="328" class="small" text-anchor="middle">and the model is asked again</text><text x="214" y="300" class="small">no tool call in the reply:</text><text x="214" y="316" class="small">that reply is the answer</text><g class="fx" opacity="0"><circle r="12" fill="var(--accent)" opacity="0.22"/><circle r="6" fill="var(--accent)"/><circle r="2.4" fill="#fff" opacity="0.9"/><animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyTimes="0.0000;0.0100;0.1200;0.1400;1.0000" keyPoints="0.0000;0.0000;1.0000;1.0000;1.0000" path="M190 152 L360 180"/><animate attributeName="opacity" dur="10s" repeatCount="indefinite" keyTimes="0.0000;0.0099;0.0300;0.1200;0.1401;1.0000" values="0;0;1;1;0;0"/></g><g class="fx" opacity="0"><circle r="12" fill="var(--purple)" opacity="0.22"/><circle r="6" fill="var(--purple)"/><circle r="2.4" fill="#fff" opacity="0.9"/><animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyTimes="0.0000;0.1800;0.3000;0.3400;0.3600;1.0000" keyPoints="0.0000;0.0000;0.6745;1.0000;1.0000;1.0000" path="M450 140 C510 50 580 50 640 140 L750 180"/><animate attributeName="opacity" dur="10s" repeatCount="indefinite" keyTimes="0.0000;0.1799;0.2000;0.3400;0.3601;1.0000" values="0;0;1;1;0;0"/></g><g class="fx" opacity="0"><circle r="12" fill="var(--ok)" opacity="0.22"/><circle r="6" fill="var(--ok)"/><circle r="2.4" fill="#fff" opacity="0.9"/><animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyTimes="0.0000;0.4100;0.4500;0.5600;0.5900;0.6100;1.0000" keyPoints="0.0000;0.0000;0.2573;0.7830;1.0000;1.0000;1.0000" path="M750 180 L640 222 C580 310 510 310 450 222 L360 180"/><animate attributeName="opacity" dur="10s" repeatCount="indefinite" keyTimes="0.0000;0.4099;0.4300;0.5900;0.6101;1.0000" values="0;0;1;1;0;0"/></g><g class="fx" opacity="0"><circle r="12" fill="var(--ok)" opacity="0.22"/><circle r="6" fill="var(--ok)"/><circle r="2.4" fill="#fff" opacity="0.9"/><animateMotion dur="10s" repeatCount="indefinite" calcMode="linear" keyTimes="0.0000;0.6500;0.7800;0.8200;1.0000" keyPoints="0.0000;0.0000;1.0000;1.0000;1.0000" path="M360 180 L270 236 L190 290 L105 314"/><animate attributeName="opacity" dur="10s" repeatCount="indefinite" keyTimes="0.0000;0.6499;0.6700;0.8000;0.8201;1.0000" values="0;0;1;1;0;0"/></g><g class="card"><rect x="20" y="110" width="170" height="84" rx="12" class="box"/><circle cx="40" cy="110" r="10.5" fill="url(#brand)"/><text x="40" y="114.2" class="num">1</text><text x="34" y="136" class="title" style="font-size:14.5px">Your question</text><text x="34" y="156" class="sub">&quot;what is said in</text><text x="34" y="173" class="sub">sample.wav?&quot;</text></g><g class="card"><rect x="270" y="110" width="180" height="140" rx="12" class="box"/><circle cx="290" cy="110" r="10.5" fill="url(#brand)"/><text x="290" y="114.2" class="num">2</text><text x="284" y="140" class="title" style="font-size:14.5px">Model</text><text x="284" y="160" class="sub">on OVMS. It reads the</text><text x="284" y="177" class="sub">chat so far and the</text><text x="284" y="194" class="sub">tool list, then</text><text x="284" y="211" class="sub">writes a reply</text></g><g class="card"><rect x="640" y="110" width="220" height="140" rx="12" class="box"/><circle cx="660" cy="110" r="10.5" fill="url(#brand)"/><text x="660" y="114.2" class="num">3</text><text x="654" y="140" class="title" style="font-size:14.5px">Tool runs</text><text x="654" y="160" class="sub">permission check, then</text><text x="654" y="177" class="sub">plain Python on your</text><text x="654" y="194" class="sub">machine: search_docs,</text><text x="654" y="211" class="sub">read_file, edit, shell, MCP,</text><text x="654" y="228" class="sub">or a subagent</text></g><g class="card"><rect x="20" y="272" width="170" height="84" rx="12" class="box"/><circle cx="40" cy="272" r="10.5" fill="url(#brand)"/><text x="40" y="276.2" class="num">4</text><text x="34" y="298" class="title" style="font-size:14.5px">Answer</text><text x="34" y="318" class="sub">plus the sources</text><text x="34" y="335" class="sub">it used</text></g><text x="20" y="384" class="small">Stops when a reply has no tool call, or after max_iterations rounds (10 by default). A tool that fails sends back an error message, not a crash.</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 380" width="880" height="380" role="img" aria-labelledby="tagentloop dagentloop">
+<title id="tagentloop">The agent loop</title><desc id="dagentloop">The question goes to the model; a reply that asks for a tool makes the tool run as Python on your machine; the result goes back to the model; a reply with no tool call is the answer, shown with its sources. The loop stops after max_iterations rounds.</desc>
+<defs><radialGradient id="bgagentloop" cx="0.12" cy="0" r="1.1"><stop offset="0" stop-color="#f9faff"/><stop offset="0.7" stop-color="#f3f5fe"/></radialGradient><linearGradient id="ruleagentloop" x1="0" x2="1"><stop offset="0" stop-color="#b2b6ca" stop-opacity="0"/><stop offset="0.08" stop-color="#b2b6ca"/><stop offset="0.92" stop-color="#b2b6ca"/><stop offset="1" stop-color="#b2b6ca" stop-opacity="0"/></linearGradient><pattern id="dpagentloop" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#dde0ee"/></pattern><marker id="ahagentloop" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="#75798c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>@keyframes k0{0%{stroke-dashoffset:66;opacity:1}8.661%{stroke-dashoffset:66;opacity:1}11.614%{stroke-dashoffset:0}98.819%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr0{animation:k0 25.4s linear infinite}
+@keyframes k1{0%{stroke-dashoffset:39.6;opacity:0}8.661%{stroke-dashoffset:39.6;opacity:0}8.740%{opacity:1}11.614%{stroke-dashoffset:-66;opacity:1}11.811%{stroke-dashoffset:-66;opacity:0}100%{stroke-dashoffset:-66;opacity:0}}.cm0{animation:k1 25.4s linear infinite}
+@keyframes k2{0%{stroke-dashoffset:68;opacity:1}20.472%{stroke-dashoffset:68;opacity:1}23.425%{stroke-dashoffset:0}98.819%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr1{animation:k2 25.4s linear infinite}
+@keyframes k3{0%{stroke-dashoffset:40.8;opacity:0}20.472%{stroke-dashoffset:40.8;opacity:0}20.551%{opacity:1}23.425%{stroke-dashoffset:-68;opacity:1}23.622%{stroke-dashoffset:-68;opacity:0}100%{stroke-dashoffset:-68;opacity:0}}.cm1{animation:k3 25.4s linear infinite}
+@keyframes k4{0%{stroke-dashoffset:60;opacity:1}32.283%{stroke-dashoffset:60;opacity:1}35.236%{stroke-dashoffset:0}98.819%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr2{animation:k4 25.4s linear infinite}
+@keyframes k5{0%{stroke-dashoffset:36;opacity:0}32.283%{stroke-dashoffset:36;opacity:0}32.362%{opacity:1}35.236%{stroke-dashoffset:-60;opacity:1}35.433%{stroke-dashoffset:-60;opacity:0}100%{stroke-dashoffset:-60;opacity:0}}.cm2{animation:k5 25.4s linear infinite}
+@keyframes k6{0%{stroke-dashoffset:68;opacity:1}44.094%{stroke-dashoffset:68;opacity:1}47.047%{stroke-dashoffset:0}98.819%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr3{animation:k6 25.4s linear infinite}
+@keyframes k7{0%{stroke-dashoffset:40.8;opacity:0}44.094%{stroke-dashoffset:40.8;opacity:0}44.173%{opacity:1}47.047%{stroke-dashoffset:-68;opacity:1}47.244%{stroke-dashoffset:-68;opacity:0}100%{stroke-dashoffset:-68;opacity:0}}.cm3{animation:k7 25.4s linear infinite}
+@keyframes k8{0%{stroke-dashoffset:54;opacity:1}55.906%{stroke-dashoffset:54;opacity:1}58.858%{stroke-dashoffset:0}98.819%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr4{animation:k8 25.4s linear infinite}
+@keyframes k9{0%{stroke-dashoffset:32.4;opacity:0}55.906%{stroke-dashoffset:32.4;opacity:0}55.984%{opacity:1}58.858%{stroke-dashoffset:-54;opacity:1}59.055%{stroke-dashoffset:-54;opacity:0}100%{stroke-dashoffset:-54;opacity:0}}.cm4{animation:k9 25.4s linear infinite}
+@keyframes k10{0%{stroke-dashoffset:68;opacity:1}67.717%{stroke-dashoffset:68;opacity:1}70.669%{stroke-dashoffset:0}98.819%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr5{animation:k10 25.4s linear infinite}
+@keyframes k11{0%{stroke-dashoffset:40.8;opacity:0}67.717%{stroke-dashoffset:40.8;opacity:0}67.795%{opacity:1}70.669%{stroke-dashoffset:-68;opacity:1}70.866%{stroke-dashoffset:-68;opacity:0}100%{stroke-dashoffset:-68;opacity:0}}.cm5{animation:k11 25.4s linear infinite}
+@keyframes k12{0%{stroke-dashoffset:56;opacity:1}79.528%{stroke-dashoffset:56;opacity:1}82.480%{stroke-dashoffset:0}98.819%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr6{animation:k12 25.4s linear infinite}
+@keyframes k13{0%{stroke-dashoffset:33.6;opacity:0}79.528%{stroke-dashoffset:33.6;opacity:0}79.606%{opacity:1}82.480%{stroke-dashoffset:-56;opacity:1}82.677%{stroke-dashoffset:-56;opacity:0}100%{stroke-dashoffset:-56;opacity:0}}.cm6{animation:k13 25.4s linear infinite}
+@keyframes k14{0%{opacity:0}0.000%{opacity:0}1.181%{opacity:1}98.819%{opacity:1}100%{opacity:0}}.vq{animation:k14 25.4s linear infinite}
+@keyframes k15{0%{opacity:0}0.000%{opacity:0}1.181%{opacity:1}7.480%{opacity:1}8.661%{opacity:0}100%{opacity:0}}.aq{animation:k15 25.4s linear infinite}
+@keyframes k16{0%{opacity:0}11.024%{opacity:0}12.205%{opacity:1}98.819%{opacity:1}100%{opacity:0}}.vmodel{animation:k16 25.4s linear infinite}
+@keyframes k17{0%{opacity:0}11.024%{opacity:0}12.205%{opacity:1}19.291%{opacity:1}20.472%{opacity:0}58.268%{opacity:0}59.449%{opacity:1}66.535%{opacity:1}67.717%{opacity:0}100%{opacity:0}}.amodel{animation:k17 25.4s linear infinite}
+@keyframes k18{0%{opacity:0}22.835%{opacity:0}24.016%{opacity:1}98.819%{opacity:1}100%{opacity:0}}.vdec{animation:k18 25.4s linear infinite}
+@keyframes k19{0%{opacity:0}22.835%{opacity:0}24.016%{opacity:1}31.102%{opacity:1}32.283%{opacity:0}70.079%{opacity:0}71.260%{opacity:1}78.346%{opacity:1}79.528%{opacity:0}100%{opacity:0}}.adec{animation:k19 25.4s linear infinite}
+@keyframes k20{0%{opacity:0}34.646%{opacity:0}35.827%{opacity:1}98.819%{opacity:1}100%{opacity:0}}.vtool{animation:k20 25.4s linear infinite}
+@keyframes k21{0%{opacity:0}34.646%{opacity:0}35.827%{opacity:1}42.913%{opacity:1}44.094%{opacity:0}100%{opacity:0}}.atool{animation:k21 25.4s linear infinite}
+@keyframes k22{0%{opacity:0}46.457%{opacity:0}47.638%{opacity:1}98.819%{opacity:1}100%{opacity:0}}.vresult{animation:k22 25.4s linear infinite}
+@keyframes k23{0%{opacity:0}46.457%{opacity:0}47.638%{opacity:1}54.724%{opacity:1}55.906%{opacity:0}100%{opacity:0}}.aresult{animation:k23 25.4s linear infinite}
+@keyframes k24{0%{opacity:0}81.890%{opacity:0}83.071%{opacity:1}98.819%{opacity:1}100%{opacity:0}}.vanswer{animation:k24 25.4s linear infinite}
+@keyframes k25{0%{opacity:0}81.890%{opacity:0}83.071%{opacity:1}97.638%{opacity:1}98.819%{opacity:0}100%{opacity:0}}.aanswer{animation:k25 25.4s linear infinite}
+@keyframes k26{0%{opacity:0}0.000%{opacity:0}1.181%{opacity:1}7.480%{opacity:1}8.661%{opacity:0}100%{opacity:0}}.tk0{animation:k26 25.4s linear infinite}
+@keyframes k27{0%{opacity:0}0.000%{opacity:0}1.181%{opacity:1}7.480%{opacity:1}8.661%{opacity:0}100%{opacity:0}}.cp0{animation:k27 25.4s linear infinite}
+@keyframes k28{0%{opacity:0}8.661%{opacity:0}9.843%{opacity:1}19.291%{opacity:1}20.472%{opacity:0}100%{opacity:0}}.tk1{animation:k28 25.4s linear infinite}
+@keyframes k29{0%{opacity:0}8.661%{opacity:0}9.843%{opacity:1}19.291%{opacity:1}20.472%{opacity:0}100%{opacity:0}}.cp1{animation:k29 25.4s linear infinite}
+@keyframes k30{0%{opacity:0}20.472%{opacity:0}21.654%{opacity:1}31.102%{opacity:1}32.283%{opacity:0}100%{opacity:0}}.tk2{animation:k30 25.4s linear infinite}
+@keyframes k31{0%{opacity:0}20.472%{opacity:0}21.654%{opacity:1}31.102%{opacity:1}32.283%{opacity:0}100%{opacity:0}}.cp2{animation:k31 25.4s linear infinite}
+@keyframes k32{0%{opacity:0}32.283%{opacity:0}33.465%{opacity:1}42.913%{opacity:1}44.094%{opacity:0}100%{opacity:0}}.tk3{animation:k32 25.4s linear infinite}
+@keyframes k33{0%{opacity:0}32.283%{opacity:0}33.465%{opacity:1}42.913%{opacity:1}44.094%{opacity:0}100%{opacity:0}}.cp3{animation:k33 25.4s linear infinite}
+@keyframes k34{0%{opacity:0}44.094%{opacity:0}45.276%{opacity:1}54.724%{opacity:1}55.906%{opacity:0}100%{opacity:0}}.tk4{animation:k34 25.4s linear infinite}
+@keyframes k35{0%{opacity:0}44.094%{opacity:0}45.276%{opacity:1}54.724%{opacity:1}55.906%{opacity:0}100%{opacity:0}}.cp4{animation:k35 25.4s linear infinite}
+@keyframes k36{0%{opacity:0}55.906%{opacity:0}57.087%{opacity:1}66.535%{opacity:1}67.717%{opacity:0}100%{opacity:0}}.tk5{animation:k36 25.4s linear infinite}
+@keyframes k37{0%{opacity:0}55.906%{opacity:0}57.087%{opacity:1}66.535%{opacity:1}67.717%{opacity:0}100%{opacity:0}}.cp5{animation:k37 25.4s linear infinite}
+@keyframes k38{0%{opacity:0}67.717%{opacity:0}68.898%{opacity:1}78.346%{opacity:1}79.528%{opacity:0}100%{opacity:0}}.tk6{animation:k38 25.4s linear infinite}
+@keyframes k39{0%{opacity:0}67.717%{opacity:0}68.898%{opacity:1}78.346%{opacity:1}79.528%{opacity:0}100%{opacity:0}}.cp6{animation:k39 25.4s linear infinite}
+@keyframes k40{0%{opacity:0}79.528%{opacity:0}80.709%{opacity:1}98.819%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.tk7{animation:k40 25.4s linear infinite}
+@keyframes k41{0%{opacity:0}79.528%{opacity:0}80.709%{opacity:1}98.819%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.cp7{animation:k41 25.4s linear infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}.v{opacity:1!important}.cap,.cmt{opacity:0!important}.sum{opacity:1!important}.tr{stroke-dashoffset:0!important}}</style>
+<rect x="0.5" y="0.5" width="879" height="379" rx="8" fill="url(#bgagentloop)" stroke="#cfd3e5"/>
+<rect x="12" y="48" width="856" height="272" fill="url(#dpagentloop)"/>
+<text x="28" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#796cbf">OVAT</text>
+<text x="72" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#595d6c">THE AGENT LOOP</text>
+<text x="24" y="268" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#75798c">max_iterations</text>
+<text x="24" y="286" style="font:400 12px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#75798c">caps the rounds,</text>
+<text x="24" y="302" style="font:400 12px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#75798c">so it always ends</text>
+<path d="M174 130 L236 130" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahagentloop)"/>
+<path d="M416 130 L480 130" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahagentloop)"/>
+<path d="M570 164 L570 220" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahagentloop)"/>
+<path d="M480 260 L416 260" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahagentloop)"/>
+<path d="M326 220 L326 170" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahagentloop)"/>
+<path d="M660 130 L712 130" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahagentloop)"/>
+<path class="tr tr0" d="M174 130 L236 130" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="66 66" stroke-dashoffset="66"/>
+<path class="cmt cm0" d="M174 130 L236 130" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="39.6 125.6" stroke-dashoffset="39.6" opacity="0"/>
+<path class="tr tr1" d="M416 130 L480 130" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="68 68" stroke-dashoffset="68"/>
+<path class="cmt cm1" d="M416 130 L480 130" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="40.8 128.8" stroke-dashoffset="40.8" opacity="0"/>
+<path class="tr tr2" d="M570 164 L570 220" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="60 60" stroke-dashoffset="60"/>
+<path class="cmt cm2" d="M570 164 L570 220" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="36 116" stroke-dashoffset="36" opacity="0"/>
+<path class="tr tr3" d="M480 260 L416 260" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="68 68" stroke-dashoffset="68"/>
+<path class="cmt cm3" d="M480 260 L416 260" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="40.8 128.8" stroke-dashoffset="40.8" opacity="0"/>
+<path class="tr tr4" d="M326 220 L326 170" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="54 54" stroke-dashoffset="54"/>
+<path class="cmt cm4" d="M326 220 L326 170" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="32.4 106.4" stroke-dashoffset="32.4" opacity="0"/>
+<path class="tr tr5" d="M416 130 L480 130" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="68 68" stroke-dashoffset="68"/>
+<path class="cmt cm5" d="M416 130 L480 130" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="40.8 128.8" stroke-dashoffset="40.8" opacity="0"/>
+<path class="tr tr6" d="M660 130 L712 130" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="56 56" stroke-dashoffset="56"/>
+<path class="cmt cm6" d="M660 130 L712 130" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="33.6 109.6" stroke-dashoffset="33.6" opacity="0"/>
+<rect x="552.95" y="181" width="34.1" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="570" y="196" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">yes</text>
+<rect x="672.3" y="119" width="27.4" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="686" y="134" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">no</text>
+<g>
+<rect x="24" y="110" width="150" height="40" rx="20" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vq" x="24" y="110" width="150" height="40" rx="20" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aq" opacity="0"><rect x="24" y="110" width="150" height="40" rx="20" fill="none" stroke="#796cbf" stroke-width="1.8"/></g>
+<text x="99" y="134.88" text-anchor="middle" style="font:500 13px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">your question</text>
+</g>
+<g>
+<rect x="236" y="90" width="180" height="80" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vmodel" x="236" y="90" width="180" height="80" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="amodel" opacity="0"><rect x="236" y="90" width="180" height="80" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M236 104 V96 Q236 90 242 90 H252" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="250" y="107.75" style="font:500 10px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#75798c">1 ASK</text>
+<text x="250" y="125.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Model</text>
+<text x="250" y="144.25" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">history + tool menu</text>
+<text x="250" y="160.25" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">on OVMS</text>
+</g>
+<g>
+<rect x="480" y="96" width="180" height="68" rx="6" fill="#e9ecf8" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vdec" x="480" y="96" width="180" height="68" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="adec" opacity="0"><rect x="480" y="96" width="180" height="68" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M480 110 V102 Q480 96 486 96 H496" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="494" y="125.25" style="font:500 10px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#75798c">2 READ</text>
+<text x="494" y="142.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Asks for a tool?</text>
+<circle cx="644" cy="112" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<text x="644" y="115.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">?</text>
+</g>
+<g>
+<rect x="480" y="220" width="180" height="80" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vtool" x="480" y="220" width="180" height="80" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="atool" opacity="0"><rect x="480" y="220" width="180" height="80" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M480 234 V226 Q480 220 486 220 H496" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="494" y="237.75" style="font:500 10px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#75798c">3 ACT</text>
+<text x="494" y="255.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Tool runs</text>
+<text x="494" y="274.25" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">plain Python,</text>
+<text x="494" y="290.25" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">on your machine</text>
+</g>
+<g>
+<rect x="236" y="220" width="180" height="80" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vresult" x="236" y="220" width="180" height="80" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aresult" opacity="0"><rect x="236" y="220" width="180" height="80" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M236 234 V226 Q236 220 242 220 H252" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="250" y="237.75" style="font:500 10px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#75798c">4 REPORT</text>
+<text x="250" y="255.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Result</text>
+<text x="250" y="274.25" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">added to the</text>
+<text x="250" y="290.25" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">history</text>
+</g>
+<g>
+<rect x="712" y="110" width="148" height="40" rx="20" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vanswer" x="712" y="110" width="148" height="40" rx="20" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aanswer" opacity="0"><rect x="712" y="110" width="148" height="40" rx="20" fill="none" stroke="#796cbf" stroke-width="1.8"/></g>
+<text x="786" y="134.88" text-anchor="middle" style="font:500 13px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#5d5294">answer + sources</text>
+</g>
+<rect x="28" y="326" width="824" height="1" fill="url(#ruleagentloop)"/>
+<rect x="728" y="350" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk0" x="728" y="350" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp0" opacity="0"><text x="28" y="354" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">01 / 08</text><text x="92" y="354" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">You ask a question.</text></g>
+<rect x="744" y="350" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk1" x="744" y="350" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp1" opacity="0"><text x="28" y="354" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">02 / 08</text><text x="92" y="354" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">OVAT sends it to the model, with the history and a menu of tools.</text></g>
+<rect x="760" y="350" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk2" x="760" y="350" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp2" opacity="0"><text x="28" y="354" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">03 / 08</text><text x="92" y="354" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">OVAT reads the reply. Does it ask for a tool?</text></g>
+<rect x="776" y="350" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk3" x="776" y="350" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp3" opacity="0"><text x="28" y="354" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">04 / 08</text><text x="92" y="354" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Yes: OVAT runs that tool as ordinary Python, on your own machine.</text></g>
+<rect x="792" y="350" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk4" x="792" y="350" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp4" opacity="0"><text x="28" y="354" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">05 / 08</text><text x="92" y="354" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">The tool's result is added to the history.</text></g>
+<rect x="808" y="350" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk5" x="808" y="350" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp5" opacity="0"><text x="28" y="354" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">06 / 08</text><text x="92" y="354" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">The model is asked again, now with the result in front of it.</text></g>
+<rect x="824" y="350" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk6" x="824" y="350" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp6" opacity="0"><text x="28" y="354" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">07 / 08</text><text x="92" y="354" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Each round can call more tools, until the model has what it needs.</text></g>
+<rect x="840" y="350" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk7" x="840" y="350" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp7" opacity="0"><text x="28" y="354" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">08 / 08</text><text x="92" y="354" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">A reply with no tool call is the answer, printed with its sources.</text></g>
+<text class="sum" x="28" y="354" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31" opacity="0">Ask the model. If it wants a tool, run it here and add the result. No tool call means the answer.</text>
+</svg>

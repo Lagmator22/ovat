@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 400" width="880" height="400" role="img" aria-labelledby="tproviders dproviders">
+<title id="tproviders">The provider interfaces</title><desc id="dproviders">Four interfaces with their backends. LLMProvider: OVMS over the OpenAI SDK, which does tool calling, or openvino_genai in-process, which does not. EmbeddingsProvider: a local TextEmbeddingPipeline or OVMS /v3/embeddings. RetrieverProvider: sqlite-vec on disk or numpy in memory. VLMProvider: openvino_genai VLMPipeline.</desc>
+<defs><radialGradient id="bgproviders" cx="0.12" cy="0" r="1.1"><stop offset="0" stop-color="#1f2236"/><stop offset="0.7" stop-color="#161826"/></radialGradient><linearGradient id="ruleproviders" x1="0" x2="1"><stop offset="0" stop-color="#3f424d" stop-opacity="0"/><stop offset="0.08" stop-color="#3f424d"/><stop offset="0.92" stop-color="#3f424d"/><stop offset="1" stop-color="#3f424d" stop-opacity="0"/></linearGradient><pattern id="dpproviders" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#262836"/></pattern><marker id="ahproviders" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="#75798c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>@keyframes k0{0%{opacity:0}0.000%{opacity:0}2.143%{opacity:1}97.857%{opacity:1}100%{opacity:0}}.vl1{animation:k0 14s linear infinite}
+@keyframes k1{0%{opacity:0}0.000%{opacity:0}2.143%{opacity:1}19.286%{opacity:1}21.429%{opacity:0}100%{opacity:0}}.al1{animation:k1 14s linear infinite}
+@keyframes k2{0%{opacity:0}0.000%{opacity:0}2.143%{opacity:1}97.857%{opacity:1}100%{opacity:0}}.vl2{animation:k2 14s linear infinite}
+@keyframes k3{0%{opacity:0}0.000%{opacity:0}2.143%{opacity:1}19.286%{opacity:1}21.429%{opacity:0}100%{opacity:0}}.al2{animation:k3 14s linear infinite}
+@keyframes k4{0%{opacity:0}21.429%{opacity:0}23.571%{opacity:1}97.857%{opacity:1}100%{opacity:0}}.vm1{animation:k4 14s linear infinite}
+@keyframes k5{0%{opacity:0}21.429%{opacity:0}23.571%{opacity:1}40.714%{opacity:1}42.857%{opacity:0}100%{opacity:0}}.am1{animation:k5 14s linear infinite}
+@keyframes k6{0%{opacity:0}21.429%{opacity:0}23.571%{opacity:1}97.857%{opacity:1}100%{opacity:0}}.vm2{animation:k6 14s linear infinite}
+@keyframes k7{0%{opacity:0}21.429%{opacity:0}23.571%{opacity:1}40.714%{opacity:1}42.857%{opacity:0}100%{opacity:0}}.am2{animation:k7 14s linear infinite}
+@keyframes k8{0%{opacity:0}42.857%{opacity:0}45.000%{opacity:1}97.857%{opacity:1}100%{opacity:0}}.vr1{animation:k8 14s linear infinite}
+@keyframes k9{0%{opacity:0}42.857%{opacity:0}45.000%{opacity:1}62.143%{opacity:1}64.286%{opacity:0}100%{opacity:0}}.ar1{animation:k9 14s linear infinite}
+@keyframes k10{0%{opacity:0}42.857%{opacity:0}45.000%{opacity:1}97.857%{opacity:1}100%{opacity:0}}.vr2{animation:k10 14s linear infinite}
+@keyframes k11{0%{opacity:0}42.857%{opacity:0}45.000%{opacity:1}62.143%{opacity:1}64.286%{opacity:0}100%{opacity:0}}.ar2{animation:k11 14s linear infinite}
+@keyframes k12{0%{opacity:0}64.286%{opacity:0}66.429%{opacity:1}97.857%{opacity:1}100%{opacity:0}}.vv1{animation:k12 14s linear infinite}
+@keyframes k13{0%{opacity:0}64.286%{opacity:0}66.429%{opacity:1}95.714%{opacity:1}97.857%{opacity:0}100%{opacity:0}}.av1{animation:k13 14s linear infinite}
+@keyframes k14{0%{opacity:0}0.000%{opacity:0}2.143%{opacity:1}19.286%{opacity:1}21.429%{opacity:0}100%{opacity:0}}.tk0{animation:k14 14s linear infinite}
+@keyframes k15{0%{opacity:0}0.000%{opacity:0}2.143%{opacity:1}19.286%{opacity:1}21.429%{opacity:0}100%{opacity:0}}.cp0{animation:k15 14s linear infinite}
+@keyframes k16{0%{opacity:0}21.429%{opacity:0}23.571%{opacity:1}40.714%{opacity:1}42.857%{opacity:0}100%{opacity:0}}.tk1{animation:k16 14s linear infinite}
+@keyframes k17{0%{opacity:0}21.429%{opacity:0}23.571%{opacity:1}40.714%{opacity:1}42.857%{opacity:0}100%{opacity:0}}.cp1{animation:k17 14s linear infinite}
+@keyframes k18{0%{opacity:0}42.857%{opacity:0}45.000%{opacity:1}62.143%{opacity:1}64.286%{opacity:0}100%{opacity:0}}.tk2{animation:k18 14s linear infinite}
+@keyframes k19{0%{opacity:0}42.857%{opacity:0}45.000%{opacity:1}62.143%{opacity:1}64.286%{opacity:0}100%{opacity:0}}.cp2{animation:k19 14s linear infinite}
+@keyframes k20{0%{opacity:0}64.286%{opacity:0}66.429%{opacity:1}97.857%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.tk3{animation:k20 14s linear infinite}
+@keyframes k21{0%{opacity:0}64.286%{opacity:0}66.429%{opacity:1}97.857%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.cp3{animation:k21 14s linear infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}.v{opacity:1!important}.cap,.cmt{opacity:0!important}.sum{opacity:1!important}.tr{stroke-dashoffset:0!important}}</style>
+<rect x="0.5" y="0.5" width="879" height="399" rx="8" fill="url(#bgproviders)" stroke="#292b31"/>
+<rect x="12" y="48" width="856" height="292" fill="url(#dpproviders)"/>
+<text x="28" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#9184d9">OVAT</text>
+<text x="72" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#b2b6ca">THE PROVIDER INTERFACES</text>
+<rect x="24" y="64" width="200" height="270" rx="8" fill="#1b1d2b" stroke="#3f424d" stroke-width="0.8" stroke-dasharray="1 3"/>
+<text x="36" y="82" style="font:500 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#9397ab">LLMPROVIDER</text>
+<rect x="236" y="64" width="200" height="270" rx="8" fill="#1b1d2b" stroke="#3f424d" stroke-width="0.8" stroke-dasharray="1 3"/>
+<text x="248" y="82" style="font:500 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#9397ab">EMBEDDINGSPROVIDER</text>
+<rect x="448" y="64" width="200" height="270" rx="8" fill="#1b1d2b" stroke="#3f424d" stroke-width="0.8" stroke-dasharray="1 3"/>
+<text x="460" y="82" style="font:500 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#9397ab">RETRIEVERPROVIDER</text>
+<rect x="660" y="64" width="200" height="270" rx="8" fill="#1b1d2b" stroke="#3f424d" stroke-width="0.8" stroke-dasharray="1 3"/>
+<text x="672" y="82" style="font:500 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.12em" fill="#9397ab">VLMPROVIDER</text>
+<g>
+<rect x="36" y="92" width="176" height="104" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vl1" x="36" y="92" width="176" height="104" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="al1" opacity="0"><rect x="36" y="92" width="176" height="104" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M36 106 V98 Q36 92 42 92 H52" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="50" y="131.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">OVMS</text>
+<text x="50" y="150.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">OpenAI SDK to /v3</text>
+<text x="50" y="166.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">does tool calling</text>
+</g>
+<g>
+<rect x="36" y="212" width="176" height="104" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vl2" x="36" y="212" width="176" height="104" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="al2" opacity="0"><rect x="36" y="212" width="176" height="104" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M36 226 V218 Q36 212 42 212 H52" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="50" y="251.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">openvino_genai</text>
+<text x="50" y="270.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">in-process</text>
+<text x="50" y="286.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">no tool calling</text>
+</g>
+<g>
+<rect x="248" y="92" width="176" height="104" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vm1" x="248" y="92" width="176" height="104" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="am1" opacity="0"><rect x="248" y="92" width="176" height="104" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M248 106 V98 Q248 92 254 92 H264" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="262" y="131.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Local</text>
+<text x="262" y="150.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">TextEmbeddingPipeline</text>
+<text x="262" y="166.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">on this machine</text>
+</g>
+<g>
+<rect x="248" y="212" width="176" height="104" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vm2" x="248" y="212" width="176" height="104" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="am2" opacity="0"><rect x="248" y="212" width="176" height="104" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M248 226 V218 Q248 212 254 212 H264" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="262" y="259.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">OVMS</text>
+<text x="262" y="278.75" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">/v3/embeddings</text>
+</g>
+<g>
+<rect x="460" y="92" width="176" height="104" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vr1" x="460" y="92" width="176" height="104" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ar1" opacity="0"><rect x="460" y="92" width="176" height="104" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M460 106 V98 Q460 92 466 92 H476" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="474" y="139.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">sqlite-vec</text>
+<text x="474" y="158.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">saved to disk</text>
+</g>
+<g>
+<rect x="460" y="212" width="176" height="104" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vr2" x="460" y="212" width="176" height="104" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ar2" opacity="0"><rect x="460" y="212" width="176" height="104" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M460 226 V218 Q460 212 466 212 H476" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="474" y="251.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">In memory</text>
+<text x="474" y="270.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">numpy,</text>
+<text x="474" y="286.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">nothing on disk</text>
+</g>
+<g>
+<rect x="672" y="92" width="176" height="104" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vv1" x="672" y="92" width="176" height="104" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="av1" opacity="0"><rect x="672" y="92" width="176" height="104" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M672 106 V98 Q672 92 678 92 H688" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="686" y="139.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">openvino_genai</text>
+<text x="686" y="158.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">VLMPipeline</text>
+</g>
+<rect x="28" y="346" width="824" height="1" fill="url(#ruleproviders)"/>
+<rect x="792" y="370" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk0" x="792" y="370" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp0" opacity="0"><text x="28" y="374" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">01 / 04</text><text x="92" y="374" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">LLMProvider: OVMS over the OpenAI SDK, or openvino_genai in-process. Only OVMS calls tools.</text></g>
+<rect x="808" y="370" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk1" x="808" y="370" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp1" opacity="0"><text x="28" y="374" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">02 / 04</text><text x="92" y="374" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">EmbeddingsProvider: a local TextEmbeddingPipeline, or OVMS /v3/embeddings.</text></g>
+<rect x="824" y="370" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk2" x="824" y="370" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp2" opacity="0"><text x="28" y="374" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">03 / 04</text><text x="92" y="374" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">RetrieverProvider: sqlite-vec saved to disk, or numpy with nothing on disk.</text></g>
+<rect x="840" y="370" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk3" x="840" y="370" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp3" opacity="0"><text x="28" y="374" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">04 / 04</text><text x="92" y="374" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">VLMProvider: the openvino_genai VLMPipeline.</text></g>
+<text class="sum" x="28" y="374" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed" opacity="0">LLM, embeddings, retriever, vision: four interfaces, each with its own backends.</text>
+</svg>

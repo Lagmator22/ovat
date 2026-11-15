@@ -1,0 +1,291 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 510" width="960" height="510" role="img" aria-labelledby="tsetup dsetup">
+<title id="tsetup">What ovat setup does</title><desc id="dsetup">ovat setup checks the platform: macOS has no build and exits 0, Windows gets the Python-enabled zip, Linux reads /etc/os-release and falls back to ubuntu24 with a warning. It downloads the archive, checks the SHA-256 when one is published, refuses on a mismatch, then extracts into ~/.ovat/ovms.</desc>
+<defs><radialGradient id="bgsetup" cx="0.12" cy="0" r="1.1"><stop offset="0" stop-color="#f9faff"/><stop offset="0.7" stop-color="#f3f5fe"/></radialGradient><linearGradient id="rulesetup" x1="0" x2="1"><stop offset="0" stop-color="#b2b6ca" stop-opacity="0"/><stop offset="0.08" stop-color="#b2b6ca"/><stop offset="0.92" stop-color="#b2b6ca"/><stop offset="1" stop-color="#b2b6ca" stop-opacity="0"/></linearGradient><pattern id="dpsetup" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#dde0ee"/></pattern><marker id="ahsetup" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="#75798c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>@keyframes k0{0%{stroke-dashoffset:28;opacity:1}6.771%{stroke-dashoffset:28;opacity:1}8.724%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr0{animation:k0 38.4s linear infinite}
+@keyframes k1{0%{stroke-dashoffset:16.8;opacity:0}6.771%{stroke-dashoffset:16.8;opacity:0}6.823%{opacity:1}8.724%{stroke-dashoffset:-28;opacity:1}8.854%{stroke-dashoffset:-28;opacity:0}100%{stroke-dashoffset:-28;opacity:0}}.cm0{animation:k1 38.4s linear infinite}
+@keyframes k2{0%{stroke-dashoffset:110.8;opacity:1}12.500%{stroke-dashoffset:110.8;opacity:1}14.453%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr1{animation:k2 38.4s linear infinite}
+@keyframes k3{0%{stroke-dashoffset:46;opacity:0}12.500%{stroke-dashoffset:46;opacity:0}12.552%{opacity:1}14.453%{stroke-dashoffset:-110.8;opacity:1}14.583%{stroke-dashoffset:-110.8;opacity:0}100%{stroke-dashoffset:-110.8;opacity:0}}.cm1{animation:k3 38.4s linear infinite}
+@keyframes k4{0%{stroke-dashoffset:36;opacity:1}20.312%{stroke-dashoffset:36;opacity:1}22.266%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr2{animation:k4 38.4s linear infinite}
+@keyframes k5{0%{stroke-dashoffset:21.6;opacity:0}20.312%{stroke-dashoffset:21.6;opacity:0}20.365%{opacity:1}22.266%{stroke-dashoffset:-36;opacity:1}22.396%{stroke-dashoffset:-36;opacity:0}100%{stroke-dashoffset:-36;opacity:0}}.cm2{animation:k5 38.4s linear infinite}
+@keyframes k6{0%{stroke-dashoffset:118.8;opacity:1}28.125%{stroke-dashoffset:118.8;opacity:1}30.078%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr3{animation:k6 38.4s linear infinite}
+@keyframes k7{0%{stroke-dashoffset:46;opacity:0}28.125%{stroke-dashoffset:46;opacity:0}28.177%{opacity:1}30.078%{stroke-dashoffset:-118.8;opacity:1}30.208%{stroke-dashoffset:-118.8;opacity:0}100%{stroke-dashoffset:-118.8;opacity:0}}.cm3{animation:k7 38.4s linear infinite}
+@keyframes k8{0%{stroke-dashoffset:26;opacity:1}35.937%{stroke-dashoffset:26;opacity:1}37.891%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr4{animation:k8 38.4s linear infinite}
+@keyframes k9{0%{stroke-dashoffset:15.6;opacity:0}35.937%{stroke-dashoffset:15.6;opacity:0}35.990%{opacity:1}37.891%{stroke-dashoffset:-26;opacity:1}38.021%{stroke-dashoffset:-26;opacity:0}100%{stroke-dashoffset:-26;opacity:0}}.cm4{animation:k9 38.4s linear infinite}
+@keyframes k10{0%{stroke-dashoffset:40;opacity:1}43.750%{stroke-dashoffset:40;opacity:1}45.703%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr5{animation:k10 38.4s linear infinite}
+@keyframes k11{0%{stroke-dashoffset:24;opacity:0}43.750%{stroke-dashoffset:24;opacity:0}43.802%{opacity:1}45.703%{stroke-dashoffset:-40;opacity:1}45.833%{stroke-dashoffset:-40;opacity:0}100%{stroke-dashoffset:-40;opacity:0}}.cm5{animation:k11 38.4s linear infinite}
+@keyframes k12{0%{stroke-dashoffset:120;opacity:1}43.750%{stroke-dashoffset:120;opacity:1}45.703%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr6{animation:k12 38.4s linear infinite}
+@keyframes k13{0%{stroke-dashoffset:46;opacity:0}43.750%{stroke-dashoffset:46;opacity:0}43.802%{opacity:1}45.703%{stroke-dashoffset:-120;opacity:1}45.833%{stroke-dashoffset:-120;opacity:0}100%{stroke-dashoffset:-120;opacity:0}}.cm6{animation:k13 38.4s linear infinite}
+@keyframes k14{0%{stroke-dashoffset:197.6;opacity:1}43.750%{stroke-dashoffset:197.6;opacity:1}45.703%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr7{animation:k14 38.4s linear infinite}
+@keyframes k15{0%{stroke-dashoffset:46;opacity:0}43.750%{stroke-dashoffset:46;opacity:0}43.802%{opacity:1}45.703%{stroke-dashoffset:-197.6;opacity:1}45.833%{stroke-dashoffset:-197.6;opacity:0}100%{stroke-dashoffset:-197.6;opacity:0}}.cm7{animation:k15 38.4s linear infinite}
+@keyframes k16{0%{stroke-dashoffset:40;opacity:1}50.000%{stroke-dashoffset:40;opacity:1}51.953%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr8{animation:k16 38.4s linear infinite}
+@keyframes k17{0%{stroke-dashoffset:24;opacity:0}50.000%{stroke-dashoffset:24;opacity:0}50.052%{opacity:1}51.953%{stroke-dashoffset:-40;opacity:1}52.083%{stroke-dashoffset:-40;opacity:0}100%{stroke-dashoffset:-40;opacity:0}}.cm8{animation:k17 38.4s linear infinite}
+@keyframes k18{0%{stroke-dashoffset:34;opacity:1}56.771%{stroke-dashoffset:34;opacity:1}58.724%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr9{animation:k18 38.4s linear infinite}
+@keyframes k19{0%{stroke-dashoffset:20.4;opacity:0}56.771%{stroke-dashoffset:20.4;opacity:0}56.823%{opacity:1}58.724%{stroke-dashoffset:-34;opacity:1}58.854%{stroke-dashoffset:-34;opacity:0}100%{stroke-dashoffset:-34;opacity:0}}.cm9{animation:k19 38.4s linear infinite}
+@keyframes k20{0%{stroke-dashoffset:34;opacity:1}64.583%{stroke-dashoffset:34;opacity:1}66.536%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr10{animation:k20 38.4s linear infinite}
+@keyframes k21{0%{stroke-dashoffset:20.4;opacity:0}64.583%{stroke-dashoffset:20.4;opacity:0}64.635%{opacity:1}66.536%{stroke-dashoffset:-34;opacity:1}66.667%{stroke-dashoffset:-34;opacity:0}100%{stroke-dashoffset:-34;opacity:0}}.cm10{animation:k21 38.4s linear infinite}
+@keyframes k22{0%{stroke-dashoffset:34;opacity:1}70.833%{stroke-dashoffset:34;opacity:1}72.786%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr11{animation:k22 38.4s linear infinite}
+@keyframes k23{0%{stroke-dashoffset:20.4;opacity:0}70.833%{stroke-dashoffset:20.4;opacity:0}70.885%{opacity:1}72.786%{stroke-dashoffset:-34;opacity:1}72.917%{stroke-dashoffset:-34;opacity:0}100%{stroke-dashoffset:-34;opacity:0}}.cm11{animation:k23 38.4s linear infinite}
+@keyframes k24{0%{stroke-dashoffset:40;opacity:1}78.646%{stroke-dashoffset:40;opacity:1}80.599%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr12{animation:k24 38.4s linear infinite}
+@keyframes k25{0%{stroke-dashoffset:24;opacity:0}78.646%{stroke-dashoffset:24;opacity:0}78.698%{opacity:1}80.599%{stroke-dashoffset:-40;opacity:1}80.729%{stroke-dashoffset:-40;opacity:0}100%{stroke-dashoffset:-40;opacity:0}}.cm12{animation:k25 38.4s linear infinite}
+@keyframes k26{0%{stroke-dashoffset:264;opacity:1}78.646%{stroke-dashoffset:264;opacity:1}80.599%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr13{animation:k26 38.4s linear infinite}
+@keyframes k27{0%{stroke-dashoffset:46;opacity:0}78.646%{stroke-dashoffset:46;opacity:0}78.698%{opacity:1}80.599%{stroke-dashoffset:-264;opacity:1}80.729%{stroke-dashoffset:-264;opacity:0}100%{stroke-dashoffset:-264;opacity:0}}.cm13{animation:k27 38.4s linear infinite}
+@keyframes k28{0%{stroke-dashoffset:34;opacity:1}86.458%{stroke-dashoffset:34;opacity:1}88.411%{stroke-dashoffset:0}99.219%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr14{animation:k28 38.4s linear infinite}
+@keyframes k29{0%{stroke-dashoffset:20.4;opacity:0}86.458%{stroke-dashoffset:20.4;opacity:0}86.510%{opacity:1}88.411%{stroke-dashoffset:-34;opacity:1}88.542%{stroke-dashoffset:-34;opacity:0}100%{stroke-dashoffset:-34;opacity:0}}.cm14{animation:k29 38.4s linear infinite}
+@keyframes k30{0%{opacity:0}0.000%{opacity:0}0.781%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vs{animation:k30 38.4s linear infinite}
+@keyframes k31{0%{opacity:0}0.000%{opacity:0}0.781%{opacity:1}5.990%{opacity:1}6.771%{opacity:0}100%{opacity:0}}.as{animation:k31 38.4s linear infinite}
+@keyframes k32{0%{opacity:0}8.333%{opacity:0}9.115%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vp{animation:k32 38.4s linear infinite}
+@keyframes k33{0%{opacity:0}8.333%{opacity:0}9.115%{opacity:1}11.719%{opacity:1}12.500%{opacity:0}100%{opacity:0}}.ap{animation:k33 38.4s linear infinite}
+@keyframes k34{0%{opacity:0}14.062%{opacity:0}14.844%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vmac{animation:k34 38.4s linear infinite}
+@keyframes k35{0%{opacity:0}14.062%{opacity:0}14.844%{opacity:1}19.531%{opacity:1}20.312%{opacity:0}100%{opacity:0}}.amac{animation:k35 38.4s linear infinite}
+@keyframes k36{0%{opacity:0}21.875%{opacity:0}22.656%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vwin{animation:k36 38.4s linear infinite}
+@keyframes k37{0%{opacity:0}21.875%{opacity:0}22.656%{opacity:1}27.344%{opacity:1}28.125%{opacity:0}100%{opacity:0}}.awin{animation:k37 38.4s linear infinite}
+@keyframes k38{0%{opacity:0}29.687%{opacity:0}30.469%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vlin{animation:k38 38.4s linear infinite}
+@keyframes k39{0%{opacity:0}29.687%{opacity:0}30.469%{opacity:1}35.156%{opacity:1}35.937%{opacity:0}100%{opacity:0}}.alin{animation:k39 38.4s linear infinite}
+@keyframes k40{0%{opacity:0}37.500%{opacity:0}38.281%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vwarn{animation:k40 38.4s linear infinite}
+@keyframes k41{0%{opacity:0}37.500%{opacity:0}38.281%{opacity:1}42.969%{opacity:1}43.750%{opacity:0}100%{opacity:0}}.awarn{animation:k41 38.4s linear infinite}
+@keyframes k42{0%{opacity:0}45.312%{opacity:0}46.094%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vdl{animation:k42 38.4s linear infinite}
+@keyframes k43{0%{opacity:0}45.312%{opacity:0}46.094%{opacity:1}49.219%{opacity:1}50.000%{opacity:0}100%{opacity:0}}.adl{animation:k43 38.4s linear infinite}
+@keyframes k44{0%{opacity:0}51.562%{opacity:0}52.344%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vsum{animation:k44 38.4s linear infinite}
+@keyframes k45{0%{opacity:0}51.562%{opacity:0}52.344%{opacity:1}55.990%{opacity:1}56.771%{opacity:0}100%{opacity:0}}.asum{animation:k45 38.4s linear infinite}
+@keyframes k46{0%{opacity:0}58.333%{opacity:0}59.115%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vunv{animation:k46 38.4s linear infinite}
+@keyframes k47{0%{opacity:0}58.333%{opacity:0}59.115%{opacity:1}63.802%{opacity:1}64.583%{opacity:0}100%{opacity:0}}.aunv{animation:k47 38.4s linear infinite}
+@keyframes k48{0%{opacity:0}66.146%{opacity:0}66.927%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vsha{animation:k48 38.4s linear infinite}
+@keyframes k49{0%{opacity:0}66.146%{opacity:0}66.927%{opacity:1}70.052%{opacity:1}70.833%{opacity:0}100%{opacity:0}}.asha{animation:k49 38.4s linear infinite}
+@keyframes k50{0%{opacity:0}72.396%{opacity:0}73.177%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vstop{animation:k50 38.4s linear infinite}
+@keyframes k51{0%{opacity:0}72.396%{opacity:0}73.177%{opacity:1}77.865%{opacity:1}78.646%{opacity:0}100%{opacity:0}}.astop{animation:k51 38.4s linear infinite}
+@keyframes k52{0%{opacity:0}80.208%{opacity:0}80.990%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vex{animation:k52 38.4s linear infinite}
+@keyframes k53{0%{opacity:0}80.208%{opacity:0}80.990%{opacity:1}85.677%{opacity:1}86.458%{opacity:0}100%{opacity:0}}.aex{animation:k53 38.4s linear infinite}
+@keyframes k54{0%{opacity:0}88.021%{opacity:0}88.802%{opacity:1}99.219%{opacity:1}100%{opacity:0}}.vr{animation:k54 38.4s linear infinite}
+@keyframes k55{0%{opacity:0}88.021%{opacity:0}88.802%{opacity:1}98.438%{opacity:1}99.219%{opacity:0}100%{opacity:0}}.ar{animation:k55 38.4s linear infinite}
+@keyframes k56{0%{opacity:0}0.000%{opacity:0}0.781%{opacity:1}5.990%{opacity:1}6.771%{opacity:0}100%{opacity:0}}.tk0{animation:k56 38.4s linear infinite}
+@keyframes k57{0%{opacity:0}0.000%{opacity:0}0.781%{opacity:1}5.990%{opacity:1}6.771%{opacity:0}100%{opacity:0}}.cp0{animation:k57 38.4s linear infinite}
+@keyframes k58{0%{opacity:0}6.771%{opacity:0}7.552%{opacity:1}11.719%{opacity:1}12.500%{opacity:0}100%{opacity:0}}.tk1{animation:k58 38.4s linear infinite}
+@keyframes k59{0%{opacity:0}6.771%{opacity:0}7.552%{opacity:1}11.719%{opacity:1}12.500%{opacity:0}100%{opacity:0}}.cp1{animation:k59 38.4s linear infinite}
+@keyframes k60{0%{opacity:0}12.500%{opacity:0}13.281%{opacity:1}19.531%{opacity:1}20.312%{opacity:0}100%{opacity:0}}.tk2{animation:k60 38.4s linear infinite}
+@keyframes k61{0%{opacity:0}12.500%{opacity:0}13.281%{opacity:1}19.531%{opacity:1}20.312%{opacity:0}100%{opacity:0}}.cp2{animation:k61 38.4s linear infinite}
+@keyframes k62{0%{opacity:0}20.312%{opacity:0}21.094%{opacity:1}27.344%{opacity:1}28.125%{opacity:0}100%{opacity:0}}.tk3{animation:k62 38.4s linear infinite}
+@keyframes k63{0%{opacity:0}20.312%{opacity:0}21.094%{opacity:1}27.344%{opacity:1}28.125%{opacity:0}100%{opacity:0}}.cp3{animation:k63 38.4s linear infinite}
+@keyframes k64{0%{opacity:0}28.125%{opacity:0}28.906%{opacity:1}35.156%{opacity:1}35.937%{opacity:0}100%{opacity:0}}.tk4{animation:k64 38.4s linear infinite}
+@keyframes k65{0%{opacity:0}28.125%{opacity:0}28.906%{opacity:1}35.156%{opacity:1}35.937%{opacity:0}100%{opacity:0}}.cp4{animation:k65 38.4s linear infinite}
+@keyframes k66{0%{opacity:0}35.937%{opacity:0}36.719%{opacity:1}42.969%{opacity:1}43.750%{opacity:0}100%{opacity:0}}.tk5{animation:k66 38.4s linear infinite}
+@keyframes k67{0%{opacity:0}35.937%{opacity:0}36.719%{opacity:1}42.969%{opacity:1}43.750%{opacity:0}100%{opacity:0}}.cp5{animation:k67 38.4s linear infinite}
+@keyframes k68{0%{opacity:0}43.750%{opacity:0}44.531%{opacity:1}49.219%{opacity:1}50.000%{opacity:0}100%{opacity:0}}.tk6{animation:k68 38.4s linear infinite}
+@keyframes k69{0%{opacity:0}43.750%{opacity:0}44.531%{opacity:1}49.219%{opacity:1}50.000%{opacity:0}100%{opacity:0}}.cp6{animation:k69 38.4s linear infinite}
+@keyframes k70{0%{opacity:0}50.000%{opacity:0}50.781%{opacity:1}55.990%{opacity:1}56.771%{opacity:0}100%{opacity:0}}.tk7{animation:k70 38.4s linear infinite}
+@keyframes k71{0%{opacity:0}50.000%{opacity:0}50.781%{opacity:1}55.990%{opacity:1}56.771%{opacity:0}100%{opacity:0}}.cp7{animation:k71 38.4s linear infinite}
+@keyframes k72{0%{opacity:0}56.771%{opacity:0}57.552%{opacity:1}63.802%{opacity:1}64.583%{opacity:0}100%{opacity:0}}.tk8{animation:k72 38.4s linear infinite}
+@keyframes k73{0%{opacity:0}56.771%{opacity:0}57.552%{opacity:1}63.802%{opacity:1}64.583%{opacity:0}100%{opacity:0}}.cp8{animation:k73 38.4s linear infinite}
+@keyframes k74{0%{opacity:0}64.583%{opacity:0}65.365%{opacity:1}70.052%{opacity:1}70.833%{opacity:0}100%{opacity:0}}.tk9{animation:k74 38.4s linear infinite}
+@keyframes k75{0%{opacity:0}64.583%{opacity:0}65.365%{opacity:1}70.052%{opacity:1}70.833%{opacity:0}100%{opacity:0}}.cp9{animation:k75 38.4s linear infinite}
+@keyframes k76{0%{opacity:0}70.833%{opacity:0}71.615%{opacity:1}77.865%{opacity:1}78.646%{opacity:0}100%{opacity:0}}.tk10{animation:k76 38.4s linear infinite}
+@keyframes k77{0%{opacity:0}70.833%{opacity:0}71.615%{opacity:1}77.865%{opacity:1}78.646%{opacity:0}100%{opacity:0}}.cp10{animation:k77 38.4s linear infinite}
+@keyframes k78{0%{opacity:0}78.646%{opacity:0}79.427%{opacity:1}85.677%{opacity:1}86.458%{opacity:0}100%{opacity:0}}.tk11{animation:k78 38.4s linear infinite}
+@keyframes k79{0%{opacity:0}78.646%{opacity:0}79.427%{opacity:1}85.677%{opacity:1}86.458%{opacity:0}100%{opacity:0}}.cp11{animation:k79 38.4s linear infinite}
+@keyframes k80{0%{opacity:0}86.458%{opacity:0}87.240%{opacity:1}99.219%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.tk12{animation:k80 38.4s linear infinite}
+@keyframes k81{0%{opacity:0}86.458%{opacity:0}87.240%{opacity:1}99.219%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.cp12{animation:k81 38.4s linear infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}.v{opacity:1!important}.cap,.cmt{opacity:0!important}.sum{opacity:1!important}.tr{stroke-dashoffset:0!important}}</style>
+<rect x="0.5" y="0.5" width="959" height="509" rx="8" fill="url(#bgsetup)" stroke="#cfd3e5"/>
+<rect x="12" y="48" width="936" height="402" fill="url(#dpsetup)"/>
+<text x="28" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#796cbf">OVAT</text>
+<text x="72" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#595d6c">WHAT OVAT SETUP DOES</text>
+<text x="932" y="34" text-anchor="end" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#75798c">$ ovat setup</text>
+<path d="M144 178 L168 178" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M288 166.8 L296 166.8 Q304 166.8 304 158.8 L304 100 Q304 92 312 92 L320 92" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M288 178 L320 178" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M288 189.2 L296 189.2 Q304 189.2 304 197.2 L304 264 Q304 272 312 272 L320 272" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M420 308 L420 330" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M520 178 L556 178" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M520 272 L529 272 Q538 272 538 263 L538 201 Q538 192 547 192 L556 192" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M520 358 L529 358 Q538 358 538 349 L538 209.4 Q538 200.4 547 200.4 L556 200.4" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M716 178 L752 178" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M844 150 L844 120" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M844 206 L844 236" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M844 292 L844 322" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M752 264 L716 264" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M752 92 L750 92 Q748 92 748 94 L748 212 Q748 222 738 222 L643 222 Q636 222 636 229 L636 236" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path d="M636 336 L636 366" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahsetup)"/>
+<path class="tr tr0" d="M144 178 L168 178" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="28 28" stroke-dashoffset="28"/>
+<path class="cmt cm0" d="M144 178 L168 178" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="16.8 64.8" stroke-dashoffset="16.8" opacity="0"/>
+<path class="tr tr1" d="M288 166.8 L296 166.8 Q304 166.8 304 158.8 L304 100 Q304 92 312 92 L320 92" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="110.8 110.8" stroke-dashoffset="110.8"/>
+<path class="cmt cm1" d="M288 166.8 L296 166.8 Q304 166.8 304 158.8 L304 100 Q304 92 312 92 L320 92" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 176.8" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr2" d="M288 178 L320 178" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="36 36" stroke-dashoffset="36"/>
+<path class="cmt cm2" d="M288 178 L320 178" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="21.6 77.6" stroke-dashoffset="21.6" opacity="0"/>
+<path class="tr tr3" d="M288 189.2 L296 189.2 Q304 189.2 304 197.2 L304 264 Q304 272 312 272 L320 272" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="118.8 118.8" stroke-dashoffset="118.8"/>
+<path class="cmt cm3" d="M288 189.2 L296 189.2 Q304 189.2 304 197.2 L304 264 Q304 272 312 272 L320 272" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 184.8" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr4" d="M420 308 L420 330" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="26 26" stroke-dashoffset="26"/>
+<path class="cmt cm4" d="M420 308 L420 330" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="15.6 61.6" stroke-dashoffset="15.6" opacity="0"/>
+<path class="tr tr5" d="M520 178 L556 178" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="40 40" stroke-dashoffset="40"/>
+<path class="cmt cm5" d="M520 178 L556 178" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="24 84" stroke-dashoffset="24" opacity="0"/>
+<path class="tr tr6" d="M520 272 L529 272 Q538 272 538 263 L538 201 Q538 192 547 192 L556 192" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="120 120" stroke-dashoffset="120"/>
+<path class="cmt cm6" d="M520 272 L529 272 Q538 272 538 263 L538 201 Q538 192 547 192 L556 192" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 186" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr7" d="M520 358 L529 358 Q538 358 538 349 L538 209.4 Q538 200.4 547 200.4 L556 200.4" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="197.6 197.6" stroke-dashoffset="197.6"/>
+<path class="cmt cm7" d="M520 358 L529 358 Q538 358 538 349 L538 209.4 Q538 200.4 547 200.4 L556 200.4" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 263.6" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr8" d="M716 178 L752 178" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="40 40" stroke-dashoffset="40"/>
+<path class="cmt cm8" d="M716 178 L752 178" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="24 84" stroke-dashoffset="24" opacity="0"/>
+<path class="tr tr9" d="M844 150 L844 120" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="34 34" stroke-dashoffset="34"/>
+<path class="cmt cm9" d="M844 150 L844 120" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="20.4 74.4" stroke-dashoffset="20.4" opacity="0"/>
+<path class="tr tr10" d="M844 206 L844 236" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="34 34" stroke-dashoffset="34"/>
+<path class="cmt cm10" d="M844 206 L844 236" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="20.4 74.4" stroke-dashoffset="20.4" opacity="0"/>
+<path class="tr tr11" d="M844 292 L844 322" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="34 34" stroke-dashoffset="34"/>
+<path class="cmt cm11" d="M844 292 L844 322" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="20.4 74.4" stroke-dashoffset="20.4" opacity="0"/>
+<path class="tr tr12" d="M752 264 L716 264" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="40 40" stroke-dashoffset="40"/>
+<path class="cmt cm12" d="M752 264 L716 264" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="24 84" stroke-dashoffset="24" opacity="0"/>
+<path class="tr tr13" d="M752 92 L750 92 Q748 92 748 94 L748 212 Q748 222 738 222 L643 222 Q636 222 636 229 L636 236" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="264 264" stroke-dashoffset="264"/>
+<path class="cmt cm13" d="M752 92 L750 92 Q748 92 748 94 L748 212 Q748 222 738 222 L643 222 Q636 222 636 229 L636 236" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 330" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr14" d="M636 336 L636 366" fill="none" stroke="#b5abfc" stroke-width="1.8" stroke-dasharray="34 34" stroke-dashoffset="34"/>
+<path class="cmt cm14" d="M636 336 L636 366" fill="none" stroke="#796cbf" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="20.4 74.4" stroke-dashoffset="20.4" opacity="0"/>
+<rect x="830.3" y="124" width="27.4" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="844" y="139" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">no</text>
+<rect x="826.95" y="210" width="34.1" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="844" y="225" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">yes</text>
+<rect x="830.3" y="296" width="27.4" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="844" y="311" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">no</text>
+<rect x="708.95" y="253" width="34.1" height="22" rx="9" fill="#f3f5fe" stroke="#b2b6ca" stroke-width="0.8"/>
+<text x="726" y="268" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">yes</text>
+<g>
+<rect x="24" y="158" width="120" height="40" rx="20" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vs" x="24" y="158" width="120" height="40" rx="20" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="as" opacity="0"><rect x="24" y="158" width="120" height="40" rx="20" fill="none" stroke="#796cbf" stroke-width="1.8"/></g>
+<text x="84" y="182.69" text-anchor="middle" style="font:500 12.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#292b31">ovat setup</text>
+</g>
+<g>
+<rect x="168" y="150" width="120" height="56" rx="6" fill="#e9ecf8" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vp" x="168" y="150" width="120" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="ap" opacity="0"><rect x="168" y="150" width="120" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M168 164 V156 Q168 150 174 150 H184" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="182" y="183.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Platform?</text>
+<circle cx="272" cy="166" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<text x="272" y="169.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">?</text>
+</g>
+<g>
+<rect x="320" y="64" width="200" height="56" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vmac" x="320" y="64" width="200" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="amac" opacity="0"><rect x="320" y="64" width="200" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M320 78 V70 Q320 64 326 64 H336" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="334" y="87.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#292b31">darwin</text>
+<text x="334" y="106.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">no macOS build, exit 0</text>
+<circle cx="504" cy="80" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<text x="504" y="83.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">!</text>
+</g>
+<g>
+<rect x="320" y="150" width="200" height="56" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vwin" x="320" y="150" width="200" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="awin" opacity="0"><rect x="320" y="150" width="200" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M320 164 V156 Q320 150 326 150 H336" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="334" y="173.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#292b31">win32</text>
+<text x="334" y="192.38" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#5d5294">ovms_windows_*.zip</text>
+</g>
+<g>
+<rect x="320" y="236" width="200" height="72" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vlin" x="320" y="236" width="200" height="72" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="alin" opacity="0"><rect x="320" y="236" width="200" height="72" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M320 250 V242 Q320 236 326 236 H336" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="334" y="259.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#292b31">linux</text>
+<text x="334" y="278.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">reads /etc/os-release:</text>
+<text x="334" y="294.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">ubuntu22, 24, redhat</text>
+</g>
+<g>
+<rect x="320" y="330" width="200" height="56" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vwarn" x="320" y="330" width="200" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="awarn" opacity="0"><rect x="320" y="330" width="200" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M320 344 V336 Q320 330 326 330 H336" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="334" y="353.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Unknown distro</text>
+<text x="334" y="372.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">warn, try ubuntu24</text>
+<circle cx="504" cy="346" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<text x="504" y="349.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">!</text>
+</g>
+<g>
+<rect x="556" y="150" width="160" height="56" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vdl" x="556" y="150" width="160" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="adl" opacity="0"><rect x="556" y="150" width="160" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M556 164 V156 Q556 150 562 150 H572" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="570" y="183.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Download</text>
+</g>
+<g>
+<rect x="752" y="150" width="184" height="56" rx="6" fill="#e9ecf8" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vsum" x="752" y="150" width="184" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="asum" opacity="0"><rect x="752" y="150" width="184" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M752 164 V156 Q752 150 758 150 H768" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="766" y="182.88" style="font:500 13px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">.sha256 published?</text>
+<circle cx="920" cy="166" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<text x="920" y="169.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">?</text>
+</g>
+<g>
+<rect x="752" y="64" width="184" height="56" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vunv" x="752" y="64" width="184" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aunv" opacity="0"><rect x="752" y="64" width="184" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M752 78 V70 Q752 64 758 64 H768" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="766" y="87.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Unverified</text>
+<text x="766" y="106.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">installed-unverified</text>
+<circle cx="920" cy="80" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<text x="920" y="83.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">!</text>
+</g>
+<g>
+<rect x="752" y="236" width="184" height="56" rx="6" fill="#e9ecf8" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vsha" x="752" y="236" width="184" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="asha" opacity="0"><rect x="752" y="236" width="184" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M752 250 V242 Q752 236 758 236 H768" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="766" y="268.88" style="font:500 13px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">SHA-256 matches?</text>
+<circle cx="920" cy="252" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<text x="920" y="255.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#595d6c">?</text>
+</g>
+<g>
+<rect x="752" y="322" width="184" height="56" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vstop" x="752" y="322" width="184" height="56" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="astop" opacity="0"><rect x="752" y="322" width="184" height="56" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M752 336 V328 Q752 322 758 322 H768" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="766" y="345.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Refuse</text>
+<text x="766" y="364.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">install nothing</text>
+<circle cx="920" cy="338" r="8" fill="none" stroke="#75798c" stroke-width="1"/>
+<path d="M917.2 335.2 L922.8 340.8 M922.8 335.2 L917.2 340.8" fill="none" stroke="#595d6c" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<g>
+<rect x="556" y="236" width="160" height="100" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vex" x="556" y="236" width="160" height="100" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="aex" opacity="0"><rect x="556" y="236" width="160" height="100" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M556 250 V242 Q556 236 562 236 H572" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="570" y="265.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#292b31">Extract</text>
+<text x="570" y="284.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">flatten ovms/,</text>
+<text x="570" y="300.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">make every member</text>
+<text x="570" y="316.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">owner-writable</text>
+</g>
+<g>
+<rect x="536" y="366" width="200" height="64" rx="6" fill="#f9faff" stroke="#b2b6ca" stroke-width="1"/>
+<rect class="v vr" x="536" y="366" width="200" height="64" rx="6" fill="#e7e5fe" stroke="#b5abfc" stroke-width="1.2" opacity="0"/>
+<g class="ar" opacity="0"><rect x="536" y="366" width="200" height="64" rx="6" fill="none" stroke="#796cbf" stroke-width="1.8"/><path d="M536 380 V372 Q536 366 542 366 H552" fill="none" stroke="#796cbf" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="550" y="393.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#5d5294">~/.ovat/ovms</text>
+<text x="550" y="412.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#595d6c">bin/ovms or ovms.exe</text>
+<circle cx="720" cy="382" r="8" fill="none" stroke="#796cbf" stroke-width="1"/>
+<path d="M716.5 382 L719 384.6 L723.6 379.4" fill="none" stroke="#796cbf" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="28" y="456" width="904" height="1" fill="url(#rulesetup)"/>
+<rect x="728" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk0" x="728" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp0" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">01 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">ovat setup installs the OVMS server for this machine.</text></g>
+<rect x="744" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk1" x="744" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp1" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">02 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">It checks the platform.</text></g>
+<rect x="760" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk2" x="760" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp2" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">03 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">macOS: there is no build. It says so and exits 0.</text></g>
+<rect x="776" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk3" x="776" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp3" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">04 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Windows: the OVMS Windows zip with Python enabled.</text></g>
+<rect x="792" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk4" x="792" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp4" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">05 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Linux: it reads /etc/os-release for ubuntu22, ubuntu24 or redhat.</text></g>
+<rect x="808" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk5" x="808" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp5" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">06 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">An unknown distro gets a warning, then the ubuntu24 build.</text></g>
+<rect x="824" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk6" x="824" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp6" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">07 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Then it downloads the archive.</text></g>
+<rect x="840" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk7" x="840" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp7" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">08 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Is a .sha256 checksum published for it?</text></g>
+<rect x="856" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk8" x="856" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp8" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">09 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">No: there is nothing to check. It is reported installed-unverified.</text></g>
+<rect x="872" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk9" x="872" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp9" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">10 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Yes: does the SHA-256 match?</text></g>
+<rect x="888" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk10" x="888" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp10" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">11 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">No: it refuses and installs nothing.</text></g>
+<rect x="904" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk11" x="904" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp11" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">12 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">Yes: it extracts, flattens the ovms/ wrapper and makes every member owner-writable.</text></g>
+<rect x="920" y="480" width="12" height="2" rx="1" fill="#b2b6ca"/>
+<rect class="tk12" x="920" y="480" width="12" height="2" rx="1" fill="#796cbf" opacity="0"/>
+<g class="cap cp12" opacity="0"><text x="28" y="484" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#796cbf">13 / 13</text><text x="92" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31">OVMS lands in ~/.ovat/ovms: bin/ovms on Linux, ovms.exe on Windows.</text></g>
+<text class="sum" x="28" y="484" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#292b31" opacity="0">Pick the build for the platform, download, verify the SHA-256 when published, extract to ~/.ovat/ovms.</text>
+</svg>

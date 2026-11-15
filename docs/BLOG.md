@@ -119,6 +119,11 @@ ovat serve workflow.yml                       # start the model server
 ovat run workflow.yml -i "what did the Q3 review conclude?"
 ```
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/core-flow-dark.svg">
+  <img src="assets/diagrams/core-flow-light.svg" alt="workflow.yml is checked against a strict schema, the agent factory wires the model, tools and search, one of four engines runs the loop, and the model runs on an OVMS server or locally through openvino_genai, on an Intel CPU, GPU or NPU. The answer comes back with its sources.">
+</picture>
+
 That is the whole thing. The loop, the schemas, the history, the retries and the
 error messages are the toolkit's job. Twelve commands and one command group cover the rest:
 
@@ -137,6 +142,11 @@ error messages are the toolkit's job. Twelve commands and one command group cove
 | `ovat` | a full-screen terminal UI |
 | `ovat agent` | the agent TUI: tools, approvals, subagents, voice |
 | `ovat a2a serve` | offer a workflow to other agents over A2A |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/agent-loop-dark.svg">
+  <img src="assets/diagrams/agent-loop-light.svg" alt="The question goes to the model; a reply that asks for a tool makes the tool run as Python on your machine; the result goes back to the model; a reply with no tool call is the answer, shown with its sources. The loop stops after max_iterations rounds.">
+</picture>
 
 ---
 
@@ -180,6 +190,11 @@ defaults to `CPU`; `ovat init` writes the suggested device instead, and
 whatever you set there wins. No device runs tools, either: the device
 generates text, and the agent loop reads the tool call out of it and runs the
 Python function itself.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/devices-dark.svg">
+  <img src="assets/diagrams/devices-light.svg" alt="On an AI PC the agent model and vision go to the GPU, embeddings to the NPU, and speech to text to the CPU. With only a CPU, everything runs on the CPU.">
+</picture>
 
 **Where the models come from.** OpenVINO publishes models already converted
 and optimised for its CPU, GPU and NPU targets on Hugging Face, in the
@@ -296,6 +311,11 @@ The index also remembers when it read each file. Edit a document afterwards
 and the next `ovat run` or `ovat chat` names it in a warning, because an old
 index answers just as confidently from text that is no longer there.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/rag-dark.svg">
+  <img src="assets/diagrams/rag-light.svg" alt="Index once: files are cut into chunks, turned into 384 numbers each by bge-small, and stored in a sqlite-vec file. Every question: the question is turned into numbers, the closest chunks are found, and the model answers from them and names the source files.">
+</picture>
+
 The config that does this is fifteen lines:
 
 ```yaml
@@ -339,6 +359,11 @@ agent:
 - **`react`**. LangChain, `create_agent` + `ChatOpenAI` pointed at OVMS
 - **`llamaindex`**. LlamaIndex `FunctionAgent` + `OpenAILike`
 - **`openai-agents`**, the OpenAI Agents SDK, against a local server
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/engines-dark.svg">
+  <img src="assets/diagrams/engines-light.svg" alt="agent.type in workflow.yml selects one of four engines: native (built in), react (LangChain), llamaindex or openai-agents. All four talk to the same OVMS server with the same model, tools and endpoint.">
+</picture>
 
 Same model, same tools, same prompt. And because "it's just a one-word change" is
 easy to claim and easy to get wrong, OVAT ships the thing that checks:
@@ -412,28 +437,20 @@ Full walkthrough: [`examples/audio-multimodal/`](../examples/audio-multimodal/).
 ## 8. A terminal UI, if you want one
 
 Everything above is the CLI, and the CLI is the product. But there is also a
-full-screen terminal app: `pip install "ovat[tui]"`, then run `ovat`. That opens
-the agent TUI. OVAT's first terminal app, the launcher, is shown first here; it
-was retired after 1.3.0 once the agent TUI covered it.
-
-<div align="center">
-<img src="assets/screens/tui-chat-tools.png" width="820px" alt="The OVAT terminal UI chat answering one question with three tools: transcribe, describe_image and search_docs, after switching itself to OVMS">
-</div>
-
-Streaming answers with foldable reasoning, multi-line input with real paste and
-Up/Down history, sessions saved to `.ovat/sessions/`, an in-app `doctor` and
-indexing progress, and `/engine` to swap between the local `openvino_genai`
-model and OVMS-with-tools without leaving the conversation.
-
-The app that bare `ovat` opens is `ovat agent`. It is a chat-first
-terminal agent. You point it at a workflow,
-and it streams the answer, shows every tool call as a card, and asks before
-it does anything that writes a file, runs a command or sends data off the
-machine.
+full-screen terminal app: `pip install "ovat[tui]"`, then run `ovat` (or
+`ovat agent`). It is a chat-first terminal agent. You point it at a workflow,
+and it streams the answer with foldable reasoning, shows every tool call as a
+card, swaps models and engines with `/model` and `/engine`, and asks before it
+does anything that writes a file, runs a command or sends data off the machine.
 
 <div align="center">
 <img src="assets/screens/agent-tui/hero-agent-start.png" width="820px" alt="The OVAT agent TUI right after start on an Intel AI PC: the banner says OVAT v1.2.0, Qwen3.5-4B-int4-ov on GPU, native engine, 1 tool and 4 subagents. The slash menu is open, and the bar shows live CPU, GPU, NPU and RAM.">
 </div>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/agent-tui-dark.svg">
+  <img src="assets/diagrams/agent-tui-light.svg" alt="You type in the terminal client. It sends a JSON-RPC request to OVAT's app server, which starts a turn on AgentSession. AgentSession runs the chosen engine on a worker thread; the engine asks the model on OVMS, and every tool call goes through one wrapper that reports events. The events travel back up the same layers and the client draws them.">
+</picture>
 
 The part worth showing is the subagents. A workflow can
 name other agents it may hand a task to: another OVAT workflow, a model behind
@@ -447,14 +464,30 @@ bar says `a2a serving`.
 <img src="assets/screens/agent-tui/hero-agent-serve-and-a2a-answer.png" width="820px" alt="The agent TUI after /serve: the A2A server listens on 127.0.0.1 port 9100 and prints its card address, the exposed tool search_docs, and that delegate is not exposed. A question to the team_docs subagent returns a cited answer over A2A, and the bar shows a2a serving.">
 </div>
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/subagents-dark.svg">
+  <img src="assets/diagrams/subagents-light.svg" alt="The main agent gets one tool, delegate(agent, task). A subagent is another OVAT workflow in this process, a model behind an OpenAI-compatible API, or an agent reached over A2A. Answers come back framed as information. Progress is reported as events and shown in the /agents table.">
+</picture>
+
 Two details matter here. The served agent is built with only the tools you
 chose to expose, and `delegate` is deliberately not one of them, so a remote
-caller cannot make your agent hand its work on to yet another agent. And a
-call that leaves the agent asks first:
+caller cannot make your agent hand its work on to yet another agent.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/a2a-flow-dark.svg">
+  <img src="assets/diagrams/a2a-flow-light.svg" alt="A caller sends a message. The server checks the host, the body size and the bearer token, then admission limits, then gives each caller and conversation its own agent. A run takes the conversation lock and then the one-model gate, runs only the exposed tools, and the answer comes back as a task update.">
+</picture>
+
+And a call that leaves the agent asks first:
 
 <div align="center">
 <img src="assets/screens/agent-tui/agent-approval-local-api.png" width="760px" alt="The approval panel for the local_api subagent: it warns that the task is sent to http://localhost:8000/v3 and offers Allow once, Allow for the remainder of the session, Always allow this tool in this project, and Deny.">
 </div>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/approval-flow-dark.svg">
+  <img src="assets/diagrams/approval-flow-light.svg" alt="The model asks for a tool. One wrapper, events.observed, checks the permission of that tool or subagent. Allow runs it. Ask opens an approval panel with once, session, always and deny when someone is there to answer, and counts as no when nobody is. Deny sends the model a plain sentence.">
+</picture>
 
 Afterwards you can see exactly what happened. `/trace` lists each turn of the
 last answer, the tool that ran in it, how long it took and how many tokens
@@ -591,6 +624,11 @@ tools:
 
 OVAT launches the server, asks what tools it advertises, and hands them to the
 agent exactly like built-ins. The agent cannot tell the difference.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/tool-source-dark.svg">
+  <img src="assets/diagrams/tool-source-light.svg" alt="A tool is either builtin, with its schema from SCHEMA and a function bound by the factory, or mcp_stdio, where MCPStdioServer launches the server, lists its tools and calls them. Both reach the agent loop in the same shape, so the loop cannot tell them apart.">
+</picture>
 
 An MCP server starts with only a few of your environment variables, so a
 server you did not write cannot read every secret in your shell. If one needs

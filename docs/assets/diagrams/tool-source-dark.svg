@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 440" width="880" height="440" role="img" aria-labelledby="ttoolsource dtoolsource">
+<title id="ttoolsource">Where a tool comes from</title><desc id="dtoolsource">A tool is either builtin, with its schema from SCHEMA and a function bound by the factory, or mcp_stdio, where MCPStdioServer launches the server, lists its tools and calls them. Both reach the agent loop in the same shape, so the loop cannot tell them apart.</desc>
+<defs><radialGradient id="bgtoolsource" cx="0.12" cy="0" r="1.1"><stop offset="0" stop-color="#1f2236"/><stop offset="0.7" stop-color="#161826"/></radialGradient><linearGradient id="ruletoolsource" x1="0" x2="1"><stop offset="0" stop-color="#3f424d" stop-opacity="0"/><stop offset="0.08" stop-color="#3f424d"/><stop offset="0.92" stop-color="#3f424d"/><stop offset="1" stop-color="#3f424d" stop-opacity="0"/></linearGradient><pattern id="dptoolsource" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#262836"/></pattern><marker id="ahtoolsource" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="#75798c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>@keyframes k0{0%{stroke-dashoffset:42;opacity:1}12.037%{stroke-dashoffset:42;opacity:1}15.509%{stroke-dashoffset:0}98.611%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr0{animation:k0 21.6s linear infinite}
+@keyframes k1{0%{stroke-dashoffset:25.2;opacity:0}12.037%{stroke-dashoffset:25.2;opacity:0}12.130%{opacity:1}15.509%{stroke-dashoffset:-42;opacity:1}15.741%{stroke-dashoffset:-42;opacity:0}100%{stroke-dashoffset:-42;opacity:0}}.cm0{animation:k1 21.6s linear infinite}
+@keyframes k2{0%{stroke-dashoffset:120;opacity:1}25.926%{stroke-dashoffset:120;opacity:1}29.398%{stroke-dashoffset:0}98.611%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr1{animation:k2 21.6s linear infinite}
+@keyframes k3{0%{stroke-dashoffset:46;opacity:0}25.926%{stroke-dashoffset:46;opacity:0}26.019%{opacity:1}29.398%{stroke-dashoffset:-120;opacity:1}29.630%{stroke-dashoffset:-120;opacity:0}100%{stroke-dashoffset:-120;opacity:0}}.cm1{animation:k3 21.6s linear infinite}
+@keyframes k4{0%{stroke-dashoffset:123.8;opacity:1}39.815%{stroke-dashoffset:123.8;opacity:1}43.287%{stroke-dashoffset:0}98.611%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr2{animation:k4 21.6s linear infinite}
+@keyframes k5{0%{stroke-dashoffset:46;opacity:0}39.815%{stroke-dashoffset:46;opacity:0}39.907%{opacity:1}43.287%{stroke-dashoffset:-123.8;opacity:1}43.519%{stroke-dashoffset:-123.8;opacity:0}100%{stroke-dashoffset:-123.8;opacity:0}}.cm2{animation:k5 21.6s linear infinite}
+@keyframes k6{0%{stroke-dashoffset:120;opacity:1}50.926%{stroke-dashoffset:120;opacity:1}54.398%{stroke-dashoffset:0}98.611%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr3{animation:k6 21.6s linear infinite}
+@keyframes k7{0%{stroke-dashoffset:46;opacity:0}50.926%{stroke-dashoffset:46;opacity:0}51.019%{opacity:1}54.398%{stroke-dashoffset:-120;opacity:1}54.630%{stroke-dashoffset:-120;opacity:0}100%{stroke-dashoffset:-120;opacity:0}}.cm3{animation:k7 21.6s linear infinite}
+@keyframes k8{0%{stroke-dashoffset:123.8;opacity:1}64.815%{stroke-dashoffset:123.8;opacity:1}68.287%{stroke-dashoffset:0}98.611%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr4{animation:k8 21.6s linear infinite}
+@keyframes k9{0%{stroke-dashoffset:46;opacity:0}64.815%{stroke-dashoffset:46;opacity:0}64.907%{opacity:1}68.287%{stroke-dashoffset:-123.8;opacity:1}68.519%{stroke-dashoffset:-123.8;opacity:0}100%{stroke-dashoffset:-123.8;opacity:0}}.cm4{animation:k9 21.6s linear infinite}
+@keyframes k10{0%{stroke-dashoffset:28;opacity:1}75.926%{stroke-dashoffset:28;opacity:1}79.398%{stroke-dashoffset:0}98.611%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr5{animation:k10 21.6s linear infinite}
+@keyframes k11{0%{stroke-dashoffset:16.8;opacity:0}75.926%{stroke-dashoffset:16.8;opacity:0}76.019%{opacity:1}79.398%{stroke-dashoffset:-28;opacity:1}79.630%{stroke-dashoffset:-28;opacity:0}100%{stroke-dashoffset:-28;opacity:0}}.cm5{animation:k11 21.6s linear infinite}
+@keyframes k12{0%{opacity:0}0.000%{opacity:0}1.389%{opacity:1}98.611%{opacity:1}100%{opacity:0}}.vneed{animation:k12 21.6s linear infinite}
+@keyframes k13{0%{opacity:0}0.000%{opacity:0}1.389%{opacity:1}10.648%{opacity:1}12.037%{opacity:0}100%{opacity:0}}.aneed{animation:k13 21.6s linear infinite}
+@keyframes k14{0%{opacity:0}14.815%{opacity:0}16.204%{opacity:1}98.611%{opacity:1}100%{opacity:0}}.vtype{animation:k14 21.6s linear infinite}
+@keyframes k15{0%{opacity:0}14.815%{opacity:0}16.204%{opacity:1}24.537%{opacity:1}25.926%{opacity:0}100%{opacity:0}}.atype{animation:k15 21.6s linear infinite}
+@keyframes k16{0%{opacity:0}28.704%{opacity:0}30.093%{opacity:1}98.611%{opacity:1}100%{opacity:0}}.vb{animation:k16 21.6s linear infinite}
+@keyframes k17{0%{opacity:0}28.704%{opacity:0}30.093%{opacity:1}38.426%{opacity:1}39.815%{opacity:0}100%{opacity:0}}.ab{animation:k17 21.6s linear infinite}
+@keyframes k18{0%{opacity:0}53.704%{opacity:0}55.093%{opacity:1}98.611%{opacity:1}100%{opacity:0}}.vm{animation:k18 21.6s linear infinite}
+@keyframes k19{0%{opacity:0}53.704%{opacity:0}55.093%{opacity:1}63.426%{opacity:1}64.815%{opacity:0}100%{opacity:0}}.am{animation:k19 21.6s linear infinite}
+@keyframes k20{0%{opacity:0}42.593%{opacity:0}43.981%{opacity:1}98.611%{opacity:1}100%{opacity:0}}.vloop{animation:k20 21.6s linear infinite}
+@keyframes k21{0%{opacity:0}42.593%{opacity:0}43.981%{opacity:1}49.537%{opacity:1}50.926%{opacity:0}67.593%{opacity:0}68.981%{opacity:1}74.537%{opacity:1}75.926%{opacity:0}100%{opacity:0}}.aloop{animation:k21 21.6s linear infinite}
+@keyframes k22{0%{opacity:0}78.704%{opacity:0}80.093%{opacity:1}98.611%{opacity:1}100%{opacity:0}}.vnote{animation:k22 21.6s linear infinite}
+@keyframes k23{0%{opacity:0}78.704%{opacity:0}80.093%{opacity:1}97.222%{opacity:1}98.611%{opacity:0}100%{opacity:0}}.anote{animation:k23 21.6s linear infinite}
+@keyframes k24{0%{opacity:0}0.000%{opacity:0}1.389%{opacity:1}10.648%{opacity:1}12.037%{opacity:0}100%{opacity:0}}.tk0{animation:k24 21.6s linear infinite}
+@keyframes k25{0%{opacity:0}0.000%{opacity:0}1.389%{opacity:1}10.648%{opacity:1}12.037%{opacity:0}100%{opacity:0}}.cp0{animation:k25 21.6s linear infinite}
+@keyframes k26{0%{opacity:0}12.037%{opacity:0}13.426%{opacity:1}24.537%{opacity:1}25.926%{opacity:0}100%{opacity:0}}.tk1{animation:k26 21.6s linear infinite}
+@keyframes k27{0%{opacity:0}12.037%{opacity:0}13.426%{opacity:1}24.537%{opacity:1}25.926%{opacity:0}100%{opacity:0}}.cp1{animation:k27 21.6s linear infinite}
+@keyframes k28{0%{opacity:0}25.926%{opacity:0}27.315%{opacity:1}38.426%{opacity:1}39.815%{opacity:0}100%{opacity:0}}.tk2{animation:k28 21.6s linear infinite}
+@keyframes k29{0%{opacity:0}25.926%{opacity:0}27.315%{opacity:1}38.426%{opacity:1}39.815%{opacity:0}100%{opacity:0}}.cp2{animation:k29 21.6s linear infinite}
+@keyframes k30{0%{opacity:0}39.815%{opacity:0}41.204%{opacity:1}49.537%{opacity:1}50.926%{opacity:0}100%{opacity:0}}.tk3{animation:k30 21.6s linear infinite}
+@keyframes k31{0%{opacity:0}39.815%{opacity:0}41.204%{opacity:1}49.537%{opacity:1}50.926%{opacity:0}100%{opacity:0}}.cp3{animation:k31 21.6s linear infinite}
+@keyframes k32{0%{opacity:0}50.926%{opacity:0}52.315%{opacity:1}63.426%{opacity:1}64.815%{opacity:0}100%{opacity:0}}.tk4{animation:k32 21.6s linear infinite}
+@keyframes k33{0%{opacity:0}50.926%{opacity:0}52.315%{opacity:1}63.426%{opacity:1}64.815%{opacity:0}100%{opacity:0}}.cp4{animation:k33 21.6s linear infinite}
+@keyframes k34{0%{opacity:0}64.815%{opacity:0}66.204%{opacity:1}74.537%{opacity:1}75.926%{opacity:0}100%{opacity:0}}.tk5{animation:k34 21.6s linear infinite}
+@keyframes k35{0%{opacity:0}64.815%{opacity:0}66.204%{opacity:1}74.537%{opacity:1}75.926%{opacity:0}100%{opacity:0}}.cp5{animation:k35 21.6s linear infinite}
+@keyframes k36{0%{opacity:0}75.926%{opacity:0}77.315%{opacity:1}98.611%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.tk6{animation:k36 21.6s linear infinite}
+@keyframes k37{0%{opacity:0}75.926%{opacity:0}77.315%{opacity:1}98.611%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.cp6{animation:k37 21.6s linear infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}.v{opacity:1!important}.cap,.cmt{opacity:0!important}.sum{opacity:1!important}.tr{stroke-dashoffset:0!important}}</style>
+<rect x="0.5" y="0.5" width="879" height="439" rx="8" fill="url(#bgtoolsource)" stroke="#292b31"/>
+<rect x="12" y="48" width="856" height="332" fill="url(#dptoolsource)"/>
+<text x="28" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#9184d9">OVAT</text>
+<text x="72" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#b2b6ca">WHERE A TOOL COMES FROM</text>
+<path d="M194 170 L232 170" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahtoolsource)"/>
+<path d="M352 158 L376 158 Q386 158 386 148 L386 120 Q386 110 396 110 L420 110" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahtoolsource)"/>
+<path d="M352 182 L376 182 Q386 182 386 192 L386 220 Q386 230 396 230 L420 230" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahtoolsource)"/>
+<path d="M630 110 L655 110 Q665 110 665 120 L665 149.8 Q665 159.8 675 159.8 L700 159.8" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahtoolsource)"/>
+<path d="M630 230 L655 230 Q665 230 665 220 L665 190.2 Q665 180.2 675 180.2 L700 180.2" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahtoolsource)"/>
+<path d="M525 276 L525 300" fill="none" stroke="#75798c" stroke-width="1.3" stroke-dasharray="3 4" marker-end="url(#ahtoolsource)"/>
+<path class="tr tr0" d="M194 170 L232 170" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="42 42" stroke-dashoffset="42"/>
+<path class="cmt cm0" d="M194 170 L232 170" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="25.2 87.2" stroke-dashoffset="25.2" opacity="0"/>
+<path class="tr tr1" d="M352 158 L376 158 Q386 158 386 148 L386 120 Q386 110 396 110 L420 110" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="120 120" stroke-dashoffset="120"/>
+<path class="cmt cm1" d="M352 158 L376 158 Q386 158 386 148 L386 120 Q386 110 396 110 L420 110" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 186" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr2" d="M630 110 L655 110 Q665 110 665 120 L665 149.8 Q665 159.8 675 159.8 L700 159.8" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="123.8 123.8" stroke-dashoffset="123.8"/>
+<path class="cmt cm2" d="M630 110 L655 110 Q665 110 665 120 L665 149.8 Q665 159.8 675 159.8 L700 159.8" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 189.8" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr3" d="M352 182 L376 182 Q386 182 386 192 L386 220 Q386 230 396 230 L420 230" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="120 120" stroke-dashoffset="120"/>
+<path class="cmt cm3" d="M352 182 L376 182 Q386 182 386 192 L386 220 Q386 230 396 230 L420 230" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 186" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr4" d="M630 230 L655 230 Q665 230 665 220 L665 190.2 Q665 180.2 675 180.2 L700 180.2" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="123.8 123.8" stroke-dashoffset="123.8"/>
+<path class="cmt cm4" d="M630 230 L655 230 Q665 230 665 220 L665 190.2 Q665 180.2 675 180.2 L700 180.2" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 189.8" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr5" d="M525 276 L525 300" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="28 28" stroke-dashoffset="28"/>
+<path class="cmt cm5" d="M525 276 L525 300" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="16.8 64.8" stroke-dashoffset="16.8" opacity="0"/>
+<g>
+<rect x="24" y="150" width="170" height="40" rx="20" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vneed" x="24" y="150" width="170" height="40" rx="20" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aneed" opacity="0"><rect x="24" y="150" width="170" height="40" rx="20" fill="none" stroke="#9184d9" stroke-width="1.8"/></g>
+<text x="109" y="174.88" text-anchor="middle" style="font:500 13px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">agent needs a tool</text>
+</g>
+<g>
+<rect x="232" y="140" width="120" height="60" rx="6" fill="#1b1d2b" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vtype" x="232" y="140" width="120" height="60" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="atype" opacity="0"><rect x="232" y="140" width="120" height="60" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M232 154 V146 Q232 140 238 140 H248" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="246" y="175.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">type?</text>
+<circle cx="336" cy="156" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="336" y="159.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">?</text>
+</g>
+<g>
+<rect x="420" y="64" width="210" height="92" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vb" x="420" y="64" width="210" height="92" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ab" opacity="0"><rect x="420" y="64" width="210" height="92" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M420 78 V70 Q420 64 426 64 H436" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="434" y="89.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">builtin</text>
+<text x="434" y="108.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">schema from SCHEMA,</text>
+<text x="434" y="124.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">function bound by</text>
+<text x="434" y="140.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">the factory</text>
+</g>
+<g>
+<rect x="420" y="184" width="210" height="92" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vm" x="420" y="184" width="210" height="92" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="am" opacity="0"><rect x="420" y="184" width="210" height="92" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M420 198 V190 Q420 184 426 184 H436" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="434" y="209.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">mcp_stdio</text>
+<text x="434" y="228.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">MCPStdioServer:</text>
+<text x="434" y="244.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">launch, list_tools,</text>
+<text x="434" y="260.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">call_tool</text>
+</g>
+<g>
+<rect x="700" y="140" width="160" height="60" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vloop" x="700" y="140" width="160" height="60" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aloop" opacity="0"><rect x="700" y="140" width="160" height="60" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M700 154 V146 Q700 140 706 140 H716" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="714" y="175.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Agent loop</text>
+</g>
+<g>
+<rect x="420" y="300" width="210" height="52" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vnote" x="420" y="300" width="210" height="52" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="anote" opacity="0"><rect x="420" y="300" width="210" height="52" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M420 314 V306 Q420 300 426 300 H436" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="434" y="321.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Same shape</text>
+<text x="434" y="340.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">loop cannot tell them apart</text>
+</g>
+<rect x="28" y="386" width="824" height="1" fill="url(#ruletoolsource)"/>
+<rect x="744" y="410" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk0" x="744" y="410" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp0" opacity="0"><text x="28" y="414" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">01 / 07</text><text x="92" y="414" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">The agent needs a tool. Where does it come from?</text></g>
+<rect x="760" y="410" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk1" x="760" y="410" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp1" opacity="0"><text x="28" y="414" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">02 / 07</text><text x="92" y="414" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Each tool has a type: builtin or mcp_stdio.</text></g>
+<rect x="776" y="410" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk2" x="776" y="410" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp2" opacity="0"><text x="28" y="414" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">03 / 07</text><text x="92" y="414" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">builtin: the schema comes from SCHEMA and the factory binds the function.</text></g>
+<rect x="792" y="410" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk3" x="792" y="410" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp3" opacity="0"><text x="28" y="414" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">04 / 07</text><text x="92" y="414" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">It goes into the agent loop.</text></g>
+<rect x="808" y="410" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk4" x="808" y="410" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp4" opacity="0"><text x="28" y="414" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">05 / 07</text><text x="92" y="414" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">mcp_stdio: MCPStdioServer launches the server, lists its tools and calls them.</text></g>
+<rect x="824" y="410" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk5" x="824" y="410" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp5" opacity="0"><text x="28" y="414" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">06 / 07</text><text x="92" y="414" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">It goes into the same loop.</text></g>
+<rect x="840" y="410" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk6" x="840" y="410" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp6" opacity="0"><text x="28" y="414" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">07 / 07</text><text x="92" y="414" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Both have the same shape, so the loop cannot tell them apart.</text></g>
+<text class="sum" x="28" y="414" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed" opacity="0">builtin or mcp_stdio. Both arrive in the same shape, so the loop treats them the same.</text>
+</svg>

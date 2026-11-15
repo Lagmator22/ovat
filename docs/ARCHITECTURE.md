@@ -126,96 +126,20 @@ Two diagrams: what the parts are (a stack), and what happens during one run
 interfaces at the top to the hardware at the bottom, which parts are optional,
 and where telemetry reads its numbers.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart TB
-    subgraph Interfaces ["1. Interfaces"]
-        direction LR
-        CLI["ovat CLI<br/>cli/main.py"]
-        TUI["Terminal UI<br/>[tui] extra"]
-    end
-    subgraph Config ["2. Configuration"]
-        direction LR
-        YAML["workflow.yml"] --> Schema["WorkflowConfig<br/>strict schema"] --> Factory["Agent factory<br/>factory.py"]
-    end
-    subgraph Engines ["3. Agent engines"]
-        direction LR
-        Native["native<br/>loop.py"]
-        LangChain["react<br/>LangChain"]
-        LlamaIndex["llamaindex<br/>LlamaIndex"]
-        OpenAIAgents["openai-agents<br/>Agents SDK"]
-    end
-    subgraph PT ["4. Providers and tools"]
-        direction LR
-        LLMP["LLM provider<br/>OVMS or GenAI"]
-        RAG["Embeddings and<br/>retriever"]
-        Builtin["Built-in tools<br/>search_docs, transcribe,<br/>describe_image"]
-        MCP["MCP client<br/>external servers"]
-    end
-    subgraph Serving ["5. Serving and runtime"]
-        direction LR
-        OVMS["OVMS server<br/>/v3, decodes<br/>tool calls"]
-        GenAI["openvino_genai<br/>in-process,<br/>no server"]
-    end
-    subgraph HW ["6. Hardware"]
-        direction LR
-        CPU["Intel CPU"]
-        GPU["Intel GPU"]
-        NPU["Intel NPU"]
-    end
-    subgraph Tel ["Telemetry, alongside the stack"]
-        direction TB
-        Sources["Sources<br/>run trace, system,<br/>process, NPU,<br/>OVMS log, Intel UT"] --> Sinks["Sinks<br/>JSON Lines,<br/>TUI page"]
-    end
-    subgraph Opt ["Optional, outside OVAT"]
-        Plano["plano gateway<br/>OpenTelemetry<br/>spans"]
-    end
-
-    Interfaces --> Config
-    Config --> Engines
-    Engines --> PT
-    PT --> Serving
-    Serving --> HW
-    LLMP -.-> Plano
-    Plano -.-> OVMS
-    Engines -.-> Sources
-    Serving -.-> Sources
-    HW -.-> Sources
-
-    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
-    classDef config fill:#FFC107,stroke:#9A6700,color:#1F2328
-    classDef engine fill:#7A45F0,stroke:#A98BFF,color:#FFFFFF
-    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
-    classDef tool fill:#3DD68C,stroke:#1A7F37,color:#0F141A
-    classDef telemetry fill:#7A8CA0,stroke:#57606A,color:#0F141A
-    classDef hw fill:#57606A,stroke:#8C959F,color:#FFFFFF
-    class CLI,TUI cli
-    class YAML,Schema config
-    class Factory,Native,LangChain,LlamaIndex,OpenAIAgents engine
-    class LLMP,RAG,OVMS,GenAI,Plano backend
-    class Builtin,MCP tool
-    class Sources,Sinks telemetry
-    class CPU,GPU,NPU hw
-    style TUI stroke-dasharray:5 4,stroke-width:2px
-    style MCP stroke-dasharray:5 4,stroke-width:2px
-    style Plano stroke-dasharray:5 4,stroke-width:2px
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/stack-dark.svg">
+  <img src="assets/diagrams/stack-light.svg" alt="Six layers: interfaces, configuration, agent engines, providers and tools, serving and runtime, Intel hardware. Telemetry reads the engines, serving and hardware alongside the stack. A plano gateway is optional and outside OVAT.">
+</picture>
 
 How to read it:
 
 - **Boxes** are parts of the system, grouped into layers. Each layer uses the
   one below it.
-- **Solid arrow:** always part of the path. It points from the caller to what
-  it calls. Where two solid paths leave one box, a run takes one of them: the
-  LLM provider talks either to OVMS or to `openvino_genai`.
-- **Dotted arrow:** an optional path, used only when that part is installed or
-  configured, or a measurement that telemetry reads.
-- **Dashed border:** an optional part (the TUI, MCP servers, plano).
-- **Colours** follow the role: blue for interfaces, yellow for configuration,
-  purple for the agent, light blue for model backends, green for tools, slate
-  for telemetry, dark grey for hardware.
-- **Telemetry is drawn last, but it is not a layer.** It sits alongside the
-  stack and reads from the engines, the model server and the hardware.
+- **Solid arrow:** part of the request or data flow between boxes.
+- **Dashed arrow:** a measurement that telemetry reads.
+- **Dashed border:** an optional part (`Terminal UI`, `MCP client`, `plano gateway`).
+- **Telemetry sits on the right, not as a layer.** It reads from the
+  engines, the model server and the hardware alongside the stack.
 
 ### 3b. One agent run, step by step
 
@@ -223,52 +147,16 @@ How to read it:
 in order, from the command line to the answer, including the loop in which the
 model asks for tools.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "actorBkg": "#0068B5", "actorTextColor": "#FFFFFF", "actorBorder": "#00C7FD", "signalColor": "#57606A", "signalTextColor": "#1F2328", "labelBoxBkgColor": "#FFC107", "labelBoxBorderColor": "#9A6700", "labelTextColor": "#1F2328", "loopTextColor": "#1F2328", "noteBkgColor": "#D0D7DE", "noteBorderColor": "#8C959F", "noteTextColor": "#1F2328"}}}%%
-sequenceDiagram
-    actor User
-    box rgba(0,104,181,0.10) OVAT
-        participant CLI as ovat CLI<br/>cli/main.py
-        participant Config as Config<br/>workflow.py
-        participant Factory as Agent factory<br/>factory.py
-        participant Engine as Agent engine<br/>e.g. loop.py
-        participant Tool as Tool<br/>built-in, or MCP<br/>over stdio
-    end
-    box rgba(0,199,253,0.15) Model server
-        participant OVMS as OVMS<br/>/v3
-    end
-
-    User->>CLI: ovat run workflow.yml -i "question"
-    CLI->>Config: _load_config() calls load_workflow()
-    Config-->>CLI: WorkflowConfig, or one sentence on error
-    CLI->>Factory: build_agent(config)
-    Factory-->>CLI: agent: engine + LLM provider + tools
-    CLI->>Engine: agent.run(question)
-    loop at most agent.max_iterations rounds
-        Engine->>OVMS: chat completion: history + tool schemas
-        OVMS-->>Engine: reply
-        alt the reply carries tool calls
-            Engine->>Tool: run it with the parsed arguments
-            Tool-->>Engine: result, or an "Error: ..." string
-            Note over Engine: add the result to history,<br/>then ask the model again
-        else no tool calls
-            Note over Engine: the reply is the answer,<br/>so the loop ends
-        end
-    end
-    Engine-->>CLI: answer, and the trace on the native loop
-    opt if --trace
-        CLI->>CLI: write the trace JSON
-    end
-    CLI-->>User: answer, sources line, exit code 0 or 1
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/run-sequence-dark.svg">
+  <img src="assets/diagrams/run-sequence-light.svg" alt="The CLI loads and validates workflow.yml, the agent factory builds the agent, and the engine loops: it sends the history and tool schemas to OVMS, runs any tool the reply asks for and adds the result, until a reply has no tool calls. The answer, a sources line and an exit code come back.">
+</picture>
 
 How to read it:
 
 - **Columns** are the parts involved; time runs from top to bottom.
-- **Solid arrow:** a call. **Dotted arrow:** the value that comes back.
-- **loop:** repeated, at most `agent.max_iterations` times. **alt:** each
-  round takes one of the two branches. **opt:** happens only when the flag is
-  given.
+- **Solid arrow:** a call. **Dashed arrow:** the value that comes back.
+- **`loop, max_iterations`:** repeated, at most `agent.max_iterations` rounds.
 - The engine in the middle can be any of the four. The native loop calls OVMS
   through `OVMSLLMProvider`; the framework engines use their own
   OpenAI-compatible client, pointed at the same `/v3` URL.
@@ -383,30 +271,12 @@ A typo like `max_iteration` for `max_iterations` fails immediately and by name.
 `workflow.yml` to `build_agent()`, and the three ways loading can fail, each
 ending in one sentence.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart LR
-    YAML["workflow.yml"] --> Load["_load_config()<br/>the ONLY loader"]
-    Load --> Parse["yaml.safe_load(f)<br/>or {}"]
-    Parse --> Validate["WorkflowConfig<br/>extra=forbid"]
-    Validate --> Derive["@model_validator<br/>fills tool_parser<br/>from model name"]
-    Derive --> Factory["build_agent()"]
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/load-config-dark.svg">
+  <img src="assets/diagrams/load-config-light.svg" alt="Every command loads workflow.yml through _load_config(), the only loader: yaml.safe_load parses it, WorkflowConfig validates it with extra=forbid, a model validator fills tool_parser from the model name, and build_agent() receives it. A missing file, bad YAML or a schema error each become one sentence.">
+</picture>
 
-    Load -.->|"missing file"| Msg1["one sentence"]
-    Load -.->|"bad YAML"| Msg2["one sentence"]
-    Load -.->|"schema error"| Msg3["one sentence"]
-
-    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
-    classDef config fill:#FFC107,stroke:#9A6700,color:#1F2328
-    classDef engine fill:#7A45F0,stroke:#A98BFF,color:#FFFFFF
-    classDef fail fill:#FF5C5C,stroke:#B42318,color:#0F141A
-    class YAML,Parse,Validate,Derive config
-    class Load cli
-    class Factory engine
-    class Msg1,Msg2,Msg3 fail
-```
-
-Solid arrows are the normal path; dotted arrows are the failure exits.
+Solid arrows are the normal path; dashed arrows lead to failure exits (`✕` with a dashed border), and `✓` is `build_agent()`.
 
 `_load_config` is the only place allowed to call `load_workflow`. It turns
 three different failures (file absent, YAML unparseable, schema mismatch) into
@@ -490,38 +360,12 @@ reply with no tool call becomes the answer.
 as a decision chart, with each way a round can end, including the four error
 exits.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart TD
-    Start["user message"] --> Ask["1. ASK<br/>POST history<br/>and tool menu"]
-    Ask --> Read{"2. READ<br/>tool calls<br/>in the reply?"}
-    Read -->|"no"| Label{"finish_reason<br/>says tool_calls?"}
-    Label -->|"yes, but<br/>none sent"| ErrA["report it,<br/>do not re-ask"]
-    Label -->|"no"| Check{"content<br/>usable?"}
-    Read -->|"yes"| Act["3. ACT<br/>run each tool"]
-    Act --> Report["4. REPORT<br/>append tool results"]
-    Report --> Cap{"iterations<br/>left?"}
-    Cap -->|"yes"| Ask
-    Cap -->|"no"| ErrB["report the cap"]
-    Check -->|"markup<br/>left in it"| ErrC["undecoded_tool_call"]
-    Check -->|"only<br/>reasoning"| ErrD["empty_answer"]
-    Check -->|"real answer"| Done["answer + trace"]
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/loop-exits-dark.svg">
+  <img src="assets/diagrams/loop-exits-light.svg" alt="Ask, read, act, report, until no tool calls come back or the round cap is hit. A reply labelled tool_calls with none sent is reported, not re-asked. Leftover markup is undecoded_tool_call, reasoning only is empty_answer, and a real answer comes back with the trace.">
+</picture>
 
-    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
-    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
-    classDef tool fill:#3DD68C,stroke:#1A7F37,color:#0F141A
-    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
-    classDef ok fill:#1A7F37,stroke:#3DD68C,color:#FFFFFF
-    classDef fail fill:#FF5C5C,stroke:#B42318,color:#0F141A
-    class Start cli
-    class Ask backend
-    class Read,Label,Check,Cap,Report step
-    class Act tool
-    class ErrA,ErrB,ErrC,ErrD fail
-    class Done ok
-```
-
-Green is the answer, red the error exits, blue the model call.
+`✓` is the answer, `✕` with a dashed border are the error exits, and `?` are the decision checks.
 
 The loop ends when a reply carries no tool calls. It decides on the payload,
 not on `finish_reason`, because OVMS documents NPU serving labelling a decoded
@@ -561,35 +405,12 @@ Four abstract base classes, `LLMProvider`, `EmbeddingsProvider`,
 **Diagram: the provider interfaces.** What this shows: each of the four
 interfaces and the classes that implement it today.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart LR
-    subgraph LLM ["LLMProvider"]
-        OVMSLLM["OVMSLLMProvider<br/>OpenAI SDK to /v3<br/>DOES tool calling"]
-        GenAILLM["GenAILLMProvider<br/>openvino_genai<br/>in-process<br/>no tool calling"]
-    end
-    subgraph Emb ["EmbeddingsProvider"]
-        GenAIEmb["GenAIEmbeddings<br/>Provider<br/>local TextEmbedding<br/>Pipeline"]
-        OVMSEmb["OVMSEmbeddings<br/>Provider<br/>/v3/embeddings"]
-    end
-    subgraph Ret ["RetrieverProvider"]
-        SQLite["SQLiteVecRetriever<br/>Provider<br/>sqlite-vec,<br/>saved to disk"]
-        Memory["InMemoryRetriever<br/>Provider<br/>numpy,<br/>nothing on disk"]
-    end
-    subgraph VLM ["VLMProvider"]
-        GenAIVLM["GenAIVLMProvider<br/>VLMPipeline"]
-    end
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/providers-dark.svg">
+  <img src="assets/diagrams/providers-light.svg" alt="Four interfaces with their backends. LLMProvider: OVMS over the OpenAI SDK, which does tool calling, or openvino_genai in-process, which does not. EmbeddingsProvider: a local TextEmbeddingPipeline or OVMS /v3/embeddings. RetrieverProvider: sqlite-vec on disk or numpy in memory. VLMProvider: openvino_genai VLMPipeline.">
+</picture>
 
-    LLM ~~~ Emb
-    Ret ~~~ VLM
-
-    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
-    class OVMSLLM,OVMSEmb backend
-    class GenAILLM,GenAIEmb,GenAIVLM backend
-    class SQLite,Memory backend
-```
-
-Each box is an interface, and the boxes inside it are its implementations.
+Each group is an interface, and the cards inside it are its implementations.
 There are no arrows: the interfaces do not call each other.
 
 **How to add an LLM backend.** Implement `LLMProvider` (one method, `chat`),
@@ -652,25 +473,12 @@ a co-located `SCHEMA` that is **the** contract, a FastMCP wrapper, and
 **Diagram: where a tool comes from.** What this shows: a built-in tool and an
 MCP tool reach the agent loop by different routes but in the same shape.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart TD
-    Need["agent needs a tool"] --> Type{"type?"}
-    Type -->|"builtin"| B["schema from SCHEMA<br/>function bound<br/>by the factory"]
-    Type -->|"mcp_stdio"| M["MCPStdioServer<br/>launch, list_tools,<br/>call_tool"]
-    B --> Loop["agent loop"]
-    M --> Loop
-    M -.->|"same shape"| Note["the loop cannot<br/>tell them apart"]
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/tool-source-dark.svg">
+  <img src="assets/diagrams/tool-source-light.svg" alt="A tool is either builtin, with its schema from SCHEMA and a function bound by the factory, or mcp_stdio, where MCPStdioServer launches the server, lists its tools and calls them. Both reach the agent loop in the same shape, so the loop cannot tell them apart.">
+</picture>
 
-    classDef engine fill:#7A45F0,stroke:#A98BFF,color:#FFFFFF
-    classDef tool fill:#3DD68C,stroke:#1A7F37,color:#0F141A
-    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
-    class Need,Loop engine
-    class Type,Note step
-    class B,M tool
-```
-
-Solid arrows are the path a tool takes; the dotted arrow is a note, not a call.
+Solid arrows are the path a tool takes; the dashed arrow points to a note box, not a call.
 
 **The MCP client runs async code from a sync loop.** The `mcp` SDK is async
 (anyio); OVAT's loop is not. Each server gets one background thread running
@@ -741,41 +549,12 @@ it where the locator looks. It always takes the `python_on` build, because the
 **Diagram: what `ovat setup` does.** What this shows: how `ovat setup` picks
 an archive per platform, verifies it, and where it installs it.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart TD
-    S["ovat setup"] --> P{"platform"}
-    P -->|darwin| M["explain: no macOS<br/>build, exit 0"]
-    P -->|win32| W["ovms_windows_...<br/>_python_on.zip"]
-    P -->|linux| L["read /etc/os-release:<br/>ubuntu22, ubuntu24<br/>or redhat"]
-    L -->|unknown distro| WARN["warn, then<br/>try ubuntu24"]
-    W --> DL["download"]
-    L --> DL
-    WARN --> DL
-    DL --> SUM{".sha256<br/>published?"}
-    SUM -->|no| UNV["no check; reported<br/>installed-unverified"]
-    SUM -->|yes| SHA{"SHA-256<br/>matches?"}
-    SHA -->|no| STOP["refuse,<br/>install nothing"]
-    SHA -->|yes| EX["extract: flatten the<br/>ovms/ wrapper, make<br/>every member<br/>owner-writable"]
-    UNV --> EX
-    EX --> R["~/.ovat/ovms<br/>bin/ovms on Linux<br/>ovms.exe on Windows"]
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/setup-dark.svg">
+  <img src="assets/diagrams/setup-light.svg" alt="ovat setup checks the platform: macOS has no build and exits 0, Windows gets the Python-enabled zip, Linux reads /etc/os-release and falls back to ubuntu24 with a warning. It downloads the archive, checks the SHA-256 when one is published, refuses on a mismatch, then extracts into ~/.ovat/ovms.">
+</picture>
 
-    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
-    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
-    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
-    classDef ok fill:#1A7F37,stroke:#3DD68C,color:#FFFFFF
-    classDef fail fill:#FF5C5C,stroke:#B42318,color:#0F141A
-    classDef warn fill:#FFC107,stroke:#9A6700,color:#1F2328,stroke-dasharray:4 3
-    class S cli
-    class P,SUM,SHA,L,DL,EX step
-    class W backend
-    class M,WARN,UNV warn
-    class STOP fail
-    class R ok
-```
-
-Green is success, red a refusal, and yellow with a dashed border a warning
-that still continues.
+`✓` is success, `✕` with a dashed border is a refusal, and `!` with a dashed border is a warning or platform note.
 
 OVMS is not part of `pip install`: the archive is 126 to 185 MB, Linux has
 three builds, and macOS has none. The archive's single `ovms/` folder is
@@ -839,35 +618,12 @@ export OVAT_OVMS=/path/to/ovms        # or set model.ovms_binary in the YAML
 **Diagram: what `ovat serve` does.** What this shows: how `ovat serve` finds
 the binary, starts it, and decides when the server is ready, dead or stalled.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart TD
-    Serve["ovat serve"] --> Locate["find_ovms()"]
-    Locate -->|"config, OVAT_OVMS,<br/>PATH, known dirs"| Found{"found?"}
-    Found -->|"no, and a TTY"| Offer["offer ovat setup"]
-    Found -->|"no, and no TTY"| Refuse["refuse,<br/>download nothing"]
-    Found -->|"yes"| Env["ovms_env()<br/>PATH, PYTHONHOME,<br/>LD_LIBRARY_PATH"]
-    Env --> Spawn["Popen,<br/>logs to a FILE"]
-    Spawn --> Wait["wait_until_ready()<br/>STALL budget,<br/>no deadline"]
-    Wait -->|"health 200"| Ready["ready;<br/>pid in ovms.pid"]
-    Wait -->|"process exited"| Dead["report;<br/>point at the log"]
-    Wait -->|"no progress<br/>for 300 s"| Stall["say it is<br/>still running"]
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/serve-dark.svg">
+  <img src="assets/diagrams/serve-light.svg" alt="find_ovms() looks in the config, OVAT_OVMS, PATH and known folders. If OVMS is missing it offers ovat setup at a terminal and refuses otherwise. If found, ovms_env() sets the environment, Popen starts OVMS with logs to a file, and wait_until_ready() watches for progress: ready on health 200, a report if the process exits, a still-running note after 300 s with no progress.">
+</picture>
 
-    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
-    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
-    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
-    classDef ok fill:#1A7F37,stroke:#3DD68C,color:#FFFFFF
-    classDef fail fill:#FF5C5C,stroke:#B42318,color:#0F141A
-    classDef warn fill:#FFC107,stroke:#9A6700,color:#1F2328,stroke-dasharray:4 3
-    class Serve cli
-    class Locate,Found,Env,Wait step
-    class Spawn backend
-    class Offer,Stall warn
-    class Refuse,Dead fail
-    class Ready ok
-```
-
-Green is ready, red a failure, yellow a state that needs the user.
+`✓` is ready, `✕` with a dashed border is a failure, and `!` with a dashed border is a state that needs the user.
 
 **`ovms_env()` does what OVMS's setupvars script would do.** On Windows the
 `python_on` build loads `python3xx.dll` from `<ovms>/python`, not the folder
@@ -943,34 +699,12 @@ suggests for each kind of model, on an AI PC and on a CPU-only machine.
 **Diagram: device routing as a decision.** What this shows: the routing table
 as a chart, plus what serving an LLM on the NPU through OVMS requires.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart TD
-    Start["ovat startup"] --> Detect{"devices?"}
-    Detect -->|"CPU only"| CPUOnly["everything on CPU<br/>macOS, dev laptop"]
-    Detect -->|"CPU + GPU"| NoNPU["embeddings: CPU<br/>LLM: GPU<br/>whisper: CPU"]
-    Detect -->|"CPU + GPU + NPU"| Full["embeddings: NPU<br/>LLM: GPU<br/>whisper: CPU"]
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/device-routing-dark.svg">
+  <img src="assets/diagrams/device-routing-light.svg" alt="At startup OVAT checks the devices. CPU only: everything on the CPU. CPU and GPU: the LLM on the GPU, embeddings and whisper on the CPU. CPU, GPU and NPU: the LLM on the GPU, embeddings on the NPU, whisper on the CPU. Serving an LLM on the NPU needs an int4-cw-ov export, a capped prompt, no batching or beam search, and ignores KV cache settings.">
+</picture>
 
-    Full --> Limits["To serve an LLM<br/>on the NPU"]
-    Limits --> L1["needs a<br/>-int4-cw-ov export"]
-    Limits --> L2["prompt capped:<br/>set --max_prompt_len"]
-    Limits --> L3["no batching or<br/>beam search"]
-    Limits --> L4["KV cache<br/>settings ignored"]
-
-    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
-    classDef config fill:#FFC107,stroke:#9A6700,color:#1F2328
-    classDef hw fill:#57606A,stroke:#8C959F,color:#FFFFFF
-    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
-    classDef warn fill:#FFC107,stroke:#9A6700,color:#1F2328,stroke-dasharray:4 3
-    class Start cli
-    class Detect step
-    class CPUOnly,NoNPU,Full hw
-    class Limits config
-    class L1,L2,L3,L4 warn
-```
-
-Grey boxes are the suggested devices; the dashed yellow boxes are the NPU
-serving requirements from the table below.
+The upper row shows the suggested devices for each hardware tier; the lower row with `!` and dashed borders lists the NPU serving requirements from the table below.
 
 | Model type | Suggested device | Why |
 | --- | --- | --- |
@@ -1102,10 +836,10 @@ source cannot stop the others.
 **Where to see it.** `ovat telemetry` prints a live table (`--once` for one
 snapshot, `--out` to save JSON Lines) and says first which sources are not
 available here and why. `ovat run --telemetry file.jsonl` records the same
-numbers during one run. The TUI's `/telemetry` page has two tabs. **Live**
-holds number cards, a table with each metric's current, minimum, maximum and
-average, and a status line naming every source as live, silent, or not
-available, refreshed every tick. **Help** explains the numbers.
+numbers during one run. In the agent TUI, `/telemetry` opens the live numbers as
+summary cards, a table with each metric's current, minimum, maximum, average
+and the last agent turn totals, and a status line naming every source as live,
+silent, or not available, refreshed every tick.
 
 Why these choices: [DECISIONS.md, telemetry](DECISIONS.md#telemetry).
 
@@ -1199,14 +933,6 @@ OVAT's own telemetry sources, and every card from an event on the agent's bus:
 </div>
 
 Three layers, each talking to the next through a small interface:
-
-```
-terminal client (ovat/tui/vibe/)  --JSON-RPC-->  app server (ovat/tui/server/)
-                                                      |
-                                    AgentSession (ovat/agentic/session.py)
-                                                      |
-                                      the four engines and the tools
-```
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/agent-tui-dark.svg">
@@ -1312,24 +1038,12 @@ neither has the plain `openvino_model.xml` that marks a text LLM. So OVAT reads
 **Diagram: how a model folder is classified.** What this shows: how
 `model_scout` tells a text LLM, a vision-only model and a unified model apart.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart TD
-    F["model folder"] --> C{"openvino_vision_*.xml<br/>or openvino_language<br/>_model.xml present?"}
-    C -->|"no"| L["other checks:<br/>whisper, embeddings,<br/>llm: LLMPipeline"]
-    C -->|"yes"| M{"model_type in<br/>_UNIFIED_TYPES?"}
-    M -->|"no: qwen2_vl,<br/>internvl_chat, phi3_v"| V["kind = vlm<br/>vision only"]
-    M -->|"yes: qwen3_5,<br/>qwen3_5_text,<br/>qwen3_6"| U["kind = unified<br/>VLMPipeline, answers<br/>to BOTH filters"]
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/model-scout-dark.svg">
+  <img src="assets/diagrams/model-scout-light.svg" alt="If a folder has openvino_vision or openvino_language_model files and its model_type is a unified type (qwen3_5, qwen3_5_text, qwen3_6), its kind is unified and one VLMPipeline answers both filters. Other vision models (qwen2_vl, internvl_chat, phi3_v) are vlm. Folders without those files go to the other checks: whisper, embeddings, or an LLM.">
+</picture>
 
-    classDef config fill:#FFC107,stroke:#9A6700,color:#1F2328
-    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
-    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
-    class F config
-    class C,M step
-    class L,V,U backend
-```
-
-Grey diamonds are questions; blue boxes are the resulting kind of model.
+`?` cards are the checks; `✓` and the other output cards are the resulting model kinds.
 
 | Rule | Effect |
 | --- | --- |
@@ -1376,28 +1090,12 @@ nothing. Each is detected and named in the trace.
 native loop decides whether a reply with no decoded tool call is a real
 answer, a truncated reply, an undecoded tool call, or an empty answer.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart TD
-    Reply["a reply with<br/>no tool_calls"] --> Q1{"tool markup<br/>still in it?"}
-    Q1 -->|"yes"| Q0{"finish_reason<br/>is length?"}
-    Q0 -->|"yes"| T["cut at max_tokens:<br/>the markup is a<br/>FRAGMENT (truncated)"]
-    Q0 -->|"no"| A["undecoded_tool_call<br/>the server did not<br/>decode the markup"]
-    Q1 -->|"no"| Q2{"anything left<br/>after reasoning?"}
-    Q2 -->|"no"| B["empty_answer<br/>parser SWALLOWED<br/>the reply"]
-    Q2 -->|"yes"| C["a real answer"]
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/reply-check-dark.svg">
+  <img src="assets/diagrams/reply-check-light.svg" alt="If tool markup is still in the text and finish_reason is length, the reply was cut at max_tokens and the markup is a truncated fragment. Markup without length is undecoded_tool_call: the server did not decode it. No markup and nothing after the reasoning is empty_answer. Otherwise it is a real answer.">
+</picture>
 
-    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
-    classDef step fill:#D0D7DE,stroke:#8C959F,color:#1F2328
-    classDef ok fill:#1A7F37,stroke:#3DD68C,color:#FFFFFF
-    classDef fail fill:#FF5C5C,stroke:#B42318,color:#0F141A
-    class Reply backend
-    class Q0,Q1,Q2 step
-    class T,A,B fail
-    class C ok
-```
-
-Red boxes set a flag in the trace; green is a normal answer.
+`✕` cards with a dashed border set a flag in the trace; `✓` is a normal answer.
 
 | Mode | Symptom | Detected by |
 | --- | --- | --- |
@@ -1439,24 +1137,12 @@ outside OVAT, and OVAT has no OpenTelemetry dependency of its own.
 **Diagram: the plano request path.** What this shows: where plano and the id
 bridge sit between `ovat run` and OVMS, and where its spans go.
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#D0D7DE", "primaryTextColor": "#1F2328", "primaryBorderColor": "#8C959F", "lineColor": "#8C959F", "textColor": "#1F2328", "edgeLabelBackground": "#D0D7DE", "clusterBkg": "transparent", "clusterBorder": "#7A8CA0", "titleColor": "#7A8CA0"}}}%%
-flowchart LR
-    OVAT["ovat run<br/>ovms_url:<br/>:8000/v1"] --> Plano["plano (Envoy)<br/>:8000<br/>OTel spans"]
-    Plano --> Bridge["ovms_id_bridge.py<br/>:8001"]
-    Bridge --> OVMS["OVMS :8002/v3<br/>model.ovms_port"]
-    Plano -.-> Obs["planoai obs<br/>latency, TTFT,<br/>tokens"]
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/plano-dark.svg">
+  <img src="assets/diagrams/plano-light.svg" alt="ovat run points ovms_url at :8000/v1, where plano (Envoy) listens and records OpenTelemetry spans. Requests pass through ovms_id_bridge.py on :8001 to OVMS on :8002/v3, the port in model.ovms_port. planoai obs shows latency, time to first token and tokens.">
+</picture>
 
-    classDef cli fill:#0068B5,stroke:#00C7FD,color:#FFFFFF
-    classDef backend fill:#00C7FD,stroke:#0068B5,color:#0F141A
-    classDef telemetry fill:#7A8CA0,stroke:#57606A,color:#0F141A
-    class OVAT cli
-    class Plano,Bridge,OVMS backend
-    class Obs telemetry
-```
-
-Solid arrows carry each request; the dotted arrow is the trace data plano
-reports on the side.
+Solid arrows carry each request; the dashed arrow is the trace data plano reports on the side.
 
 Three problems are solved in the example config, and each answer is recorded
 in its comments:

@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 404" width="880" height="404" role="img" aria-labelledby="tmodelscout dmodelscout">
+<title id="tmodelscout">How a model folder is classified</title><desc id="dmodelscout">If a folder has openvino_vision or openvino_language_model files and its model_type is a unified type (qwen3_5, qwen3_5_text, qwen3_6), its kind is unified and one VLMPipeline answers both filters. Other vision models (qwen2_vl, internvl_chat, phi3_v) are vlm. Folders without those files go to the other checks: whisper, embeddings, or an LLM.</desc>
+<defs><radialGradient id="bgmodelscout" cx="0.12" cy="0" r="1.1"><stop offset="0" stop-color="#1f2236"/><stop offset="0.7" stop-color="#161826"/></radialGradient><linearGradient id="rulemodelscout" x1="0" x2="1"><stop offset="0" stop-color="#3f424d" stop-opacity="0"/><stop offset="0.08" stop-color="#3f424d"/><stop offset="0.92" stop-color="#3f424d"/><stop offset="1" stop-color="#3f424d" stop-opacity="0"/></linearGradient><pattern id="dpmodelscout" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#262836"/></pattern><marker id="ahmodelscout" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="#75798c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>@keyframes k0{0%{stroke-dashoffset:34;opacity:1}14.563%{stroke-dashoffset:34;opacity:1}18.204%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr0{animation:k0 20.6s linear infinite}
+@keyframes k1{0%{stroke-dashoffset:20.4;opacity:0}14.563%{stroke-dashoffset:20.4;opacity:0}14.660%{opacity:1}18.204%{stroke-dashoffset:-34;opacity:1}18.447%{stroke-dashoffset:-34;opacity:0}100%{stroke-dashoffset:-34;opacity:0}}.cm0{animation:k1 20.6s linear infinite}
+@keyframes k2{0%{stroke-dashoffset:56;opacity:1}29.126%{stroke-dashoffset:56;opacity:1}32.767%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr1{animation:k2 20.6s linear infinite}
+@keyframes k3{0%{stroke-dashoffset:33.6;opacity:0}29.126%{stroke-dashoffset:33.6;opacity:0}29.223%{opacity:1}32.767%{stroke-dashoffset:-56;opacity:1}33.010%{stroke-dashoffset:-56;opacity:0}100%{stroke-dashoffset:-56;opacity:0}}.cm1{animation:k3 20.6s linear infinite}
+@keyframes k4{0%{stroke-dashoffset:50;opacity:1}43.689%{stroke-dashoffset:50;opacity:1}47.330%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr2{animation:k4 20.6s linear infinite}
+@keyframes k5{0%{stroke-dashoffset:30;opacity:0}43.689%{stroke-dashoffset:30;opacity:0}43.786%{opacity:1}47.330%{stroke-dashoffset:-50;opacity:1}47.573%{stroke-dashoffset:-50;opacity:0}100%{stroke-dashoffset:-50;opacity:0}}.cm2{animation:k5 20.6s linear infinite}
+@keyframes k6{0%{stroke-dashoffset:56;opacity:1}58.252%{stroke-dashoffset:56;opacity:1}61.893%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr3{animation:k6 20.6s linear infinite}
+@keyframes k7{0%{stroke-dashoffset:33.6;opacity:0}58.252%{stroke-dashoffset:33.6;opacity:0}58.350%{opacity:1}61.893%{stroke-dashoffset:-56;opacity:1}62.136%{stroke-dashoffset:-56;opacity:0}100%{stroke-dashoffset:-56;opacity:0}}.cm3{animation:k7 20.6s linear infinite}
+@keyframes k8{0%{stroke-dashoffset:44;opacity:1}72.816%{stroke-dashoffset:44;opacity:1}76.456%{stroke-dashoffset:0}98.544%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr4{animation:k8 20.6s linear infinite}
+@keyframes k9{0%{stroke-dashoffset:26.4;opacity:0}72.816%{stroke-dashoffset:26.4;opacity:0}72.913%{opacity:1}76.456%{stroke-dashoffset:-44;opacity:1}76.699%{stroke-dashoffset:-44;opacity:0}100%{stroke-dashoffset:-44;opacity:0}}.cm4{animation:k9 20.6s linear infinite}
+@keyframes k10{0%{opacity:0}0.000%{opacity:0}1.456%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vf{animation:k10 20.6s linear infinite}
+@keyframes k11{0%{opacity:0}0.000%{opacity:0}1.456%{opacity:1}13.107%{opacity:1}14.563%{opacity:0}100%{opacity:0}}.af{animation:k11 20.6s linear infinite}
+@keyframes k12{0%{opacity:0}17.476%{opacity:0}18.932%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vc{animation:k12 20.6s linear infinite}
+@keyframes k13{0%{opacity:0}17.476%{opacity:0}18.932%{opacity:1}27.670%{opacity:1}29.126%{opacity:0}100%{opacity:0}}.ac{animation:k13 20.6s linear infinite}
+@keyframes k14{0%{opacity:0}32.039%{opacity:0}33.495%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vl{animation:k14 20.6s linear infinite}
+@keyframes k15{0%{opacity:0}32.039%{opacity:0}33.495%{opacity:1}42.233%{opacity:1}43.689%{opacity:0}100%{opacity:0}}.al{animation:k15 20.6s linear infinite}
+@keyframes k16{0%{opacity:0}46.602%{opacity:0}48.058%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vm{animation:k16 20.6s linear infinite}
+@keyframes k17{0%{opacity:0}46.602%{opacity:0}48.058%{opacity:1}56.796%{opacity:1}58.252%{opacity:0}100%{opacity:0}}.am{animation:k17 20.6s linear infinite}
+@keyframes k18{0%{opacity:0}61.165%{opacity:0}62.621%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vv{animation:k18 20.6s linear infinite}
+@keyframes k19{0%{opacity:0}61.165%{opacity:0}62.621%{opacity:1}71.359%{opacity:1}72.816%{opacity:0}100%{opacity:0}}.av{animation:k19 20.6s linear infinite}
+@keyframes k20{0%{opacity:0}75.728%{opacity:0}77.184%{opacity:1}98.544%{opacity:1}100%{opacity:0}}.vu{animation:k20 20.6s linear infinite}
+@keyframes k21{0%{opacity:0}75.728%{opacity:0}77.184%{opacity:1}97.087%{opacity:1}98.544%{opacity:0}100%{opacity:0}}.au{animation:k21 20.6s linear infinite}
+@keyframes k22{0%{opacity:0}0.000%{opacity:0}1.456%{opacity:1}13.107%{opacity:1}14.563%{opacity:0}100%{opacity:0}}.tk0{animation:k22 20.6s linear infinite}
+@keyframes k23{0%{opacity:0}0.000%{opacity:0}1.456%{opacity:1}13.107%{opacity:1}14.563%{opacity:0}100%{opacity:0}}.cp0{animation:k23 20.6s linear infinite}
+@keyframes k24{0%{opacity:0}14.563%{opacity:0}16.019%{opacity:1}27.670%{opacity:1}29.126%{opacity:0}100%{opacity:0}}.tk1{animation:k24 20.6s linear infinite}
+@keyframes k25{0%{opacity:0}14.563%{opacity:0}16.019%{opacity:1}27.670%{opacity:1}29.126%{opacity:0}100%{opacity:0}}.cp1{animation:k25 20.6s linear infinite}
+@keyframes k26{0%{opacity:0}29.126%{opacity:0}30.583%{opacity:1}42.233%{opacity:1}43.689%{opacity:0}100%{opacity:0}}.tk2{animation:k26 20.6s linear infinite}
+@keyframes k27{0%{opacity:0}29.126%{opacity:0}30.583%{opacity:1}42.233%{opacity:1}43.689%{opacity:0}100%{opacity:0}}.cp2{animation:k27 20.6s linear infinite}
+@keyframes k28{0%{opacity:0}43.689%{opacity:0}45.146%{opacity:1}56.796%{opacity:1}58.252%{opacity:0}100%{opacity:0}}.tk3{animation:k28 20.6s linear infinite}
+@keyframes k29{0%{opacity:0}43.689%{opacity:0}45.146%{opacity:1}56.796%{opacity:1}58.252%{opacity:0}100%{opacity:0}}.cp3{animation:k29 20.6s linear infinite}
+@keyframes k30{0%{opacity:0}58.252%{opacity:0}59.709%{opacity:1}71.359%{opacity:1}72.816%{opacity:0}100%{opacity:0}}.tk4{animation:k30 20.6s linear infinite}
+@keyframes k31{0%{opacity:0}58.252%{opacity:0}59.709%{opacity:1}71.359%{opacity:1}72.816%{opacity:0}100%{opacity:0}}.cp4{animation:k31 20.6s linear infinite}
+@keyframes k32{0%{opacity:0}72.816%{opacity:0}74.272%{opacity:1}98.544%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.tk5{animation:k32 20.6s linear infinite}
+@keyframes k33{0%{opacity:0}72.816%{opacity:0}74.272%{opacity:1}98.544%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.cp5{animation:k33 20.6s linear infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}.v{opacity:1!important}.cap,.cmt{opacity:0!important}.sum{opacity:1!important}.tr{stroke-dashoffset:0!important}}</style>
+<rect x="0.5" y="0.5" width="879" height="403" rx="8" fill="url(#bgmodelscout)" stroke="#292b31"/>
+<rect x="12" y="48" width="856" height="296" fill="url(#dpmodelscout)"/>
+<text x="28" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#9184d9">OVAT</text>
+<text x="72" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#b2b6ca">HOW A MODEL FOLDER IS CLASSIFIED</text>
+<path d="M174 124 L204 124" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahmodelscout)"/>
+<path d="M329 168 L329 220" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahmodelscout)"/>
+<path d="M454 124 L500 124" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahmodelscout)"/>
+<path d="M580 168 L580 220" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahmodelscout)"/>
+<path d="M660 124 L700 124.2" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahmodelscout)"/>
+<path class="tr tr0" d="M174 124 L204 124" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="34 34" stroke-dashoffset="34"/>
+<path class="cmt cm0" d="M174 124 L204 124" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="20.4 74.4" stroke-dashoffset="20.4" opacity="0"/>
+<path class="tr tr1" d="M329 168 L329 220" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="56 56" stroke-dashoffset="56"/>
+<path class="cmt cm1" d="M329 168 L329 220" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="33.6 109.6" stroke-dashoffset="33.6" opacity="0"/>
+<path class="tr tr2" d="M454 124 L500 124" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="50 50" stroke-dashoffset="50"/>
+<path class="cmt cm2" d="M454 124 L500 124" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="30 100" stroke-dashoffset="30" opacity="0"/>
+<path class="tr tr3" d="M580 168 L580 220" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="56 56" stroke-dashoffset="56"/>
+<path class="cmt cm3" d="M580 168 L580 220" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="33.6 109.6" stroke-dashoffset="33.6" opacity="0"/>
+<path class="tr tr4" d="M660 124 L700 124.2" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="44 44" stroke-dashoffset="44"/>
+<path class="cmt cm4" d="M660 124 L700 124.2" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="26.4 90.4" stroke-dashoffset="26.4" opacity="0"/>
+<rect x="315.3" y="183" width="27.4" height="22" rx="9" fill="#161826" stroke="#3f424d" stroke-width="0.8"/>
+<text x="329" y="198" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">no</text>
+<rect x="459.95" y="113" width="34.1" height="22" rx="9" fill="#161826" stroke="#3f424d" stroke-width="0.8"/>
+<text x="477" y="128" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">yes</text>
+<rect x="566.3" y="183" width="27.4" height="22" rx="9" fill="#161826" stroke="#3f424d" stroke-width="0.8"/>
+<text x="580" y="198" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">no</text>
+<rect x="662.95" y="113" width="34.1" height="22" rx="9" fill="#161826" stroke="#3f424d" stroke-width="0.8"/>
+<text x="680" y="128" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">yes</text>
+<g>
+<rect x="24" y="104" width="150" height="40" rx="20" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vf" x="24" y="104" width="150" height="40" rx="20" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="af" opacity="0"><rect x="24" y="104" width="150" height="40" rx="20" fill="none" stroke="#9184d9" stroke-width="1.8"/></g>
+<text x="99" y="128.69" text-anchor="middle" style="font:500 12.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">model folder</text>
+</g>
+<g>
+<rect x="204" y="80" width="250" height="88" rx="6" fill="#1b1d2b" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vc" x="204" y="80" width="250" height="88" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ac" opacity="0"><rect x="204" y="80" width="250" height="88" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M204 94 V86 Q204 80 210 80 H220" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="218" y="111.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Vision files?</text>
+<text x="218" y="130.75" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">openvino_vision_*.xml</text>
+<text x="218" y="146.75" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">openvino_language_model.xml</text>
+<circle cx="438" cy="96" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="438" y="99.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">?</text>
+</g>
+<g>
+<rect x="204" y="220" width="250" height="84" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vl" x="204" y="220" width="250" height="84" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="al" opacity="0"><rect x="204" y="220" width="250" height="84" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M204 234 V226 Q204 220 210 220 H220" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="218" y="249.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Other checks</text>
+<text x="218" y="268.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">whisper, embeddings,</text>
+<text x="218" y="284.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">or llm: LLMPipeline</text>
+</g>
+<g>
+<rect x="500" y="80" width="160" height="88" rx="6" fill="#1b1d2b" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vm" x="500" y="80" width="160" height="88" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="am" opacity="0"><rect x="500" y="80" width="160" height="88" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M500 94 V86 Q500 80 506 80 H516" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="514" y="111.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Unified type?</text>
+<text x="514" y="130.75" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">model_type in</text>
+<text x="514" y="146.75" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">_UNIFIED_TYPES</text>
+<circle cx="644" cy="96" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="644" y="99.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">?</text>
+</g>
+<g>
+<rect x="500" y="220" width="160" height="100" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vv" x="500" y="220" width="160" height="100" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="av" opacity="0"><rect x="500" y="220" width="160" height="100" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M500 234 V226 Q500 220 506 220 H516" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="514" y="249.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">kind = vlm</text>
+<text x="514" y="268.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">vision only</text>
+<text x="514" y="284.38" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">qwen2_vl, phi3_v</text>
+<text x="514" y="300.38" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">internvl_chat</text>
+</g>
+<g>
+<rect x="700" y="80" width="160" height="130" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vu" x="700" y="80" width="160" height="130" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="au" opacity="0"><rect x="700" y="80" width="160" height="130" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M700 94 V86 Q700 80 706 80 H716" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="714" y="116.19" style="font:500 12.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#d2cefd">kind = unified</text>
+<text x="714" y="135.19" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">one VLMPipeline,</text>
+<text x="714" y="151.19" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">both filters</text>
+<text x="714" y="167.19" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">qwen3_5, qwen3_6</text>
+<text x="714" y="183.19" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#d2cefd">qwen3_5_text</text>
+<circle cx="844" cy="96" r="8" fill="none" stroke="#9184d9" stroke-width="1"/>
+<path d="M840.5 96 L843 98.6 L847.6 93.4" fill="none" stroke="#9184d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="28" y="350" width="824" height="1" fill="url(#rulemodelscout)"/>
+<rect x="760" y="374" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk0" x="760" y="374" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp0" opacity="0"><text x="28" y="378" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">01 / 06</text><text x="92" y="378" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">OVAT looks inside a model folder to decide what kind of model it is.</text></g>
+<rect x="776" y="374" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk1" x="776" y="374" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp1" opacity="0"><text x="28" y="378" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">02 / 06</text><text x="92" y="378" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Are there OpenVINO vision or language-model files?</text></g>
+<rect x="792" y="374" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk2" x="792" y="374" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp2" opacity="0"><text x="28" y="378" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">03 / 06</text><text x="92" y="378" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">No: the other checks run: whisper, embeddings, or an LLM for LLMPipeline.</text></g>
+<rect x="808" y="374" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk3" x="808" y="374" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp3" opacity="0"><text x="28" y="378" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">04 / 06</text><text x="92" y="378" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Yes: is its model_type one of the unified types?</text></g>
+<rect x="824" y="374" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk4" x="824" y="374" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp4" opacity="0"><text x="28" y="378" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">05 / 06</text><text x="92" y="378" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">No, like qwen2_vl, internvl_chat or phi3_v: kind is vlm, vision only.</text></g>
+<rect x="840" y="374" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk5" x="840" y="374" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp5" opacity="0"><text x="28" y="378" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">06 / 06</text><text x="92" y="378" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Yes, like qwen3_5 or qwen3_6: kind is unified. One VLMPipeline answers both filters.</text></g>
+<text class="sum" x="28" y="378" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed" opacity="0">Vision files and a unified type: unified. Vision files only: vlm. Neither: the other checks.</text>
+</svg>

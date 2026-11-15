@@ -1,0 +1,232 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 484" width="960" height="484" role="img" aria-labelledby="tserve dserve">
+<title id="tserve">What ovat serve does</title><desc id="dserve">find_ovms() looks in the config, OVAT_OVMS, PATH and known folders. If OVMS is missing it offers ovat setup at a terminal and refuses otherwise. If found, ovms_env() sets the environment, Popen starts OVMS with logs to a file, and wait_until_ready() watches for progress: ready on health 200, a report if the process exits, a still-running note after 300 s with no progress.</desc>
+<defs><radialGradient id="bgserve" cx="0.12" cy="0" r="1.1"><stop offset="0" stop-color="#1f2236"/><stop offset="0.7" stop-color="#161826"/></radialGradient><linearGradient id="ruleserve" x1="0" x2="1"><stop offset="0" stop-color="#3f424d" stop-opacity="0"/><stop offset="0.08" stop-color="#3f424d"/><stop offset="0.92" stop-color="#3f424d"/><stop offset="1" stop-color="#3f424d" stop-opacity="0"/></linearGradient><pattern id="dpserve" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#262836"/></pattern><marker id="ahserve" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8.5 5L1 8.5" fill="none" stroke="#75798c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<style>@keyframes k0{0%{stroke-dashoffset:32;opacity:1}6.587%{stroke-dashoffset:32;opacity:1}8.832%{stroke-dashoffset:0}99.102%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr0{animation:k0 33.4s linear infinite}
+@keyframes k1{0%{stroke-dashoffset:19.2;opacity:0}6.587%{stroke-dashoffset:19.2;opacity:0}6.647%{opacity:1}8.832%{stroke-dashoffset:-32;opacity:1}8.982%{stroke-dashoffset:-32;opacity:0}100%{stroke-dashoffset:-32;opacity:0}}.cm0{animation:k1 33.4s linear infinite}
+@keyframes k2{0%{stroke-dashoffset:42;opacity:1}15.569%{stroke-dashoffset:42;opacity:1}17.814%{stroke-dashoffset:0}99.102%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr1{animation:k2 33.4s linear infinite}
+@keyframes k3{0%{stroke-dashoffset:25.2;opacity:0}15.569%{stroke-dashoffset:25.2;opacity:0}15.629%{opacity:1}17.814%{stroke-dashoffset:-42;opacity:1}17.964%{stroke-dashoffset:-42;opacity:0}100%{stroke-dashoffset:-42;opacity:0}}.cm1{animation:k3 33.4s linear infinite}
+@keyframes k4{0%{stroke-dashoffset:154;opacity:1}21.557%{stroke-dashoffset:154;opacity:1}23.802%{stroke-dashoffset:0}99.102%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr2{animation:k4 33.4s linear infinite}
+@keyframes k5{0%{stroke-dashoffset:46;opacity:0}21.557%{stroke-dashoffset:46;opacity:0}21.617%{opacity:1}23.802%{stroke-dashoffset:-154;opacity:1}23.952%{stroke-dashoffset:-154;opacity:0}100%{stroke-dashoffset:-154;opacity:0}}.cm2{animation:k5 33.4s linear infinite}
+@keyframes k6{0%{stroke-dashoffset:84;opacity:1}30.539%{stroke-dashoffset:84;opacity:1}32.784%{stroke-dashoffset:0}99.102%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr3{animation:k6 33.4s linear infinite}
+@keyframes k7{0%{stroke-dashoffset:46;opacity:0}30.539%{stroke-dashoffset:46;opacity:0}30.599%{opacity:1}32.784%{stroke-dashoffset:-84;opacity:1}32.934%{stroke-dashoffset:-84;opacity:0}100%{stroke-dashoffset:-84;opacity:0}}.cm3{animation:k7 33.4s linear infinite}
+@keyframes k8{0%{stroke-dashoffset:52;opacity:1}39.521%{stroke-dashoffset:52;opacity:1}41.766%{stroke-dashoffset:0}99.102%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr4{animation:k8 33.4s linear infinite}
+@keyframes k9{0%{stroke-dashoffset:31.2;opacity:0}39.521%{stroke-dashoffset:31.2;opacity:0}39.581%{opacity:1}41.766%{stroke-dashoffset:-52;opacity:1}41.916%{stroke-dashoffset:-52;opacity:0}100%{stroke-dashoffset:-52;opacity:0}}.cm4{animation:k9 33.4s linear infinite}
+@keyframes k10{0%{stroke-dashoffset:34;opacity:1}48.503%{stroke-dashoffset:34;opacity:1}50.749%{stroke-dashoffset:0}99.102%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr5{animation:k10 33.4s linear infinite}
+@keyframes k11{0%{stroke-dashoffset:20.4;opacity:0}48.503%{stroke-dashoffset:20.4;opacity:0}48.563%{opacity:1}50.749%{stroke-dashoffset:-34;opacity:1}50.898%{stroke-dashoffset:-34;opacity:0}100%{stroke-dashoffset:-34;opacity:0}}.cm5{animation:k11 33.4s linear infinite}
+@keyframes k12{0%{stroke-dashoffset:44;opacity:1}57.485%{stroke-dashoffset:44;opacity:1}59.731%{stroke-dashoffset:0}99.102%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr6{animation:k12 33.4s linear infinite}
+@keyframes k13{0%{stroke-dashoffset:26.4;opacity:0}57.485%{stroke-dashoffset:26.4;opacity:0}57.545%{opacity:1}59.731%{stroke-dashoffset:-44;opacity:1}59.880%{stroke-dashoffset:-44;opacity:0}100%{stroke-dashoffset:-44;opacity:0}}.cm6{animation:k13 33.4s linear infinite}
+@keyframes k14{0%{stroke-dashoffset:64;opacity:1}66.467%{stroke-dashoffset:64;opacity:1}68.713%{stroke-dashoffset:0}99.102%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr7{animation:k14 33.4s linear infinite}
+@keyframes k15{0%{stroke-dashoffset:38.4;opacity:0}66.467%{stroke-dashoffset:38.4;opacity:0}66.527%{opacity:1}68.713%{stroke-dashoffset:-64;opacity:1}68.862%{stroke-dashoffset:-64;opacity:0}100%{stroke-dashoffset:-64;opacity:0}}.cm7{animation:k15 33.4s linear infinite}
+@keyframes k16{0%{stroke-dashoffset:188;opacity:1}75.449%{stroke-dashoffset:188;opacity:1}77.695%{stroke-dashoffset:0}99.102%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr8{animation:k16 33.4s linear infinite}
+@keyframes k17{0%{stroke-dashoffset:46;opacity:0}75.449%{stroke-dashoffset:46;opacity:0}75.509%{opacity:1}77.695%{stroke-dashoffset:-188;opacity:1}77.844%{stroke-dashoffset:-188;opacity:0}100%{stroke-dashoffset:-188;opacity:0}}.cm8{animation:k17 33.4s linear infinite}
+@keyframes k18{0%{stroke-dashoffset:420;opacity:1}84.431%{stroke-dashoffset:420;opacity:1}86.677%{stroke-dashoffset:0}99.102%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}.tr9{animation:k18 33.4s linear infinite}
+@keyframes k19{0%{stroke-dashoffset:46;opacity:0}84.431%{stroke-dashoffset:46;opacity:0}84.491%{opacity:1}86.677%{stroke-dashoffset:-420;opacity:1}86.826%{stroke-dashoffset:-420;opacity:0}100%{stroke-dashoffset:-420;opacity:0}}.cm9{animation:k19 33.4s linear infinite}
+@keyframes k20{0%{opacity:0}0.000%{opacity:0}0.898%{opacity:1}99.102%{opacity:1}100%{opacity:0}}.vsv{animation:k20 33.4s linear infinite}
+@keyframes k21{0%{opacity:0}0.000%{opacity:0}0.898%{opacity:1}5.689%{opacity:1}6.587%{opacity:0}100%{opacity:0}}.asv{animation:k21 33.4s linear infinite}
+@keyframes k22{0%{opacity:0}8.383%{opacity:0}9.281%{opacity:1}99.102%{opacity:1}100%{opacity:0}}.vloc{animation:k22 33.4s linear infinite}
+@keyframes k23{0%{opacity:0}8.383%{opacity:0}9.281%{opacity:1}14.671%{opacity:1}15.569%{opacity:0}100%{opacity:0}}.aloc{animation:k23 33.4s linear infinite}
+@keyframes k24{0%{opacity:0}17.365%{opacity:0}18.263%{opacity:1}99.102%{opacity:1}100%{opacity:0}}.vfd{animation:k24 33.4s linear infinite}
+@keyframes k25{0%{opacity:0}17.365%{opacity:0}18.263%{opacity:1}20.659%{opacity:1}21.557%{opacity:0}100%{opacity:0}}.afd{animation:k25 33.4s linear infinite}
+@keyframes k26{0%{opacity:0}41.317%{opacity:0}42.216%{opacity:1}99.102%{opacity:1}100%{opacity:0}}.venv{animation:k26 33.4s linear infinite}
+@keyframes k27{0%{opacity:0}41.317%{opacity:0}42.216%{opacity:1}47.605%{opacity:1}48.503%{opacity:0}100%{opacity:0}}.aenv{animation:k27 33.4s linear infinite}
+@keyframes k28{0%{opacity:0}50.299%{opacity:0}51.198%{opacity:1}99.102%{opacity:1}100%{opacity:0}}.vsp{animation:k28 33.4s linear infinite}
+@keyframes k29{0%{opacity:0}50.299%{opacity:0}51.198%{opacity:1}56.587%{opacity:1}57.485%{opacity:0}100%{opacity:0}}.asp{animation:k29 33.4s linear infinite}
+@keyframes k30{0%{opacity:0}23.353%{opacity:0}24.251%{opacity:1}99.102%{opacity:1}100%{opacity:0}}.voffer{animation:k30 33.4s linear infinite}
+@keyframes k31{0%{opacity:0}23.353%{opacity:0}24.251%{opacity:1}29.641%{opacity:1}30.539%{opacity:0}100%{opacity:0}}.aoffer{animation:k31 33.4s linear infinite}
+@keyframes k32{0%{opacity:0}32.335%{opacity:0}33.234%{opacity:1}99.102%{opacity:1}100%{opacity:0}}.vref{animation:k32 33.4s linear infinite}
+@keyframes k33{0%{opacity:0}32.335%{opacity:0}33.234%{opacity:1}38.623%{opacity:1}39.521%{opacity:0}100%{opacity:0}}.aref{animation:k33 33.4s linear infinite}
+@keyframes k34{0%{opacity:0}59.281%{opacity:0}60.180%{opacity:1}99.102%{opacity:1}100%{opacity:0}}.vwt{animation:k34 33.4s linear infinite}
+@keyframes k35{0%{opacity:0}59.281%{opacity:0}60.180%{opacity:1}65.569%{opacity:1}66.467%{opacity:0}100%{opacity:0}}.awt{animation:k35 33.4s linear infinite}
+@keyframes k36{0%{opacity:0}86.228%{opacity:0}87.126%{opacity:1}99.102%{opacity:1}100%{opacity:0}}.vstall{animation:k36 33.4s linear infinite}
+@keyframes k37{0%{opacity:0}86.228%{opacity:0}87.126%{opacity:1}98.204%{opacity:1}99.102%{opacity:0}100%{opacity:0}}.astall{animation:k37 33.4s linear infinite}
+@keyframes k38{0%{opacity:0}77.246%{opacity:0}78.144%{opacity:1}99.102%{opacity:1}100%{opacity:0}}.vdead{animation:k38 33.4s linear infinite}
+@keyframes k39{0%{opacity:0}77.246%{opacity:0}78.144%{opacity:1}83.533%{opacity:1}84.431%{opacity:0}100%{opacity:0}}.adead{animation:k39 33.4s linear infinite}
+@keyframes k40{0%{opacity:0}68.263%{opacity:0}69.162%{opacity:1}99.102%{opacity:1}100%{opacity:0}}.vrdy{animation:k40 33.4s linear infinite}
+@keyframes k41{0%{opacity:0}68.263%{opacity:0}69.162%{opacity:1}74.551%{opacity:1}75.449%{opacity:0}100%{opacity:0}}.ardy{animation:k41 33.4s linear infinite}
+@keyframes k42{0%{opacity:0}0.000%{opacity:0}0.898%{opacity:1}5.689%{opacity:1}6.587%{opacity:0}100%{opacity:0}}.tk0{animation:k42 33.4s linear infinite}
+@keyframes k43{0%{opacity:0}0.000%{opacity:0}0.898%{opacity:1}5.689%{opacity:1}6.587%{opacity:0}100%{opacity:0}}.cp0{animation:k43 33.4s linear infinite}
+@keyframes k44{0%{opacity:0}6.587%{opacity:0}7.485%{opacity:1}14.671%{opacity:1}15.569%{opacity:0}100%{opacity:0}}.tk1{animation:k44 33.4s linear infinite}
+@keyframes k45{0%{opacity:0}6.587%{opacity:0}7.485%{opacity:1}14.671%{opacity:1}15.569%{opacity:0}100%{opacity:0}}.cp1{animation:k45 33.4s linear infinite}
+@keyframes k46{0%{opacity:0}15.569%{opacity:0}16.467%{opacity:1}20.659%{opacity:1}21.557%{opacity:0}100%{opacity:0}}.tk2{animation:k46 33.4s linear infinite}
+@keyframes k47{0%{opacity:0}15.569%{opacity:0}16.467%{opacity:1}20.659%{opacity:1}21.557%{opacity:0}100%{opacity:0}}.cp2{animation:k47 33.4s linear infinite}
+@keyframes k48{0%{opacity:0}21.557%{opacity:0}22.455%{opacity:1}29.641%{opacity:1}30.539%{opacity:0}100%{opacity:0}}.tk3{animation:k48 33.4s linear infinite}
+@keyframes k49{0%{opacity:0}21.557%{opacity:0}22.455%{opacity:1}29.641%{opacity:1}30.539%{opacity:0}100%{opacity:0}}.cp3{animation:k49 33.4s linear infinite}
+@keyframes k50{0%{opacity:0}30.539%{opacity:0}31.437%{opacity:1}38.623%{opacity:1}39.521%{opacity:0}100%{opacity:0}}.tk4{animation:k50 33.4s linear infinite}
+@keyframes k51{0%{opacity:0}30.539%{opacity:0}31.437%{opacity:1}38.623%{opacity:1}39.521%{opacity:0}100%{opacity:0}}.cp4{animation:k51 33.4s linear infinite}
+@keyframes k52{0%{opacity:0}39.521%{opacity:0}40.419%{opacity:1}47.605%{opacity:1}48.503%{opacity:0}100%{opacity:0}}.tk5{animation:k52 33.4s linear infinite}
+@keyframes k53{0%{opacity:0}39.521%{opacity:0}40.419%{opacity:1}47.605%{opacity:1}48.503%{opacity:0}100%{opacity:0}}.cp5{animation:k53 33.4s linear infinite}
+@keyframes k54{0%{opacity:0}48.503%{opacity:0}49.401%{opacity:1}56.587%{opacity:1}57.485%{opacity:0}100%{opacity:0}}.tk6{animation:k54 33.4s linear infinite}
+@keyframes k55{0%{opacity:0}48.503%{opacity:0}49.401%{opacity:1}56.587%{opacity:1}57.485%{opacity:0}100%{opacity:0}}.cp6{animation:k55 33.4s linear infinite}
+@keyframes k56{0%{opacity:0}57.485%{opacity:0}58.383%{opacity:1}65.569%{opacity:1}66.467%{opacity:0}100%{opacity:0}}.tk7{animation:k56 33.4s linear infinite}
+@keyframes k57{0%{opacity:0}57.485%{opacity:0}58.383%{opacity:1}65.569%{opacity:1}66.467%{opacity:0}100%{opacity:0}}.cp7{animation:k57 33.4s linear infinite}
+@keyframes k58{0%{opacity:0}66.467%{opacity:0}67.365%{opacity:1}74.551%{opacity:1}75.449%{opacity:0}100%{opacity:0}}.tk8{animation:k58 33.4s linear infinite}
+@keyframes k59{0%{opacity:0}66.467%{opacity:0}67.365%{opacity:1}74.551%{opacity:1}75.449%{opacity:0}100%{opacity:0}}.cp8{animation:k59 33.4s linear infinite}
+@keyframes k60{0%{opacity:0}75.449%{opacity:0}76.347%{opacity:1}83.533%{opacity:1}84.431%{opacity:0}100%{opacity:0}}.tk9{animation:k60 33.4s linear infinite}
+@keyframes k61{0%{opacity:0}75.449%{opacity:0}76.347%{opacity:1}83.533%{opacity:1}84.431%{opacity:0}100%{opacity:0}}.cp9{animation:k61 33.4s linear infinite}
+@keyframes k62{0%{opacity:0}84.431%{opacity:0}85.329%{opacity:1}99.102%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.tk10{animation:k62 33.4s linear infinite}
+@keyframes k63{0%{opacity:0}84.431%{opacity:0}85.329%{opacity:1}99.102%{opacity:1}100.000%{opacity:0}100%{opacity:0}}.cp10{animation:k63 33.4s linear infinite}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}.v{opacity:1!important}.cap,.cmt{opacity:0!important}.sum{opacity:1!important}.tr{stroke-dashoffset:0!important}}</style>
+<rect x="0.5" y="0.5" width="959" height="483" rx="8" fill="url(#bgserve)" stroke="#292b31"/>
+<rect x="12" y="48" width="936" height="376" fill="url(#dpserve)"/>
+<text x="28" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#9184d9">OVAT</text>
+<text x="72" y="34" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.14em" fill="#b2b6ca">WHAT OVAT SERVE DOES</text>
+<text x="932" y="34" text-anchor="end" style="font:400 11.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#9397ab">$ ovat serve</text>
+<path d="M144 112 L172 112" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahserve)"/>
+<path d="M342 112 L380 112" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahserve)"/>
+<path d="M419 144 L419 162 Q419 172 409 172 L335 172 Q325 172 325 182 L325 200" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahserve)"/>
+<path d="M471 144 L471 162 Q471 172 481 172 L485 172 Q495 172 495 182 L495 200" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahserve)"/>
+<path d="M510 112 L528 112 Q531 112 531 115 L531 115 Q531 118 534 118 L552 118" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahserve)"/>
+<path d="M722 118 L752 118" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahserve)"/>
+<path d="M844 156 L844 196" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahserve)"/>
+<path d="M844 280 L844 340" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahserve)"/>
+<path d="M752 262 L656 262 Q646 262 646 272 L646 340" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahserve)"/>
+<path d="M752 226 L610 226 Q600 226 600 236 L600 306 Q600 316 590 316 L460 316 Q450 316 450 326 L450 340" fill="none" stroke="#75798c" stroke-width="1.3" marker-end="url(#ahserve)"/>
+<path class="tr tr0" d="M144 112 L172 112" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="32 32" stroke-dashoffset="32"/>
+<path class="cmt cm0" d="M144 112 L172 112" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="19.2 71.2" stroke-dashoffset="19.2" opacity="0"/>
+<path class="tr tr1" d="M342 112 L380 112" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="42 42" stroke-dashoffset="42"/>
+<path class="cmt cm1" d="M342 112 L380 112" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="25.2 87.2" stroke-dashoffset="25.2" opacity="0"/>
+<path class="tr tr2" d="M419 144 L419 162 Q419 172 409 172 L335 172 Q325 172 325 182 L325 200" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="154 154" stroke-dashoffset="154"/>
+<path class="cmt cm2" d="M419 144 L419 162 Q419 172 409 172 L335 172 Q325 172 325 182 L325 200" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 220" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr3" d="M471 144 L471 162 Q471 172 481 172 L485 172 Q495 172 495 182 L495 200" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="84 84" stroke-dashoffset="84"/>
+<path class="cmt cm3" d="M471 144 L471 162 Q471 172 481 172 L485 172 Q495 172 495 182 L495 200" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 150" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr4" d="M510 112 L528 112 Q531 112 531 115 L531 115 Q531 118 534 118 L552 118" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="52 52" stroke-dashoffset="52"/>
+<path class="cmt cm4" d="M510 112 L528 112 Q531 112 531 115 L531 115 Q531 118 534 118 L552 118" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="31.2 103.2" stroke-dashoffset="31.2" opacity="0"/>
+<path class="tr tr5" d="M722 118 L752 118" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="34 34" stroke-dashoffset="34"/>
+<path class="cmt cm5" d="M722 118 L752 118" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="20.4 74.4" stroke-dashoffset="20.4" opacity="0"/>
+<path class="tr tr6" d="M844 156 L844 196" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="44 44" stroke-dashoffset="44"/>
+<path class="cmt cm6" d="M844 156 L844 196" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="26.4 90.4" stroke-dashoffset="26.4" opacity="0"/>
+<path class="tr tr7" d="M844 280 L844 340" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="64 64" stroke-dashoffset="64"/>
+<path class="cmt cm7" d="M844 280 L844 340" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="38.4 122.4" stroke-dashoffset="38.4" opacity="0"/>
+<path class="tr tr8" d="M752 262 L656 262 Q646 262 646 272 L646 340" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="188 188" stroke-dashoffset="188"/>
+<path class="cmt cm8" d="M752 262 L656 262 Q646 262 646 272 L646 340" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 254" stroke-dashoffset="46" opacity="0"/>
+<path class="tr tr9" d="M752 226 L610 226 Q600 226 600 236 L600 306 Q600 316 590 316 L460 316 Q450 316 450 326 L450 340" fill="none" stroke="#5d5294" stroke-width="1.8" stroke-dasharray="420 420" stroke-dashoffset="420"/>
+<path class="cmt cm9" d="M752 226 L610 226 Q600 226 600 236 L600 306 Q600 316 590 316 L460 316 Q450 316 450 326 L450 340" fill="none" stroke="#9184d9" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="46 486" stroke-dashoffset="46" opacity="0"/>
+<rect x="513.95" y="101" width="34.1" height="22" rx="9" fill="#161826" stroke="#3f424d" stroke-width="0.8"/>
+<text x="531" y="116" text-anchor="middle" style="font:400 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">yes</text>
+<g>
+<rect x="24" y="92" width="120" height="40" rx="20" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vsv" x="24" y="92" width="120" height="40" rx="20" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="asv" opacity="0"><rect x="24" y="92" width="120" height="40" rx="20" fill="none" stroke="#9184d9" stroke-width="1.8"/></g>
+<text x="84" y="116.69" text-anchor="middle" style="font:500 12.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">ovat serve</text>
+</g>
+<g>
+<rect x="172" y="80" width="170" height="64" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vloc" x="172" y="80" width="170" height="64" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aloc" opacity="0"><rect x="172" y="80" width="170" height="64" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M172 94 V86 Q172 80 178 80 H188" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="186" y="99.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">find_ovms()</text>
+<text x="186" y="118.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">config, OVAT_OVMS,</text>
+<text x="186" y="134.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">PATH, known dirs</text>
+</g>
+<g>
+<rect x="380" y="80" width="130" height="64" rx="6" fill="#1b1d2b" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vfd" x="380" y="80" width="130" height="64" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="afd" opacity="0"><rect x="380" y="80" width="130" height="64" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M380 94 V86 Q380 80 386 80 H396" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="394" y="117.25" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Found?</text>
+<circle cx="494" cy="96" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="494" y="99.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">?</text>
+</g>
+<g>
+<rect x="552" y="80" width="170" height="76" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v venv" x="552" y="80" width="170" height="76" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aenv" opacity="0"><rect x="552" y="80" width="170" height="76" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M552 94 V86 Q552 80 558 80 H568" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="566" y="105.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">ovms_env()</text>
+<text x="566" y="124.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">PATH, PYTHONHOME,</text>
+<text x="566" y="140.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">LD_LIBRARY_PATH</text>
+</g>
+<g>
+<rect x="752" y="80" width="184" height="76" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vsp" x="752" y="80" width="184" height="76" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="asp" opacity="0"><rect x="752" y="80" width="184" height="76" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M752 94 V86 Q752 80 758 80 H768" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="766" y="113.38" style="font:500 13px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">Popen</text>
+<text x="766" y="132.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">logs go to a file</text>
+</g>
+<g>
+<rect x="250" y="200" width="150" height="64" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v voffer" x="250" y="200" width="150" height="64" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aoffer" opacity="0"><rect x="250" y="200" width="150" height="64" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M250 214 V206 Q250 200 256 200 H266" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="264" y="227.38" style="font:500 13px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Offer ovat setup</text>
+<text x="264" y="246.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">at a terminal</text>
+<circle cx="384" cy="216" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="384" y="219.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">!</text>
+</g>
+<g>
+<rect x="420" y="200" width="150" height="64" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vref" x="420" y="200" width="150" height="64" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="aref" opacity="0"><rect x="420" y="200" width="150" height="64" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M420 214 V206 Q420 200 426 200 H436" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="434" y="219.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Refuse</text>
+<text x="434" y="238.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">no terminal,</text>
+<text x="434" y="254.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">download nothing</text>
+<circle cx="554" cy="216" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<path d="M551.2 213.2 L556.8 218.8 M556.8 213.2 L551.2 218.8" fill="none" stroke="#b2b6ca" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<g>
+<rect x="752" y="196" width="184" height="84" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vwt" x="752" y="196" width="184" height="84" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="awt" opacity="0"><rect x="752" y="196" width="184" height="84" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M752 210 V202 Q752 196 758 196 H768" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="766" y="225" style="font:500 12px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:0" fill="#e9e9ed">wait_until_ready()</text>
+<text x="766" y="244" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">stall budget,</text>
+<text x="766" y="260" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">no deadline</text>
+</g>
+<g>
+<rect x="360" y="340" width="180" height="64" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vstall" x="360" y="340" width="180" height="64" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="astall" opacity="0"><rect x="360" y="340" width="180" height="64" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M360 354 V346 Q360 340 366 340 H376" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="374" y="367.38" style="font:500 13px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">No progress, 300 s</text>
+<text x="374" y="386.38" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">says it is still running</text>
+<circle cx="524" cy="356" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<text x="524" y="359.8" text-anchor="middle" style="font:600 10.5px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#b2b6ca">!</text>
+</g>
+<g>
+<rect x="556" y="340" width="180" height="64" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1" stroke-dasharray="4 3"/>
+<rect class="v vdead" x="556" y="340" width="180" height="64" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="adead" opacity="0"><rect x="556" y="340" width="180" height="64" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M556 354 V346 Q556 340 562 340 H572" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="570" y="367.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#e9e9ed">Process exited</text>
+<text x="570" y="386.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">report, point at the log</text>
+<circle cx="720" cy="356" r="8" fill="none" stroke="#9397ab" stroke-width="1"/>
+<path d="M717.2 353.2 L722.8 358.8 M722.8 353.2 L717.2 358.8" fill="none" stroke="#b2b6ca" stroke-width="1.4" stroke-linecap="round"/>
+</g>
+<g>
+<rect x="752" y="340" width="184" height="64" rx="6" fill="#232532" stroke="#3f424d" stroke-width="1"/>
+<rect class="v vrdy" x="752" y="340" width="184" height="64" rx="6" fill="#2b2741" stroke="#5d5294" stroke-width="1.2" opacity="0"/>
+<g class="ardy" opacity="0"><rect x="752" y="340" width="184" height="64" rx="6" fill="none" stroke="#9184d9" stroke-width="1.8"/><path d="M752 354 V346 Q752 340 758 340 H768" fill="none" stroke="#9184d9" stroke-width="3.5" stroke-linecap="square"/></g>
+<text x="766" y="367.75" style="font:500 14px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;letter-spacing:-.01em" fill="#d2cefd">Ready</text>
+<text x="766" y="386.75" style="font:400 12.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#b2b6ca">health 200, pid saved</text>
+<circle cx="920" cy="356" r="8" fill="none" stroke="#9184d9" stroke-width="1"/>
+<path d="M916.5 356 L919 358.6 L923.6 353.4" fill="none" stroke="#9184d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="28" y="430" width="904" height="1" fill="url(#ruleserve)"/>
+<rect x="760" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk0" x="760" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp0" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">01 / 11</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">ovat serve starts the OVMS server.</text></g>
+<rect x="776" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk1" x="776" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp1" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">02 / 11</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">find_ovms() looks in the config, OVAT_OVMS, PATH and known folders.</text></g>
+<rect x="792" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk2" x="792" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp2" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">03 / 11</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Was it found?</text></g>
+<rect x="808" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk3" x="808" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp3" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">04 / 11</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">No, at a terminal: it offers to run ovat setup.</text></g>
+<rect x="824" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk4" x="824" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp4" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">05 / 11</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">No, and no terminal: it refuses and downloads nothing.</text></g>
+<rect x="840" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk5" x="840" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp5" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">06 / 11</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Yes: ovms_env() sets PATH, PYTHONHOME and LD_LIBRARY_PATH.</text></g>
+<rect x="856" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk6" x="856" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp6" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">07 / 11</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Popen starts OVMS, with its logs going to a file.</text></g>
+<rect x="872" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk7" x="872" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp7" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">08 / 11</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">wait_until_ready() watches for progress. There is no fixed deadline.</text></g>
+<rect x="888" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk8" x="888" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp8" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">09 / 11</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">Health returns 200: ready. The pid goes in ovms.pid.</text></g>
+<rect x="904" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk9" x="904" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp9" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">10 / 11</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">The process exited: OVAT reports it and points at the log.</text></g>
+<rect x="920" y="454" width="12" height="2" rx="1" fill="#3f424d"/>
+<rect class="tk10" x="920" y="454" width="12" height="2" rx="1" fill="#9184d9" opacity="0"/>
+<g class="cap cp10" opacity="0"><text x="28" y="458" style="font:500 11px ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;letter-spacing:.06em" fill="#9184d9">11 / 11</text><text x="92" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed">No progress for 300 s: it says the server is still running.</text></g>
+<text class="sum" x="28" y="458" style="font:400 13.5px Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif" fill="#e9e9ed" opacity="0">Find OVMS, set its environment, start it, then wait on progress: ready, exited, or still running.</text>
+</svg>
