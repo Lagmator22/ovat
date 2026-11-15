@@ -595,3 +595,14 @@ def test_web_search_searxng_blocks_cloud_metadata_base_url():
     )
     assert _is_error(out) and "metadata" in out
 
+
+
+def test_web_fetch_refuses_every_non_global_address():
+    """python 3.10's is_private misses shared address space (100.64.0.0/10,
+    used inside carrier and cloud networks); is_global covers it."""
+    from ovat.tools.web_fetch import check_safe_url
+    for url in ("http://100.64.0.1/", "http://100.127.255.254/x",
+                "http://192.0.0.8/", "http://10.0.0.1/"):
+        assert check_safe_url(url) is not None, url
+    assert check_safe_url("http://8.8.8.8/") is None
+    assert check_safe_url("http://100.64.0.1/", allow_private_lan=True) is None

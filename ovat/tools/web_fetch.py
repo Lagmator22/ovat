@@ -195,7 +195,9 @@ def _check_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
         return "refusing to fetch a link-local or cloud metadata address."
     if ip.is_unspecified or ip.is_multicast:
         return "refusing to fetch a reserved or unspecified address."
-    if ip.is_private and not allow_private_lan:
+    # is_global also covers shared address space (100.64.0.0/10), which
+    # is_private misses on python 3.10.
+    if (ip.is_private or not ip.is_global) and not allow_private_lan:
         return "refusing to fetch a private network address."
     if ip.is_reserved and not ip.is_private:
         return "refusing to fetch a reserved or unspecified address."
