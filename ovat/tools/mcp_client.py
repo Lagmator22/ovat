@@ -183,7 +183,10 @@ class _MCPClientBase:
         parts = [block.text for block in result.content
                  if getattr(block, "text", None) is not None]
         text = "\n".join(parts) if parts else str(result.content)
-        if getattr(result, "isError", False) and not text.startswith("Error:"):
+        is_err = getattr(result, "is_error", None)
+        if is_err is None:
+            is_err = getattr(result, "isError", False)
+        if is_err and not text.startswith("Error:"):
             return f"Error: {text}"
         return text
 
@@ -319,12 +322,14 @@ class MCPHttpServer(_MCPClientBase):
 
 def openai_schema_from_mcp_tool(tool) -> dict:
     """An MCP tool advertisement -> the OpenAI-style schema our loop shows."""
+    params = getattr(tool, "input_schema", None)
+    if params is None:
+        params = getattr(tool, "inputSchema", None)
     return {
         "type": "function",
         "function": {
             "name": tool.name,
             "description": tool.description or "",
-            "parameters": tool.inputSchema
-            or {"type": "object", "properties": {}},
+            "parameters": params or {"type": "object", "properties": {}},
         },
     }
