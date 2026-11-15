@@ -200,7 +200,9 @@ as always `"stop"`.
   Also here: `voice.py` (local dictation), `rules.py` and `prefs.py` (saved
   grants and UI preferences), `atomic.py` (all-or-nothing file writes),
   `workflow_edit.py` (/config edits keeping comments), `mcp.py`,
-  `sessions.py` (saved conversations).
+  `sessions.py` (saved conversations), `trust.py` (workspace trust, kept in
+  `~/.ovat/trusted.json`: `./workflow.yml` is built on its own only in a
+  trusted folder, because building it starts its `mcp_stdio` commands).
 - `ovat/userdata.py`: the user folder `~/.ovat`. "Always allow" grants
   (`permissions.json`, per project) and the A2A server token
   (`a2a/<id>.token`) live there, NEVER in the project's own `.ovat/`: a
@@ -214,11 +216,9 @@ as always `"stop"`.
   `vibe/` is the COPIED terminal client (Apache-2.0, see `NOTICE` and
   `vibe/LICENSE`); it talks JSON-RPC to OVAT's own app server in `server/`
   (`projector`, `bridge`, `turns`, `approvals`, `questions`, `settings`,
-  `methods/`), which drives `AgentSession`. `app.py` is the classic app
-  (`OVAT_AGENT_UI=classic`), to be removed after the AI PC test. The
-  bare `ovat` and `ovat tui` open this agent TUI too (since 2026-10-17);
-  the old launcher (`cli/tui.py`) runs only with `OVAT_LAUNCHER=classic`, to
-  be removed in a later release along with the classic app.
+  `methods/`), which drives `AgentSession`. The bare `ovat`, `ovat tui`
+  and `ovat agent` all open it. The classic launcher and classic agent app
+  were removed in 2026-11.
 
 ### CLI and TUI
 - `ovat/cli/main.py`: all 12 typer commands plus the `a2a` group: run,
@@ -231,15 +231,9 @@ as always `"stop"`.
   TUI), console theme, `wordmark()`.
 - `ovat/cli/diagnostics.py`: doctor's checks. Platform-aware (macOS gets
   "OVMS does not run here", not "not on PATH").
-- TUI (the `[tui]` extra): `tui.py` (launcher + masthead), `shell.py`
-  (subprocess layer, slash TEMPLATES, \r progress sampling, process-tree
-  kill), `chat_screen.py` (in-process chat, streaming, sessions in
-  `.ovat/sessions/`, `/engine` local <-> OVMS), `doctor_screen.py`,
-  `telemetry_screen.py` (two tabs, Live and Help; a per-source status
-  line refreshed every tick; headline cards re-ranked each tick),
-  `widgets.py` (PasteInput, ChatInput, SelectableRichLog), `editing.py`
-  (InputHistory + clipboard, no textual), `theme.py`, `commands.py`
-  (palette providers).
+- `ovat/cli/shell.py`: the subprocess layer under `!` shell and `/serve`
+  (process-tree kill on Windows, \r progress sampling). textual-free.
+- `ovat/cli/theme.py`: the palette as a Textual theme, for the agent TUI.
 
 ### outside ovat/
 - `scripts/gen_workflow_reference.py`: generates
@@ -286,9 +280,8 @@ as always `"stop"`.
    up first.
 4. **Isolation contract**: the CLI must fully work with NO TUI installed.
    `textual`/`pyfiglet` live in the `[tui]` extra only. Module-level
-   `import textual` is allowed ONLY in: `tui.py`, `chat_screen.py`,
-   `doctor_screen.py`, `telemetry_screen.py`, `widgets.py`, `theme.py`,
-   `commands.py`, and everything under `ovat/tui/` (the agent TUI).
+   `import textual` is allowed ONLY in `cli/theme.py` and under `ovat/tui/`
+   (the agent TUI).
    `ovat/agentic/` must NEVER import textual (a test scans it).
    `tests/test_tui_isolation.py` enforces this. The same
    applies to the framework engines and the A2A SDK: importing the CLI must
@@ -567,32 +560,18 @@ Do not "improve" any of these without reading the reason first.
   did not reproduce in 76 starts later the same day; cause not determined.
 
 ### TUI
-- **`#masthead` height stays 17.** At 18 the TUI HANGS at 80x24.
-- **`#brand-panel` is a COLUMN COUNT (42), never a percentage.** FIGlet art
-  wider than the panel WRAPS and shears.
-- **No Tooltips anywhere.** Tried, removed, tests assert none exist. Trap:
-  Textual's `run_test()` switches tooltips OFF by default, so a no-tooltip
-  test passes while the real app shows one; Textual's Footer adds them to
-  its keys by itself ("Open the command palette"). Use OVAT's `Footer`
-  (`widgets.py`, strips them) and test with `run_test(tooltips=True)`.
-- **Small windows hide the masthead, never the prompt.** Below 24 rows
-  the 17-row masthead is hidden (at 83x23 it pushed the input off screen),
-  and the Updates heading falls back to plain text when its FIGlet art is
-  wider than the panel (28 columns in 12 at 83 columns: it wrapped into
-  scrambled blocks).
+- **No Tooltips anywhere.** Tried, removed, a test asserts none exist.
+  Trap: Textual's `run_test()` switches tooltips OFF by default, so a
+  no-tooltip test passes while the real app shows one. Test with
+  `run_test(tooltips=True)`.
 - **No `priority=True` bindings on scrolling keys.** They stole keys from
   the slash menu and modals.
 - **Never mix `stream.write()` and `response.update()` on one Markdown
   widget.** MarkdownStream keeps its own record; once the text reshapes,
   retire the stream for that turn. Tags arrive SPLIT ACROSS TOKENS (`<th`
   then `ink>`).
-- **Textual already binds `ctrl+c,super+c` to `screen.copy_text`** and
-  provides `ctrl+p`; the app's copy branch in `action_cancel_or_quit` is
-  what makes Ctrl-C copy. Do not declare a second `ctrl+p`.
-- **RichLog cannot extract selected text.** It is a line-API widget, so
-  Textual's generic `get_selection` returns None. Use `SelectableRichLog`.
 - **Esc/Ctrl-C must end the whole process tree on Windows**, not just the
-  direct child (`shell.py`); otherwise OVMS children outlive the command.
+  direct child (`cli/shell.py`); otherwise OVMS children outlive the command.
 
 ### A2A (a2a-sdk 1.2.2, each one seen by running it)
 - **An exception that escapes `AgentExecutor.execute()` reaches the remote
@@ -669,7 +648,6 @@ roots, pathsep-separated) · `OVAT_VLM_MODEL` / `OVAT_WHISPER_MODEL` (tool
 model dirs) · `OVAT_VLM_DEVICE` / `OVAT_WHISPER_DEVICE` (override the
 routing table) · `OVAT_UT` (Intel UT folder or binary) · `OVAT_TUI=1` (set
 by the TUI in children; bare `ovat` prints a hint instead of recursing).
-`OVAT_LAUNCHER=classic` (old launcher for bare `ovat` / `ovat tui`) · `OVAT_AGENT_UI=classic` (old agent app).
 
 Tests: `OVAT_TEST_MODELS_DIR` / `OVAT_TEST_IMAGE` (integration) ·
 `OVAT_OVMS_URL` / `OVAT_OVMS_MODEL` (`test_ovms_live.py` target).
@@ -703,8 +681,7 @@ TUI tests use Textual's headless Pilot via `asyncio.run` (no
 pytest-asyncio). Mouse selection must be driven through
 `Screen._forward_event`, NOT `post_message`.
 
-Heavy seams for mocking: `chat_screen._build_components`,
-`chat_screen._build_engine`, `cli_main.build_agent`,
+Heavy seams for mocking: `cli_main.build_agent`, `agent_app.run_agent`,
 `diagnostics.run_checks`, `model_server.subprocess.Popen`,
 `bench.benchmark_engine`. Use `monkeypatch`, never a bare attribute
 assignment: one leaked into other tests once.
@@ -771,14 +748,9 @@ LICENSE.
 
 After the `wip/phase3` branch:
 - The AI PC A-to-Z test (`~/claude-projects/ovat/test_guide/`).
-- Remote A2A approvals: an AUTHENTICATED caller that says it can approve may
-  approve `ask` tools on the serving machine. Add a server opt-in, default off.
-- The launcher's /chat remembers its workflow in the project's
-  `.ovat/chat_prefs.json`; a cloned repo could pre-set it. Decide: fix or not.
-- `workspace/trust/status` always answers trusted: the copied trust prompt is
-  inert. Implement real trust or remove the affordance.
-- Remove the classic agent app after the test, and the connector code with a
-  careful edit of the MCP panel.
+- The TUI has no way to trust a folder yet (the server method exists, the
+  client never sends it); until then, `ovat agent workflow.yml` is the
+  opt-in.
 - A docs site refresh after merge, and a PyPI release.
 - GPU utilisation without Intel UT on real hardware; GPU/NPU on Linux.
 
@@ -868,3 +840,12 @@ earned their place on the telemetry page.
   real A2A section, the agent TUI, 124 modules on the codebase map, charts
   recounted, one demo video made from three recordings) and the README got
   three inline demo videos.
+- **Release hardening (2026-11-15, `fix/security-hardening` then
+  `feat/tui-overhaul`)**: a two-pass external review, every finding checked
+  against the code. grep and symlinks no longer get past the sensitive-file
+  gate; remote A2A approvals are opt-in; web_fetch refuses every non-global
+  address and pins the IP it checked; `./workflow.yml` is built on its own
+  only in a trusted folder; agents close their retriever and event loop;
+  `/compact`, `/load` and `/model` keep their state. The classic launcher
+  and classic agent app were removed, and comments were rewritten to
+  describe the code rather than its history.

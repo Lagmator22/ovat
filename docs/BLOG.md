@@ -413,8 +413,8 @@ Full walkthrough: [`examples/audio-multimodal/`](../examples/audio-multimodal/).
 
 Everything above is the CLI, and the CLI is the product. But there is also a
 full-screen terminal app: `pip install "ovat[tui]"`, then run `ovat`. That opens
-the agent TUI, described further down. The first app, the launcher, is shown
-first here and runs with `OVAT_LAUNCHER=classic ovat`.
+the agent TUI. OVAT's first terminal app, the launcher, is shown first here; it
+was retired after 1.3.0 once the agent TUI covered it.
 
 <div align="center">
 <img src="assets/screens/tui-chat-tools.png" width="820px" alt="The OVAT terminal UI chat answering one question with three tools: transcribe, describe_image and search_docs, after switching itself to OVMS">
