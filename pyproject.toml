@@ -37,6 +37,10 @@ dependencies = [
   "pyyaml",
   "pillow",
   "fastmcp",
+  # The MCP client (tools/mcp_client.py) imports both directly. They arrive
+  # through fastmcp today, but that is fastmcp's choice, not a promise.
+  "mcp",
+  "anyio",
   "sqlite-vec",
   # Imported directly (transcribe/vlm use numpy; the CLI renders with rich).
   # Declared here so we never depend on openvino/typer pulling them in for us.
@@ -79,7 +83,11 @@ voice = ["sounddevice>=0.5"]
 # agent TUI's copied widgets import anyio, jsonpatch and pyperclip directly;
 # they mostly arrive through other packages, but nothing guarantees that, so
 # they are named here.
-tui = ["textual", "pyfiglet", "anyio", "jsonpatch", "pyperclip",
+# Textual has a ceiling because the copied client was written against one
+# release: Mistral Vibe pins textual==8.2.8 at the commit OVAT copied, and a
+# new minor release could break every fresh install. 8.2.7 and 8.2.8 are the
+# versions the suite has run on. Raise the ceiling after testing a new one.
+tui = ["textual>=8.2.7,<8.3", "pyfiglet", "anyio", "jsonpatch", "pyperclip",
        "sounddevice>=0.5",
        # /config edits workflow.yml and must keep the user's comments; PyYAML
        # drops them. Not in the base install: only the settings screen writes.
