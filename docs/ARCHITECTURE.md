@@ -383,9 +383,9 @@ What the loop does with each reply:
   ```` ```json ````. `strip_code_fence` lives in `ovat/text.py` and is shared
   with the OpenAI Agents engine, the only other engine that parses arguments
   itself.
-- **A misspelt tool name is matched.** If the model names a tool that does not
-  exist, the loop takes the closest real name (`difflib`, 60% similarity), and
-  the trace records the tool that actually ran.
+- **A misspelt tool name is refused.** If the model names a tool that does not
+  exist, no tool runs. The model gets the list of real names back as the tool
+  result and asks again.
 - **`Session` is thread-safe.** The TUI streams and saves on a worker thread
   while the main thread can `/load` or `/clear`. `save()` copies under the lock
   and writes outside it.
