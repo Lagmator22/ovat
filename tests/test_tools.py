@@ -622,3 +622,55 @@ def test_fuzzy_resolve_path_prefers_project_root_over_cwd(tmp_path, monkeypatch)
     assert note is not None
 
 
+
+
+# ---- standalone MCP servers: no call to PyPI ----------------------------------
+
+def test_a_tool_server_starts_with_fastmcps_update_check_off(monkeypatch):
+    """FastMCP's banner asks pypi.org whether a newer FastMCP exists, every
+    time a tool starts as an MCP server. A local tool server should not call
+    out. FastMCP reads the environment once at import, so the helper changes
+    the setting on the object."""
+    import fastmcp
+    from ovat.tools.mcp_serve import serve
+
+    monkeypatch.delenv("FASTMCP_CHECK_FOR_UPDATES", raising=False)
+    monkeypatch.setattr(fastmcp.settings, "check_for_updates", "stable")
+    seen = []
+
+    class _Server:
+        def run(self):
+            seen.append(fastmcp.settings.check_for_updates)
+
+    serve(_Server())
+    assert seen == ["off"]
+
+
+def test_a_tool_server_keeps_an_update_check_the_person_asked_for(monkeypatch):
+    import fastmcp
+    from ovat.tools.mcp_serve import serve
+
+    monkeypatch.setenv("FASTMCP_CHECK_FOR_UPDATES", "stable")
+    monkeypatch.setattr(fastmcp.settings, "check_for_updates", "stable")
+    seen = []
+
+    class _Server:
+        def run(self):
+            seen.append(fastmcp.settings.check_for_updates)
+
+    serve(_Server())
+    assert seen == ["stable"]
+
+
+def test_every_builtin_tool_server_starts_through_the_helper():
+    """One place turns the update check off. A tool that calls mcp.run()
+    itself would bring the call to PyPI back for that tool only."""
+    import pathlib
+
+    import ovat.tools
+
+    folder = pathlib.Path(ovat.tools.__file__).parent
+    offenders = [path.name for path in sorted(folder.glob("*.py"))
+                 if path.name != "mcp_serve.py"
+                 and "mcp.run()" in path.read_text(encoding="utf-8")]
+    assert not offenders, f"these start their own server: {offenders}"
