@@ -395,7 +395,7 @@ Twelve tools are built in. Name the ones you want under `tools:`.
 | `write_file` | Creates or replaces a file in the project | ask |
 | `edit` | Replaces text in a file | ask |
 | `shell` | Runs a command in the project folder | ask |
-| `web_fetch` | Fetches a web page | ask |
+| `web_fetch` | Fetches a web page. Connects directly and ignores proxy settings | ask |
 | `web_search` | Searches the web | ask |
 
 `ask` means you are asked first (once, for the session, or always). With
