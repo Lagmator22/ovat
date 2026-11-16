@@ -1152,10 +1152,11 @@ def _offer_ovms_install(assume_yes: bool) -> str | None:
 def _say_if_unverified(what: str) -> None:
     """Warn when an install went ahead with nothing to check it against.
 
-    `setup` verifies SHA-256 checksums whenever a release publishes a `.sha256`
-    file. When no checksum asset exists, installation still proceeds (blocking
-    those releases would break valid installs), while warning that the archive
-    could not be verified.
+    `setup` checks the pinned OVMS version against hashes kept in the
+    installer, and any other version against the `.sha256` file its release
+    publishes. When that release has no checksum file, installation still
+    proceeds (blocking those releases would break valid installs), while
+    warning that the archive could not be verified.
     """
     if what == "installed-unverified":
         rprint("[yellow]Not verified:[/yellow] this OVMS release has no "
