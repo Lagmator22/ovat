@@ -633,6 +633,38 @@ def test_ripgrep_command_passes_no_config_and_no_follow(root, monkeypatch):
 
 
 
+def test_the_ripgrep_branch_drops_secret_files_even_without_ripgrep(
+        root, monkeypatch):
+    """The ripgrep branch has its own secret-file filter, and the tests above
+    only reach it on a machine that has ripgrep. Where it is missing, that
+    filter could be deleted with every test still green. This one feeds the branch
+    ripgrep's own output format (path, NUL, line:text) through a fake."""
+    import io
+
+    class FakeProc:
+        def __init__(self, cmd, **kwargs):
+            self.stdout = io.BytesIO(
+                b".env\x001:TOKEN=hush1\n"
+                b"./.env.local\x001:TOKEN=hush2\n"
+                b".ovat/audit.jsonl\x004:TOKEN=hush3\n"
+                b"src/a.py\x003:TOKEN=fine\n")
+            self.stderr = io.BytesIO(b"")
+
+        def kill(self):
+            pass
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(grep_tool.shutil, "which", lambda name: "/usr/bin/rg")
+    monkeypatch.setattr(grep_tool.subprocess, "Popen",
+                        lambda cmd, **kw: FakeProc(cmd, **kw))
+    out = str(grep_impl("TOKEN", root))
+    assert "src/a.py:3:TOKEN=fine" in out
+    for secret in ("hush1", "hush2", "hush3"):
+        assert secret not in out, secret
+
+
 # ---- grep and symlinks must not get around the sensitive-file gate --------
 
 def test_grep_does_not_search_secret_files_with_or_without_rg(

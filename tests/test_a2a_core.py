@@ -912,7 +912,11 @@ def test_remote_approvals_are_off_unless_the_server_opts_in():
 
 
 def test_allow_remote_approvals_false_refuses_remote_approver():
-    svc, built = _service(AsksFirst, allow_remote_approvals=False)
+    # The short timeout is for the day this rule breaks: the task would then
+    # wait for an approval nobody sends. With the default (900 s) the suite
+    # hung for fifteen minutes instead of failing.
+    svc, built = _service(AsksFirst, allow_remote_approvals=False,
+                          task_timeout_s=2)
     rec = ApprovalRecorder()
     asyncio.run(
         svc.run(_task("deploy it", task_id="t1", approval_capable=True), rec)
