@@ -69,8 +69,8 @@ One entry per tool. `tools:` is a LIST.
 | `name` | string | **required** | - | `search_docs`, `transcribe`, `describe_image`, the coding tools `read_file`, `write_file`, `edit`, `grep`, `shell` (they work inside the folder you run from; the last three ask first), `todo` (the agent's own task list), `ask_user` (asks the person a question; agent TUI only), `web_fetch` and `web_search` (ask first), or any tool an MCP server advertises. |
 | `type` | string | `builtin` | - | `builtin` runs in-process; `mcp_stdio` launches an external MCP server; `mcp_http` and `mcp_sse` connect to a remote MCP server over Streamable HTTP or SSE; `a2a` asks another agent over A2A (needs `pip install 'ovat[a2a]'`). |
 | `command` | list[string] \| null | `null` | - | Argv that launches the MCP server. Required when `type: mcp_stdio`. |
-| `env` | map of string to string \| null | `null` | - | Extra environment for an `mcp_stdio` server, which otherwise sees only HOME, PATH and a few more. `${VAR}` is expanded from your shell. |
-| `headers` | map of string to string \| null | `null` | - | Extra HTTP headers for an `mcp_http` or `mcp_sse` server. `${VAR}` in values is expanded from your shell. |
+| `env` | map of string to string \| null | `null` | - | Extra environment for an `mcp_stdio` server, which otherwise sees only HOME, PATH and a few more. `${VAR}` is expanded from your shell; an unset variable is an error. |
+| `headers` | map of string to string \| null | `null` | - | Extra HTTP headers for an `mcp_http` or `mcp_sse` server. `${VAR}` in values is expanded from your shell; an unset variable is an error. |
 | `model` | string \| null | `null` | - | Where this tool's own weights live. `transcribe` and `describe_image` only. |
 | `device` | string \| null | `null` | - | Device for this tool's model, separate from the agent's. Omit to let the device router choose. |
 | `url` | string \| null | `null` | - | Base URL of the remote agent or MCP server. Required when `type: a2a`, `mcp_http`, or `mcp_sse`. |

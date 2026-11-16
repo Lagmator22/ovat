@@ -222,6 +222,29 @@ def test_a_tool_env_reaches_the_mcp_server(tmp_path, monkeypatch):
             server.close()
 
 
+def test_an_unset_variable_in_env_or_headers_is_an_error(monkeypatch):
+    """os.path.expandvars leaves an unset ${VAR} as it is, so a token nobody
+    exported was sent to the server as the literal text "${MY_TOKEN}". The
+    server then answers "bad token", which points at the wrong thing."""
+    from ovat.tools import mcp_client
+
+    monkeypatch.delenv("OVAT_TEST_UNSET", raising=False)
+    # Both refuse before anything is launched or connected to.
+    with pytest.raises(ValueError, match="OVAT_TEST_UNSET is not set"):
+        mcp_client.MCPStdioServer([sys.executable, "-c", "pass"],
+                                  env={"TOKEN": "${OVAT_TEST_UNSET}"})
+    with pytest.raises(ValueError, match="OVAT_TEST_UNSET is not set"):
+        mcp_client.MCPHttpServer(
+            "https://mcp.example/mcp",
+            headers={"Authorization": "Bearer ${OVAT_TEST_UNSET}"})
+
+    # A set variable is filled in; a value with no ${...} is passed through
+    # as written, "$" included.
+    monkeypatch.setenv("OVAT_TEST_SET", "abc")
+    assert mcp_client._expand("Bearer ${OVAT_TEST_SET}", "x") == "Bearer abc"
+    assert mcp_client._expand("5$ each", "x") == "5$ each"
+
+
 def test_without_env_the_parent_shell_still_does_not_leak(tmp_path,
                                                          monkeypatch):
     """The isolation is the point of the SDK's default; env opts in, it does
