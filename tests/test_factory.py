@@ -162,9 +162,10 @@ def test_an_unknown_engine_names_the_ones_that_exist():
     from ovat.agent.factory import AGENT_TYPES, build_agent
     from ovat.config.workflow import WorkflowConfig
 
-    cfg = WorkflowConfig(model={"name": "m"}, agent={"type": "langchian"})
+    # Refused when the config loads, so build_agent never sees it.
     with pytest.raises(ValueError) as excinfo:
-        build_agent(cfg, skip_rag=True)
+        build_agent(WorkflowConfig(model={"name": "m"},
+                                   agent={"type": "langchian"}), skip_rag=True)
     for name in AGENT_TYPES:
         assert name in str(excinfo.value)
 
@@ -241,9 +242,8 @@ def test_an_unknown_provider_names_the_ones_that_exist():
     from ovat.agent.factory import build_llm
     from ovat.config.workflow import WorkflowConfig
 
-    cfg = WorkflowConfig(model={"name": "m", "provider": "ovmss"})
     with pytest.raises(ValueError) as excinfo:
-        build_llm(cfg)
+        build_llm(WorkflowConfig(model={"name": "m", "provider": "ovmss"}))
     assert "ovms" in str(excinfo.value) and "genai" in str(excinfo.value)
 
 

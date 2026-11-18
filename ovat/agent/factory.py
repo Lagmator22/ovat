@@ -12,7 +12,8 @@ import os
 from ovat.agent.events import EventBus, observed
 from ovat.agent.loop import AgentLoop
 from ovat.agent.permissions import default_permission
-from ovat.config.workflow import WorkflowConfig
+# AGENT_TYPES is re-exported: the CLI and /config import it from here.
+from ovat.config.workflow import AGENT_TYPES, WorkflowConfig  # noqa: F401
 from ovat.providers.backend import LLMBackend
 from ovat.providers.base import (EmbeddingsProvider, LLMProvider,
                                  RetrieverProvider)
@@ -510,11 +511,6 @@ def observe_tools(tools: dict, bus: EventBus) -> dict:
                 name, spec["function"], bus,
                 spec.get("permission", "allow"))}
             for name, spec in tools.items()}
-
-
-# Every engine the factory can build. Named here so the error message, the
-# config docs and the dispatch below cannot drift apart.
-AGENT_TYPES = ("native", "react", "llamaindex", "openai-agents")
 
 
 def build_agent(config: WorkflowConfig, skip_rag: bool = False,

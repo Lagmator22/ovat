@@ -165,10 +165,10 @@ def test_mcp_stdio_without_a_command_is_rejected():
 
 
 def test_unknown_tool_type_is_still_rejected():
-    cfg = WorkflowConfig(model={"name": "m"},
-                         tools=[{"name": "x", "type": "banana"}])
+    # Refused when the config loads, before any tool is built.
     with pytest.raises(ValueError, match="Unsupported tool type"):
-        build_tools(cfg)
+        WorkflowConfig(model={"name": "m"},
+                       tools=[{"name": "x", "type": "banana"}])
 
 
 # env: what an MCP server is allowed to see
