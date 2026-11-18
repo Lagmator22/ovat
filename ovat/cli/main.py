@@ -405,10 +405,10 @@ def run(
         failed = True
         rprint("[yellow]Warning: this answer still contains raw tool-call "
                "markup, so the tool was never run.[/yellow]")
-        rprint(f"[dim]Usually the wrong[/dim] tool_parser [dim]for this model "
-               f"(Qwen3.5 needs[/dim] qwen3coder[dim], Qwen3 needs[/dim] "
-               f"hermes3[dim]). It can also be the model emitting a malformed "
-               f"call, which a retry often clears.[/dim]")
+        rprint("[dim]Usually the wrong[/dim] tool_parser [dim]for this model "
+               "(Qwen3.5 needs[/dim] qwen3coder[dim], Qwen3 needs[/dim] "
+               "hermes3[dim]). It can also be the model emitting a malformed "
+               "call, which a retry often clears.[/dim]")
     # esc() stops the answer being read as markup; highlight=False stops rich
     # RE-styling it afterwards. Its highlighter treats plain text as a python
     # repr, so it bolds every bracket and colours bare numbers, which puts

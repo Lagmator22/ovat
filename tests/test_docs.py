@@ -11,7 +11,6 @@ import os
 import subprocess
 import sys
 
-import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(ROOT, "scripts", "gen_workflow_reference.py")

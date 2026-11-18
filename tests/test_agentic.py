@@ -4,7 +4,6 @@
 AgentSession reports everything through one callback, so these tests just
 collect the reports in a list and wait for the one they need.
 """
-import sys
 import threading
 import time
 from pathlib import Path

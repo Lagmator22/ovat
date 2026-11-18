@@ -260,7 +260,6 @@ def test_find_ut_looks_one_level_into_known_folders(tmp_path, monkeypatch):
     leaves the binary at ~/ut/ut-tool-ext-v0.2.0-beta1.1/bin/ut.exe. A flat
     check of the known folders misses that entirely, which is exactly what
     happened on the AI PC."""
-    import sys
 
     from ovat.telemetry import sources
 
@@ -374,7 +373,6 @@ def test_intel_ut_writes_into_a_scratch_folder_and_cleans_it_up(monkeypatch,
     scratch folder keeps its files (SoCWatchHelp.json, ut_default_output.*)
     out of the project without the flag it refuses.
     """
-    import shutil
     from ovat.telemetry.sources import IntelHardwareSource
 
     class FakeProc:

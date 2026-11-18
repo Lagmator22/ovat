@@ -552,7 +552,6 @@ def test_child_approval_marks_blocked_and_unblocks():
     from ovat.tui.server.approvals import Approvals
     from ovat.tui.server.projector import Projector
     from ovat.tui.vibe.app_server.models import (
-        ApprovalDecisionType,
         BlockedSessionStatus,
         IdleSessionStatus,
         PublicSession,
@@ -726,7 +725,7 @@ def test_child_sessions_save_restore_and_rewind():
     projector.turns = [PublicTurn.model_validate({"id": "t1", "sessionId": "p1", "inputEntryId": "u1", "status": "completed", "startedAt": 0, "completedAt": 0})]
 
     # Rewind to u2 (so u1 and eff1 remain, while u2 and eff2 are dropped)
-    res = asyncio.run(session_rewind(ctx, SessionRewindParams(session_id="p1", entry_id="u2", inplace=True)))
+    asyncio.run(session_rewind(ctx, SessionRewindParams(session_id="p1", entry_id="u2", inplace=True)))
     # Kept history has u1 and eff1
     assert len(projector.history) == 2
     # Only child-c1 is kept; child-c2 is dropped because eff2 was rewound!
@@ -856,7 +855,7 @@ def test_cancel_child_unblocks_pending_approval_and_question_for_that_child_only
         monkeypatch, tmp_path):
     """Cancelling one running subagent must immediately wake its blocked
     approval or question prompt without cancelling a sibling's prompt."""
-    from ovat.agent.events import CURRENT_CALL_ID, CURRENT_SUBAGENT
+    from ovat.agent.events import CURRENT_SUBAGENT
     from ovat.agent.questions import QuestionBroker
 
     runner, bus, _ = _workflow_runner(monkeypatch, tmp_path)

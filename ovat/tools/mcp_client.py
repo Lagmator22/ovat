@@ -145,7 +145,7 @@ class _MCPClientBase:
                     self._shutdown = asyncio.Event()
                     ready.set()
                     await self._shutdown.wait()   # serve until close() fires it
-        except BaseException as exc:            # noqa: broad on purpose:
+        except BaseException as exc:            # broad on purpose:
             self._error = exc                   # whatever went wrong, report it
             ready.set()
         finally:

@@ -56,7 +56,6 @@ def test_local_genai_check_confirms_the_no_server_path():
 
 
 def test_ovms_serving_is_platform_aware(monkeypatch):
-    from ovat.cli import diagnostics
 
     # On macOS: never "not on PATH"; the honest answer is "does not run here".
     monkeypatch.setattr(diagnostics.sys, "platform", "darwin")
@@ -76,7 +75,6 @@ def test_ovms_serving_is_platform_aware(monkeypatch):
 
 
 def test_ovms_serving_reports_a_config_supplied_binary(monkeypatch, tmp_path):
-    from ovat.cli import diagnostics
     monkeypatch.setattr(diagnostics.sys, "platform", "linux")
     import ovat.core.ovms_locator as locator
     exe = tmp_path / locator._EXE
@@ -89,7 +87,6 @@ def test_ovms_serving_reports_a_config_supplied_binary(monkeypatch, tmp_path):
 def test_doctor_warns_when_ovms_is_not_the_pinned_build(monkeypatch, tmp_path):
     """A pin only helps if the running build matches it; 2026.2.1 answered
     42/60 against the pin's 56/60 on the AI PC, and nothing said so."""
-    from ovat.cli import diagnostics
     from ovat.core import ovms_installer
     monkeypatch.setattr(diagnostics.sys, "platform", "linux")
     import ovat.core.ovms_locator as locator

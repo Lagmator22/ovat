@@ -10,7 +10,6 @@ import json
 import os
 import stat
 import sys
-import threading
 import time
 
 import pytest
