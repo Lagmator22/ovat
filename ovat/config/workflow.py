@@ -159,8 +159,9 @@ class ModelConfig(StrictModel):
     # to performance degradation and endless repetitions" is on the Qwen3
     # card (Qwen/Qwen3-8B), not Qwen3.5's; Qwen3.5's card only says
     # presence_penalty can reduce endless repetitions. OVMS accepts all of them
-    # (docs/model_server_rest_api_chat.md). Which preset suits OVAT's agents
-    # is NOT yet measured, which is why nothing here is switched on.
+    # (docs/model_server_rest_api_chat.md). Measured on OVMS 2026.4.1
+    # (2026-10-08): the Qwen3.5 card's thinking preset showed no measurable
+    # effect on OVAT's agents, so nothing here is switched on.
     #
     # seed makes a sampled run repeatable, the job temperature 0.0 was doing.
     top_p: float | None = Field(default=None, gt=0, le=1)
@@ -243,7 +244,8 @@ class ModelConfig(StrictModel):
     # July 2025 and in the 2026.2.1 parameter table; OVAT never passed it.
     # Measured on the AI PC: Qwen3.5 wrote malformed <parameter> markup 4
     # times in 5 on a fresh server, the drift Ollama #18563 also records.
-    # Whether this prevents that is NOT yet measured, so it is off.
+    # Measured on OVMS 2026.4.1 (2026-10-08), 15 questions x 4 engines: 55/60
+    # with it on against 56/60 off, so it stays off.
     ovms_tool_guided_generation: bool = False
     # Total context window of the model in tokens (used by the TUI context
     # indicator). When unset, OVAT reads max_position_embeddings from a local
