@@ -1,3 +1,4 @@
+# Changed by OVAT from Mistral Vibe (commit 4ae5c59). See NOTICE.
 from __future__ import annotations
 
 import time
