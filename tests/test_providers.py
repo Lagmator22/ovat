@@ -650,6 +650,31 @@ def test_ovms_provider_accumulates_streamed_tool_calls_by_index():
     assert call.function.arguments == '{"query": "leave"}'
 
 
+def test_streamed_tool_calls_without_a_server_id_get_unique_ids():
+    """The fallback id was "call_0", "call_1" on EVERY reply, so when a
+    server sent no ids, two turns of one conversation carried the same
+    tool-call id and their results could not be told apart."""
+    from types import SimpleNamespace
+    provider = OVMSLLMProvider(base_url="http://localhost:8000/v3", model="m")
+
+    def tc(index):
+        return SimpleNamespace(
+            index=index, id=None,
+            function=SimpleNamespace(name="search_docs", arguments="{}"))
+
+    provider.client.chat.completions.create = lambda **kw: iter([
+        _chunk(tool_calls=[tc(0), tc(1)]),
+        _chunk(finish_reason="tool_calls"),
+    ])
+    ids = []
+    for _ in range(2):                       # two replies, as in two turns
+        out = provider.chat([{"role": "user", "content": "hi"}],
+                            on_token=lambda piece: None)
+        ids += [call.id for call in out["tool_calls"]]
+    assert len(set(ids)) == 4, ids
+    assert all(i.startswith("call_") for i in ids)
+
+
 def test_ovms_provider_does_not_stream_on_npu_so_usage_survives():
     from ovat.agent.factory import build_llm
     from ovat.config.workflow import WorkflowConfig

@@ -28,11 +28,18 @@ ovat serve workflow.yml                       # start the model server
 ovat run workflow.yml --input "what do my notes say about Q3?"
 ```
 
+The starter config has no document index yet, so until you add a `rag:`
+section `search_docs` answers with a placeholder. `ovat doctor workflow.yml`
+says so. [Search your documents](#search-your-documents-rag) shows how to
+index your notes.
+
 An **agent** is a language model that can call your functions ("tools"):
 search your files, transcribe a recording, describe an image. OVAT builds
 that agent from a config file and runs it on your own machine, through
 [OpenVINO Model Server](https://docs.openvino.ai/2026/model-server/ovms_what_is_openvino_model_server.html)
-(OVMS). No API keys, no cloud, nothing leaves the machine.
+(OVMS). The model runs on your machine and needs no API key. OVAT sends
+nothing on its own; see [What leaves the machine](#what-leaves-the-machine)
+for the tools that do, when you add them.
 
 > **New here?** The [OVAT docs site](https://lagmator22.github.io/ovat-navigate/)
 > walks through the project and the codebase step by step.
@@ -333,7 +340,7 @@ stops, and Ctrl-C stops it early. `--max-tokens N` sets a cap.
 
 | Use case | Folder | Shows |
 | --- | --- | --- |
-| **RAG** | [`examples/rag/`](examples/rag/) | Answers from your own documents, naming the file each answer came from |
+| **RAG** | [`examples/rag/`](examples/rag/) | Answers from your own documents, and lists the files the search returned |
 | **ReAct** | [`examples/react/`](examples/react/) | The same agent through LangChain, and all four engines compared |
 | **Audio + vision** | [`examples/audio-multimodal/`](examples/audio-multimodal/) | Transcribe a `.wav`, describe an image |
 | **OpenTelemetry** | [`examples/plano/`](examples/plano/) | Request traces through the plano AI gateway |
@@ -395,7 +402,7 @@ Twelve tools are built in. Name the ones you want under `tools:`.
 | `write_file` | Creates or replaces a file in the project | ask |
 | `edit` | Replaces text in a file | ask |
 | `shell` | Runs a command in the project folder | ask |
-| `web_fetch` | Fetches a web page | ask |
+| `web_fetch` | Fetches a web page. Connects directly and ignores proxy settings | ask |
 | `web_search` | Searches the web | ask |
 
 `ask` means you are asked first (once, for the session, or always). With
@@ -414,8 +421,9 @@ it looks nearby for a very similar name, uses that, and says so in its result,
 so you can always see which file was really used.
 
 Any [MCP](https://modelcontextprotocol.io) server (MCP is a standard way to
-plug tools into an agent) works as a tool too. The built-in tools are also MCP
-servers themselves, so other agents can use them.
+plug tools into an agent) works as a tool too. Three built-in tools,
+`search_docs`, `transcribe` and `describe_image`, also run as MCP servers
+(`python -m ovat.tools.search_docs`), so other agents can use them.
 
 ```yaml
 tools:
@@ -431,6 +439,18 @@ An MCP server starts with only a few of your environment variables (such as
 shell. `env:` passes on the ones it needs.
 
 ---
+
+### What leaves the machine
+
+OVAT itself sends nothing. These send what you give them, and only when your
+workflow names them: `web_fetch`, `web_search`, `api` subagents, A2A peers and
+MCP servers. Two libraries OVAT uses can also call out on their own:
+
+- **OpenVINO** is set up to send a usage event to Google Analytics when it is
+  imported, unless you opt out. Run `opt_in_out --opt_out` once (the command
+  comes with OpenVINO).
+- **FastMCP** checks PyPI for a newer FastMCP when an MCP server starts. OVAT
+  turns this off for its own tool servers.
 
 ## Which device runs what
 
@@ -458,8 +478,10 @@ The details are in
 three open the same app, a chat-first TUI and a local coding and research
 agent. The conversation is the whole screen: answers stream in, each tool
 call is a card (file changes show as diffs), and the bar shows the model,
-device and live CPU, GPU, NPU and RAM. Anything that writes, runs a command
-or leaves the machine asks first: once, for the session, or always.
+device and live CPU, GPU, NPU and RAM. The built-in tools that write, run a
+command or leave the machine ask first: once, for the session, or always. MCP
+servers you start over stdio, and MCP or A2A servers on localhost, are allowed
+by default; give them `permission: ask` to be asked.
 
 <div align="center">
 <img src="docs/assets/screens/agent-tui/hero-agent-start.png" width="860px" alt="The OVAT agent TUI right after start on an Intel AI PC: the banner says OVAT v1.2.0, Qwen3.5-4B-int4-ov on GPU, native engine, 1 tool and 4 subagents. The slash menu is open, and the bar shows live CPU, GPU, NPU and RAM.">

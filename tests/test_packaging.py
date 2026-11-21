@@ -54,6 +54,26 @@ def test_the_model_download_tool_is_a_core_dependency():
     assert any("huggingface" in d.replace("_", "-").lower() for d in deps)
 
 
+def test_packages_imported_directly_are_declared():
+    """tools/mcp_client.py imports `mcp` and `anyio` itself. Only fastmcp was
+    declared, so both arrived by way of fastmcp's own dependencies, which
+    fastmcp is free to change."""
+    pyproject = Path(__file__).parents[1] / "pyproject.toml"
+    metadata = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    deps = metadata["project"]["dependencies"]
+    for name in ("mcp", "anyio"):
+        assert name in deps, f"{name} is imported directly but not declared"
+
+
+def test_textual_has_a_ceiling():
+    """The copied terminal client was written against one Textual release
+    (upstream pins it exactly). With no ceiling, the next Textual release
+    could break `pip install "ovat[tui]"` for everyone on the day it ships,
+    and CI would only notice afterwards."""
+    (textual,) = [d for d in _extras()["tui"] if d.startswith("textual")]
+    assert "<" in textual, f"textual has no upper bound: {textual!r}"
+
+
 def _expanded(extras: dict, name: str) -> set:
     """An extra's packages, with `ovat[a,b]` entries replaced by those
     extras' packages (the way pip resolves them)."""

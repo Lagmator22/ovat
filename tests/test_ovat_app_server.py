@@ -826,7 +826,7 @@ def test_a_prompt_sent_while_busy_waits_in_the_queue_and_runs_next():
             assert not queue.paused
             fake.turn_gate.set()
             await events_until(session, is_completed)         # the first
-            seen = await events_until(
+            await events_until(
                 session, lambda e: is_completed(e)
                 and e.turn.queue_item_id == second.id)
             assert fake.asked == ["first", "second"]

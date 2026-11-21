@@ -13,8 +13,39 @@ from pydantic import (BaseModel, ConfigDict, Field, field_validator,
                       model_validator)
 
 
-# What an environment variable name looks like (POSIX shell rules).
+# What an environment variable name looks like (POSIX shell rules). Anything
+# else in a field that wants a NAME is almost certainly a pasted secret.
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# The values each choice field accepts. Checked when the YAML loads, so a typo
+# such as `device: GPUU` is one error naming the field, not a failure later in
+# a server, a pipeline or the factory. The factory reads these same tuples.
+AGENT_TYPES = ("native", "react", "llamaindex", "openai-agents")
+TOOL_TYPES = ("builtin", "mcp_stdio", "mcp_http", "mcp_sse", "a2a")
+MODEL_PROVIDERS = ("ovms", "genai")
+EMBEDDINGS_PROVIDERS = ("genai", "ovms")
+RETRIEVER_PROVIDERS = ("sqlite-vec", "memory")
+_RETRIEVER_ALIASES = ("sqlite_vec", "in-memory", "in_memory")
+# OpenVINO device names. A suffix is allowed: GPU.1 picks a card,
+# AUTO:GPU,CPU and HETERO:GPU,CPU list devices.
+_DEVICES = ("CPU", "GPU", "NPU", "AUTO", "HETERO", "MULTI")
+
+
+def _one_of(value: str, allowed: tuple, what: str, extra: tuple = ()) -> str:
+    if value not in allowed + extra:
+        raise ValueError(f"Unknown {what} '{value}'. Supported: "
+                         f"{', '.join(allowed)}.")
+    return value
+
+
+def _check_device(value: str | None, field: str) -> str | None:
+    if value is None:
+        return value
+    base = re.split(r"[.:]", value, maxsplit=1)[0]
+    if base not in _DEVICES:
+        raise ValueError(f"{field} '{value}' is not an OpenVINO device. Use "
+                         f"CPU, GPU or NPU (or GPU.1, AUTO, HETERO:GPU,CPU).")
+    return value
 
 
 class StrictModel(BaseModel):
@@ -44,8 +75,10 @@ class ModelConfig(StrictModel):
     provider: str = "ovms"
     device: str = "CPU"                         # CPU, GPU, or NPU
     ovms_url: str = "http://localhost:8000/v3"  # OVMS OpenAI-compatible endpoint
-    # Port for OVMS to bind to when running via `ovat serve`
-    ovms_port: int = 8000
+    # Port for OVMS to bind to when running via `ovat serve`. It may differ
+    # from the port in ovms_url on purpose: examples/plano puts a gateway on
+    # 8000 in front of OVMS on 8002.
+    ovms_port: int = Field(default=8000, ge=1, le=65535)
     # How OVMS decodes tool calls. None means "derive it from the model name"
     # (see _derive_tool_parser below); an explicit value always wins.
     tool_parser: str | None = None
@@ -88,7 +121,7 @@ class ModelConfig(StrictModel):
     # 0.0 by default: an agent that has to emit well-formed tool calls wants
     # the most likely token, and a reproducible run is worth more here than a
     # varied one.
-    temperature: float = 0.0
+    temperature: float = Field(default=0.0, ge=0)
     # Ceiling on ONE reply, sent to OVMS as max_tokens.
     #
     # WHY THERE IS A DEFAULT AT ALL. Nothing capped a generation before this,
@@ -126,8 +159,9 @@ class ModelConfig(StrictModel):
     # to performance degradation and endless repetitions" is on the Qwen3
     # card (Qwen/Qwen3-8B), not Qwen3.5's; Qwen3.5's card only says
     # presence_penalty can reduce endless repetitions. OVMS accepts all of them
-    # (docs/model_server_rest_api_chat.md). Which preset suits OVAT's agents
-    # is NOT yet measured, which is why nothing here is switched on.
+    # (docs/model_server_rest_api_chat.md). Measured on OVMS 2026.4.1
+    # (2026-10-08): the Qwen3.5 card's thinking preset showed no measurable
+    # effect on OVAT's agents, so nothing here is switched on.
     #
     # seed makes a sampled run repeatable, the job temperature 0.0 was doing.
     top_p: float | None = Field(default=None, gt=0, le=1)
@@ -210,7 +244,8 @@ class ModelConfig(StrictModel):
     # July 2025 and in the 2026.2.1 parameter table; OVAT never passed it.
     # Measured on the AI PC: Qwen3.5 wrote malformed <parameter> markup 4
     # times in 5 on a fresh server, the drift Ollama #18563 also records.
-    # Whether this prevents that is NOT yet measured, so it is off.
+    # Measured on OVMS 2026.4.1 (2026-10-08), 15 questions x 4 engines: 55/60
+    # with it on against 56/60 off, so it stays off.
     ovms_tool_guided_generation: bool = False
     # Total context window of the model in tokens (used by the TUI context
     # indicator). When unset, OVAT reads max_position_embeddings from a local
@@ -280,6 +315,16 @@ class ModelConfig(StrictModel):
                 f"that environment variable is not set. Set it to the OVMS "
                 f"API key, or remove ovms_api_key_env from the workflow.")
         return key
+
+    @field_validator("provider")
+    @classmethod
+    def _known_provider(cls, value):
+        return _one_of(value, MODEL_PROVIDERS, "model provider")
+
+    @field_validator("device")
+    @classmethod
+    def _known_device(cls, value):
+        return _check_device(value, "model.device")
 
     @model_validator(mode="after")
     def _top_k_is_never_zero(self):
@@ -357,6 +402,19 @@ class ToolConfig(StrictModel):
     # default, so nothing that works today stops working.
     model: str | None = None
     device: str | None = None       # CPU, GPU or NPU; unset asks DeviceManager
+
+    @field_validator("type")
+    @classmethod
+    def _known_type(cls, value):
+        if value not in TOOL_TYPES:
+            raise ValueError(f"Unsupported tool type '{value}'. Supported: "
+                             f"{', '.join(TOOL_TYPES)}.")
+        return value
+
+    @field_validator("device")
+    @classmethod
+    def _known_device(cls, value):
+        return _check_device(value, "tools[].device")
 
     # type: a2a, mcp_http or mcp_sse. For a2a, another agent reached over A2A
     # and used as ONE tool; for mcp_http and mcp_sse, a remote MCP server
@@ -438,15 +496,23 @@ class AgentConfig(StrictModel):
     #   react          LangChain      (pip install 'ovat[langchain]')
     #   llamaindex     LlamaIndex     (pip install 'ovat[llamaindex]')
     #   openai-agents  OpenAI Agents  (pip install 'ovat[openai-agents]')
-    # Kept as str instead of Literal so unknown engines produce an actionable
-    # error naming every supported engine and extra in factory.py.
+    # A str checked against AGENT_TYPES rather than a Literal, so the error
+    # is one sentence naming every engine.
     type: str = "native"
-    max_iterations: int = 10            # Safety cap on model-tool iterations
+    max_iterations: int = Field(default=10, ge=1)   # cap on model-tool rounds
     system_prompt: str | None = None    # optional persona for the agent
     # Add the project folder's AGENTS.md (and OVAT.md) to the system prompt
     # when the agent is built. Off by default: an existing workflow must not
     # start reading files it never read before.
     project_context: bool = False
+
+    @field_validator("type")
+    @classmethod
+    def _known_engine(cls, value):
+        if value not in AGENT_TYPES:
+            raise ValueError(f"Unknown agent type '{value}'. Supported: "
+                             f"{', '.join(AGENT_TYPES)}.")
+        return value
 
 
 class EmbeddingsConfig(StrictModel):
@@ -462,7 +528,17 @@ class EmbeddingsConfig(StrictModel):
     # is the served model name. Same field, read differently per provider.
     model: str = "models/bge-small-en-v1.5"
     device: str = "CPU"         # genai only: CPU or NPU on the AI PC
-    dim: int = 384              # bge-small emits 384 floats; the table must match
+    dim: int = Field(default=384, ge=1)   # bge-small emits 384 floats
+
+    @field_validator("provider")
+    @classmethod
+    def _known_provider(cls, value):
+        return _one_of(value, EMBEDDINGS_PROVIDERS, "embeddings provider")
+
+    @field_validator("device")
+    @classmethod
+    def _known_device(cls, value):
+        return _check_device(value, "rag.embeddings.device")
 
 
 class RetrieverConfig(StrictModel):
@@ -482,13 +558,28 @@ class RetrieverConfig(StrictModel):
     # has nowhere to put it.
     db_path: str = "ovat_index.db"
 
+    @field_validator("provider")
+    @classmethod
+    def _known_provider(cls, value):
+        return _one_of(value, RETRIEVER_PROVIDERS, "retriever provider",
+                       extra=_RETRIEVER_ALIASES)
+
 
 class ChunkConfig(StrictModel):
     """How `ovat index` slices a document before embedding it."""
 
-    size: int = 512        # characters per chunk; roughly a paragraph
-    overlap: int = 64      # characters shared with the next chunk so meaning
-    #                        is not cut in half at a boundary
+    size: int = Field(default=512, ge=1)    # characters per chunk
+    # Characters shared with the next chunk, so meaning is not cut in half at
+    # a boundary. Smaller than size, or the window would never move forward.
+    overlap: int = Field(default=64, ge=0)
+
+    @model_validator(mode="after")
+    def _overlap_is_smaller_than_size(self):
+        if self.overlap >= self.size:
+            raise ValueError(
+                f"rag.chunk.overlap ({self.overlap}) must be smaller than "
+                f"rag.chunk.size ({self.size}).")
+        return self
 
 
 class RagConfig(StrictModel):
@@ -502,11 +593,6 @@ class RagConfig(StrictModel):
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
     retriever: RetrieverConfig = Field(default_factory=RetrieverConfig)
     chunk: ChunkConfig = Field(default_factory=ChunkConfig)
-
-
-# What an environment variable name looks like. Anything else in a field
-# that wants a NAME is almost certainly a pasted secret.
-_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _check_env_name(value: str, field: str) -> None:

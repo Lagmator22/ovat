@@ -151,4 +151,5 @@ def describe_image(image_path: str,
 
 if __name__ == "__main__":
     # Standalone MCP server mode, like search_docs and transcribe.
-    mcp.run()
+    from ovat.tools.mcp_serve import serve
+    serve(mcp)

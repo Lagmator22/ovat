@@ -603,6 +603,51 @@ def test_web_fetch_refuses_every_non_global_address():
     assert check_safe_url("http://100.64.0.1/", allow_private_lan=True) is None
 
 
+def test_web_fetch_refuses_when_the_host_does_not_resolve(monkeypatch):
+    """A failed lookup used to mean "no objection, nothing pinned": the
+    request went on through urllib's default handlers, which looked the name
+    up again with no address check. Whoever answers that second lookup picks
+    the address. Now the first failure is the answer."""
+    import socket
+    from ovat.tools import web_fetch
+
+    lookups = []
+    dialed = []
+
+    def failing_then_loopback(host, *args, **kwargs):
+        lookups.append(host)
+        if len(lookups) == 1:
+            raise socket.gaierror("Name or service not known")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0))]
+
+    def no_connection(address, *args, **kwargs):
+        dialed.append(address)
+        raise OSError("refused")
+
+    monkeypatch.setattr(web_fetch.socket, "getaddrinfo", failing_then_loopback)
+    monkeypatch.setattr(web_fetch.socket, "create_connection", no_connection)
+
+    out = web_fetch_impl("http://flaky.example/page", timeout=1)
+    assert _is_error(out) and "could not resolve the host 'flaky.example'" in out
+    assert lookups == ["flaky.example"], "the name was looked up a second time"
+    assert dialed == [], "a connection was attempted after the lookup failed"
+    assert web_fetch.check_safe_url("http://flaky.example/") is not None
+
+
+def test_web_fetch_connects_directly_and_ignores_a_proxy(site, monkeypatch):
+    """With HTTP_PROXY set, urllib pointed the request at the proxy while the
+    pinned connection still dialed the target's IP, on the proxy's port. So
+    web_fetch failed on every machine behind a proxy. It ignores proxies now:
+    the address it checked is the address it fetches."""
+    for name in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy",
+                 "ALL_PROXY", "all_proxy"):
+        monkeypatch.setenv(name, "http://127.0.0.1:9")
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    out = web_fetch_impl(site + "/text", timeout=2)
+    assert out == "plain words", out
+
+
 def test_web_fetch_pins_resolved_ip_against_dns_rebinding_toctou(
         site, monkeypatch):
     """web_fetch dials the IP validated during lookup instead of re-resolving

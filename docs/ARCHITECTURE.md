@@ -56,7 +56,7 @@ The terms this document uses, in plain words.
 | Term | Meaning |
 | --- | --- |
 | **Agent** | A program where a language model can ask for your functions to be run, read the results, and then answer. |
-| **Tool** | One of those functions, with a description the model reads. OVAT ships three: `search_docs`, `transcribe` and `describe_image`. |
+| **Tool** | One of those functions, with a description the model reads. OVAT ships twelve (the README lists them). Three of them, `search_docs`, `transcribe` and `describe_image`, also run as MCP servers. |
 | **Tool call** | The model's request to run a tool: a name plus JSON arguments. The model only writes the request; OVAT runs the Python function. |
 | **Engine** | The code that runs the agent loop. OVAT has four: its own `native` loop, LangChain (`react`), LlamaIndex and the OpenAI Agents SDK. You pick one with `agent.type`. |
 | **workflow.yml** | The one config file that describes an agent: model, device, tools, engine and prompt. |
@@ -383,9 +383,9 @@ What the loop does with each reply:
   ```` ```json ````. `strip_code_fence` lives in `ovat/text.py` and is shared
   with the OpenAI Agents engine, the only other engine that parses arguments
   itself.
-- **A misspelt tool name is matched.** If the model names a tool that does not
-  exist, the loop takes the closest real name (`difflib`, 60% similarity), and
-  the trace records the tool that actually ran.
+- **A misspelt tool name is refused.** If the model names a tool that does not
+  exist, no tool runs. The model gets the list of real names back as the tool
+  result and asks again.
 - **`Session` is thread-safe.** The TUI streams and saves on a worker thread
   while the main thread can `/load` or `/clear`. `save()` copies under the lock
   and writes outside it.

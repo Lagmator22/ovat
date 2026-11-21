@@ -136,6 +136,21 @@ jobs:
               # slower than Linux's.
               run: python -m pytest -q -m "not live" -n auto --dist loadfile
 
+    lint:
+        # Pyflakes only (see [tool.ruff] in pyproject.toml): unused imports,
+        # undefined names, dead variables. Pinned, so a new ruff release
+        # cannot turn a green commit red.
+        name: ruff
+        runs-on: ubuntu-22.04
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+            - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+              with:
+                  python-version: "3.12"
+            - run: python -m pip install ruff==0.14.0
+            - run: ruff check ovat scripts tests
+
     isolation:
         # AGENTS.md rule 3: the plain CLI must work with NO optional extra
         # installed. Nothing in the suite above can prove that, because it

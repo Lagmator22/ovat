@@ -37,14 +37,14 @@ Which model to run, where, and how to reach it.
 | `provider` | string | `ovms` | - | `ovms` talks to the server and can call tools; `genai` runs in-process and cannot. |
 | `device` | string | `CPU` | - | Where the model runs. `NPU` needs a channel-wise INT4 export; see the README. |
 | `ovms_url` | string | `http://localhost:8000/v3` | - | OpenAI-compatible endpoint. Ends in `/v3` unless a gateway sits in front. |
-| `ovms_port` | integer | `8000` | - | Port `ovat serve` binds OVMS to. |
+| `ovms_port` | integer | `8000` | >= 1, <= 65535 | Port `ovat serve` binds OVMS to. |
 | `tool_parser` | string \| null | `null` | - | How OVMS decodes tool calls. `qwen3coder` for Qwen3.5, Qwen3.6 and Qwen3-Coder, `hermes3` for Qwen3, `phi4` for Phi-4-mini, `gptoss`, `llama3` for Llama-3.2, `devstral`. Derived from `name` when omitted; `hermes3` for a family OVAT does not recognise. |
 | `reasoning_parser` | string \| null | `null` | - | For thinking models that emit a separate reasoning channel. |
 | `enable_thinking` | boolean \| null | `null` | - | Turn a thinking model's reasoning on or off via its chat template. Unset leaves the template's default. |
 | `source_model` | string \| null | `null` | - | Hugging Face id `ovat serve` downloads on first run. |
 | `model_repository_path` | string | `models` | - | Folder OVMS keeps its models in. |
 | `request_timeout` | float | `1200.0` | - | Cap on one HTTP request, in seconds. A CPU agent turn can genuinely take minutes. |
-| `temperature` | float | `0.0` | - | Sampling temperature, applied by every engine. `0.0` keeps tool calls well-formed. |
+| `temperature` | float | `0.0` | >= 0 | Sampling temperature, applied by every engine. `0.0` keeps tool calls well-formed. |
 | `max_tokens` | integer \| null | `4096` | > 0 | Ceiling on one reply. `null` is unbounded, which lets a model that never stops run until the client gives up. |
 | `top_p` | float \| null | `null` | > 0, <= 1 | Nucleus sampling cut-off. Unset sends nothing. The Qwen3.5 card suggests 0.8 without thinking. |
 | `top_k` | integer \| null | `null` | >= -1 | Sample from the k most likely tokens; `-1` for all. Unset sends nothing. |
@@ -69,8 +69,8 @@ One entry per tool. `tools:` is a LIST.
 | `name` | string | **required** | - | `search_docs`, `transcribe`, `describe_image`, the coding tools `read_file`, `write_file`, `edit`, `grep`, `shell` (they work inside the folder you run from; the last three ask first), `todo` (the agent's own task list), `ask_user` (asks the person a question; agent TUI only), `web_fetch` and `web_search` (ask first), or any tool an MCP server advertises. |
 | `type` | string | `builtin` | - | `builtin` runs in-process; `mcp_stdio` launches an external MCP server; `mcp_http` and `mcp_sse` connect to a remote MCP server over Streamable HTTP or SSE; `a2a` asks another agent over A2A (needs `pip install 'ovat[a2a]'`). |
 | `command` | list[string] \| null | `null` | - | Argv that launches the MCP server. Required when `type: mcp_stdio`. |
-| `env` | map of string to string \| null | `null` | - | Extra environment for an `mcp_stdio` server, which otherwise sees only HOME, PATH and a few more. `${VAR}` is expanded from your shell. |
-| `headers` | map of string to string \| null | `null` | - | Extra HTTP headers for an `mcp_http` or `mcp_sse` server. `${VAR}` in values is expanded from your shell. |
+| `env` | map of string to string \| null | `null` | - | Extra environment for an `mcp_stdio` server, which otherwise sees only HOME, PATH and a few more. `${VAR}` is expanded from your shell; an unset variable is an error. |
+| `headers` | map of string to string \| null | `null` | - | Extra HTTP headers for an `mcp_http` or `mcp_sse` server. `${VAR}` in values is expanded from your shell; an unset variable is an error. |
 | `model` | string \| null | `null` | - | Where this tool's own weights live. `transcribe` and `describe_image` only. |
 | `device` | string \| null | `null` | - | Device for this tool's model, separate from the agent's. Omit to let the device router choose. |
 | `url` | string \| null | `null` | - | Base URL of the remote agent or MCP server. Required when `type: a2a`, `mcp_http`, or `mcp_sse`. |
@@ -89,7 +89,7 @@ Which engine drives the tool loop.
 | Field | Type | Default | Constraints | Purpose |
 | --- | --- | --- | --- | --- |
 | `type` | string | `native` | - | Which engine runs the tool loop: `native` (built in), `react` (LangChain), `llamaindex`, or `openai-agents`. Each non-native one needs its matching extra, e.g. `pip install 'ovat[langchain]'`. |
-| `max_iterations` | integer | `10` | - | Safety cap on tool-calling rounds before the loop gives up. |
+| `max_iterations` | integer | `10` | >= 1 | Safety cap on tool-calling rounds before the loop gives up. |
 | `system_prompt` | string \| null | `null` | - | The agent's persona and standing instructions. |
 | `project_context` | boolean | `false` | - | Add the AGENTS.md and OVAT.md of the folder you run from to the system prompt (cut at 12,000 characters each). Off by default. |
 
@@ -102,7 +102,7 @@ Turning text into vectors.
 | `provider` | string | `genai` | - | `genai` embeds in-process; `ovms` asks the server. |
 | `model` | string | `models/bge-small-en-v1.5` | - | Folder holding the embedding model. |
 | `device` | string | `CPU` | - | Device for the embedder. Small and static-shaped, so NPU suits it. |
-| `dim` | integer | `384` | - | Vector width. **Must match the model** -- bge-small is 384. A mismatch corrupts the index rather than erroring. |
+| `dim` | integer | `384` | >= 1 | Vector width. **Must match the model** -- bge-small is 384. A mismatch corrupts the index rather than erroring. |
 
 ## `rag.retriever`
 
@@ -119,8 +119,8 @@ How a document is sliced before embedding.
 
 | Field | Type | Default | Constraints | Purpose |
 | --- | --- | --- | --- | --- |
-| `size` | integer | `512` | - | Characters per chunk before embedding. |
-| `overlap` | integer | `64` | - | Characters shared with the next chunk, so meaning is not cut in half at a boundary. |
+| `size` | integer | `512` | >= 1 | Characters per chunk before embedding. |
+| `overlap` | integer | `64` | >= 0 | Characters shared with the next chunk, so meaning is not cut in half at a boundary. |
 
 ## `subagents`
 

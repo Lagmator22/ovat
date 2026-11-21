@@ -6,7 +6,7 @@ readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 classifiers = [
-  "Development Status :: 5 - Production/Stable",
+  "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: Apache Software License",
@@ -37,6 +37,10 @@ dependencies = [
   "pyyaml",
   "pillow",
   "fastmcp",
+  # The MCP client (tools/mcp_client.py) imports both directly. They arrive
+  # through fastmcp today, but that is fastmcp's choice, not a promise.
+  "mcp",
+  "anyio",
   "sqlite-vec",
   # Imported directly (transcribe/vlm use numpy; the CLI renders with rich).
   # Declared here so we never depend on openvino/typer pulling them in for us.
@@ -79,7 +83,11 @@ voice = ["sounddevice>=0.5"]
 # agent TUI's copied widgets import anyio, jsonpatch and pyperclip directly;
 # they mostly arrive through other packages, but nothing guarantees that, so
 # they are named here.
-tui = ["textual", "pyfiglet", "anyio", "jsonpatch", "pyperclip",
+# Textual has a ceiling because the copied client was written against one
+# release: Mistral Vibe pins textual==8.2.8 at the commit OVAT copied, and a
+# new minor release could break every fresh install. 8.2.7 and 8.2.8 are the
+# versions the suite has run on. Raise the ceiling after testing a new one.
+tui = ["textual>=8.2.7,<8.3", "pyfiglet", "anyio", "jsonpatch", "pyperclip",
        "sounddevice>=0.5",
        # /config edits workflow.yml and must keep the user's comments; PyYAML
        # drops them. Not in the base install: only the settings screen writes.
@@ -95,7 +103,7 @@ a2a = ["a2a-sdk[http-server]>=1.2.2,<2", "uvicorn>=0.30"]
 # It names the other extras instead of repeating their packages, so the
 # lists cannot drift apart (pip resolves a package's own extras since 21.2).
 all = ["ovat[tui,a2a,langchain,llamaindex,openai-agents]"]
-dev = ["pytest", "pytest-cov", "pytest-xdist", "ovat[all]",
+dev = ["pytest", "pytest-cov", "pytest-xdist", "ovat[all]", "ruff==0.14.0",
        # tomllib is stdlib from 3.11; on 3.10, which we support and advertise,
        # the packaging tests need it under its original name.
        "tomli; python_version < '3.11'"]
@@ -112,6 +120,14 @@ markers = [
   "live: tests that need a running OVMS server (AI PC only, skipped elsewhere)",
   "rag: tests that need the bge-small embedding model on disk (auto-skip if absent)",
 ]
+
+# CI runs `ruff check`. Only pyflakes (F) for now: unused imports, undefined
+# names, dead variables. The copied terminal client is left as upstream wrote it.
+[tool.ruff]
+extend-exclude = ["ovat/tui/vibe"]
+
+[tool.ruff.lint]
+select = ["F"]
 
 [project.scripts]
 ovat = "ovat.cli.main:app"

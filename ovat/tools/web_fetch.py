@@ -283,10 +283,14 @@ def _resolve_safe_url(
         if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
             ip = ip.ipv4_mapped
         return str(ip), None
+    # A lookup that fails is a refusal. Returning "no objection" here let the
+    # request go on unpinned, where urllib looked the name up a second time
+    # with no address check at all.
+    unresolved = f"could not resolve the host '{host}'."
     try:
         infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
     except OSError:
-        return None, None
+        return None, unresolved
     pinned_ip: str | None = None
     for _, _, _, _, sockaddr in infos:
         raw_ip = str(sockaddr[0]).split("%")[0]
@@ -301,6 +305,8 @@ def _resolve_safe_url(
             if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
                 ip = ip.ipv4_mapped
             pinned_ip = str(ip)
+    if pinned_ip is None:
+        return None, unresolved
     return pinned_ip, None
 
 
@@ -339,11 +345,14 @@ def web_fetch_impl(url: str, timeout: int | None = None) -> str:
         pinned_ip, blocked = _resolve_safe_url(current)
         if blocked:
             return fail("web_fetch", blocked)
-        handlers: list = [_NoRedirect]
-        if pinned_ip:
-            handlers.extend([_PinnedHTTPHandler(pinned_ip),
-                             _PinnedHTTPSHandler(pinned_ip)])
-        opener = urllib.request.build_opener(*handlers)
+        # The empty ProxyHandler makes web_fetch connect directly and ignore
+        # HTTP_PROXY / HTTPS_PROXY. A proxy does its own lookup, so the address
+        # checked above would not be the one fetched; and urllib's default
+        # proxy handling made the pinned connection dial the target's IP on
+        # the PROXY's port, which never answered.
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), _NoRedirect,
+            _PinnedHTTPHandler(pinned_ip), _PinnedHTTPSHandler(pinned_ip))
         request = urllib.request.Request(current, headers={
             "User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9",
             "Accept": "text/html,application/xhtml+xml,application/xml;"

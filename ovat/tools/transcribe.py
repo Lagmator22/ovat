@@ -206,4 +206,5 @@ def transcribe(path: str, language: str = "en") -> str:
 
 if __name__ == "__main__":
     # Standalone MCP server entry point (`python -m ovat.tools.transcribe`).
-    mcp.run()
+    from ovat.tools.mcp_serve import serve
+    serve(mcp)

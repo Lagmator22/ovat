@@ -5,6 +5,7 @@ Uses the OpenAI Python SDK to call OVMS chat completions with server-side tool
 call decoding (``--tool_parser``) and returns normalized responses including
 token usage.
 """
+import uuid
 from dataclasses import dataclass
 
 from openai import OpenAI
@@ -216,7 +217,12 @@ class OVMSLLMProvider(LLMProvider):
                     idx = getattr(tc, "index", 0) or 0
                     slot = calls_by_index.get(idx)
                     if slot is None:
-                        slot = _StreamToolCall(id=f"call_{idx}")
+                        # A placeholder until the server sends its own
+                        # id. Unique, because "call_0" on every reply
+                        # gave two turns of one conversation the same
+                        # tool-call id when a server sent none.
+                        slot = _StreamToolCall(
+                            id=f"call_{uuid.uuid4().hex[:24]}")
                         calls_by_index[idx] = slot
                     if getattr(tc, "id", None):
                         slot.id = tc.id

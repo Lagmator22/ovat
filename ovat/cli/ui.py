@@ -193,7 +193,7 @@ def status_text(status: str) -> Text:
 # and it must not import from cli/. Re-exported under the old names so every
 # existing caller keeps working, and so there is still exactly ONE copy.
 from ovat.text import (  # noqa: E402  (re-export, deliberately at the bottom)
-    looks_like_undecoded_tool_call,
-    says_nothing,
-    strip_thinking,
+    looks_like_undecoded_tool_call as looks_like_undecoded_tool_call,
+    says_nothing as says_nothing,
+    strip_thinking as strip_thinking,
 )

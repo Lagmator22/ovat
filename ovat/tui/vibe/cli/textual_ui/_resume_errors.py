@@ -1,3 +1,4 @@
+# Changed by OVAT from Mistral Vibe (commit 4ae5c59). See NOTICE.
 """Map a failed session resume to the message shown in the transcript.
 
 Most resume failures surface the underlying error verbatim. A session written
