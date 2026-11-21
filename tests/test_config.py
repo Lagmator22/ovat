@@ -761,3 +761,51 @@ def test_ovms_api_key_env_refuses_what_is_not_a_variable_name(value):
     """Pasting the key itself here would leave it in the YAML in plain text."""
     with pytest.raises(ValidationError, match="NAME of an environment"):
         ModelConfig(name="m", ovms_api_key_env=value)
+
+
+# ---- values, not only key names, are checked when the YAML loads -------------
+
+@pytest.mark.parametrize("bad, phrase", [
+    ({"model": {"name": "m", "device": "GPUU"}}, "not an OpenVINO device"),
+    ({"model": {"name": "m", "provider": "ovmss"}}, "Unknown model provider"),
+    ({"model": {"name": "m", "ovms_port": 99999}}, "ovms_port"),
+    ({"model": {"name": "m", "temperature": -1}}, "temperature"),
+    ({"model": {"name": "m"}, "agent": {"type": "natve"}}, "Unknown agent type"),
+    ({"model": {"name": "m"}, "agent": {"max_iterations": -3}}, "max_iterations"),
+    ({"model": {"name": "m"}, "tools": [{"name": "x", "type": "builtn"}]},
+     "Unsupported tool type"),
+    ({"model": {"name": "m"}, "tools": [{"name": "transcribe", "device": "NPUU"}]},
+     "not an OpenVINO device"),
+    ({"model": {"name": "m"}, "rag": {"embeddings": {"provider": "zzz"}}},
+     "Unknown embeddings provider"),
+    ({"model": {"name": "m"}, "rag": {"embeddings": {"device": "gpu-ish"}}},
+     "not an OpenVINO device"),
+    ({"model": {"name": "m"}, "rag": {"retriever": {"provider": "zzz"}}},
+     "Unknown retriever provider"),
+    ({"model": {"name": "m"}, "rag": {"chunk": {"size": 10, "overlap": 99}}},
+     "must be smaller than"),
+])
+def test_a_wrong_value_fails_when_the_yaml_loads(bad, phrase):
+    """Each of these loaded without a word and failed later, somewhere else,
+    with a different message (or, for chunk overlap >= size, never moved the
+    window forward)."""
+    with pytest.raises(ValueError, match=phrase):
+        WorkflowConfig(**bad)
+
+
+@pytest.mark.parametrize("device", ["CPU", "GPU", "NPU", "GPU.1", "AUTO",
+                                    "AUTO:GPU,CPU", "HETERO:GPU,CPU"])
+def test_every_openvino_device_spelling_still_loads(device):
+    assert WorkflowConfig(model={"name": "m", "device": device}).model.device == device
+
+
+def test_retriever_aliases_the_factory_accepts_still_load():
+    for provider in ("sqlite-vec", "sqlite_vec", "memory", "in-memory", "in_memory"):
+        WorkflowConfig(model={"name": "m"}, rag={"retriever": {"provider": provider}})
+
+
+def test_ovms_port_may_differ_from_the_url_port():
+    """examples/plano puts a gateway on 8000 in front of OVMS on 8002."""
+    cfg = WorkflowConfig(model={"name": "m", "ovms_port": 8002,
+                                "ovms_url": "http://localhost:8000/v1"})
+    assert cfg.model.ovms_port == 8002

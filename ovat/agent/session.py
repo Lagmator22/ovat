@@ -28,22 +28,14 @@ class Session:
             self.messages.append({"role": "user", "content": content})
 
     def add_assistant(self, content: str | None = None,
-                      tool_calls: list[dict] | None = None,
-                      sources: list[str] | None = None,
-                      sources_label: str | None = None) -> None:
-        """Record an assistant reply, optional tool calls, and citation metadata.
+                      tool_calls: list[dict] | None = None) -> None:
+        """Record an assistant reply and its tool calls, if any.
 
         Attaches ``tool_calls`` only when non-empty so text replies stay compact.
-        ``sources`` and ``sources_label`` are stored for UI transcript redraws
-        on reload or toggle, and stripped before sending messages to providers.
         """
         message: dict = {"role": "assistant", "content": content}
         if tool_calls:
             message["tool_calls"] = tool_calls
-        if sources:
-            message["sources"] = list(sources)
-            if sources_label:
-                message["sources_label"] = sources_label
         with self._lock:
             self.messages.append(message)
 

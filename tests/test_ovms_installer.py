@@ -81,6 +81,11 @@ def test_missing_os_release_falls_back(monkeypatch):
 # Checksums
 # --------------------------------------------------------------------------
 
+def _not_found(url):
+    import urllib.error
+    return urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+
 def test_checksum_tries_both_upstream_namings(monkeypatch):
     """Upstream is inconsistent: `.zip.sha256` for one build, `.sha256` for
     the other. Trying only the documented one silently skips verification."""
@@ -98,7 +103,7 @@ def test_checksum_tries_both_upstream_namings(monkeypatch):
         seen.append(url)
         if url.endswith("_python_on.sha256"):
             return Response(f"{digest}  ovms.zip\n".encode())
-        raise OSError("404")
+        raise _not_found(url)
 
     monkeypatch.setattr(installer.urllib.request, "urlopen", fake_urlopen)
     got = installer._expected_sha256(
@@ -110,11 +115,75 @@ def test_checksum_tries_both_upstream_namings(monkeypatch):
 
 def test_missing_checksum_is_tolerated(monkeypatch):
     def always_404(url, timeout=None):
-        raise OSError("404")
+        raise _not_found(url)
 
     monkeypatch.setattr(installer.urllib.request, "urlopen", always_404)
     # Releases without a published hash return None rather than blocking install.
     assert installer._expected_sha256("https://example.invalid/x.zip") is None
+
+
+@pytest.mark.parametrize("failure", [
+    lambda url: __import__("urllib.error").error.HTTPError(
+        url, 503, "Service Unavailable", {}, None),
+    lambda url: __import__("urllib.error").error.URLError("timed out"),
+    lambda url: ConnectionResetError("reset by peer"),
+])
+def test_a_checksum_that_cannot_be_fetched_stops_the_install(
+        tmp_path, monkeypatch, failure):
+    """Every fetch error used to count as "this release publishes no
+    checksum", and the install went ahead unverified. So whoever could break
+    one small request could switch the check off. Only a 404 means there is
+    no checksum; anything else stops before the archive is downloaded."""
+    downloaded = []
+    monkeypatch.setattr(installer, "asset_for_platform",
+                        lambda version=None: (
+                            "ovms_x_9.9_python_on.zip",
+                            "https://example.invalid/ovms_x_9.9_python_on.zip"))
+    monkeypatch.setattr(installer, "_download",
+                        lambda url, target, on_progress=None:
+                        downloaded.append(url))
+
+    def broken(url, timeout=None):
+        raise failure(url)
+
+    monkeypatch.setattr(installer.urllib.request, "urlopen", broken)
+    root = tmp_path / "root"
+    with pytest.raises(RuntimeError, match="could not fetch the checksum"):
+        installer.install(root=str(root))
+    assert downloaded == [], "the archive was downloaded with nothing to check it against"
+    assert installer.installed_binary(str(root)) is None
+
+
+def test_the_pinned_version_is_checked_against_hashes_in_the_source(
+        monkeypatch):
+    """A hash fetched from the same release as the archive only catches a
+    corrupt download: whoever replaces the archive replaces the hash file
+    too. The pinned version's hashes are in the code, and no request is made
+    for them."""
+    def no_network(url, timeout=None):
+        raise AssertionError(f"fetched {url}")
+
+    monkeypatch.setattr(installer.urllib.request, "urlopen", no_network)
+    monkeypatch.setattr(installer.sys, "platform", "win32")
+    asset, url = installer.asset_for_platform()
+    assert installer._expected_sha256(url) == installer._PINNED_SHA256[asset]
+
+
+def test_every_archive_of_the_pinned_version_has_a_pinned_hash(monkeypatch):
+    """Bumping OVMS_VERSION without new hashes would quietly send every
+    platform back to the fetched checksum."""
+    names = []
+    monkeypatch.setattr(installer.sys, "platform", "win32")
+    names.append(installer.asset_for_platform()[0])
+    monkeypatch.setattr(installer.sys, "platform", "linux")
+    for flavour in ("ubuntu22", "ubuntu24", "redhat"):
+        monkeypatch.setattr(installer, "_linux_flavour", lambda f=flavour: f)
+        names.append(installer.asset_for_platform()[0])
+    assert all(installer.OVMS_VERSION in name for name in names)
+    missing = [name for name in names if name not in installer._PINNED_SHA256]
+    assert not missing, f"no pinned hash for: {missing}"
+    assert all(len(v) == 64 and v == v.lower()
+               for v in installer._PINNED_SHA256.values())
 
 
 # --------------------------------------------------------------------------

@@ -140,16 +140,17 @@ order as ARCHITECTURE.md.
 - **Alternatives considered:** rejecting fenced arguments.
 - **Evidence:** rejecting them cost a whole round trip per call.
 
-### D10. A misspelt tool name is matched, and the trace says so
+### D10. A misspelt tool name is refused, not matched
 
-- **Decision:** an unknown tool name is matched to the closest real one
-  (`difflib`, 60% similarity). The trace records the tool that ran, and keeps
-  the name the model asked for under `requested`.
-- **Why:** a near miss such as `search` for `search_docs` is a clear intent.
-- **Alternatives considered:** refusing unknown names outright (still the
-  result when nothing is close enough).
-- **Evidence:** before the trace fix, a matched call was logged under the name
-  the model invented, which no tool has.
+- **Decision:** an unknown tool name runs nothing. The model gets "tool 'x' is
+  not available" with the list of real names, and asks again.
+- **Why:** up to 1.4.0 the loop ran the closest real name (`difflib`, 60%
+  similarity). Spelling is not intent. With both search tools loaded, `search`
+  is closer to `web_search` (0.75) than to `search_docs` (0.71), so a question
+  about private notes could go to the web.
+- **Alternatives considered:** keeping the match only inside one permission
+  class. Refusing is simpler and costs one extra model turn.
+- **Evidence:** the similarity scores above, from `difflib.SequenceMatcher`.
 
 ### D11. `Session` is thread-safe
 

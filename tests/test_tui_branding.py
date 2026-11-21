@@ -15,7 +15,6 @@ import ast
 import re
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 TUI = ROOT / "ovat" / "tui"

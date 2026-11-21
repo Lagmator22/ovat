@@ -502,9 +502,8 @@ def test_an_unknown_backend_names_the_ones_that_exist():
 
     from ovat.agent.factory import build_retriever
 
-    cfg = _rag_cfg(ret_provider="faiss")
     with pytest.raises(ValueError) as caught:
-        build_retriever(cfg, embedder=FakeEmbedder())
+        build_retriever(_rag_cfg(ret_provider="faiss"), embedder=FakeEmbedder())
     assert "sqlite-vec" in str(caught.value)
     assert "memory" in str(caught.value)
 

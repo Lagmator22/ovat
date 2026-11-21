@@ -27,6 +27,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -207,15 +208,41 @@ def binary_version(binary: str, timeout: float = 15.0) -> str | None:
     return match.group(1) if match else None
 
 
-def _expected_sha256(asset_url: str) -> str | None:
-    """The published checksum, or None if the release does not carry one.
+#: SHA-256 of every archive of OVMS_VERSION. A hash served next to the archive
+#: only catches a corrupt download: whoever can replace the archive can
+#: replace that file too. These are compared against the code instead. Each
+#: value is the release's own .sha256 file and also the digest GitHub's API
+#: reports for the asset (both read 2026-11-16). Change them with
+#: OVMS_VERSION; a test fails when an archive of that version has no entry.
+_PINNED_SHA256 = {
+    "ovms_windows_2026.4.1_python_on.zip":
+        "aa79a0ae3b858356ba550978e397a8e8876a9d2706ffe4041b1dfd3f32cb8ce4",
+    "ovms_ubuntu22_2026.4.1_python_on.tar.gz":
+        "dad2d30e8151b2c03cadd8d269e38df0efc480129d1d4c9dcde689ea5f8dd167",
+    "ovms_ubuntu24_2026.4.1_python_on.tar.gz":
+        "92104f29d009fc365cd1031a6a6939b076aacffa01da206bfe2826d80d3ed5ee",
+    "ovms_redhat_2026.4.1_python_on.tar.gz":
+        "0509aafba5216fc5733017122c60fb24f60ca3602208531901b64eabf6506749",
+}
 
-    Upstream naming is inconsistent: python_off ships
+
+def _expected_sha256(asset_url: str) -> str | None:
+    """The checksum to hold the archive to, or None if there is none.
+
+    The pinned version's archives are checked against _PINNED_SHA256. Any
+    other version (`--version`) falls back to the checksum its release
+    publishes. Upstream naming is inconsistent there: python_off ships
     `ovms_windows_..._python_off.zip.sha256` while python_on ships
-    `ovms_windows_..._python_on.sha256` with no `.zip`. Try both rather than
-    guess. Missing checksums are logged as warnings rather than treated as hard
-    failures so releases without a published hash remain installable.
+    `ovms_windows_..._python_on.sha256` with no `.zip`, so both are tried.
+
+    Only a 404 on both means "this release publishes no checksum" (None, and
+    the install is reported as unverified). Any other failure raises: a
+    request that was blocked or cut off must not turn a checked install into
+    an unchecked one.
     """
+    asset = asset_url.rsplit("/", 1)[-1]
+    if asset in _PINNED_SHA256:
+        return _PINNED_SHA256[asset]
     stem, _, _ = asset_url.rpartition(".")
     if asset_url.endswith(".tar.gz"):
         stem = asset_url[:-len(".tar.gz")]
@@ -223,8 +250,16 @@ def _expected_sha256(asset_url: str) -> str | None:
         try:
             with urllib.request.urlopen(url, timeout=30) as response:
                 text = response.read().decode("utf-8", "replace").strip()
-        except Exception:
-            continue
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                continue
+            raise RuntimeError(
+                f"could not fetch the checksum for {asset} (HTTP "
+                f"{exc.code}); nothing was installed.") from exc
+        except OSError as exc:
+            raise RuntimeError(
+                f"could not fetch the checksum for {asset}: {exc}. Nothing "
+                f"was installed; check the connection and try again.") from exc
         # Files are either a bare digest or "<digest>  <filename>".
         digest = text.split()[0] if text.split() else ""
         if len(digest) == 64:
@@ -545,9 +580,9 @@ def install(root: str = DEFAULT_ROOT, version: str = OVMS_VERSION,
     """Put a usable OVMS under `root`. Returns (binary_path, what_happened).
 
     what_happened is 'already-installed', 'installed', or
-    'installed-unverified' (the release published no checksum, so there was
-    nothing to check the archive against), so the CLI can say which without
-    re-deriving it. Idempotent by default: running this twice is a no-op,
+    'installed-unverified' (a version other than the pinned one, whose
+    release published no checksum, so there was nothing to check the archive
+    against), so the CLI can say which without re-deriving it. Idempotent by default: running this twice is a no-op,
     which is what makes it safe to call from `serve` and from scripts.
 
     Raises RuntimeError on a checksum mismatch, and leaves nothing behind.
@@ -572,9 +607,10 @@ def install(root: str = DEFAULT_ROOT, version: str = OVMS_VERSION,
     workdir = tempfile.mkdtemp(prefix="ovat-dl-")
     archive = os.path.join(workdir, asset)
     try:
-        _download(url, archive, on_progress)
-
+        # Before the download: a checksum that cannot be fetched should not
+        # cost 200 MB first.
         expected = _expected_sha256(url)
+        _download(url, archive, on_progress)
         if expected:
             digest = hashlib.sha256()
             with open(archive, "rb") as handle:

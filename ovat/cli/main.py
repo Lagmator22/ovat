@@ -405,10 +405,10 @@ def run(
         failed = True
         rprint("[yellow]Warning: this answer still contains raw tool-call "
                "markup, so the tool was never run.[/yellow]")
-        rprint(f"[dim]Usually the wrong[/dim] tool_parser [dim]for this model "
-               f"(Qwen3.5 needs[/dim] qwen3coder[dim], Qwen3 needs[/dim] "
-               f"hermes3[dim]). It can also be the model emitting a malformed "
-               f"call, which a retry often clears.[/dim]")
+        rprint("[dim]Usually the wrong[/dim] tool_parser [dim]for this model "
+               "(Qwen3.5 needs[/dim] qwen3coder[dim], Qwen3 needs[/dim] "
+               "hermes3[dim]). It can also be the model emitting a malformed "
+               "call, which a retry often clears.[/dim]")
     # esc() stops the answer being read as markup; highlight=False stops rich
     # RE-styling it afterwards. Its highlighter treats plain text as a python
     # repr, so it bolds every bracket and colours bare numbers, which puts
@@ -1152,10 +1152,11 @@ def _offer_ovms_install(assume_yes: bool) -> str | None:
 def _say_if_unverified(what: str) -> None:
     """Warn when an install went ahead with nothing to check it against.
 
-    `setup` verifies SHA-256 checksums whenever a release publishes a `.sha256`
-    file. When no checksum asset exists, installation still proceeds (blocking
-    those releases would break valid installs), while warning that the archive
-    could not be verified.
+    `setup` checks the pinned OVMS version against hashes kept in the
+    installer, and any other version against the `.sha256` file its release
+    publishes. When that release has no checksum file, installation still
+    proceeds (blocking those releases would break valid installs), while
+    warning that the archive could not be verified.
     """
     if what == "installed-unverified":
         rprint("[yellow]Not verified:[/yellow] this OVMS release has no "

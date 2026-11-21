@@ -131,4 +131,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.config:
         configure_from_config(args.config)
-    mcp.run()
+    from ovat.tools.mcp_serve import serve
+    serve(mcp)

@@ -123,10 +123,11 @@ PURPOSE = {
                           "`type: mcp_stdio`.",
     ("tools", "env"): "Extra environment for an `mcp_stdio` server, which "
                       "otherwise sees only HOME, PATH and a few more. "
-                      "`${VAR}` is expanded from your shell.",
+                      "`${VAR}` is expanded from your shell; an unset "
+                      "variable is an error.",
     ("tools", "headers"): "Extra HTTP headers for an `mcp_http` or `mcp_sse` "
                           "server. `${VAR}` in values is expanded from your "
-                          "shell.",
+                          "shell; an unset variable is an error.",
     ("tools", "model"): "Where this tool's own weights live. `transcribe` and "
                         "`describe_image` only.",
     ("tools", "device"): "Device for this tool's model, separate from the "

@@ -117,8 +117,9 @@ as always `"stop"`.
 ### tools, rag, telemetry, top level
 - `ovat/tools/search_docs.py`, `transcribe.py`, `describe_image.py`: builtin
   tools. Pattern: plain `*_impl()` (testable), co-located `SCHEMA` (THE
-  contract, carries defaults), FastMCP wrapper + `mcp.run()` under
-  `__main__` (standalone MCP server mode).
+  contract, carries defaults), FastMCP wrapper + `mcp_serve.serve(mcp)`
+  under `__main__` (standalone MCP server mode). `mcp_serve.py` turns off
+  FastMCP's update check (a call to pypi.org) before the server starts.
 - `ovat/tools/fuzzy.py`: a misspelt file path is swapped for the closest
   existing file, BOUNDED (the named folder if it exists; for a relative
   folder that does not, folders ENDING in that name two levels under the

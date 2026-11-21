@@ -40,7 +40,8 @@ Expected shape of the answer: **under 8 GB**, followed by a line like
 `sources: examples/rag/docs/ovat-facts.md`. That line is the point: it is what
 separates an answer that came from your files from one that only sounds
 right. OVAT prints it itself, from what the search returned, rather than
-trusting the model to cite.
+trusting the model to cite. It lists every file the search returned, which can
+include files the answer did not use.
 
 More questions the sample documents can answer, and pre-training cannot:
 

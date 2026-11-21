@@ -27,6 +27,7 @@ connecting) and WAITS for it to unwind before stopping the loop.
 import asyncio
 import atexit
 import os
+import re
 import threading
 from contextlib import AsyncExitStack
 
@@ -35,6 +36,25 @@ from contextlib import AsyncExitStack
 # the server to exit after stdin closes, 2 s after killing its process
 # tree, 2 s to reap it), so this covers its worst case.
 _UNWIND_TIMEOUT = 10.0
+
+
+_BRACED_VAR = re.compile(r"\$\{([^}]*)\}")
+
+
+def _expand(value, where: str) -> str:
+    """`value` with `${VAR}` filled in from the environment.
+
+    os.path.expandvars leaves an unset `${VAR}` exactly as written, so a
+    token that was never exported went to the server as the literal text
+    "${MY_TOKEN}". An unset one is a config error that names the variable.
+    """
+    text = str(value)
+    for name in _BRACED_VAR.findall(text):
+        if name not in os.environ:
+            raise ValueError(
+                f"{where} uses ${{{name}}}, but the environment variable "
+                f"{name} is not set.")
+    return os.path.expandvars(text)
 
 
 def _is_transport_error(exc: BaseException) -> bool:
@@ -125,7 +145,7 @@ class _MCPClientBase:
                     self._shutdown = asyncio.Event()
                     ready.set()
                     await self._shutdown.wait()   # serve until close() fires it
-        except BaseException as exc:            # noqa: broad on purpose:
+        except BaseException as exc:            # broad on purpose:
             self._error = exc                   # whatever went wrong, report it
             ready.set()
         finally:
@@ -232,8 +252,8 @@ class MCPStdioServer(_MCPClientBase):
         # Added ON TOP of the SDK's safe allowlist, never instead of it: the
         # SDK merges these over get_default_environment(). ${VAR} is expanded
         # here so a secret can be named in the YAML without being written there.
-        self.env = ({k: os.path.expandvars(str(v)) for k, v in env.items()}
-                    if env else None)
+        self.env = ({k: _expand(v, f"mcp_stdio env '{k}'")
+                     for k, v in env.items()} if env else None)
         super().__init__(label=str(self.command),
                          connect_timeout=connect_timeout)
 
@@ -271,7 +291,8 @@ class MCPHttpServer(_MCPClientBase):
         self.url = url
         self.transport = transport
         self._headers = (
-            {k: os.path.expandvars(str(v)) for k, v in headers.items()}
+            {k: _expand(v, f"mcp_{transport} header '{k}'")
+             for k, v in headers.items()}
             if headers else {}
         )
         self.token_env = token_env
